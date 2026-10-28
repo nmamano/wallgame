@@ -200,24 +200,26 @@ describe("ship", () => {
   describe("the steps, with a fake app and a fake 4090", () => {
     /** The app as ship sees it: its state, its busy route, its restarts. */
     const fakeApp = (cwd: string) => {
+      /** The app's state route: its items in work. */
+      interface State {
+        items?: { id: string; updatedAt: string }[];
+      }
       const app = {
-        cycle: {
-          day: "2026-10-26",
-          state: "rendered",
-          updatedAt: "t1",
-        } as Record<string, string> | null,
-        renders: [] as { day: string; jobId: string; state: string }[],
+        state: {
+          items: [{ id: "v-2026-10-26-1", updatedAt: "t1" }],
+        } as State,
+        renders: [] as { itemId: string; jobId: string; state: string }[],
         restarts: 0,
         hashExit: 0,
-        /** What the restarted app's record looks like, if it changes. */
-        afterRestart: null as Record<string, string> | null,
+        /** What the restarted app's state looks like, if it changes. */
+        afterRestart: null as State | null,
       };
       const server = Bun.serve({
         port: 0,
         fetch: (req) => {
           const path = new URL(req.url).pathname;
           if (path === "/api/daily/state") {
-            return Response.json({ cycle: app.cycle });
+            return Response.json(app.state);
           }
           if (path === "/api/daily/busy") {
             return Response.json({ renders: app.renders, posting: false });
@@ -229,7 +231,7 @@ describe("ship", () => {
       const office = (method: string, path: string) => {
         if (method === "POST" && path.endsWith("/restart")) {
           app.restarts++;
-          if (app.afterRestart) app.cycle = app.afterRestart;
+          if (app.afterRestart) app.state = app.afterRestart;
         }
         return Promise.resolve({
           status: 200,
@@ -285,11 +287,13 @@ describe("ship", () => {
     test("a render in the app stops ship before anything moves", async () => {
       const { root, release, git, first, second } = repos();
       const fake = fakeApp(release);
-      fake.app.renders = [{ day: "2026-10-26", jobId: "j", state: "queued" }];
+      fake.app.renders = [
+        { itemId: "v-2026-10-26-1", jobId: "j", state: "queued" },
+      ];
       const { passed, lines } = await go(release, second, fake);
       expect(passed).toBe(false);
       expect(lines.at(-1)).toBe(
-        "ship FAILED at 1/7 move: the app has renders: 2026-10-26 queued; wait until they end",
+        "ship FAILED at 1/7 move: the app has renders: v-2026-10-26-1 queued; wait until they end",
       );
       expect(git(release, "rev-parse", "HEAD")).toBe(first);
       expect(fake.calls).toEqual([]);
@@ -321,36 +325,44 @@ describe("ship", () => {
       rmSync(root, { recursive: true });
     });
 
-    test("a restart that rewrites the record's format, but not the record, passes", async () => {
+    test("the first start of the review queue: an app with no items, then items", async () => {
       const { root, release, second } = repos();
       const fake = fakeApp(release);
-      // store.mjs migrateV1: the same record, with a version 2 state name.
+      // The app from before the review queue answers with a day cycle; the
+      // new app makes items from the day files at its first start.
+      fake.app.state = {};
       fake.app.afterRestart = {
-        day: "2026-10-26",
-        state: "open",
-        updatedAt: "t1",
+        items: [{ id: "v-2026-10-26-A", updatedAt: "t1" }],
       };
       const { passed, lines } = await go(release, second, fake);
       expect(passed).toBe(true);
-      expect(lines.at(-1)).toMatch(/^ship 7\/7 state/);
+      expect(lines.at(-1)).toBe(
+        "ship 7/7 state: ok - 0 item(s) unchanged, 1 new",
+      );
       void fake.server.stop();
       rmSync(root, { recursive: true });
     });
 
-    test("a record that changed across the restart fails the state step", async () => {
+    test("an item that changed or went away in the restart fails the state step", async () => {
       const { root, release, second } = repos();
       const fake = fakeApp(release);
       fake.app.afterRestart = {
-        day: "2026-10-26",
-        state: "rendered",
-        updatedAt: "t2",
+        items: [{ id: "v-2026-10-26-1", updatedAt: "t2" }],
       };
-      const { passed, lines } = await go(release, second, fake);
-      expect(passed).toBe(false);
-      expect(lines.at(-1)).toContain(
-        "the day's cycle changed: before 2026-10-26 t1, after 2026-10-26 t2",
+      const changed = await go(release, second, fake);
+      expect(changed.passed).toBe(false);
+      expect(changed.lines.at(-1)).toContain(
+        "items changed in the restart: v-2026-10-26-1 (t1 -> t2)",
       );
       void fake.server.stop();
+      const gone = fakeApp(release);
+      gone.app.afterRestart = { items: [] };
+      const lost = await go(release, second, gone);
+      expect(lost.passed).toBe(false);
+      expect(lost.lines.at(-1)).toContain(
+        "items changed in the restart: v-2026-10-26-1 (t1 -> gone)",
+      );
+      void gone.server.stop();
       rmSync(root, { recursive: true });
     });
 
@@ -383,7 +395,7 @@ describe("ship", () => {
       fake.run = (cmd: string, args: string[]) => {
         if (cmd === "bash") {
           fake.app.renders = [
-            { day: "2026-10-26", jobId: "j", state: "running" },
+            { itemId: "v-2026-10-26-1", jobId: "j", state: "running" },
           ];
         }
         return run(cmd, args);
@@ -391,7 +403,7 @@ describe("ship", () => {
       const { passed, lines } = await go(release, second, fake);
       expect(passed).toBe(false);
       expect(lines.at(-1)).toMatch(
-        /^ship FAILED at 5\/7 restart: the app has renders: 2026-10-26 running; wait until they end - the release checkout is now at /,
+        /^ship FAILED at 5\/7 restart: the app has renders: v-2026-10-26-1 running; wait until they end - the release checkout is now at /,
       );
       expect(fake.app.restarts).toBe(0);
       void fake.server.stop();

@@ -21,7 +21,7 @@
  *   5. restart  the app restarts (refused while a render is queued or runs,
  *               or a post runs)
  *   6. page     /daily answers 200
- *   7. state    the day's cycle is the one from before the restart
+ *   7. state    every item from before the restart is there, unchanged
  *
  * The 4090 is the box the app renders on: WALLGAME_GPU_HOST, from the
  * environment or the app's registered command line. The repo is public, so
@@ -38,6 +38,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+/**
+ * id -> updatedAt of each item the app's state lists, in work or recently
+ * over. An app from before the review queue lists none.
+ */
+const itemsOf = (state) =>
+  new Map(
+    [...(state.items ?? []), ...(state.over ?? [])].map((it) => [
+      it.id,
+      it.updatedAt,
+    ]),
+  );
 import { REPO, KIT_ENTRIES, renderKitFiles } from "../render-kit.mjs";
 
 /**
@@ -228,44 +240,28 @@ export const ship = async ({
   const noAnswer = () => ({ ok: false, status: "no answer", json: null });
 
   /**
-   * Why the app must not change now, or the day's cycle when it may. The
-   * app spawns its renders from the checkout and the renderer reads the
-   * 4090 kit, so neither may move under a render; a restart kills a render
-   * (and each render costs a view of the real game) or a post. An app older
-   * than GET /api/daily/busy answers 404; then only the day's cycle counts.
+   * Why the app must not change now, or its items when it may. The app
+   * spawns its renders from the checkout and the renderer reads the 4090
+   * kit, so neither may move under a render; a restart kills a render (and
+   * each render costs a view of the real game) or a post.
    */
-  let warnedOld = false;
   const idle = async () => {
+    const busy = await get("/api/daily/busy").catch(noAnswer);
+    if (!busy.ok || !busy.json) {
+      return { reason: `GET /api/daily/busy: HTTP ${busy.status}` };
+    }
+    const { renders, posting } = busy.json;
+    if (renders.length > 0) {
+      return {
+        reason: `the app has renders: ${renders.map((r) => `${r.itemId} ${r.state}`).join(", ")}; wait until they end`,
+      };
+    }
+    if (posting) return { reason: "a post is running; wait until it ends" };
     const state = await get("/api/daily/state").catch(noAnswer);
     if (!state.ok || !state.json) {
       return { reason: `GET /api/daily/state: HTTP ${state.status}` };
     }
-    const cycle = state.json.cycle;
-    if (cycle?.state === "rendering") {
-      return {
-        reason: `the ${cycle.day} cycle is rendering; wait until it ends`,
-      };
-    }
-    const busy = await get("/api/daily/busy").catch(noAnswer);
-    if (busy.ok && busy.json) {
-      const { renders, posting } = busy.json;
-      if (renders.length > 0) {
-        return {
-          reason: `the app has renders: ${renders.map((r) => `${r.day} ${r.state}`).join(", ")}; wait until they end`,
-        };
-      }
-      if (posting) return { reason: "a post is running; wait until it ends" };
-    } else if (busy.status === 404) {
-      if (!warnedOld) {
-        say(
-          "ship: the running app has no /api/daily/busy yet, so only the day's cycle is checked for a render",
-        );
-        warnedOld = true;
-      }
-    } else {
-      return { reason: `GET /api/daily/busy: HTTP ${busy.status}` };
-    }
-    return { cycle };
+    return { items: itemsOf(state.json) };
   };
 
   // 1. move. The app must run from this checkout: else the kit would come
@@ -372,7 +368,7 @@ export const ship = async ({
   // step 1).
   const now = await idle();
   if (now.reason) return fail("restart", now.reason);
-  const { cycle } = now;
+  const { items } = now;
   const restart = await office("POST", `/api/apps/${appName}/restart`).catch(
     (err) => ({ status: `no answer (${err?.cause?.code ?? err?.message})` }),
   );
@@ -403,23 +399,25 @@ export const ship = async ({
   }
   ok("page", "/daily 200");
 
-  // 7. state. Every save moves updatedAt, so the same day and updatedAt is
-  // the same record. The state name is left out: a restart may rewrite an
-  // old file in a new format (store.mjs migrateV1) without changing it.
+  // 7. state. Every save moves updatedAt, so an item with the same
+  // updatedAt is the same record. A restart may add items (the first start
+  // of the review queue makes them from the day files) but may not lose or
+  // change one.
   const after = await get("/api/daily/state").catch(noAnswer);
-  const same = (c) => (c ? `${c.day} ${c.updatedAt}` : "none");
   if (!after.ok || !after.json) {
     return fail("state", `GET /api/daily/state: HTTP ${after.status}`);
   }
-  if (same(after.json.cycle) !== same(cycle)) {
+  const afterItems = itemsOf(after.json);
+  const changed = [...items].filter(([id, at]) => afterItems.get(id) !== at);
+  if (changed.length) {
     return fail(
       "state",
-      `the day's cycle changed: before ${same(cycle)}, after ${same(after.json.cycle)}`,
+      `items changed in the restart: ${changed.map(([id, at]) => `${id} (${at} -> ${afterItems.get(id) ?? "gone"})`).join(", ")}`,
     );
   }
   ok(
     "state",
-    cycle ? `${cycle.day} still ${cycle.state}` : "no cycle, as before",
+    `${items.size} item(s) unchanged${afterItems.size > items.size ? `, ${afterItems.size - items.size} new` : ""}`,
   );
   return true;
 };

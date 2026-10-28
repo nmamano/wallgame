@@ -77,8 +77,8 @@ export const musicText = (cues) =>
     .join(", ");
 
 /**
- * The director's edit list in short lines, for the dashboard and the part of
- * the ask that is not posted. Plies are 0-based, as in the list.
+ * The director's edit list in short lines, for the dashboard and the
+ * director's status (never posted). Plies are 0-based, as in the list.
  */
 export const edlSummary = (edl) => [
   `ending ${edl.ending}, music ${edl.music ? musicText(edl.music) : "random"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,

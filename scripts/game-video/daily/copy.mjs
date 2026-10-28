@@ -4,10 +4,10 @@
  *
  * WHO WRITES WHAT (Nil, 2026-10-26, through Wall Game PM). The Director owns
  * the video and its on-video caption. Wall Game Growth writes all post text
- * and posts. The flow: the Director picks, directs, renders and checks, then
- * sends Growth a copy request; Growth gives the app its block (crew.mjs
- * copy); the Director's ask shows the stored block; on Nil's yes, Growth
- * posts that approved block (crew.mjs post).
+ * and owns posting. The flow: the Director picks, directs, renders and
+ * checks an item, then sends Growth a copy request; Growth gives the app its
+ * block (crew.mjs copy); Nil's review page shows the stored block; an
+ * approved item posts that block at a slot.
  *
  * THE BLOCK is eight lines, each the exact text that posts (format by Growth
  * Lead, ~/nil/growth/posting/README.md and wallgame.md):
@@ -23,8 +23,8 @@
  *
  * The app adds " #Shorts" to the YouTube title, and nothing else to any line.
  * TikTok takes no caption through the API: Nil pastes it in the inbox draft,
- * so the ask shows it. The limits are checked here, when the block comes in,
- * so an ask never shows a text that cannot post.
+ * so the review page shows it. The limits are checked here, when the block
+ * comes in, so Nil never reviews a text that cannot post.
  */
 import { createHash } from "node:crypto";
 import { textProblems } from "./candidate.mjs";
@@ -244,8 +244,8 @@ export const copyLines = (copy) =>
   COPY_LINES.map(([label, field]) => `${label}: ${copy[field]}`);
 
 /**
- * The hash that binds an ask and an approval to a block: its eight texts
- * and its version, nothing else.
+ * The hash that binds an approval to a block: its eight texts and its
+ * version, nothing else.
  * @param {Copy} copy
  */
 export const copySha256 = (copy) =>

@@ -2,7 +2,7 @@
  * Measured checks on a rendered daily video, beside the director's own look
  * at the contact sheet (quality audit, info/daily-video-quality.md). The
  * renderer measures each render and the app judges the measures when it
- * lands; the check step refuses an ask for a render that fails one.
+ * lands; the check step does not finish an item whose render fails one.
  *
  *   loudness   each meme sound's own loudness in the final mix, and how
  *              far it stands over the music and clicks under it, as the

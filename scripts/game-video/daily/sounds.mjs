@@ -13,7 +13,7 @@
  * 2026-10-26: "they are keeps, just lower priority. even the 'drops' can be
  * used if they fit your creative direction"). The director prefers best,
  * then ok. POST /api/daily/direct allows a disliked sound and adds one line
- * for each one to the list's summary, which the ask shows (routes.mjs).
+ * for each one to the list's summary, which the dashboard shows (routes.mjs).
  *
  * CLAIM RISK IS NOT TASTE. A sound that meme-sounds.md rates as a high claim
  * risk (its MEME_SOURCE_NOTES note) keeps its level, but `direct` refuses it

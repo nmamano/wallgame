@@ -1,12 +1,16 @@
 /**
  * What the daily video pipeline must refuse, and one whole dry-run cycle.
  *
- * The refusals are the reason the pipeline is a state machine: a post must
- * only ever follow an approval of the same video, in the same posting mode,
- * and a platform must never get the same video twice. The full cycle runs the
- * real app (server.mjs) with a stub in place of the 4090 render step, and
- * checks that a dry run writes the requests a live post would send, with no
- * credential in them.
+ * Each video is an item (store.mjs): picked, directed, rendered, checked by
+ * the director, given Growth's copy block, and then reviewed by Nil. The
+ * refusals are the reason the item is a state machine: a step runs only
+ * from the stage it expects, a check is about the current render's sheet,
+ * a block belongs to one video, and each live render is one view of a real
+ * game. The full cycle runs the daily routes with a stub in place of the
+ * 4090 render step, and checks that posting an approved item in dry-run
+ * writes the requests a live post would send, with no credential in them.
+ * Nil's review actions and the post queue are not here: a test approves an
+ * item through store.updateItem, as the review page will.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
@@ -23,7 +27,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { migrateV1, migrateV2, openStore, readPostLog } from "./store.mjs";
+import {
+  ITEM_ID,
+  PLATFORMS,
+  openStore,
+  readPostLog,
+  reviewState,
+  stage,
+  utcDay,
+} from "./store.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
@@ -51,7 +63,6 @@ import type {
   PickedJump,
 } from "../daily-candidates";
 import { oauth1Header, xDryRunReply } from "./post-x.mjs";
-import { youtubeDryRunReply } from "./post-youtube.mjs";
 import {
   postToTiktok,
   tiktokDryRunReply,
@@ -66,14 +77,6 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import {
-  ASK_TEXT_LIMIT,
-  approvedPackage,
-  askNotes,
-  askOptions,
-  askText,
-  postedTexts,
-} from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
@@ -174,7 +177,6 @@ const BLOCK = [
   `Bluesky: bro thought he could just walk home 😭🙏 ${trackedLink("bluesky")} #wallgame`,
   "Threads: bro thought he could just walk home 😭🙏 #wallgame",
 ].join("\n");
-const BLOCK_LINES = BLOCK.split("\n").length;
 const COPY_VERSION = "growth-copy-1";
 const COPY = { ...parseCopy(BLOCK).copy!, version: COPY_VERSION };
 const COPY_SHA = copySha256(COPY);
@@ -205,97 +207,90 @@ const REPORT = {
   ],
 };
 
-/** The parts of a candidate (store.mjs) that these tests read. */
-interface Cand {
-  label: string;
+/** A video as a render reports it. */
+interface Video {
+  path: string;
+  bytes: number;
+  sha256: string;
+  durationSeconds?: number;
+}
+
+/** The parts of a video item (store.mjs) that these tests read. */
+interface Item {
+  id: string;
   state: string;
+  gameId: string;
+  // Only a carry-over has it.
+  source: { carriedFrom?: string };
   candidate: { gameId: string };
-  copy: Record<string, string> | null;
-  copyFor: string | null;
+  copy: {
+    block: Record<string, string>;
+    sha256: string;
+    forVideoSha256: string;
+  } | null;
   render: {
     jobId: string;
+    finishedAt: string | null;
     error: string | null;
     fromCache: boolean;
     effect: string | null;
     ending: string;
     sheet: { sha256: string; stills: unknown[] } | null;
-    video: { path: string; sha256: string } | null;
+    video: Video | null;
     quality: Record<string, { ok: boolean; note: string }> | null;
+    music: { fromPly: number; track: string; at: number }[] | null;
+    timeline: { events: object[] } | null;
   } | null;
   check: { ok: boolean } | null;
-}
-
-/** The parts of a day's record (store.mjs) that these tests read. */
-interface Day {
-  day: string;
-  state: string;
-  cands: Record<string, Cand>;
   approval: {
-    askId: string;
-    offered: Record<string, { videoSha256: string; copySha256: string }>;
-    picked: string | null;
-    decision: string | null;
-    videoSha256: string | null;
-    copy: Record<string, string> | null;
-    reply: string | null;
+    videoSha256: string;
+    copySha256: string;
+    by: string;
+    at: string;
   } | null;
-  events: { what: string }[];
-  posts: Record<string, { postId: string; requestsFile: string }>;
-  renders: Record<string, number>;
+  events: { utc: string; what: string }[];
 }
 
-/** The picked candidate as posting reads it (store.picked). */
-interface PickedView {
-  label: string;
-  approval: { copy: Record<string, string> };
-  render: { video: { sha256: string; path: string } };
-  copy: Record<string, string>;
+/** An item as GET /api/daily/state lists it: with what is derived. */
+interface ItemView extends Item {
+  stage: string;
+  reviewState: string | null;
+  staleCopy: string | null;
 }
-
-/** One line of the feedback log (store.recordAnswer). */
-interface FeedbackRow {
-  day: string;
-  askId: string;
-  approver: string;
-  picked: string | null;
-  reply: string | null;
-  recommended: { label: string; why: string } | null;
-  offered: { label: string; gameId: string; videoSha256: string }[];
-}
-
-/** Candidate `label` of the stored day. */
-const candOf = (
-  store: ReturnType<typeof openStore>,
-  day: string,
-  label = "A",
-): Cand => (store.read(day) as Day).cands[label];
 
 interface DailyState {
-  cycle: Day;
+  items: ItemView[];
+  // The last items that posted or were discarded.
+  over: { id: string; state: string }[];
+  counts: Record<string, number>;
+  suggestedEnding: string;
+  lastMusic: string[] | null;
 }
 
 interface LogRow {
+  itemId: string;
+  gameId: string;
+  videoSha256: string;
   platform: string;
   caption: string;
   styleVersion: string | null;
   copyVersion: string;
 }
 
-const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
+/** postPlatform's result: the platform's reply, or why it did not post. */
+type PostResult =
+  | { ok: true; mode: string; postId: string; requestsFile: string }
+  | {
+      ok: false;
+      uncertain: boolean;
+      mode: string;
+      error: string;
+      requestsFile: string;
+    };
 
-const pickToday = (
-  store: ReturnType<typeof openStore>,
-  day: string,
-  replace = false,
-): void => {
-  const candidate = candidateFromReport(REPORT, 1);
-  store.pick(day, "A", {
-    candidate,
-    style: "daily",
-    styleVersion: CAPTION_STYLE_VERSION,
-    replace,
-  });
-};
+type Store = ReturnType<typeof openStore>;
+
+const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
 
 const DRY = {
   x: "dry-run",
@@ -316,23 +311,10 @@ const EDL = {
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
-const directToday = (
-  store: ReturnType<typeof openStore>,
-  day: string,
-  replace = false,
-) => {
-  pickToday(store, day, replace);
-  store.direct(day, "A", {
-    edl: EDL,
-    text: JSON.stringify(EDL),
-    summary: edlSummary(EDL),
-  });
-};
-
-/** The contact sheet of a render of EDL: one still, the zoom. */
-/** The music a render played: the shared list's one cue (EDL below). */
+/** The music a render played: the list's one cue. */
 const PLAYED = [{ fromPly: 0, track: "deja-vus", at: 0 }];
 
+/** The contact sheet of a render of EDL: one still, the zoom. */
 const SHEET = {
   path: "/nowhere-sheet.png",
   sha256: "ss",
@@ -353,657 +335,343 @@ const MEASURED = {
   safeArea: { ok: true, note: "board, caption inside the safe area" },
 };
 
-/** Walk a cycle to "checked" (ready to ask) for this video. */
-const checkedToday = (
-  store: ReturnType<typeof openStore>,
-  day: string,
-  video: {
-    path: string;
-    bytes: number;
-    sha256: string;
-    durationSeconds?: number;
-  },
-) => {
-  directToday(store, day);
-  store.startRender(day, "A", "job-00000001");
-  store.finishRender(day, "A", "job-00000001", {
-    video,
-    sheet: SHEET,
-    music: PLAYED,
-    quality: MEASURED,
-  });
-  store.recordCopy(day, "A", COPY);
-  store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
+const VIDEO: Video = { path: "/nowhere.mp4", bytes: 1, sha256: "aa" };
+
+/** A new item of TESTGAME1, as pick makes it from the report; its id. */
+const pickItem = (store: Store): string =>
+  store.pick({
+    candidate: candidateFromReport(REPORT, 1),
+    style: "daily",
+    styleVersion: CAPTION_STYLE_VERSION,
+    source: {
+      report: "2026-10-26.json",
+      reportCreatedAt: REPORT.createdAt,
+      gameId: "TESTGAME1",
+    },
+  }).id;
+
+/** A new item with EDL as its list (`text`: the list's bytes). */
+const directItem = (store: Store, text = JSON.stringify(EDL)): string => {
+  const id = pickItem(store);
+  store.direct(id, { edl: EDL, text, summary: edlSummary(EDL) });
+  return id;
 };
 
-/** Walk a cycle to "approved" for a video with this hash. */
-const approved = (
-  store: ReturnType<typeof openStore>,
-  day: string,
-  sha = "aa",
+/**
+ * Render the item's list as `video`. A second live render of TESTGAME1 the
+ * same UTC day needs `force`.
+ */
+const renderItem = (
+  store: Store,
+  id: string,
+  video: Video = VIDEO,
+  {
+    quality = MEASURED,
+    force = false,
+  }: { quality?: object | null; force?: boolean } = {},
 ) => {
-  directToday(store, day);
-  store.startRender(day, "A", "job-00000001");
-  store.finishRender(day, "A", "job-00000001", {
-    video: { path: "/nowhere.mp4", bytes: 1, sha256: sha },
+  const job = `job-${id}-${video.sha256}`;
+  store.startRender(id, job, { force });
+  store.finishRender(id, job, {
+    video,
     sheet: SHEET,
     music: PLAYED,
     effect: "zoom",
     sound: "shotgun",
-    quality: MEASURED,
-  });
-  store.recordCopy(day, "A", COPY);
-  store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
-  store.recordAsk(day, {
-    askId: "ask1",
-    modes: DRY,
-    offered: { A: { videoSha256: sha, copySha256: COPY_SHA } },
-    currentModes: DRY,
-  });
-  store.recordAnswer(day, {
-    askId: "ask1",
-    pick: "A",
-    approver: "Nil",
-    reply: "Approve",
+    quality,
   });
 };
 
-describe("after None today: a new ask must offer something new", () => {
-  const day = "2026-10-26";
-  const NEW = { ...COPY, x: "bro walked right into it 😭🙏 #wallgame" };
-  const ask = (
-    store: ReturnType<typeof openStore>,
-    askId: string,
-    copy: typeof COPY,
-    replacesAskId?: string,
-  ) => {
-    store.recordAsk(day, {
-      askId,
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: copySha256(copy) } },
-      currentModes: DRY,
-      ...(replacesAskId && { replacesAskId }),
-    });
-  };
-  const rejected = (reply: string | null = "the X line is cringe") => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    ask(store, "ask1", COPY);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: null,
-      approver: "Nil",
-      reply,
-    });
-    return store;
-  };
+/** A new item rendered as `video`, checked, with Growth's block: in review. */
+const finishItem = (
+  store: Store,
+  video: Video = VIDEO,
+  copy: typeof COPY = COPY,
+  force = false,
+): string => {
+  const id = directItem(store);
+  renderItem(store, id, video, { force });
+  store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+  store.recordCopy(id, copy);
+  return id;
+};
 
-  test("the same offer cannot be asked again", () => {
-    expect(() => {
-      ask(rejected(), "ask2", COPY);
-    }).toThrow(
-      /every candidate in this ask was offered in ask ask1, which Nil answered with none/,
-    );
-  });
+const itemOf = (store: Store, id: string) => store.item(id) as Item;
 
-  test("a new block for the same video opens a new ask, and it can post", () => {
-    const store = rejected();
-    store.recordCopy(day, "A", NEW);
-    expect((store.read(day) as Day).state).toBe("rejected");
-    ask(store, "ask2", NEW);
-    const record = store.read(day) as Day & {
-      earlierAsks: { askId: string; decision: string; reply: string }[];
-    };
-    expect(record.state).toBe("asked");
-    expect(record.earlierAsks).toMatchObject([
-      { askId: "ask1", decision: "none", reply: "the X line is cringe" },
-    ]);
-    expect(record.events.at(-1)?.what).toBe("ask ask2 opened: A");
-    // Opened again for the right member: the same offer.
-    ask(store, "ask3", NEW, "ask2");
-    store.recordAnswer(day, {
-      askId: "ask3",
-      pick: "A",
-      approver: "Nil",
-      reply: "Post A",
-    });
-    expect(store.checkPost(day, { modes: DRY, videoSha256: "aa" })).toEqual([
-      "x",
-      "youtube",
-      "tiktok",
-      "instagram",
-      "facebook",
-      "bluesky",
-      "threads",
-    ]);
-    expect((store.read(day) as Day).approval?.copy).toEqual(NEW);
-  });
+/**
+ * Nil's approval of the item's video and block, as the review page will
+ * write it (it comes in a later commit).
+ */
+const approveItem = (store: Store, id: string): Item =>
+  store.updateItem(
+    id,
+    ["finished"],
+    (it: Item) => {
+      it.state = "approved";
+      it.approval = {
+        videoSha256: it.render!.video!.sha256,
+        copySha256: it.copy!.sha256,
+        by: "Nil",
+        at: new Date().toISOString(),
+      };
+    },
+    "approved (test)",
+  ) as Item;
 
-  // The day as askText reads it once candidate A is rendered and checked.
-  const askable = (store: ReturnType<typeof openStore>) => {
-    const record = store.read(day) as Day;
-    return {
-      ...record,
-      cands: {
-        A: {
-          ...record.cands.A,
-          candidate: {
-            seats: [{ name: "A" }, { name: "B" }],
-            movesCount: 9,
-            gameId: "g",
-          },
-          render: { video: { bytes: 1e6 }, ending: "e" },
-          edl: { doc: { caption: "can bro get home?" }, summary: [] },
-          check: { verdicts: [] },
-        },
-      },
-    };
-  };
-
-  test("the new ask quotes Nil's answer and marks the same video", () => {
-    const store = rejected();
-    store.recordCopy(day, "A", NEW);
-    const lines = askText(askable(store), DRY, { A: "aa" }).split("\n");
-    const after =
-      'After ask ask1, where you picked none: "the X line is cringe".';
-    expect(lines).toContain(after);
-    expect(lines).toContain(
-      "CANDIDATE A (the same video as in ask ask1): video A and sheet A are attached.",
-    );
-    // After the new ask is recorded (a reopen builds the text then).
-    ask(store, "ask2", NEW);
-    expect(askText(askable(store), DRY, { A: "aa" }).split("\n")).toContain(
-      after,
-    );
-  });
-
-  test("a dismissed ask is not quoted as a reply", () => {
-    const store = rejected(null);
-    store.recordCopy(day, "A", NEW);
-    expect(askText(askable(store), DRY, { A: "aa" }).split("\n")).toContain(
-      "After ask ask1, where you picked none without a reply.",
-    );
-  });
-});
-
-describe("an ask opened again for the right member", () => {
-  const day = "2026-10-26";
-  const asked = () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    store.recordAsk(day, {
-      askId: "old",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-    });
-    return store;
-  };
-  const reopen = (
-    store: ReturnType<typeof openStore>,
-    replacesAskId: string,
-  ) => {
-    store.recordAsk(day, {
-      askId: "new",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-      replacesAskId,
-    });
-  };
-
-  test("the new ask takes over, and only its answer counts", () => {
-    const store = asked();
-    reopen(store, "old");
-    const cycle = store.read(day) as Day;
-    expect(cycle.state).toBe("asked");
-    expect(cycle.events.at(-1)?.what).toBe("ask new opened again (was old)");
-    expect(() => {
-      store.recordAnswer(day, {
-        askId: "old",
-        pick: "A",
-        approver: "Nil",
-        reply: "Approve",
-      });
-    }).toThrow(/ask old is not this day's ask \(new\)/);
-    store.recordAnswer(day, {
-      askId: "new",
-      pick: "A",
-      approver: "Nil",
-      reply: "Approve",
-    });
-    expect((store.read(day) as Day).state).toBe("approved");
-  });
-
-  test("only the cycle's open ask can be replaced", () => {
-    expect(() => {
-      reopen(asked(), "other");
-    }).toThrow(/ask other is not this day's ask \(old\)/);
-    const answered = asked();
-    answered.recordAnswer(day, {
-      askId: "old",
-      pick: null,
-      approver: "Nil",
-      reply: "Reject",
-    });
-    expect(() => {
-      reopen(answered, "old");
-    }).toThrow(/reopen the ask needs the day asked/);
-  });
-});
-
-describe("the director's recommendation", () => {
-  const day = "2026-10-27";
-  const ask = (
-    store: ReturnType<typeof openStore>,
-    recommended: { label: string; why: string } | null,
-  ) => {
-    store.recordAsk(day, {
-      askId: "ask1",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-      recommended,
-    });
-  };
-  const checked = () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    return store;
-  };
-
-  test("the ask keeps it, and the feedback log says whether Nil agreed", () => {
-    const store = checked();
-    const rec = { label: "A", why: "the save and the bye both land" };
-    const text = askText(store.read(day), DRY, { A: "aa" }, rec).split("\n");
-    const at = text.indexOf(
-      "Director recommends A: the save and the bye both land",
-    );
-    expect(at).toBeGreaterThan(0);
-    expect(at).toBeLessThan(
-      text.indexOf("CANDIDATE A: video A and sheet A are attached."),
-    );
-    // Only the label and the reason are kept.
-    ask(store, { ...rec, extra: "dropped" } as typeof rec);
-    expect(
-      (store.read(day) as { approval: { recommended: unknown } }).approval
-        .recommended,
-    ).toEqual(rec);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: "A",
-      approver: "Nil",
-      reply: "Post A",
-    });
-    const [row] = readPostLog(store.feedbackLog) as FeedbackRow[];
-    expect([row.recommended, row.picked]).toEqual([rec, "A"]);
-  });
-
-  test("without one, the log says null", () => {
-    const store = checked();
-    ask(store, null);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: null,
-      approver: "Nil",
-      reply: "no",
-    });
-    expect(
-      (readPostLog(store.feedbackLog) as FeedbackRow[])[0].recommended,
-    ).toBe(null);
-  });
-
-  test("it names an offered candidate and gives a short reason", () => {
-    expect(() => {
-      ask(checked(), { label: "B", why: "better" });
-    }).toThrow(/the ask recommends B, which it does not offer/);
-    // A plain object "has" constructor; only an offered label counts.
-    expect(() => {
-      ask(checked(), { label: "constructor", why: "better" });
-    }).toThrow(/the ask recommends constructor, which it does not offer/);
-    expect(() => {
-      ask(checked(), { label: "A", why: "two\nlines" });
-    }).toThrow(/on one line/);
-    expect(() => {
-      ask(checked(), { label: "A", why: " " });
-    }).toThrow(
-      /a recommendation needs a reason of 1 to 100 characters on one line/,
-    );
-    expect(() => {
-      ask(checked(), { label: "A", why: "x".repeat(101) });
-    }).toThrow(
-      /a recommendation needs a reason of 1 to 100 characters on one line/,
-    );
-  });
-});
-
-describe("a mode change after the approval asks again", () => {
-  const day = "2026-10-27";
-  const LIVE_YT = { ...DRY, youtube: "live" };
-  const askAgain = (
-    store: ReturnType<typeof openStore>,
-    over: { modes?: object; sha?: string; askId?: string } = {},
-  ) => {
-    store.recordAsk(day, {
-      askId: over.askId ?? "ask2",
-      modes: over.modes ?? LIVE_YT,
-      offered: {
-        A: { videoSha256: over.sha ?? "aa", copySha256: COPY_SHA },
-      },
-      currentModes: over.modes ?? LIVE_YT,
-      modeChange: true,
-    });
-  };
-  const fail = (store: ReturnType<typeof openStore>, platform: string) => {
-    store.recordPost(
-      day,
-      platform,
-      { ok: false, mode: "dry-run", error: "boom" },
-      null,
-    );
-  };
-
-  test("the same video and block go back to Nil, and the new answer posts", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    expect(() =>
-      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
-    ).toThrow(/approval was for dry-run; ask again/);
-    const text = askText(store.read(day), LIVE_YT, { A: "aa" }).split("\n");
-    expect(text[1]).toBe(
-      "ASKED AGAIN: YouTube is now live (was dry-run). Same video, same post text as ask ask1, where you picked A. Your earlier approval does not cover the new posting mode.",
-    );
-    expect(text).toContain(
-      "CANDIDATE A (the same video as in ask ask1): video A and sheet A are attached.",
-    );
-    askAgain(store);
-    const cycle = store.read(day) as Day & {
-      earlierAsks: { askId: string; decision: string }[];
-      approval: { modeChangeOf: string };
-    };
-    expect(cycle.state).toBe("asked");
-    expect(cycle.approval.modeChangeOf).toBe("ask1");
-    expect(Object.keys(cycle.approval.offered)).toEqual(["A"]);
-    expect(cycle.earlierAsks.map((a) => [a.askId, a.decision])).toEqual([
-      ["ask1", "pick"],
-    ]);
-    expect(cycle.events.at(-1)?.what).toBe(
-      "ask ask2 opened for a mode change (was ask1): A",
-    );
-    store.recordAnswer(day, {
-      askId: "ask2",
-      pick: "A",
-      approver: "Nil",
-      reply: "Post A",
-    });
-    expect(
-      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
-    ).toHaveLength(7);
-  });
-
-  test("a failed post with nothing out may ask again", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    fail(store, "x");
-    expect((store.read(day) as Day).state).toBe("post-failed");
-    askAgain(store);
-    expect((store.read(day) as Day).state).toBe("asked");
-  });
-
-  test("once a platform posted, or may have, the modes cannot change", () => {
-    const posted = openStore(tempDir());
-    approved(posted, day);
-    // A dry-run post counts: that platform cannot post the day again.
-    posted.recordPost(
-      day,
-      "x",
-      { ok: true, mode: "dry-run", postId: "p" },
-      null,
-    );
-    fail(posted, "youtube");
-    expect(() => askAgain(posted)).toThrow(
-      /x posted \(or may have\): a mode change is asked only before any platform posts/,
-    );
-    const pending = openStore(tempDir());
-    approved(pending, day);
-    pending.markPending(day, "threads", "dry-run");
-    expect(() => askAgain(pending)).toThrow(/threads posted \(or may have\)/);
-  });
-
-  test("it asks for exactly what was approved, in new modes", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    expect(() => askAgain(store, { modes: DRY })).toThrow(
-      /the posting modes are the ones of ask ask1: no mode change to ask for/,
-    );
-    expect(() => askAgain(store, { sha: "bb" })).toThrow(
-      /the ask shows another video for A than its render/,
-    );
-    expect(() => {
-      store.recordAsk(day, {
-        askId: "ask2",
-        modes: LIVE_YT,
-        offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-        currentModes: DRY,
-        modeChange: true,
-      });
-    }).toThrow(/the ask says youtube live, but the app would post dry-run/);
-    expect((store.read(day) as Day).state).toBe("approved");
-  });
-
-  test("only an approved day asks for a mode change", () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    expect(() => askAgain(store)).toThrow(
-      /ask for a mode change needs the day approved or post-failed, but 2026-10-27 is open/,
-    );
-  });
-
-  test("an answer of none rejects the day, so it posts nothing", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    askAgain(store);
-    store.recordAnswer(day, {
-      askId: "ask2",
-      pick: null,
-      approver: "Nil",
-      reply: "not live yet",
-    });
-    expect((store.read(day) as Day).state).toBe("rejected");
-    expect(() =>
-      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
-    ).toThrow(/post needs the day approved/);
-  });
-
-  test("a mode-change ask opened again is still one", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    askAgain(store);
-    store.recordAsk(day, {
-      askId: "ask3",
-      modes: LIVE_YT,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: LIVE_YT,
-      replacesAskId: "ask2",
-    });
-    const cycle = store.read(day) as Day & {
-      approval: { modeChangeOf: string };
-    };
-    expect(cycle.approval.modeChangeOf).toBe("ask1");
-    // The text still says what changed, not "you picked none".
-    expect(askText(cycle, LIVE_YT, { A: "aa" }).split("\n")[1]).toMatch(
-      /^ASKED AGAIN: YouTube is now live \(was dry-run\)/,
-    );
-  });
-});
-
-describe("the ask must show what the approval will cover", () => {
-  const day = "2026-10-26";
-  const rendered = () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    return store;
-  };
-
-  test("a new block replaces the old one, and the ask must show the stored one", () => {
-    const store = rendered();
-    store.recordCopy(day, "A", { ...COPY, x: "first draft" });
-    // A new block replaces the old one until the ask.
-    store.recordCopy(day, "A", COPY);
-    expect((store.read(day) as Day).events.at(-1)?.what).toBe(
-      `A: copy block replaced (${COPY_VERSION}, for video aa)`,
-    );
-    const ask = (copySha256: string) => {
-      rendered().recordAsk(day, {
-        askId: "a",
-        modes: DRY,
-        offered: { A: { videoSha256: "aa", copySha256 } },
-        currentModes: DRY,
-      });
-    };
-    expect(() => {
-      ask(copySha256({ ...COPY, x: "first draft" }));
-    }).toThrow(/another copy block for A than the stored one/);
-  });
-
-  test("an ask that showed another video is refused", () => {
-    expect(() => {
-      rendered().recordAsk(day, {
-        askId: "a",
-        modes: DRY,
-        offered: { A: { videoSha256: "bb", copySha256: COPY_SHA } },
-        currentModes: DRY,
-      });
-    }).toThrow(/another video/);
-  });
-
-  test("an ask that said dry-run is refused once the app would post live", () => {
-    expect(() => {
-      rendered().recordAsk(day, {
-        askId: "a",
-        modes: DRY,
-        offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-        currentModes: {
-          x: "live",
-          youtube: "dry-run",
-          tiktok: "dry-run",
-          instagram: "dry-run",
-        },
-      });
-    }).toThrow(/the ask says x dry-run, but the app would post live/);
-  });
-});
-
-describe("the director checks the contact sheet before the ask", () => {
-  const day = "2026-10-26";
-  const video = { path: "/x", bytes: 1, sha256: "aa" };
+describe("the director checks the contact sheet before the review", () => {
+  /** A rendered item with a block, before its check. */
   const rendered = (quality: object | null = MEASURED) => {
     const store = openStore(tempDir());
-    directToday(store, day);
-    store.startRender(day, "A", "job-00000001");
-    store.finishRender(day, "A", "job-00000001", {
-      video,
-      sheet: SHEET,
-      music: PLAYED,
-      quality,
-    });
-    store.recordCopy(day, "A", COPY);
-    return store;
-  };
-  const ask = (store: ReturnType<typeof openStore>) => {
-    store.recordAsk(day, {
-      askId: "a",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-    });
+    const id = directItem(store);
+    renderItem(store, id, VIDEO, { quality });
+    store.recordCopy(id, COPY);
+    return { store, id };
   };
 
   test("no render without an edit list", () => {
     const store = openStore(tempDir());
-    pickToday(store, day);
+    const id = pickItem(store);
     expect(() => {
-      store.startRender(day, "A", "job-00000001");
-    }).toThrow(/render needs candidate A directed/);
+      store.startRender(id, "job-00000001");
+    }).toThrow(
+      `render needs ${id} directed or render-failed, but it is picked`,
+    );
   });
 
-  test("no ask before the check", () => {
-    expect(() => {
-      ask(rendered());
-    }).toThrow(/ask needs candidate A checked/);
-  });
-
-  test("a bad still keeps the ask closed, and the way on is a new list", () => {
-    const store = rendered();
-    store.recordCheck(day, "A", {
+  test("a bad still keeps the item a draft, out of review, and the way on is a new list", () => {
+    const { store, id } = rendered();
+    // Rendered with a block, but not checked: not for Nil yet.
+    expect(reviewState(itemOf(store, id))).toBeNull();
+    store.recordCheck(id, {
       sheetSha256: "ss",
       stills: [
         { ...ZOOM_OK, ok: false, note: "the zoom shows the cat, not the wall" },
       ],
     });
-    expect(candOf(store, day).state).toBe("rendered");
-    expect(() => {
-      ask(store);
-    }).toThrow(/ask needs candidate A checked/);
+    expect(itemOf(store, id).state).toBe("draft");
+    expect(stage(itemOf(store, id))).toBe("rendered");
+    expect(reviewState(itemOf(store, id))).toBeNull();
     // A second look at the same render cannot turn the failure into a pass.
     expect(() => {
-      store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
+      store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
     }).toThrow(/already failed its check/);
-    store.direct(day, "A", {
-      edl: EDL,
-      text: JSON.stringify(EDL),
-      summary: [],
-    });
-    const cand = candOf(store, day);
-    expect(cand.state).toBe("directed");
-    expect(cand.render).toBeNull();
+    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    expect(stage(itemOf(store, id))).toBe("directed");
+    expect(itemOf(store, id).render).toBeNull();
   });
 
   test("every still needs its own verdict, in order, with a note", () => {
-    const store = rendered();
+    const { store, id } = rendered();
     expect(() => {
-      store.recordCheck(day, "A", { sheetSha256: "ss", stills: [] });
+      store.recordCheck(id, { sheetSha256: "ss", stills: [] });
     }).toThrow(/a verdict on each/);
     expect(() => {
-      store.recordCheck(day, "A", {
+      store.recordCheck(id, {
         sheetSha256: "ss",
         stills: [{ ...ZOOM_OK, ply: 23 }],
       });
     }).toThrow(/still 1 is ply 22 zoom/);
     expect(() => {
-      store.recordCheck(day, "A", {
+      store.recordCheck(id, {
         sheetSha256: "ss",
         stills: [{ ...ZOOM_OK, note: " " }],
       });
     }).toThrow(/needs a note/);
     expect(() => {
-      store.recordCheck(day, "A", { sheetSha256: "other", stills: [ZOOM_OK] });
+      store.recordCheck(id, { sheetSha256: "other", stills: [ZOOM_OK] });
     }).toThrow(/another contact sheet/);
-    store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
-    ask(store);
-    expect((store.read(day) as Day).state).toBe("asked");
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(itemOf(store, id).state).toBe("finished");
+    expect(reviewState(itemOf(store, id))).toBe("in-review");
   });
 
   test("a failed measure fails the check, even when every still is ok", () => {
-    const store = rendered({
+    const { store, id } = rendered({
       loudness: {
         ok: false,
         note: "shotgun-2 at 1.1 s: -15.8 LUFS: a meme sound may be at most -18.5 LUFS",
       },
     });
-    store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
-    expect(candOf(store, day).state).toBe("rendered");
-    expect(candOf(store, day).check?.ok).toBe(false);
-    expect((store.read(day) as Day).events.at(-1)?.what).toBe(
-      "A: check failed: loudness: shotgun-2 at 1.1 s: -15.8 LUFS: a meme sound may be at most -18.5 LUFS",
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    const it = itemOf(store, id);
+    expect(it.state).toBe("draft");
+    expect(stage(it)).toBe("rendered");
+    expect(it.check?.ok).toBe(false);
+    expect(it.events.at(-1)?.what).toBe(
+      "check failed: loudness: shotgun-2 at 1.1 s: -15.8 LUFS: a meme sound may be at most -18.5 LUFS",
     );
   });
 
   test("a render with no measures cannot be checked", () => {
-    const store = rendered(null);
+    const { store, id } = rendered(null);
     expect(() => {
-      store.recordCheck(day, "A", { sheetSha256: "ss", stills: [ZOOM_OK] });
+      store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
     }).toThrow(/no measures/);
+  });
+});
+
+describe("an item's production", () => {
+  const COPY_B = { ...COPY, x: "B's own X line #wallgame" };
+  const COPY_C = { ...COPY, x: "C's own X line #wallgame" };
+  /** Three finished items of TESTGAME1, with videos aa, bb and cc. */
+  const three = () => {
+    const store = openStore(tempDir());
+    const [a, b, c] = [
+      finishItem(store, { ...VIDEO, sha256: "aa" }),
+      finishItem(store, { ...VIDEO, sha256: "bb" }, COPY_B, true),
+      finishItem(store, { ...VIDEO, sha256: "cc" }, COPY_C, true),
+    ];
+    return { store, a, b, c };
+  };
+
+  test("each pick is a new item, numbered within its UTC day", () => {
+    const { a, b, c } = three();
+    expect([a, b, c]).toEqual([1, 2, 3].map((n) => `v-${utcDay()}-${n}`));
+    expect(a).toMatch(ITEM_ID);
+  });
+
+  test("its stage follows its fields: picked, directed, rendering, rendered, render-failed, checked", () => {
+    const store = openStore(tempDir());
+    const id = pickItem(store);
+    const now = () => stage(itemOf(store, id));
+    expect(now()).toBe("picked");
+    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    expect(now()).toBe("directed");
+    store.startRender(id, "job-1");
+    expect(now()).toBe("rendering");
+    store.finishRender(id, "job-1", { error: "boom" });
+    expect(now()).toBe("render-failed");
+    store.startRender(id, "job-2", { force: true });
+    store.finishRender(id, "job-2", {
+      video: VIDEO,
+      sheet: SHEET,
+      music: PLAYED,
+      quality: MEASURED,
+    });
+    expect(now()).toBe("rendered");
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(now()).toBe("checked");
+    // Production is over; the item waits for Growth's block.
+    expect(itemOf(store, id).state).toBe("finished");
+    expect(reviewState(itemOf(store, id))).toBe("waiting-copy");
+  });
+
+  test("a new list sends a finished item back to draft, out of review", () => {
+    const store = openStore(tempDir());
+    const id = finishItem(store);
+    expect(reviewState(itemOf(store, id))).toBe("in-review");
+    store.direct(id, { edl: EDL, text: "a new list", summary: [] });
+    const it = itemOf(store, id);
+    expect([it.state, stage(it), reviewState(it)]).toEqual([
+      "draft",
+      "directed",
+      null,
+    ]);
+    expect(it.render).toBeNull();
+    expect(it.check).toBeNull();
+  });
+
+  test("items move on their own: one is directed again while the others stay finished", () => {
+    const { store, a, b, c } = three();
+    store.direct(b, { edl: EDL, text: "new list", summary: [] });
+    expect(itemOf(store, a).state).toBe("finished");
+    expect(stage(itemOf(store, b))).toBe("directed");
+    expect(itemOf(store, c).state).toBe("finished");
+  });
+
+  test("a render with other bytes makes only that item's block stale", () => {
+    const { store, a, b, c } = three();
+    store.direct(b, { edl: EDL, text: "new list", summary: [] });
+    renderItem(store, b, { ...VIDEO, sha256: "dd" }, { force: true });
+    store.recordCheck(b, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    // Finished, but its block is for the old video: not for Nil.
+    expect(itemOf(store, b).state).toBe("finished");
+    expect(reviewState(itemOf(store, b))).toBe("waiting-copy");
+    expect(store.staleCopy(itemOf(store, b))).toContain(
+      `${b}'s copy block was written for another video (bb, now dd)`,
+    );
+    for (const other of [a, c]) {
+      expect(store.staleCopy(itemOf(store, other))).toBeNull();
+      expect(reviewState(itemOf(store, other))).toBe("in-review");
+    }
+    // A block for the new video puts it back in review.
+    store.recordCopy(b, COPY_B);
+    expect(reviewState(itemOf(store, b))).toBe("in-review");
+  });
+
+  test("a render of the same bytes keeps the block (a re-render from the cache)", () => {
+    const { store, b } = three();
+    store.direct(b, { edl: EDL, text: "same list", summary: [] });
+    renderItem(store, b, { ...VIDEO, sha256: "bb" }, { force: true });
+    expect(store.staleCopy(itemOf(store, b))).toBeNull();
+    store.recordCheck(b, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(reviewState(itemOf(store, b))).toBe("in-review");
+  });
+
+  test("drop needs a reason; a draft or a finished item is discarded, with the reason", () => {
+    const store = openStore(tempDir());
+    const draft = directItem(store);
+    expect(() => {
+      store.drop(draft, " ");
+    }).toThrow("drop needs the reason");
+    expect(itemOf(store, draft).state).toBe("draft");
+    store.drop(draft, "the save is too small to read");
+    expect(itemOf(store, draft).state).toBe("discarded");
+    expect(itemOf(store, draft).events.at(-1)?.what).toBe(
+      "dropped by the director: the save is too small to read",
+    );
+    const done = finishItem(store, VIDEO, COPY, true);
+    store.drop(done, "a better game came in");
+    expect(itemOf(store, done).state).toBe("discarded");
+    // A discarded item takes no more steps.
+    expect(() => {
+      store.direct(done, { edl: EDL, text: "again", summary: [] });
+    }).toThrow(`${done} is discarded`);
+  });
+
+  test("no drop while the render runs, nor once Nil approved the item", () => {
+    const store = openStore(tempDir());
+    const running = directItem(store);
+    store.startRender(running, "job-1");
+    expect(() => {
+      store.drop(running, "late");
+    }).toThrow(
+      `drop needs ${running} picked or directed or rendered or render-failed or checked, but it is rendering`,
+    );
+    const approved = finishItem(store, VIDEO, COPY, true);
+    approveItem(store, approved);
+    expect(() => {
+      store.drop(approved, "changed my mind");
+    }).toThrow(`${approved} is approved`);
+    // Nor can a new block change what Nil approved.
+    expect(() => {
+      store.recordCopy(approved, COPY);
+    }).toThrow(`${approved} is approved`);
+  });
+});
+
+describe("each render is one production view", () => {
+  test("a second live render of a game the same UTC day needs force, also from a new item", () => {
+    const store = openStore(tempDir());
+    const first = directItem(store);
+    store.startRender(first, "job-00000001");
+    store.finishRender(first, "job-00000001", { error: "boom" });
+    expect(() => {
+      store.startRender(first, "job-00000002");
+    }).toThrow(/already rendered 1 time/);
+    // The count is the game's, over every item.
+    const second = directItem(store);
+    expect(() => {
+      store.startRender(second, "job-00000003");
+    }).toThrow(/already rendered 1 time/);
+    // A render from the capture loads no page: no view, no refusal.
+    store.startRender(second, "job-00000003", { fromCache: true });
+    store.startRender(first, "job-00000004", { force: true });
+    expect(stage(itemOf(store, first))).toBe("rendering");
+    const counts = JSON.parse(
+      readFileSync(store.rendersFile, "utf8"),
+    ) as Record<string, Record<string, number>>;
+    expect(counts[utcDay()]).toEqual({ TESTGAME1: 2 });
   });
 });
 
@@ -1211,35 +879,26 @@ describe("the app's measures of a render", () => {
   });
 });
 
-describe("a post that may exist is not posted again", () => {
-  test("a lost reply to the final X request blocks a retry until a person confirms", async () => {
+describe("postPlatform posts an approved item in the platform's mode", () => {
+  /** An approved item whose video is a file; its store, id and bytes. */
+  const approvedOnDisk = () => {
     const dir = tempDir();
-    const video = join(dir, "v.mp4");
-    writeFileSync(video, "bytes");
-    const day = "2026-10-26";
+    const path = join(dir, "v.mp4");
+    writeFileSync(path, "bytes");
     const store = openStore(dir);
-    checkedToday(store, day, {
-      path: video,
+    const id = finishItem(store, {
+      path,
       bytes: 5,
-      sha256: sha256(readFileSync(video)),
+      sha256: sha256(readFileSync(path)),
       // A render reports it; Facebook refuses a video of unknown length.
       durationSeconds: 30,
     });
-    store.recordAsk(day, {
-      askId: "a",
-      modes: DRY,
-      offered: {
-        A: { videoSha256: sha256(readFileSync(video)), copySha256: COPY_SHA },
-      },
-      currentModes: DRY,
-    });
-    store.recordAnswer(day, {
-      askId: "a",
-      pick: "A",
-      approver: "Nil",
-      reply: "Approve",
-    });
+    approveItem(store, id);
+    return { dir, store, id, video: readFileSync(path) };
+  };
 
+  test("a lost reply to the final X request leaves the post uncertain", async () => {
+    const { dir, store, id, video } = approvedOnDisk();
     let lose = true;
     const daily = createDaily({
       dataDir: dir,
@@ -1251,720 +910,93 @@ describe("a post that may exist is not posted again", () => {
           }
           return xDryRunReply(req);
         },
-        youtube: youtubeDryRunReply,
-        tiktok: tiktokDryRunReply,
       },
     });
-    const first = (await daily.post(day)) as Day & {
-      posts: Record<string, { uncertain?: boolean }>;
-    };
-    expect(first.state).toBe("post-failed");
-    expect(first.posts.x.uncertain).toBe(true);
-    expect(first.posts.youtube.postId).toBe("DRY-RUN-VIDEO-ID");
-
+    const post = async () =>
+      (await daily.postPlatform("x", {
+        item: itemOf(store, id),
+        video,
+        beforeCommit: () => undefined,
+      })) as PostResult;
+    // The poster must not post it again until a person checks X.
+    expect(await post()).toMatchObject({
+      ok: false,
+      uncertain: true,
+      mode: "dry-run",
+    });
     lose = false;
-    expect(daily.post(day)).rejects.toThrow(/x may already have this post/);
-    const second = (await daily.post(day, ["x"])) as Day;
-    expect(second.state).toBe("posted");
-  });
-});
-
-describe("the TikTok refresh after a connect", () => {
-  /**
-   * An approved day with TikTok connected and live, while the env still
-   * holds an old TIKTOK_CLIENT_KEY. `token` answers the refresh request.
-   */
-  const postWithTiktokLive = async (
-    token: (req: { url: string }) => unknown,
-  ) => {
-    const dir = tempDir();
-    const video = join(dir, "v.mp4");
-    writeFileSync(video, "bytes");
-    const day = "2026-10-26";
-    const store = openStore(dir);
-    checkedToday(store, day, {
-      path: video,
-      bytes: 5,
-      sha256: sha256(readFileSync(video)),
-      durationSeconds: 30,
+    expect(await post()).toMatchObject({
+      ok: true,
+      postId: "DRY-RUN-POST-ID",
     });
-    // TikTok connected, as /daily/connect stores it.
-    openTokenStore(join(store.dirs.root, "tokens")).write("tiktok", {
-      connectedAt: "2026-10-26T20:00:00.000Z",
-      connectedBy: "Nil",
-      scopes: ["video.upload"],
-      account: { id: null, name: null },
-      refreshToken: "stored-refresh",
-    });
-    const modes = { ...DRY, tiktok: "live" };
-    store.recordAsk(day, {
-      askId: "a",
-      modes,
-      offered: {
-        A: { videoSha256: sha256(readFileSync(video)), copySha256: COPY_SHA },
-      },
-      currentModes: modes,
-    });
-    store.recordAnswer(day, {
-      askId: "a",
-      pick: "A",
-      approver: "Nil",
-      reply: "Approve",
-    });
-    const sent: { url: string; body?: unknown }[] = [];
-    const daily = createDaily({
-      dataDir: dir,
-      // The old secret of the key's name is still in the environment.
-      env: { TIKTOK_CLIENT_KEY: "old-env-key", TIKTOK_CLIENT_SECRET: "s" },
-      live: () => ({
-        mode: "live",
-        sent,
-        request: (req: { url: string; body?: unknown }) => {
-          sent.push(req);
-          return Promise.resolve(
-            req.url === TIKTOK_TOKEN_URL ? token(req) : tiktokDryRunReply(req),
-          );
-        },
-      }),
-    });
-    const cycle = (await daily.post(day)) as Day & {
-      posts: Record<string, { error?: string; uncertain?: boolean }>;
-    };
-    return { cycle, sent };
-  };
-
-  test("carries the client key from code and the stored refresh token; an env var of the key's name has no effect", async () => {
-    const { cycle, sent } = await postWithTiktokLive(tiktokDryRunReply);
-    expect(cycle.state).toBe("posted");
-    const refresh = sent.find((r) => r.url === TIKTOK_TOKEN_URL);
-    const body = new URLSearchParams(String(refresh?.body));
-    expect(body.get("client_key")).toBe(PUBLIC_IDS.TIKTOK_CLIENT_KEY);
-    expect(body.get("client_key")).toBe("sbawgnt7vpik5zdozp");
-    expect(body.get("grant_type")).toBe("refresh_token");
-    expect(body.get("refresh_token")).toBe("stored-refresh");
   });
 
-  test("a refused refresh is a plain TikTok error, not a silent dry run", async () => {
-    const { cycle } = await postWithTiktokLive(() => ({
-      status: 400,
-      json: { error: "invalid_client" },
-    }));
-    expect(cycle.state).toBe("post-failed");
-    expect(cycle.posts.tiktok.error).toMatch(
-      /^tiktok token: HTTP 400 .*invalid_client/,
-    );
-    // A 4xx before the upload: nothing was made, so a retry is safe.
-    expect(cycle.posts.tiktok.uncertain).toBe(false);
-  });
-});
-
-describe("an approval covers one video in one mode", () => {
-  const day = "2026-10-26";
-
-  test("post is refused before an approval", () => {
-    const store = openStore(tempDir());
-    pickToday(store, day);
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
-    ).toThrow(/post needs the day approved/);
-  });
-
-  test("an answer to another ask does not count", () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x.mp4", bytes: 1, sha256: "aa" });
-    store.recordAsk(day, {
-      askId: "ask1",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-    });
-    expect(() => {
-      store.recordAnswer(day, {
-        askId: "other",
-        pick: "A",
-        approver: "Nil",
-        reply: "Approve",
+  describe("the TikTok refresh after a connect", () => {
+    /**
+     * An approved item with TikTok connected and live, while the env still
+     * holds an old TIKTOK_CLIENT_KEY. `token` answers the refresh request.
+     */
+    const postWithTiktokLive = async (
+      token: (req: { url: string }) => unknown,
+    ) => {
+      const { dir, store, id, video } = approvedOnDisk();
+      // TikTok connected, as /daily/connect stores it.
+      openTokenStore(join(store.dirs.root, "tokens")).write("tiktok", {
+        connectedAt: "2026-10-26T20:00:00.000Z",
+        connectedBy: "Nil",
+        scopes: ["video.upload"],
+        account: { id: null, name: null },
+        refreshToken: "stored-refresh",
       });
-    }).toThrow(/not this day's ask/);
-  });
-
-  test("a different video on disk is refused", () => {
-    const store = openStore(tempDir());
-    approved(store, day, "aa");
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "bb" }),
-    ).toThrow(/not the one that was approved/);
-  });
-
-  /** Change the stored cycle by hand, as a bad edit or an old record would. */
-  interface Stored {
-    cands: { A: { copy: Record<string, string> } };
-    approval: { copy?: Record<string, string> };
-  }
-  const edit = (
-    store: ReturnType<typeof openStore>,
-    change: (c: Stored) => void,
-  ) => {
-    const path = join(store.dirs.cycles, `${day}.json`);
-    const cycle = JSON.parse(readFileSync(path, "utf8")) as Stored;
-    change(cycle);
-    writeFileSync(path, JSON.stringify(cycle));
-  };
-
-  test("a copy block that is not the approved one is refused", () => {
-    const store = openStore(tempDir());
-    approved(store, day, "aa");
-    edit(store, (c) => {
-      c.cands.A.copy.x = "something else";
-    });
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
-    ).toThrow(/the copy block is not the one that was approved/);
-  });
-
-  test("an approval from before the copy block posts nothing", () => {
-    const store = openStore(tempDir());
-    approved(store, day, "aa");
-    edit(store, (c) => {
-      delete c.approval.copy;
-    });
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
-    ).toThrow(/this approval has no copy block/);
-  });
-
-  test("the approved package names the video and the block as approved", () => {
-    const store = openStore(tempDir());
-    approved(store, day, "aa");
-    const release = "/srv/release/scripts/game-video/daily/crew.mjs";
-    const lines = approvedPackage(store.read(day), release).split("\n");
-    expect(lines.slice(0, 4)).toEqual([
-      `APPROVED PACKAGE, day ${day}`,
-      "Video: /nowhere.mp4",
-      "Video sha256: aa",
-      `Copy block as approved (${COPY_VERSION}, copy sha256 ${COPY_SHA}):`,
-    ]);
-    const end = 4 + BLOCK_LINES;
-    expect(lines.slice(4, end).join("\n")).toBe(BLOCK);
-    expect(lines[end]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
-    expect(lines[end + 1]).toBe("Nil's reply, verbatim: Approve");
-    // The release checkout's crew.mjs, whichever checkout ran `answer`.
-    expect(lines[end + 2]).toBe(
-      `Post it with: node ${release} post --day ${day}`,
-    );
-  });
-
-  test("keys that arrived after the ask do not turn a dry-run approval live", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    expect(() =>
-      store.checkPost(day, {
-        modes: {
-          x: "live",
-          youtube: "dry-run",
-          tiktok: "dry-run",
-          instagram: "dry-run",
-        },
-        videoSha256: "aa",
-      }),
-    ).toThrow(/approval was for dry-run/);
-  });
-
-  test("once the ask is open, the candidate cannot be swapped under it", () => {
-    const store = openStore(tempDir());
-    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
-    store.recordAsk(day, {
-      askId: "ask1",
-      modes: DRY,
-      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
-      currentModes: DRY,
-    });
-    expect(() => {
-      pickToday(store, day, true);
-    }).toThrow(/pick needs/);
-  });
-
-  test("a retry posts only the platform that failed, and logs dry runs apart", () => {
-    const store = openStore(tempDir());
-    approved(store, day);
-    const row = { utc: "t", gameId: candOf(store, day).candidate.gameId };
-    store.recordPost(day, "x", { ok: true, mode: "dry-run", postId: "p" }, row);
-    store.recordPost(
-      day,
-      "youtube",
-      { ok: false, mode: "dry-run", error: "boom" },
-      null,
-    );
-    expect((store.read(day) as Day).state).toBe("post-failed");
-    expect(store.checkPost(day, { modes: DRY, videoSha256: "aa" })).toEqual([
-      "youtube",
-      "tiktok",
-      "instagram",
-      "facebook",
-      "bluesky",
-      "threads",
-    ]);
-    expect(readPostLog(store.postLog.dryRun)).toHaveLength(1);
-    expect(existsSync(store.postLog.live)).toBe(false);
-  });
-});
-
-describe("a day has up to three candidates", () => {
-  const day = "2026-10-27";
-  /** Candidate `label` of TESTGAME1, rendered as `sha`, checked, with `copy`. */
-  const checked = (
-    store: ReturnType<typeof openStore>,
-    label: string,
-    sha: string,
-    copy: typeof COPY = COPY,
-  ) => {
-    store.pick(day, label, {
-      candidate: candidateFromReport(REPORT, 1),
-      style: "daily",
-      styleVersion: CAPTION_STYLE_VERSION,
-    });
-    store.direct(day, label, {
-      edl: EDL,
-      text: JSON.stringify(EDL) + label,
-      summary: [],
-    });
-    store.startRender(day, label, `job-${label}-${sha}`, { force: true });
-    store.finishRender(day, label, `job-${label}-${sha}`, {
-      video: { path: `/${label}.mp4`, bytes: 1, sha256: sha },
-      sheet: SHEET,
-      music: PLAYED,
-      quality: MEASURED,
-    });
-    store.recordCopy(day, label, copy);
-    store.recordCheck(day, label, { sheetSha256: "ss", stills: [ZOOM_OK] });
-  };
-  const COPY_B = { ...COPY, x: "B's own X line #wallgame" };
-  const COPY_C = { ...COPY, x: "C's own X line #wallgame" };
-  const offer = (store: ReturnType<typeof openStore>, labels: string[]) =>
-    Object.fromEntries(
-      labels.map((l) => {
-        const c = candOf(store, day, l);
-        return [
-          l,
-          {
-            videoSha256: c.render!.video!.sha256,
-            copySha256: copySha256(c.copy as typeof COPY),
+      const sent: { url: string; body?: unknown }[] = [];
+      const daily = createDaily({
+        dataDir: dir,
+        // The old secret of the key's name is still in the environment.
+        env: { TIKTOK_CLIENT_KEY: "old-env-key", TIKTOK_CLIENT_SECRET: "s" },
+        live: () => ({
+          mode: "live",
+          sent,
+          request: (req: { url: string; body?: unknown }) => {
+            sent.push(req);
+            return Promise.resolve(
+              req.url === TIKTOK_TOKEN_URL
+                ? token(req)
+                : tiktokDryRunReply(req),
+            );
           },
-        ];
-      }),
-    );
-  const ask = (
-    store: ReturnType<typeof openStore>,
-    labels: string[],
-    askId = "ask1",
-  ) => {
-    store.recordAsk(day, {
-      askId,
-      modes: DRY,
-      offered: offer(store, labels),
-      currentModes: DRY,
-    });
-  };
-  const three = () => {
-    const store = openStore(tempDir());
-    checked(store, "A", "aa");
-    checked(store, "B", "bb", COPY_B);
-    checked(store, "C", "cc", COPY_C);
-    return store;
-  };
-
-  test("after None today, an ask needs a video and block that Nil has not refused today", () => {
-    const store = three();
-    const none = (askId: string) => {
-      store.recordAnswer(day, {
-        askId,
-        pick: null,
-        approver: "Nil",
-        reply: "no",
+        }),
       });
+      expect(daily.livePlatforms()).toEqual(["tiktok"]);
+      const result = (await daily.postPlatform("tiktok", {
+        item: itemOf(store, id),
+        video,
+        beforeCommit: () => undefined,
+      })) as PostResult;
+      return { result, sent };
     };
-    ask(store, ["A", "B"]);
-    none("ask1");
-    // A alone was in ask1, with the same video and block.
-    expect(() => {
-      ask(store, ["A"], "ask2");
-    }).toThrow(
-      /every candidate in this ask was offered in ask ask1, which Nil answered with none/,
-    );
-    ask(store, ["A", "C"], "ask2");
-    none("ask2");
-    // Each of B and C was refused, in different asks: both count.
-    expect(() => {
-      ask(store, ["B", "C"], "ask3");
-    }).toThrow(/every candidate in this ask was offered in ask ask1 or ask2,/);
-    expect((store.read(day) as Day).state).toBe("rejected");
-  });
 
-  // Wall Game Worker 1, poster-side check of 2026-10-27.
-  test("after B is approved nothing moves B, a late C render cannot reach the post, and a mode-change re-ask keeps B", () => {
-    const store = openStore(tempDir());
-    checked(store, "A", "aa");
-    checked(store, "B", "bb", COPY_B);
-    // C is still rendering when the ask opens; the ask does not offer it.
-    store.pick(day, "C", {
-      candidate: candidateFromReport(REPORT, 1),
-      style: "daily",
-      styleVersion: CAPTION_STYLE_VERSION,
+    test("carries the client key from code and the stored refresh token; an env var of the key's name has no effect", async () => {
+      const { result, sent } = await postWithTiktokLive(tiktokDryRunReply);
+      expect(result).toMatchObject({ ok: true, mode: "live" });
+      const refresh = sent.find((r) => r.url === TIKTOK_TOKEN_URL);
+      const body = new URLSearchParams(String(refresh?.body));
+      expect(body.get("client_key")).toBe(PUBLIC_IDS.TIKTOK_CLIENT_KEY);
+      expect(body.get("client_key")).toBe("sbawgnt7vpik5zdozp");
+      expect(body.get("grant_type")).toBe("refresh_token");
+      expect(body.get("refresh_token")).toBe("stored-refresh");
     });
-    store.direct(day, "C", {
-      edl: EDL,
-      text: JSON.stringify(EDL) + "C",
-      summary: [],
-    });
-    store.startRender(day, "C", "job-C", { force: true });
-    ask(store, ["A", "B"]);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: "B",
-      approver: "Nil",
-      reply: "B",
-    });
-    for (const label of ["A", "B", "C"]) {
-      expect(() => {
-        store.recordCopy(day, label, COPY_C);
-      }).toThrow(/needs the day open/);
-      expect(() => {
-        store.direct(day, label, { edl: EDL, text: "x" + label, summary: [] });
-      }).toThrow(/needs the day open/);
-      expect(() => {
-        store.startRender(day, label, "j2", { force: true });
-      }).toThrow(/needs the day open/);
-      expect(() => {
-        store.recordCheck(day, label, { sheetSha256: "ss", stills: [ZOOM_OK] });
-      }).toThrow(/needs the day open/);
-      expect(() => {
-        store.pick(day, label, {
-          candidate: candidateFromReport(REPORT, 1),
-          style: "daily",
-          styleVersion: CAPTION_STYLE_VERSION,
-          replace: true,
-        });
-      }).toThrow(/needs the day open/);
-    }
-    // The late render of C lands; it changes only C.
-    store.finishRender(day, "C", "job-C", {
-      video: { path: "/C.mp4", bytes: 1, sha256: "cc" },
-      sheet: SHEET,
-      music: PLAYED,
-      quality: MEASURED,
-    });
-    const view = store.picked(day) as PickedView;
-    expect([
-      view.label,
-      view.render.video.sha256,
-      view.render.video.path,
-    ]).toEqual(["B", "bb", "/B.mp4"]);
-    expect(view.approval.copy).toEqual(COPY_B);
-    expect(
-      store.checkPost(day, { modes: DRY, videoSha256: "bb" }),
-    ).toHaveLength(7);
-    for (const sha of ["aa", "cc"]) {
-      expect(() => {
-        store.checkPost(day, { modes: DRY, videoSha256: sha });
-      }).toThrow(/not the one that was approved/);
-    }
-    // A mode-change re-ask may offer only B with B's video and block.
-    const LIVE_X = { ...DRY, x: "live" };
-    expect(() => {
-      store.recordAsk(day, {
-        askId: "ask2",
-        modes: LIVE_X,
-        offered: offer(store, ["A"]),
-        currentModes: LIVE_X,
-        modeChange: true,
-      });
-    }).toThrow(/offers only B/);
-    expect(() => {
-      store.recordAsk(day, {
-        askId: "ask2",
-        modes: LIVE_X,
-        offered: offer(store, ["A", "B"]),
-        currentModes: LIVE_X,
-        modeChange: true,
-      });
-    }).toThrow(/offers only B/);
-    store.recordAsk(day, {
-      askId: "ask2",
-      modes: LIVE_X,
-      offered: offer(store, ["B"]),
-      currentModes: LIVE_X,
-      modeChange: true,
-    });
-    expect(() => {
-      store.recordAnswer(day, {
-        askId: "ask2",
-        pick: "A",
-        approver: "Nil",
-        reply: "A",
-      });
-    }).toThrow(/not A/);
-    store.recordAnswer(day, {
-      askId: "ask2",
-      pick: "B",
-      approver: "Nil",
-      reply: "B",
-    });
-    const after = store.read(day) as Day;
-    expect(after.approval).toMatchObject({
-      picked: "B",
-      videoSha256: "bb",
-      copy: COPY_B,
-    });
-    expect(() => {
-      store.checkPost(day, { modes: DRY, videoSha256: "bb" });
-    }).toThrow(/approval was for live/);
-    expect(
-      store.checkPost(day, { modes: LIVE_X, videoSha256: "bb" }),
-    ).toHaveLength(7);
-  });
 
-  test("each label is picked once; a second pick of a label needs replace", () => {
-    const store = openStore(tempDir());
-    pickToday(store, day);
-    expect(() => {
-      pickToday(store, day);
-    }).toThrow(
-      /2026-10-27 already has candidate A \(picked, TESTGAME1\); use replace/,
-    );
-    pickToday(store, day, true);
-    expect(candOf(store, day).state).toBe("picked");
-    expect(() => {
-      store.pick(day, "D", {
-        candidate: candidateFromReport(REPORT, 1),
-        style: "daily",
-        styleVersion: CAPTION_STYLE_VERSION,
-      });
-    }).toThrow(/a candidate is A, B, C, not D/);
-  });
-
-  test("candidates move on their own: one is directed again while another is checked", () => {
-    const store = three();
-    store.direct(day, "B", { edl: EDL, text: "new list", summary: [] });
-    expect(candOf(store, day, "A").state).toBe("checked");
-    expect(candOf(store, day, "B").state).toBe("directed");
-    expect(candOf(store, day, "C").state).toBe("checked");
-    expect((store.read(day) as Day).state).toBe("open");
-  });
-
-  test("a render with other bytes makes only that candidate's block stale", () => {
-    const store = three();
-    store.direct(day, "B", { edl: EDL, text: "new list", summary: [] });
-    store.startRender(day, "B", "job-B-dd", { force: true });
-    store.finishRender(day, "B", "job-B-dd", {
-      video: { path: "/B2.mp4", bytes: 1, sha256: "dd" },
-      sheet: SHEET,
-      music: PLAYED,
-      quality: MEASURED,
+    test("a refused refresh is a plain TikTok error, not a silent dry run", async () => {
+      const { result } = await postWithTiktokLive(() => ({
+        status: 400,
+        json: { error: "invalid_client" },
+      }));
+      if (result.ok) throw new Error("the refused refresh posted");
+      expect(result.mode).toBe("live");
+      expect(result.error).toMatch(/^tiktok token: HTTP 400 .*invalid_client/);
+      // A 4xx before the upload: nothing was made, so a retry is safe.
+      expect(result.uncertain).toBe(false);
     });
-    store.recordCheck(day, "B", { sheetSha256: "ss", stills: [ZOOM_OK] });
-    expect(store.staleCopy(candOf(store, day, "B"))).toMatch(
-      /candidate B's copy block was written for another video \(bb, now dd\)/,
-    );
-    expect(store.staleCopy(candOf(store, day, "A"))).toBeNull();
-    expect(store.staleCopy(candOf(store, day, "C"))).toBeNull();
-    expect(() => {
-      store.recordAsk(day, {
-        askId: "ask1",
-        modes: DRY,
-        offered: {
-          A: { videoSha256: "aa", copySha256: COPY_SHA },
-          B: { videoSha256: "dd", copySha256: copySha256(COPY_B) },
-        },
-        currentModes: DRY,
-      });
-    }).toThrow(/candidate B's copy block was written for another video/);
-    // A and C can still go in the ask.
-    ask(store, ["A", "C"]);
-    expect(Object.keys((store.read(day) as Day).approval!.offered)).toEqual([
-      "A",
-      "C",
-    ]);
-  });
-
-  test("a render of the same bytes keeps the block (a re-render from the cache)", () => {
-    const store = three();
-    store.direct(day, "B", { edl: EDL, text: "same list", summary: [] });
-    store.startRender(day, "B", "job-B-bb2", { force: true });
-    store.finishRender(day, "B", "job-B-bb2", {
-      video: { path: "/B2.mp4", bytes: 1, sha256: "bb" },
-      sheet: SHEET,
-      music: PLAYED,
-      quality: MEASURED,
-    });
-    expect(store.staleCopy(candOf(store, day, "B"))).toBeNull();
-  });
-
-  test("the ask offers one, two or three checked candidates", () => {
-    for (const labels of [["B"], ["A", "C"], ["A", "B", "C"]]) {
-      const store = three();
-      ask(store, labels);
-      const a = (store.read(day) as Day).approval!;
-      expect(Object.keys(a.offered)).toEqual(labels);
-      expect(Object.values(a.offered).map((o) => o.videoSha256)).toEqual(
-        labels.map(
-          (l) => (({ A: "aa", B: "bb", C: "cc" }) as Record<string, string>)[l],
-        ),
-      );
-    }
-  });
-
-  test("only a checked candidate can be offered", () => {
-    const store = three();
-    store.direct(day, "C", { edl: EDL, text: "again", summary: [] });
-    expect(() => {
-      store.recordAsk(day, {
-        askId: "ask1",
-        modes: DRY,
-        offered: { C: { videoSha256: "cc", copySha256: copySha256(COPY_C) } },
-        currentModes: DRY,
-      });
-    }).toThrow(/ask needs candidate C checked, but it is directed/);
-  });
-
-  test("while the ask is open, no candidate changes", () => {
-    const store = three();
-    ask(store, ["A"]);
-    // Also one the ask did not offer: one ask covers the day.
-    expect(() => {
-      store.direct(day, "C", { edl: EDL, text: "again", summary: [] });
-    }).toThrow(/direct needs the day open, but 2026-10-27 is asked/);
-    expect(() => {
-      store.recordCopy(day, "B", COPY);
-    }).toThrow(/copy needs the day open/);
-  });
-
-  test("Nil picks B: the approval and the package are B's video and B's block only", () => {
-    const store = three();
-    ask(store, ["A", "B", "C"]);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: "B",
-      approver: "Nil",
-      reply: "Post B. A's caption is too long.",
-    });
-    const record = store.read(day) as Day;
-    expect(record.state).toBe("approved");
-    expect(record.approval).toMatchObject({
-      decision: "pick",
-      picked: "B",
-      videoSha256: "bb",
-      copy: COPY_B,
-    });
-    expect(
-      store.checkPost(day, { modes: DRY, videoSha256: "bb" }),
-    ).toHaveLength(7);
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
-    ).toThrow(/not the one that was approved/);
-    const release = "/srv/release/scripts/game-video/daily/crew.mjs";
-    const pack = approvedPackage(record, release).split("\n");
-    expect(pack.slice(0, 4)).toEqual([
-      `APPROVED PACKAGE, day ${day}`,
-      "Video: /B.mp4",
-      "Video sha256: bb",
-      `Copy block as approved (${COPY_VERSION}, copy sha256 ${copySha256(COPY_B)}):`,
-    ]);
-    expect(pack.join("\n")).not.toContain("/A.mp4");
-    expect(pack).toContain(`X: ${COPY_B.x}`);
-    expect(pack).not.toContain(`X: ${COPY.x}`);
-    // What posting reads: B as one flat cycle.
-    const view = store.picked(day) as PickedView;
-    expect(view.label).toBe("B");
-    expect(view.render.video.sha256).toBe("bb");
-    expect(view.copy).toEqual(COPY_B);
-  });
-
-  test("only an offered candidate can be picked", () => {
-    const store = three();
-    ask(store, ["A", "B"]);
-    expect(() => {
-      store.recordAnswer(day, {
-        askId: "ask1",
-        pick: "C",
-        approver: "Nil",
-        reply: "Post C",
-      });
-    }).toThrow(/the ask offered A, B, not C/);
-  });
-
-  test("None today: no package, no post, and the reply is in the feedback log", () => {
-    const store = three();
-    ask(store, ["A", "C"]);
-    store.recordAnswer(day, {
-      askId: "ask1",
-      pick: null,
-      approver: "Nil",
-      reply: "none today. C's zoom is late; A is fine but dull",
-    });
-    const record = store.read(day) as Day;
-    expect(record.state).toBe("rejected");
-    expect(record.approval).toMatchObject({
-      decision: "none",
-      picked: null,
-      videoSha256: null,
-      copy: null,
-    });
-    expect(store.picked(day)).toBeNull();
-    expect(() =>
-      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
-    ).toThrow(/post needs the day approved/);
-    const log = readPostLog(store.feedbackLog) as FeedbackRow[];
-    expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({
-      day,
-      askId: "ask1",
-      approver: "Nil",
-      picked: null,
-      reply: "none today. C's zoom is late; A is fine but dull",
-    });
-    expect(log[0].offered.map((o) => [o.label, o.videoSha256])).toEqual([
-      ["A", "aa"],
-      ["C", "cc"],
-    ]);
-    // After none, the production steps open again, and a new offer can be
-    // asked.
-    store.direct(day, "C", { edl: EDL, text: "later zoom", summary: [] });
-    store.startRender(day, "C", "job-C-ee", { force: true });
-    store.finishRender(day, "C", "job-C-ee", {
-      video: { path: "/C2.mp4", bytes: 1, sha256: "ee" },
-      sheet: SHEET,
-      music: PLAYED,
-      quality: MEASURED,
-    });
-    store.recordCopy(day, "C", COPY_C);
-    store.recordCheck(day, "C", { sheetSha256: "ss", stills: [ZOOM_OK] });
-    ask(store, ["A", "C"], "ask2");
-    store.recordAnswer(day, {
-      askId: "ask2",
-      pick: "C",
-      approver: "Nil",
-      reply: "Post C",
-    });
-    expect(
-      (readPostLog(store.feedbackLog) as FeedbackRow[]).map((r) => r.picked),
-    ).toEqual([null, "C"]);
-    expect((store.picked(day) as PickedView).render.video.sha256).toBe("ee");
-  });
-});
-
-describe("each render is one production view", () => {
-  test("a second render of the same game needs force, also after a re-pick", () => {
-    const store = openStore(tempDir());
-    const day = "2026-10-26";
-    directToday(store, day);
-    store.startRender(day, "A", "job-00000001");
-    store.finishRender(day, "A", "job-00000001", { error: "boom" });
-    directToday(store, day, true);
-    expect(() => {
-      store.startRender(day, "A", "job-00000002");
-    }).toThrow(/already rendered 1 time/);
-    store.startRender(day, "A", "job-00000002", { force: true });
-    expect(candOf(store, day).state).toBe("rendering");
   });
 });
 
@@ -2478,131 +1510,6 @@ describe("TikTok", () => {
     expect(err).not.toBeInstanceOf(PostFailed);
     expect(String(err)).toMatch(/HTTP 429.*may exist/);
   });
-
-  test("the ask shows the stored block word for word, and the TikTok step only when live", () => {
-    const c = {
-      day: "2026-10-26",
-      state: "open",
-      cands: {
-        A: {
-          copy: COPY,
-          candidate: {
-            seats: [{ name: "A" }, { name: "B" }],
-            movesCount: 9,
-            gameId: "g",
-          },
-          render: { video: { bytes: 1e6 }, ending: "e" },
-          edl: { doc: { caption: "can bro get home?" }, summary: [] },
-          check: { verdicts: [] },
-        },
-      },
-    };
-    const shas = { A: "0".repeat(64) };
-    const live = askText(
-      c,
-      { ...DRY, x: "live", youtube: "live", tiktok: "live", bluesky: "live" },
-      shas,
-    ).split("\n");
-    // Whether it posts for real comes first, live first.
-    expect(live.slice(1, 5)).toEqual([
-      "LIVE on X, YouTube, TikTok, Bluesky: the candidate you pick posts for real.",
-      "Posting mode: X live, YouTube live, TikTok live, Instagram dry-run, Facebook dry-run, Bluesky live, Threads dry-run.",
-      "TikTok: open the inbox draft, paste the TikTok line, tap Post.",
-      'The app adds "#Shorts" to the YouTube title.',
-    ]);
-    const at = live.indexOf(`Post text (by Growth, ${COPY_VERSION}):`);
-    expect(at).toBeGreaterThan(-1);
-    expect(live.slice(at + 1, at + 1 + BLOCK_LINES).join("\n")).toBe(BLOCK);
-    const dry = askText(
-      c,
-      { ...DRY, x: "live", instagram: "live" },
-      shas,
-    ).split("\n");
-    expect(dry.slice(1, 4)).toEqual([
-      "LIVE on X, Instagram: the candidate you pick posts for real.",
-      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live, Facebook dry-run, Bluesky dry-run, Threads dry-run.",
-      "TikTok: dry run, no draft.",
-    ]);
-    const none = askText(c, DRY, shas);
-    expect(none).not.toContain("LIVE on");
-    expect(none).toContain(
-      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run, Facebook dry-run, Bluesky dry-run, Threads dry-run.",
-    );
-    // The mode is stated once, not again per candidate.
-    expect(none.split("Posting mode:").length).toBe(2);
-  });
-
-  test("three real candidates fit the office's ask; the details go in the notes", () => {
-    // The real 2026-10-27 record: its block, 13 edit-list lines, 5 checks.
-    const real = migrateV2(
-      migrateV1(
-        JSON.parse(
-          readFileSync(
-            join(import.meta.dir, "fixtures", "v1-2026-10-27.json"),
-            "utf8",
-          ),
-        ),
-      ),
-    ) as { day: string; cands: { A: { edl: { summary: string[] } } } };
-    const A = real.cands.A;
-    const reply = "the X line is cringe, try again. ".repeat(20);
-    const c = {
-      ...real,
-      state: "rejected",
-      approval: { askId: "ask0", decision: "none", reply, offered: {} },
-      cands: { A, B: A, C: A },
-    };
-    const shas = { A: "a".repeat(64), B: "b".repeat(64), C: "c".repeat(64) };
-    const text = askText(c, { ...DRY, youtube: "live", tiktok: "live" }, shas);
-    expect(text.length).toBeLessThanOrEqual(ASK_TEXT_LIMIT);
-    expect(text).not.toContain("Director's edit list:");
-    expect(text).toContain(
-      `picked none: "${reply.slice(0, 300)}..." (all of it in the notes).`,
-    );
-    const notes = askNotes(c, shas);
-    expect(notes).toContain(`Your reply to ask ask0, in full:\n${reply}\n`);
-    expect(notes.split("Director's edit list:")).toHaveLength(4);
-    expect(notes.split("Contact sheet, checked by the director:")).toHaveLength(
-      4,
-    );
-    for (const line of A.edl.summary) expect(notes).toContain(`- ${line}`);
-  });
-
-  test("the ask shows each offered candidate, and options for each and none", () => {
-    const cand = (label: string, x: string) => ({
-      copy: { ...COPY, x },
-      candidate: {
-        seats: [{ name: "P" }, { name: "Q" }],
-        movesCount: 9,
-        gameId: `game${label}`,
-      },
-      render: { video: { bytes: 2e6 }, ending: "gg" },
-      edl: { doc: { caption: `caption ${label}` }, summary: [`list ${label}`] },
-      check: { verdicts: [{ ply: 1, kind: "zoom", note: `still ${label}` }] },
-    });
-    const c = {
-      day: "2026-10-27",
-      state: "open",
-      cands: { A: cand("A", "xa"), B: cand("B", "xb"), C: cand("C", "xc") },
-    };
-    const text = askText(c, DRY, { A: "a".repeat(64), C: "c".repeat(64) });
-    const lines = text.split("\n");
-    expect(lines[0]).toBe(
-      "Daily Wall Game video for 2026-10-27: 2 candidates, A, C. DRY RUN: nothing will be posted.",
-    );
-    expect(lines).toContain("CANDIDATE A: video A and sheet A are attached.");
-    expect(lines).toContain("CANDIDATE C: video C and sheet C are attached.");
-    expect(text).not.toContain("CANDIDATE B");
-    expect(lines).toContain('On the video: "caption C".');
-    expect(lines).toContain("X: xa");
-    expect(lines).toContain("X: xc");
-    expect(lines).not.toContain("X: xb");
-    expect(lines.at(-1)).toBe(
-      "Pick the one to post (Post A, Post C), or None today. Add notes on any candidate in your reply: they go to the director's feedback log.",
-    );
-    expect(askOptions(["A", "C"])).toEqual(["Post A", "Post C", "None today"]);
-    expect(askOptions(["B"])).toEqual(["Post B", "None today"]);
-  });
 });
 
 describe("Instagram", () => {
@@ -2844,12 +1751,12 @@ describe("the render step", () => {
   test("a render cut off by an app restart is closed, not left stuck", () => {
     const dir = tempDir();
     const store = openStore(dir);
-    directToday(store, "2026-10-26");
-    store.startRender("2026-10-26", "A", "job-00000001");
+    const id = directItem(store);
+    store.startRender(id, "job-00000001");
     createDaily({ dataDir: dir, env: {} });
-    const cand = candOf(openStore(dir), "2026-10-26");
-    expect(cand.state).toBe("render-failed");
-    expect(cand.render?.error).toMatch(/app restarted/);
+    const it = itemOf(openStore(dir), id);
+    expect([it.state, stage(it)]).toEqual(["draft", "render-failed"]);
+    expect(it.render?.error).toMatch(/app restarted/);
   });
 });
 
@@ -2931,12 +1838,22 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     sounds: [{ name: "pawn", role: "move", start: 10, event: null }] } }));
 `;
 
-test("a render reads the game's capture when the 4090 has one: no view", async () => {
-  const dir = tempDir();
-  const stub = join(dir, "stub-render.cjs");
-  writeFileSync(stub, STUB_RENDER);
+/** Wait for the app at `base` to answer. */
+const answering = async (base: string) => {
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(`${base}/api/daily/state`);
+      return;
+    } catch {
+      await Bun.sleep(100);
+    }
+  }
+};
+
+/** The app's server.mjs in a child process, with `renderer` as its 4090 step. */
+const serve = async (dir: string, renderer: string): Promise<string> => {
   const port = await freePort();
-  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
+  const child = Bun.spawn(["node", SERVER, "--daily-renderer", renderer], {
     env: {
       PATH: process.env.PATH!,
       PORT: String(port),
@@ -2947,49 +1864,115 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   });
   stops.push(() => child.kill());
   const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 50; i++) {
-    try {
-      await fetch(`${base}/api/daily/state`);
-      break;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-  const day = "2026-10-26";
-  const call = async <T = Day>(path: string, body: object) => {
-    const res = await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ day, cand: "A", ...body }),
-    });
-    return { status: res.status, body: (await res.json()) as T };
-  };
-  const cycle = async () =>
-    (
-      (await (
-        await fetch(`${base}/api/daily/state?day=${day}`)
-      ).json()) as DailyState
-    ).cycle;
-  /** Render (or be refused) and wait for the end; the day's record. */
-  const render = async (body: object = {}) => {
-    const started = await call<{ error?: string }>("/api/daily/render", body);
-    for (let i = 0; i < 50; i++) {
-      const c = await cycle();
-      if (c.cands.A.state !== "rendering") return { started, c };
-      await Bun.sleep(100);
-    }
-    throw new Error("the render did not end");
-  };
-  const direct = async (edl: object) => {
-    const { suggestedEnding } = (await (
-      await fetch(`${base}/api/daily/state?day=${day}`)
-    ).json()) as { suggestedEnding: string };
-    return call<{ error?: string }>("/api/daily/direct", {
-      edl: { ...EDL, ending: suggestedEnding, ...edl },
-    });
-  };
+  await answering(base);
+  return base;
+};
 
-  expect((await call("/api/daily/pick", { report: REPORT })).status).toBe(200);
+/**
+ * The daily routes in this process, behind an HTTP server, so a test can
+ * also call the poster's parts (postPlatform, logPost) of the same app.
+ */
+const serveHere = async (dir: string, renderer: string) => {
+  const daily = createDaily({
+    dataDir: dir,
+    renderer,
+    env: { PATH: process.env.PATH! },
+  });
+  const server = createHttpServer((req, res) => {
+    void daily
+      .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
+      .then((done: boolean) => {
+        if (!done) res.writeHead(404).end();
+      });
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  stops.push(() => {
+    server.close();
+    daily.stop();
+  });
+  const { port } = server.address() as { port: number };
+  return { base: `http://127.0.0.1:${port}`, daily };
+};
+
+/** A reply of the item routes: the item, or why the step was refused. */
+type Reply = Item & { error?: string };
+
+/** GET `path`, or POST `body` to it: the status and the JSON reply. */
+const call = async <T = Reply>(base: string, path: string, body?: object) => {
+  const res = await fetch(`${base}${path}`, {
+    method: body ? "POST" : "GET",
+    headers: { "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, body: (await res.json()) as T };
+};
+
+const dailyState = async (base: string) =>
+  (await call<DailyState>(base, "/api/daily/state")).body;
+
+/** The item, whatever its state. */
+const fetchItem = async (base: string, id: string) =>
+  (await call<Item>(base, `/api/daily/item?id=${id}`)).body;
+
+/** Wait for the end of the item's render; the item. */
+const rendered = async (base: string, id: string) => {
+  for (let i = 0; i < 100; i++) {
+    const it = await fetchItem(base, id);
+    if (stage(it) !== "rendering") return it;
+    await Bun.sleep(100);
+  }
+  throw new Error("the render did not end");
+};
+
+/** POST the render (or have it refused) and wait for its end. */
+const renderAndWait = async (base: string, id: string, body: object = {}) => {
+  const started = await call<{ jobId: string; error?: string }>(
+    base,
+    "/api/daily/render",
+    { item: id, ...body },
+  );
+  return { started, it: await rendered(base, id) };
+};
+
+/** Direct EDL, changed by `edl`, with the app's default ending. */
+const directOver = async (base: string, id: string, edl: object = {}) =>
+  call(base, "/api/daily/direct", {
+    item: id,
+    edl: { ...EDL, ending: (await dailyState(base)).suggestedEnding, ...edl },
+  });
+
+/** The live captures of each game today (UTC), over every item. */
+const viewsToday = (dir: string) =>
+  (
+    JSON.parse(
+      readFileSync(join(dir, "daily", "renders.json"), "utf8"),
+    ) as Record<string, Record<string, number>>
+  )[utcDay()];
+
+/** crew.mjs against the app at `base`. */
+const crew = (base: string, ...args: string[]) => {
+  const run = Bun.spawnSync(
+    ["node", resolve(import.meta.dir, "crew.mjs"), ...args, "--app", base],
+    { env: { PATH: process.env.PATH! } },
+  );
+  return {
+    code: run.exitCode,
+    out: run.stdout.toString(),
+    err: run.stderr.toString(),
+  };
+};
+
+test("a render reads the game's capture when the 4090 has one: no view", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const base = await serve(dir, stub);
+  const picked = await call(base, "/api/daily/pick", { report: REPORT });
+  expect(picked.status).toBe(200);
+  const id = picked.body.id;
+  const direct = (edl: object) => directOver(base, id, edl);
+  const render = (body: object = {}) => renderAndWait(base, id, body);
+
   // Without a named track a second render could play another song.
   const unnamed = await direct({ music: undefined });
   expect(unnamed.status).toBe(409);
@@ -3011,22 +1994,22 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect((await direct({})).status).toBe(200);
 
   // The game's first render captures it live: one view.
-  let { c } = await render();
-  expect(c.cands.A.state).toBe("rendered");
-  expect(c.cands.A.render?.fromCache).toBe(false);
-  expect(c.renders).toEqual({ TESTGAME1: 1 });
-  const live = c.cands.A.render?.video?.sha256;
+  let { it } = await render();
+  expect(stage(it)).toBe("rendered");
+  expect(it.render?.fromCache).toBe(false);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 1 });
+  const live = it.render?.video?.sha256;
 
   // A new list renders from the capture: no view, no --force.
   expect((await direct({ caption: "a new list" })).status).toBe(200);
-  ({ c } = await render());
-  expect(c.cands.A.state).toBe("rendered");
-  expect(c.cands.A.render?.fromCache).toBe(true);
-  expect(c.renders).toEqual({ TESTGAME1: 1 });
-  expect(c.events.map((e) => e.what)).toContain(
-    `A: render ${c.cands.A.render?.jobId} queued (from the capture)`,
+  ({ it } = await render());
+  expect(stage(it)).toBe("rendered");
+  expect(it.render?.fromCache).toBe(true);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 1 });
+  expect(it.events.map((e) => e.what)).toContain(
+    `render ${it.render?.jobId} queued (from the capture)`,
   );
-  expect(c.cands.A.render?.video?.sha256).not.toBe(live);
+  expect(it.render?.video?.sha256).not.toBe(live);
 
   // A live capture on purpose is one more view, so it needs force.
   expect((await direct({ caption: "another list" })).status).toBe(200);
@@ -3035,9 +2018,18 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect(refused.started.body.error).toContain(
     "TESTGAME1 was already rendered 1 time(s) today",
   );
-  ({ c } = await render({ live: true, force: true }));
-  expect(c.cands.A.render?.fromCache).toBe(false);
-  expect(c.renders).toEqual({ TESTGAME1: 2 });
+  ({ it } = await render({ live: true, force: true }));
+  expect(it.render?.fromCache).toBe(false);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
+
+  // A new item of the same game counts against the same game.
+  const again = (await call(base, "/api/daily/pick", { report: REPORT })).body
+    .id;
+  expect((await directOver(base, again)).status).toBe(200);
+  const second = await renderAndWait(base, again, { live: true });
+  expect(second.started.body.error).toContain(
+    "TESTGAME1 was already rendered 2 time(s) today",
+  );
 
   // When the app cannot ask the 4090, it does not guess (a live render
   // would be a view nobody counted): nothing starts.
@@ -3048,112 +2040,56 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect(unknown.started.body.error).toContain(
     "Connection timed out; the app must know whether the 4090 has the game's capture before it renders, so try again",
   );
-  expect(unknown.c.cands.A.state).toBe("directed");
+  expect(stage(unknown.it)).toBe("directed");
   unlinkSync(join(dir, "probe-fails"));
 
   // A render that was not what the app asked for fails.
   writeFileSync(join(dir, "lie-about-cache"), "");
-  ({ c } = await render());
-  expect(c.cands.A.state).toBe("render-failed");
+  ({ it } = await render());
+  expect(stage(it)).toBe("render-failed");
   // A renderer that ignores --from-cache captured live: that view counts.
-  expect(c.cands.A.render?.error).toBe(
+  expect(it.render?.error).toBe(
     "the renderer captured the game live, but the app asked for its capture: one view of the game, now counted; the 4090 kit may be older than --from-cache, so sync it",
   );
-  expect(c.renders).toEqual({ TESTGAME1: 3 });
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 3 });
   // The other way: counted as live but read from the capture; it stays
   // counted (an overcount is safe).
-  ({ c } = await render({ live: true, force: true }));
-  expect(c.cands.A.render?.error).toBe(
+  ({ it } = await render({ live: true, force: true }));
+  expect(it.render?.error).toBe(
     "the render was from the capture, but the app asked for a live capture",
   );
-  expect(c.renders).toEqual({ TESTGAME1: 4 });
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 4 });
 }, 30_000);
 
-test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
+test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-render.cjs");
   writeFileSync(stub, STUB_RENDER);
-  const port = await freePort();
-  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
-    env: {
-      PATH: process.env.PATH!,
-      PORT: String(port),
-      ISOMUX_APP_DATA_DIR: dir,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  stops.push(() => child.kill());
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 50; i++) {
-    try {
-      await fetch(`${base}/api/daily/state`);
-      break;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-  // This test drives one candidate, A, through the whole day: the
-  // candidate routes get cand A unless a call names another.
-  const CAND_ROUTES = ["pick", "direct", "render", "check", "copy"].map(
-    (r) => `/api/daily/${r}`,
-  );
-  const call = async <T = Day>(path: string, body?: unknown) => {
-    const sent =
-      body && CAND_ROUTES.includes(path) ? { cand: "A", ...body } : body;
-    const res = await fetch(`${base}${path}`, {
-      method: sent ? "POST" : "GET",
-      headers: { "content-type": "application/json" },
-      body: sent ? JSON.stringify(sent) : undefined,
-    });
-    return { status: res.status, body: (await res.json()) as T };
-  };
-  const day = "2026-10-26";
+  const { base, daily } = await serveHere(dir, stub);
+  const post = (path: string, body: object) =>
+    call(base, `/api/daily/${path}`, body);
 
   // Post text is Growth's copy block, not the pick's.
-  const withCaption = await call("/api/daily/pick", {
-    day,
-    report: REPORT,
-    caption: "lmao",
-  });
+  const withCaption = await post("pick", { report: REPORT, caption: "lmao" });
   expect(withCaption.status).toBe(409);
-  expect(JSON.stringify(withCaption.body)).toContain(
-    "pick takes no caption or title",
-  );
-  expect((await call("/api/daily/pick", { day, report: REPORT })).status).toBe(
-    200,
-  );
-  expect((await call("/api/daily/post", { day })).status).toBe(409);
+  expect(withCaption.body.error).toContain("pick takes no caption or title");
+  const picked = await post("pick", { report: REPORT });
+  expect(picked.status).toBe(200);
+  const id = picked.body.id;
+  expect(id).toMatch(ITEM_ID);
+  expect(picked.body).toMatchObject({ state: "draft", gameId: "TESTGAME1" });
+  // Every production step names its item.
+  expect((await post("render", {})).body.error).toContain("name the item");
   // No render without the director's list.
-  expect((await call("/api/daily/render", { day })).status).toBe(409);
-  const direct = async (
-    d: string,
-    music?: { fromPly: number; track: string }[],
-  ) => {
-    const { suggestedEnding } = (
-      await call<DailyState & { suggestedEnding: string }>(
-        `/api/daily/state?day=${d}`,
-      )
-    ).body;
-    return call("/api/daily/direct", {
-      day: d,
-      edl: { ...EDL, ending: suggestedEnding, ...(music ? { music } : {}) },
-    });
-  };
-  expect(
-    (
-      await call("/api/daily/direct", {
-        day,
-        edl: { ...EDL, gameId: "OTHERGAME" },
-      })
-    ).status,
-  ).toBe(409);
+  expect((await post("render", { item: id })).status).toBe(409);
+  const direct = (edl: object = {}) => directOver(base, id, edl);
+  expect((await direct({ gameId: "OTHERGAME" })).status).toBe(409);
   // A sound Nil disliked on /daily/sounds is allowed, and the edit list's
-  // summary (which the ask shows) names it.
+  // summary (which the review shows) names it.
   const pickSound = (choice: string) =>
-    call("/api/daily/sounds", { key: "fuahhh-1", choice });
+    post("sounds", { key: "fuahhh-1", choice });
   expect((await pickSound("disliked")).status).toBe(200);
-  const allowed = await direct(day);
+  const allowed = await direct();
   expect(allowed.status).toBe(200);
   expect(JSON.stringify(allowed.body)).toMatch(
     /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
@@ -3162,14 +2098,14 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   // A sound with a high claim risk is refused whatever Nil's level, and
   // allowed only on purpose; the summary then names it.
   const risky = (claimRiskOk?: unknown) =>
-    call("/api/daily/direct", {
-      day,
+    post("direct", {
+      item: id,
       edl: { ...EDL, vsSound: "win-2" },
       ...(claimRiskOk === undefined ? {} : { claimRiskOk }),
     });
   const riskRefused = await risky();
   expect(riskRefused.status).toBe(409);
-  expect(JSON.stringify(riskRefused.body)).toContain(
+  expect(riskRefused.body.error).toContain(
     "vsSound: win-2: high claim risk: a Rockstar Games music sting",
   );
   expect((await risky(["boom-2"])).status).toBe(409);
@@ -3181,21 +2117,21 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   );
   // What the video says must match the counter, and the payoff goes out too.
   const told = (edl: Record<string, unknown>) =>
-    call("/api/daily/direct", { day, edl: { ...EDL, ...edl } });
+    post("direct", { item: id, edl: { ...EDL, ...edl } });
   const coldOpen = await told({ coldOpenPly: 22 });
   expect(coldOpen.status).toBe(409);
-  expect(JSON.stringify(coldOpen.body)).toContain(
+  expect(coldOpen.body.error).toContain(
     "coldOpenPly is cut from the daily video (Nil, 2026-10-26",
   );
   const offCounter = await told({ caption: "Ruby was 2 steps away" });
   expect(offCounter.status).toBe(409);
-  expect(JSON.stringify(offCounter.body)).toContain("the caption says 2");
+  expect(offCounter.body.error).toContain("the caption says 2");
   const named = await told({
     caption: "can bro get home? 😭",
     payoff: { ply: 22, text: "guest tuatara got humbled" },
   });
   expect(named.status).toBe(409);
-  expect(JSON.stringify(named.body)).toContain(
+  expect(named.body.error).toContain(
     "video payoff must not name the player Guest Tuatara",
   );
   const mention = await told({
@@ -3203,9 +2139,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     payoff: { ply: 22, text: "ask @someone" },
   });
   expect(mention.status).toBe(409);
-  expect(JSON.stringify(mention.body)).toContain(
-    "video payoff must not mention",
-  );
+  expect(mention.body.error).toContain("video payoff must not mention");
   // The laugh plays on the save ply, after its zoom (Nil, 2026-10-26).
   const zoomThenLaugh = await told({
     events: [
@@ -3214,74 +2148,57 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     ],
   });
   expect(zoomThenLaugh.status).toBe(200);
-  expect((await direct(day)).status).toBe(200);
+  expect((await direct()).status).toBe(200);
+
   // What a restart would cut (crew.mjs ship refuses while any is busy).
   interface Busy {
-    renders: { day: string; label: string; jobId: string; state: string }[];
+    renders: { itemId: string; jobId: string; state: string }[];
     posting: boolean;
   }
-  expect((await call<Busy>("/api/daily/busy")).body).toEqual({
-    renders: [],
-    posting: false,
+  const busy = async () => (await call<Busy>(base, "/api/daily/busy")).body;
+  expect(await busy()).toEqual({ renders: [], posting: false });
+  const started = await call<{ jobId: string }>(base, "/api/daily/render", {
+    item: id,
   });
-  const started = await call<{ jobId: string }>("/api/daily/render", { day });
   expect(started.status).toBe(200);
-  // The queue takes the job before the POST answers; the stub is a process.
-  expect((await call<Busy>("/api/daily/busy")).body).toEqual({
-    renders: [{ day, label: "A", jobId: started.body.jobId, state: "running" }],
+  // The queue takes the job before the POST answers.
+  expect(await busy()).toEqual({
+    renders: [{ itemId: id, jobId: started.body.jobId, state: "running" }],
     posting: false,
   });
-  let state: DailyState | undefined;
-  for (let i = 0; i < 50; i++) {
-    state = (await call<DailyState>(`/api/daily/state?day=${day}`)).body;
-    if (state.cycle.cands.A.state !== "rendering") break;
-    await Bun.sleep(100);
-  }
-  expect(state?.cycle.cands.A.state).toBe("rendered");
-  expect((await call<Busy>("/api/daily/busy")).body.renders).toEqual([]);
+  const it = await rendered(base, id);
+  expect(stage(it)).toBe("rendered");
+  expect((await busy()).renders).toEqual([]);
   // The renderer's timeline is kept for the event strips, without extras.
-  const timeline = (
-    state?.cycle.cands.A.render as
-      | { timeline: { events: object[] } }
-      | undefined
-  )?.timeline;
-  expect(timeline?.events[0]).toEqual({
+  expect(it.render?.timeline?.events[0]).toEqual({
     index: 0,
     ply: EDL.events[0].ply,
     kind: EDL.events[0].kind,
     start: 10,
     end: 11,
   });
-  expect(state?.cycle.cands.A.render?.effect).toBe("daily");
-  expect(state?.cycle.cands.A.render?.ending).toBe("replay");
-  expect(state?.cycle.cands.A.render?.quality?.loudness?.ok).toBe(true);
-  expect(state?.cycle.cands.A.render?.quality?.safeArea?.ok).toBe(true);
-  const sheet = state?.cycle.cands.A.render?.sheet;
+  expect(it.render?.effect).toBe("daily");
+  expect(it.render?.ending).toBe("replay");
+  expect(it.render?.quality?.loudness?.ok).toBe(true);
+  expect(it.render?.quality?.safeArea?.ok).toBe(true);
+  const sheet = it.render?.sheet;
   expect(sheet?.stills).toEqual([{ ply: 22, kind: "zoom", sound: "fuahhh-1" }]);
-  expect(
-    (
-      await call("/api/daily/check", {
-        day,
-        sheetSha256: sheet?.sha256,
-        stills: [ZOOM_OK],
-      })
-    ).body.cands.A.state,
-  ).toBe("checked");
+  const checked = await post("check", {
+    item: id,
+    sheetSha256: sheet?.sha256,
+    stills: [ZOOM_OK],
+  });
+  expect(checked.body.state).toBe("finished");
 
-  const videoSha256 = state?.cycle.cands.A.render?.video?.sha256;
-  const ask = (copySha256: string) =>
-    call("/api/daily/ask", {
-      day,
-      askId: "ask-xyz",
-      modes: DRY,
-      offered: { A: { videoSha256, copySha256 } },
-    });
-  // No ask before Growth's copy block.
-  const noCopy = await ask(COPY_SHA);
-  expect(noCopy.status).toBe(409);
-  expect(JSON.stringify(noCopy.body)).toContain("crew.mjs copy");
-  const copy = (body: object) =>
-    call<DailyState["cycle"]>("/api/daily/copy", { day, ...body });
+  // Finished, but not for Nil before Growth's block for this video.
+  const viewOf = async () =>
+    (await dailyState(base)).items.find((x) => x.id === id);
+  expect(await viewOf()).toMatchObject({
+    stage: "checked",
+    reviewState: "waiting-copy",
+  });
+  expect((await viewOf())?.staleCopy).toContain(`crew.mjs copy --item ${id}`);
+  const copy = (body: object) => post("copy", { item: id, ...body });
   expect(
     (
       await copy({
@@ -3295,41 +2212,60 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     text: BLOCK.replace("X: ", `X: ${"a".repeat(280)}`),
     copyVersion: COPY_VERSION,
   });
-  expect(JSON.stringify(long.body)).toContain("X is over 280 in X's count");
+  expect(long.body.error).toContain("X is over 280 in X's count");
   const stored = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
   expect(stored.status).toBe(200);
-  expect(stored.body.cands.A.copy).toEqual(COPY);
-  // The ask must show the stored block, and then the block cannot change.
-  expect((await ask("0".repeat(64))).status).toBe(409);
-  expect((await ask(COPY_SHA)).status).toBe(200);
+  expect(stored.body.copy?.block).toEqual(COPY);
+  // Now it is in review: what Nil sees on /review.
+  const state = await dailyState(base);
+  expect(state.counts.inReview).toBe(1);
+  expect(await viewOf()).toMatchObject({
+    state: "finished",
+    stage: "checked",
+    reviewState: "in-review",
+    staleCopy: null,
+  });
+
+  // Nil approves this video and this block; then the block cannot change.
+  const approved = approveItem(daily.store, id);
+  expect(approved.approval).toMatchObject({
+    videoSha256: it.render?.video?.sha256,
+    copySha256: COPY_SHA,
+  });
   const late = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
   expect(late.status).toBe(409);
-  expect(JSON.stringify(late.body)).toContain("copy needs the day open");
-  // An approval with no reply text is not evidence of one.
-  expect(
-    (
-      await call("/api/daily/answer", {
-        askId: "ask-xyz",
-        pick: "A",
-        approver: "Nil",
-      })
-    ).status,
-  ).toBe(409);
-  const answered = await call("/api/daily/answer", {
-    askId: "ask-xyz",
-    pick: "A",
-    approver: "Nil",
-    reply: "Approve",
+  expect(late.body.error).toContain(`${id} is approved`);
+
+  // The poster's part: each platform in its mode (all dry-run here), with
+  // the approved item's file, and a post-log row for each.
+  const video = readFileSync(approved.render!.video!.path);
+  const posts: Record<string, PostResult> = {};
+  await daily.asThePost(async () => {
+    for (const platform of PLATFORMS) {
+      const result = (await daily.postPlatform(platform, {
+        item: approved,
+        video,
+        beforeCommit: () => undefined,
+      })) as PostResult;
+      expect([platform, result.ok, result.mode]).toEqual([
+        platform,
+        true,
+        "dry-run",
+      ]);
+      posts[platform] = result;
+      daily.logPost(approved, platform, result);
+    }
   });
-  expect(answered.body.state).toBe("approved");
+  expect(posts.x).toMatchObject({ postId: "DRY-RUN-POST-ID" });
 
-  const posted = await call("/api/daily/post", { day });
-  expect(posted.body.state).toBe("posted");
-  expect(posted.body.posts.x.postId).toBe("DRY-RUN-POST-ID");
-
-  const xPlan = JSON.parse(
-    readFileSync(posted.body.posts.x.requestsFile, "utf8"),
-  ) as { url: string; body: { text?: string } }[];
+  const planOf = (p: string) =>
+    JSON.parse(readFileSync(posts[p].requestsFile, "utf8")) as {
+      method: string;
+      url: string;
+      body: Record<string, unknown> | null;
+      headers: Record<string, string>;
+    }[];
+  const xPlan = planOf("x");
   expect(xPlan.map((r) => r.url.replace("https://api.x.com", ""))).toEqual([
     "/2/media/upload/initialize",
     "/2/media/upload/DRY-RUN-MEDIA-ID/append",
@@ -3337,8 +2273,8 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "/2/tweets",
   ]);
   // Each platform posts the approved block's own line.
-  expect(xPlan[3].body.text).toBe(COPY.x);
-  const ytPlan = readFileSync(posted.body.posts.youtube.requestsFile, "utf8");
+  expect(xPlan[3].body?.text).toBe(COPY.x);
+  const ytPlan = readFileSync(posts.youtube.requestsFile, "utf8");
   expect(ytPlan).toContain(JSON.stringify(`${COPY.youtubeTitle} #Shorts`));
   expect(ytPlan).toContain(
     "utm_source=youtube&utm_medium=social&utm_campaign=daily-video",
@@ -3350,14 +2286,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   );
 
   // The four newer platforms: each public request carries its line as is.
-  const planOf = (p: string) =>
-    JSON.parse(
-      readFileSync(
-        (posted.body.posts as Record<string, { requestsFile: string }>)[p]
-          .requestsFile,
-        "utf8",
-      ),
-    ) as { url: string; body: Record<string, unknown> | null }[];
   const finish = planOf("facebook").find(
     (r) => r.body?.upload_phase === "finish",
   );
@@ -3372,14 +2300,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "app.bsky.richtext.facet#link",
     "app.bsky.richtext.facet#tag",
   ]);
-  const container = planOf("threads").find((r) => r.url.endsWith("/threads"));
+  const threadsPlan = planOf("threads");
+  const container = threadsPlan.find((r) => r.url.endsWith("/threads"));
   expect(container?.body?.text).toBe(COPY.threads);
   // Threads: the video goes to the private R2 bucket under a random name,
   // Threads gets a signed URL, and the copy is deleted at the end.
-  const threadsPlan = planOf("threads") as unknown as {
-    method: string;
-    url: string;
-  }[];
   const object = threadsPlan.find((r) => r.method === "PUT")?.url ?? "";
   const key = object.split("/").slice(-2).join("/");
   expect(key).toMatch(/^wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
@@ -3403,28 +2328,12 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   for (const path of written) {
     expect(readFileSync(path, "utf8")).not.toContain("X-Amz-Signature");
   }
-  // What `crew.mjs post` prints: each platform's mode and exact text.
-  expect(postedTexts(posted.body)).toEqual([
-    `dry-run X: ${JSON.stringify(COPY.x)}`,
-    `dry-run YouTube: title ${JSON.stringify(`${COPY.youtubeTitle} #Shorts`)}, description ${JSON.stringify(COPY.youtubeDescription)}`,
-    `dry-run TikTok: ${JSON.stringify(COPY.tiktok)} (not sent: Nil pastes it in the inbox draft)`,
-    `dry-run Instagram: ${JSON.stringify(COPY.instagram)}`,
-    `dry-run Facebook: ${JSON.stringify(COPY.facebook)}`,
-    `dry-run Bluesky: ${JSON.stringify(COPY.bluesky)}`,
-    `dry-run Threads: ${JSON.stringify(COPY.threads)}`,
-  ]);
 
-  const log = (await call<LogRow[]>("/api/daily/post-log?dryRun=1")).body;
-  expect(log.map((r) => r.platform)).toEqual([
-    "x",
-    "youtube",
-    "tiktok",
-    "instagram",
-    "facebook",
-    "bluesky",
-    "threads",
-  ]);
-  // Each row names the on-video caption style and Growth's copy style.
+  const log = (await call<LogRow[]>(base, "/api/daily/post-log?dryRun=1")).body;
+  expect(log.map((r) => r.platform)).toEqual(PLATFORMS);
+  // Each row names its item, the on-video caption style and Growth's copy
+  // style.
+  expect(log.map((r) => r.itemId)).toEqual(log.map(() => id));
   expect(log.map((r) => r.styleVersion)).toEqual(
     log.map(() => CAPTION_STYLE_VERSION),
   );
@@ -3439,15 +2348,8 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     COPY.threads,
   ]);
   // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
-  expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");
-  const tiktokPlan = JSON.parse(
-    readFileSync(posted.body.posts.tiktok.requestsFile, "utf8"),
-  ) as {
-    method: string;
-    url: string;
-    body: unknown;
-    headers: Record<string, string>;
-  }[];
+  expect(posts.tiktok).toMatchObject({ postId: "DRY-RUN-PUBLISH-ID" });
+  const tiktokPlan = planOf("tiktok");
   expect(tiktokPlan.map((r) => `${r.method} ${r.url.split("?")[0]}`)).toEqual([
     "POST https://open.tiktokapis.com/v2/oauth/token/",
     "POST https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
@@ -3462,14 +2364,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     platform: "tiktok",
     tiktokStatus: "SEND_TO_USER_INBOX",
   });
-  const instagramPlan = JSON.parse(
-    readFileSync(posted.body.posts.instagram.requestsFile, "utf8"),
-  ) as {
-    method: string;
-    url: string;
-    body: unknown;
-    headers: Record<string, string>;
-  }[];
+  const instagramPlan = planOf("instagram");
   const igObject = instagramPlan.find((r) => r.method === "PUT")?.url ?? "";
   expect(igObject).toMatch(/\/wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
   // The Page and its Instagram account come from the one Meta secret first.
@@ -3503,176 +2398,92 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     url: "https://www.instagram.com/reel/DRY-RUN/",
   });
   expect(log[0]).toMatchObject({
+    itemId: id,
+    // The UTC day of the post.
+    day: utcDay(),
     gameId: "TESTGAME1",
     mode: "dry-run",
     approver: "Nil",
+    videoSha256: approved.approval?.videoSha256,
     effect: "daily",
     ending: "replay",
     music: ["deja-vus"],
     sound: "shotgun",
     swingMove: 23,
   });
-  expect((await call<LogRow[]>("/api/daily/post-log")).body).toEqual([]);
+  expect((await call<LogRow[]>(base, "/api/daily/post-log")).body).toEqual([]);
+  expect(readPostLog(daily.store.postLog.dryRun)).toHaveLength(7);
 
-  // Posting again posts nothing: both platforms are done.
-  expect((await call("/api/daily/post", { day })).status).toBe(409);
-
-  // The next day's default reads the log and is the next ending.
-  const next = "2026-10-27";
-  await call("/api/daily/pick", {
-    day: next,
-    report: REPORT,
-  });
+  // The next item's default reads the log and is the next ending.
+  const next = (await post("pick", { report: REPORT })).body.id;
   // The director sees the last posted track, to pick another.
-  expect(
-    (await call<{ lastMusic: string[] }>(`/api/daily/state?day=${next}`)).body
-      .lastMusic,
-  ).toEqual(["deja-vus"]);
-  await direct(next);
-  await call("/api/daily/render", { day: next });
-  for (let i = 0; i < 50; i++) {
-    state = (await call<DailyState>(`/api/daily/state?day=${next}`)).body;
-    if (state.cycle.cands.A.state !== "rendering") break;
-    await Bun.sleep(100);
-  }
-  expect(state?.cycle.cands.A.state).toBe("rendered");
-  expect(state?.cycle.cands.A.render?.ending).toBe("gg");
+  expect((await dailyState(base)).lastMusic).toEqual(["deja-vus"]);
+  expect((await directOver(base, next)).status).toBe(200);
+  // The 4090 has the game's capture now: no view, no force.
+  let second = (await renderAndWait(base, next)).it;
+  expect(stage(second)).toBe("rendered");
+  expect(second.render?.ending).toBe("gg");
 
-  // Day 2 is only rendered: an unpicked video takes no ending from day 3.
-  const third = "2026-10-28";
-  await call("/api/daily/pick", {
-    day: third,
-    report: REPORT,
-  });
-  const defaultOf = async (d: string) =>
-    (await call<{ suggestedEnding: string }>(`/api/daily/state?day=${d}`)).body
-      .suggestedEnding;
-  expect(await defaultOf(third)).toBe("gg");
-  // Nil picks day 2's video, which waits to post: now its ending is taken.
+  // The second item is only rendered: an unapproved video takes no ending
+  // from a third.
+  const third = (await post("pick", { report: REPORT })).body.id;
+  expect((await dailyState(base)).suggestedEnding).toBe("gg");
+  // Nil approves the second video, which waits to post: now its ending is
+  // taken.
   expect(
     (
-      await call("/api/daily/check", {
-        day: next,
-        sheetSha256: state?.cycle.cands.A.render?.sheet?.sha256,
+      await post("check", {
+        item: next,
+        sheetSha256: second.render?.sheet?.sha256,
         stills: [ZOOM_OK],
       })
     ).status,
   ).toBe(200);
   expect(
-    (
-      await call("/api/daily/copy", {
-        day: next,
-        text: BLOCK,
-        copyVersion: COPY_VERSION,
-      })
-    ).status,
+    (await post("copy", { item: next, text: BLOCK, copyVersion: COPY_VERSION }))
+      .status,
   ).toBe(200);
-  expect(
-    (
-      await call("/api/daily/ask", {
-        day: next,
-        askId: "ask-day2",
-        modes: DRY,
-        offered: {
-          A: {
-            videoSha256: state?.cycle.cands.A.render?.video?.sha256,
-            copySha256: COPY_SHA,
-          },
-        },
-      })
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await call("/api/daily/answer", {
-        askId: "ask-day2",
-        pick: "A",
-        approver: "Nil",
-        reply: "Post A",
-      })
-    ).status,
-  ).toBe(200);
-  expect(await defaultOf(third)).toBe("ko");
+  approveItem(daily.store, next);
+  expect((await dailyState(base)).suggestedEnding).toBe("ko");
   // A list with no event has no still to check, so it is refused.
-  expect(
-    (
-      await call("/api/daily/direct", {
-        day: third,
-        edl: {
-          ...EDL,
-          events: [],
-        },
-      })
-    ).status,
-  ).toBe(409);
+  expect((await directOver(base, third, { events: [] })).status).toBe(409);
   // The most events edl.mjs allows: 40 stills come back whole.
-  const { suggestedEnding } = (
-    await call<{ suggestedEnding: string }>(`/api/daily/state?day=${third}`)
-  ).body;
   expect(
     (
-      await call("/api/daily/direct", {
-        day: third,
-        edl: {
-          ...EDL,
-          ending: suggestedEnding,
-          events: Array.from({ length: 40 }, (_, ply) => ({
-            ply,
-            kind: "zoom",
-            frame: ["e4"],
-            sound: "fuahhh-1",
-          })),
-        },
+      await directOver(base, third, {
+        events: Array.from({ length: 40 }, (_, ply) => ({
+          ply,
+          kind: "zoom",
+          frame: ["e4"],
+          sound: "fuahhh-1",
+        })),
       })
     ).status,
   ).toBe(200);
-  await call("/api/daily/render", { day: third });
-  for (let i = 0; i < 50; i++) {
-    state = (await call<DailyState>(`/api/daily/state?day=${third}`)).body;
-    if (state.cycle.cands.A.state !== "rendering") break;
-    await Bun.sleep(100);
-  }
-  expect(state?.cycle.cands.A.render?.ending).toBe("ko");
-  expect(state?.cycle.cands.A.render?.sheet?.stills).toHaveLength(40);
-  // Day 2's picked video waits to post, so its track is the last one.
-  // (Day 2's list named deja-vus.)
-  expect(
-    (await call<{ lastMusic: string[] }>(`/api/daily/state?day=${third}`)).body
-      .lastMusic,
-  ).toEqual(["deja-vus"]);
+  second = (await renderAndWait(base, third)).it;
+  expect(second.render?.ending).toBe("ko");
+  expect(second.render?.sheet?.stills).toHaveLength(40);
+  // The second video waits to post, so its track is the last one.
+  expect((await dailyState(base)).lastMusic).toEqual(["deja-vus"]);
 
   // The music the video played must be the list's cues, each a track the
   // site has.
-  const fourth = "2026-10-29";
+  const fourth = (await post("pick", { report: REPORT })).body.id;
   const renderWith = async (
-    played: { fromPly: number; track: string; at: number }[] | null,
-    force = false,
+    played: { fromPly: number; track: string; at: number }[],
   ) => {
-    const override = join(dir, "music-override");
-    if (played) writeFileSync(override, JSON.stringify(played));
-    else rmSync(override, { force: true });
-    await call("/api/daily/render", { day: fourth, force });
-    for (let i = 0; i < 50; i++) {
-      state = (await call<DailyState>(`/api/daily/state?day=${fourth}`)).body;
-      if (state.cycle.cands.A.state !== "rendering") break;
-      await Bun.sleep(100);
-    }
+    writeFileSync(join(dir, "music-override"), JSON.stringify(played));
+    return (await renderAndWait(base, fourth)).it;
   };
-  await call("/api/daily/pick", {
-    day: fourth,
-    report: REPORT,
-  });
   const one = (track: string) => [{ fromPly: 0, track, at: 0 }];
-  await direct(fourth);
-  await renderWith(one("tea-for-two"));
-  expect(state?.cycle.cands.A.state).toBe("render-failed");
-  expect(state?.cycle.cands.A.render?.error).toMatch(
-    /music tea-for-two, not deja-vus/,
-  );
-  await direct(fourth);
-  await renderWith(one("elevator-jazz"), true);
-  expect(state?.cycle.cands.A.render?.error).toMatch(/music elevator-jazz/);
-}, 20_000);
+  await directOver(base, fourth);
+  let wrong = await renderWith(one("tea-for-two"));
+  expect(stage(wrong)).toBe("render-failed");
+  expect(wrong.render?.error).toMatch(/music tea-for-two, not deja-vus/);
+  await directOver(base, fourth);
+  wrong = await renderWith(one("elevator-jazz"));
+  expect(wrong.render?.error).toMatch(/music elevator-jazz/);
+}, 30_000);
 
 test("two music cues: direct takes them, and the render must play both from their plies", async () => {
   // Two cues need two tracks that may play; only deja-vus may today. The app
@@ -3684,101 +2495,64 @@ test("two music cues: direct takes them, and the render must play both from thei
     const dir = tempDir();
     const stub = join(dir, "stub-render.cjs");
     writeFileSync(stub, STUB_RENDER);
-    const daily = createDaily({ dataDir: dir, renderer: stub, env: {} });
-    const server = createHttpServer((req, res) => {
-      void daily
-        .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
-        .then((done: boolean) => {
-          if (!done) res.writeHead(404).end();
-        });
-    });
-    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
-    stops.push(() => {
-      server.close();
-      daily.stop();
-    });
-    const { port } = server.address() as { port: number };
-    const day = "2026-10-26";
-    const call = async <T = Day>(path: string, body: object) => {
-      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ day, cand: "A", ...body }),
-      });
-      return { status: res.status, body: (await res.json()) as T };
-    };
-    const rendered = async (played?: object[]) => {
+    const { base } = await serveHere(dir, stub);
+    const picked = await call(base, "/api/daily/pick", { report: REPORT });
+    expect(picked.status).toBe(200);
+    const id = picked.body.id;
+    const render = async (played?: object[]) => {
       const override = join(dir, "music-override");
       if (played) writeFileSync(override, JSON.stringify(played));
       else rmSync(override, { force: true });
-      await call("/api/daily/render", { force: true });
-      for (let i = 0; i < 50; i++) {
-        const res = await fetch(
-          `http://127.0.0.1:${port}/api/daily/state?day=${day}`,
-        );
-        const c = ((await res.json()) as { cycle: Day }).cycle.cands.A;
-        if (c.state !== "rendering") return c;
-        await Bun.sleep(100);
-      }
-      throw new Error("the render did not finish");
+      return (await renderAndWait(base, id, { force: true })).it;
     };
-    expect((await call("/api/daily/pick", { report: REPORT })).status).toBe(
-      200,
-    );
     const cues = [
       { fromPly: 0, track: "deja-vus" },
       { fromPly: 10, track: "skippy" },
     ];
-    const direct = () =>
-      call("/api/daily/direct", { edl: { ...EDL, music: cues } });
+    const direct = (music: object[] = cues) =>
+      call(base, "/api/daily/direct", { item: id, edl: { ...EDL, music } });
     expect((await direct()).status).toBe(200);
 
     // The stub plays the list's cues, the second from second 10.
-    let c = await rendered();
-    expect(c.state).toBe("rendered");
-    expect((c.render as unknown as { music: object[] } | null)?.music).toEqual([
+    let it = await render();
+    expect(stage(it)).toBe("rendered");
+    expect(it.render?.music).toEqual([
       { ...cues[0], at: 0 },
       { ...cues[1], at: 10 },
     ]);
 
     // A cue that starts on another ply is another video.
     expect((await direct()).status).toBe(200);
-    c = await rendered([
+    it = await render([
       { ...cues[0], at: 0 },
       { ...cues[1], fromPly: 12, at: 11 },
     ]);
-    expect(c.state).toBe("render-failed");
-    expect(c.render?.error).toBe(
+    expect(stage(it)).toBe("render-failed");
+    expect(it.render?.error).toBe(
       "the render played the music deja-vus, then skippy from ply 12, not deja-vus, then skippy from ply 10",
     );
 
     // At most 2 different tracks fit the credit (edl.mjs), and a track may
     // come back in a later cue.
-    const third = await call<{ error: string }>("/api/daily/direct", {
-      edl: { ...EDL, music: [...cues, { fromPly: 20, track: "a-legend" }] },
-    });
+    const third = await direct([...cues, { fromPly: 20, track: "a-legend" }]);
     expect(third.status).toBe(409);
     expect(third.body.error).toContain(
       "music plays 3 different tracks; at most 2 fit the credit",
     );
     expect(
-      (
-        await call("/api/daily/direct", {
-          edl: { ...EDL, music: [...cues, { fromPly: 20, track: "deja-vus" }] },
-        })
-      ).status,
+      (await direct([...cues, { fromPly: 20, track: "deja-vus" }])).status,
     ).toBe(200);
   } finally {
     cleared.forEach((t, i) => (t.license = licenses[i]));
   }
 });
 
-test("a dry run with two candidates: B is a carry-over, Nil picks B, only B posts", async () => {
+test("a carry-over: a new item with the game of one that was dropped", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-render.cjs");
   writeFileSync(stub, STUB_RENDER);
-  // An older day's report that ranks the carry-over game second: pick
-  // takes it by id, not by rank.
+  // An older day's report that ranks the game second: pick takes it by id,
+  // not by rank.
   const entry = REPORT.ranked[0];
   const oldReport = join(dir, "2026-10-26.json");
   writeFileSync(
@@ -3792,239 +2566,101 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
       ],
     }),
   );
-  const port = await freePort();
-  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
-    env: {
-      PATH: process.env.PATH!,
-      PORT: String(port),
-      ISOMUX_APP_DATA_DIR: dir,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  stops.push(() => child.kill());
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 50; i++) {
-    try {
-      await fetch(`${base}/api/daily/state`);
-      break;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-  const call = async <T = Day>(path: string, body?: unknown) => {
-    const res = await fetch(`${base}${path}`, {
-      method: body ? "POST" : "GET",
-      headers: { "content-type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return { status: res.status, body: (await res.json()) as T };
-  };
-  const crew = (...args: string[]) => {
-    const run = Bun.spawnSync(
-      ["node", resolve(import.meta.dir, "crew.mjs"), ...args, "--app", base],
-      { env: { PATH: process.env.PATH! } },
-    );
-    return {
-      code: run.exitCode,
-      out: run.stdout.toString(),
-      err: run.stderr.toString(),
-    };
-  };
-  const day = "2026-10-29";
+  // crew.mjs runs synchronously, so the app runs in its own process.
+  const base = await serve(dir, stub);
   const ok = async (path: string, body: object) => {
-    const r = await call(path, body);
+    const r = await call(base, path, body);
     expect([path, r.status]).toEqual([path, 200]);
     return r.body;
   };
 
-  // A: today's rank 1. B: a game from an older report, by id.
-  await ok("/api/daily/pick", { day, cand: "A", report: REPORT });
-  expect(crew("pick", "--day", day, "--cand", "B").err).toContain(
-    "pick needs --report",
+  expect(crew(base, "pick").err).toContain(
+    "pick needs --report <file> (or --from <item>)",
   );
-  const pickedB = crew(
+  const pickedFirst = crew(
+    base,
     "pick",
-    "--day",
-    day,
-    "--cand",
-    "B",
     "--report",
     oldReport,
     "--game",
     "CARRYOVR1",
   );
-  expect(pickedB.code).toBe(0);
-  expect(pickedB.out).toContain("CANDIDATE B: picked");
-  expect(pickedB.out).toContain("game CARRYOVR1");
-  // A production command must name its candidate.
-  expect(crew("render", "--day", day).err).toContain(
-    "name the candidate: --cand A|B|C",
-  );
+  expect(pickedFirst.code).toBe(0);
+  const first = /^picked: (\S+)$/m.exec(pickedFirst.out)?.[1] ?? "";
+  expect(first).toMatch(ITEM_ID);
+  expect(pickedFirst.out).toContain(`ITEM ${first}: draft, picked`);
+  expect(pickedFirst.out).toContain("game CARRYOVR1");
+  // A production command must name its item.
+  expect(crew(base, "render").err).toContain("name the item: --item <id>");
 
-  const { suggestedEnding } = (
-    await call<{ suggestedEnding: string }>(`/api/daily/state?day=${day}`)
-  ).body;
+  // Only a game that is not in work any more is carried over: work on a
+  // draft or a finished item itself.
+  const carry = (from: string) => crew(base, "pick", "--from", from);
+  expect(carry(first).err).toContain(
+    `${first} is draft: carry over only an item that is discarded or posted`,
+  );
   await ok("/api/daily/direct", {
-    day,
-    cand: "A",
-    edl: { ...EDL, ending: suggestedEnding },
-  });
-  await ok("/api/daily/direct", {
-    day,
-    cand: "B",
-    edl: { ...EDL, gameId: "CARRYOVR1", ending: suggestedEnding },
-  });
-  await ok("/api/daily/render", { day, cand: "A" });
-  await ok("/api/daily/render", { day, cand: "B" });
-  let s: DailyState | undefined;
-  for (let i = 0; i < 100; i++) {
-    s = (await call<DailyState>(`/api/daily/state?day=${day}`)).body;
-    if (["A", "B"].every((l) => s!.cycle.cands[l].state === "rendered")) break;
-    await Bun.sleep(100);
-  }
-  const video = (l: string) => s!.cycle.cands[l].render!.video!;
-  expect(video("A").sha256).not.toBe(video("B").sha256);
-  const COPY_B = { ...COPY, x: "B's X line #wallgame" };
-  for (const [l, text] of [
-    ["A", BLOCK],
-    ["B", BLOCK.replace(`X: ${COPY.x}`, `X: ${COPY_B.x}`)],
-  ]) {
-    await ok("/api/daily/check", {
-      day,
-      cand: l,
-      sheetSha256: s!.cycle.cands[l].render!.sheet!.sha256,
-      stills: [ZOOM_OK],
-    });
-    await ok("/api/daily/copy", {
-      day,
-      cand: l,
-      text,
-      copyVersion: COPY_VERSION,
-    });
-  }
-  const status = crew("status", "--day", day);
-  expect(status.out).toContain("CANDIDATE A: checked");
-  expect(status.out).toContain("CANDIDATE B: checked");
-
-  // ask measures its text before it calls the office. This test has no
-  // office token, so a text that fits stops at the office call, after the
-  // app wrote the notes that the ask attaches.
-  const notesDir = join(dir, "daily", "ask-notes");
-  const fits = crew("ask", "--day", day, "--agent", "agent-x");
-  expect(fits.err).toContain("ISOMUX_AGENT_TOKEN is not set");
-  const written = readdirSync(notesDir);
-  expect(written).toHaveLength(1);
-  expect(readFileSync(join(notesDir, written[0]), "utf8")).toContain(
-    "CANDIDATE B\nGuest Tuatara vs Ruby, 41 plies, game CARRYOVR1.",
-  );
-  // A long line (inside YouTube's own limit) makes the text too long: no
-  // notes, no office call.
-  const long = `${"bro humbled the bot with one wall 😭🥀 ".repeat(90)}Play Wall Game: ${YOUTUBE_LINK}`;
-  await ok("/api/daily/copy", {
-    day,
-    cand: "B",
-    text: BLOCK.replace(
-      /^YouTube description: .*$/m,
-      `YouTube description: ${long}`,
-    ),
-    copyVersion: COPY_VERSION,
-  });
-  // A recommendation names an offered candidate, with a reason.
-  expect(
-    crew(
-      "ask",
-      "--day",
-      day,
-      "--agent",
-      "agent-x",
-      "--recommend",
-      "C",
-      "--why",
-      "x",
-    ).err,
-  ).toContain("--recommend names an offered candidate: A, B");
-  expect(
-    crew("ask", "--day", day, "--agent", "agent-x", "--recommend", "A").err,
-  ).toContain(
-    '--recommend needs --why "<reason>", 1 to 100 characters on one line',
-  );
-  // A reason without its label is refused, also on --reopen, before any
-  // office call.
-  for (const extra of [[], ["--reopen"]]) {
-    expect(
-      crew("ask", "--day", day, "--agent", "agent-x", ...extra, "--why", "x")
-        .err,
-    ).toContain("--why goes with --recommend X");
-  }
-  const over = crew("ask", "--day", day, "--agent", "agent-x");
-  expect(over.err).toMatch(
-    /^the ask text has \d+ characters, over the office's 4000: offer fewer candidates \(--cands\), or ask Growth for shorter lines/,
-  );
-  expect(readdirSync(notesDir)).toEqual(written);
-  await ok("/api/daily/copy", {
-    day,
-    cand: "B",
-    text: BLOCK.replace(`X: ${COPY.x}`, `X: ${COPY_B.x}`),
-    copyVersion: COPY_VERSION,
-  });
-
-  // The ask as crew.mjs records it (no real ask to Nil in a test).
-  await ok("/api/daily/ask", {
-    day,
-    askId: "ask-two",
-    modes: DRY,
-    offered: {
-      A: { videoSha256: video("A").sha256, copySha256: COPY_SHA },
-      B: { videoSha256: video("B").sha256, copySha256: copySha256(COPY_B) },
+    item: first,
+    edl: {
+      ...EDL,
+      gameId: "CARRYOVR1",
+      ending: (await dailyState(base)).suggestedEnding,
     },
-    recommended: { label: "A", why: "A's zoom lands on the save" },
   });
-  const notes = "Post B. A: the zoom comes too late, try it one move earlier";
-  const answered = await ok("/api/daily/answer", {
-    askId: "ask-two",
-    pick: "B",
-    approver: "Nil",
-    reply: notes,
+  const it = (await renderAndWait(base, first)).it;
+  await ok("/api/daily/check", {
+    item: first,
+    sheetSha256: it.render?.sheet?.sha256,
+    stills: [ZOOM_OK],
   });
-  expect(answered.state).toBe("approved");
-  // ask --mode-change stops before the office when no mode changed.
-  expect(
-    crew("ask", "--day", day, "--agent", "agent-x", "--mode-change").err,
-  ).toContain(
-    "the posting modes are the ones of ask ask-two: no mode change to ask for",
+  await ok("/api/daily/copy", {
+    item: first,
+    text: BLOCK,
+    copyVersion: COPY_VERSION,
+  });
+  expect(crew(base, "status").out).toContain(
+    `ITEM ${first}: finished (in-review), checked`,
   );
-  expect(answered.approval).toMatchObject({
-    picked: "B",
-    videoSha256: video("B").sha256,
-    copy: COPY_B,
-  });
-
-  // Only B posts: its video, its block, its game.
-  const posted = await ok("/api/daily/post", { day });
-  expect(posted.state).toBe("posted");
-  const log = (await call<LogRow[]>("/api/daily/post-log?dryRun=1")).body;
-  expect(log).toHaveLength(7);
+  expect(carry(first).err).toContain(`${first} is finished`);
   expect(
-    new Set(
-      log.map(
-        (r) =>
-          `${(r as LogRow & { gameId: string }).gameId} ${(r as LogRow & { videoSha256: string }).videoSha256}`,
-      ),
-    ),
-  ).toEqual(new Set([`CARRYOVR1 ${video("B").sha256}`]));
-  expect(log.find((r) => r.platform === "x")?.caption).toBe(COPY_B.x);
+    crew(base, "pick", "--from", first, "--report", oldReport).err,
+  ).toContain("pick takes --report or --from, not both");
 
-  // The feedback log has Nil's words, verbatim, with both candidates.
-  const feedback = crew("feedback", "--last", "5");
-  expect(feedback.code).toBe(0);
-  expect(feedback.out).toContain(`${day} ask ask-two: B picked by Nil`);
-  expect(feedback.out).toContain(
-    "  you recommended A: A's zoom lands on the save",
+  // The director drops it, with a reason, and it leaves the work list.
+  expect(crew(base, "drop", "--item", first).err).toContain(
+    'drop needs --why "<reason>"',
   );
-  expect(feedback.out).toContain("  A: game TESTGAME1, edit list");
-  expect(feedback.out).toContain("  B: game CARRYOVR1, edit list");
-  expect(feedback.out).toContain(`  reply, verbatim: ${JSON.stringify(notes)}`);
+  const dropped = crew(base, "drop", "--item", first, "--why", "too slow");
+  expect(dropped.out).toContain(`${first} dropped: too slow`);
+  const after = await dailyState(base);
+  expect(after.items.map((x) => x.id)).not.toContain(first);
+  expect(after.over.map((x) => [x.id, x.state])).toEqual([
+    [first, "discarded"],
+  ]);
+
+  // Now its game can come back as a new item, which names where it came
+  // from.
+  const carried = carry(first);
+  expect(carried.code).toBe(0);
+  const second = /^picked: (\S+)$/m.exec(carried.out)?.[1] ?? "";
+  expect(second).not.toBe(first);
+  const old = await fetchItem(base, first);
+  const now = await fetchItem(base, second);
+  expect(now).toMatchObject({
+    state: "draft",
+    gameId: "CARRYOVR1",
+    source: { carriedFrom: first },
+    candidate: old.candidate,
+    render: null,
+    copy: null,
+  });
+  expect(now.events[0].what).toBe(
+    `picked CARRYOVR1 (carried over from ${first})`,
+  );
+  expect(old.state).toBe("discarded");
+  expect(crew(base, "pick", "--from", "v-2026-01-01-9").err).toContain(
+    "there is no item v-2026-01-01-9",
+  );
 }, 30_000);
 
 /** A stand-in for render-4090.mjs --has-capture and --plies. */
@@ -4050,53 +2686,30 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   preview: { from, to }, edlSha256: null, sheet: null }));
 `;
 
-test("a preview: a few plies from the capture, and the cycle does not change", async () => {
+test("a preview: a few plies from the capture, and the item does not change", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-preview.cjs");
   writeFileSync(stub, STUB_PREVIEW);
-  const port = await freePort();
-  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
-    env: {
-      PATH: process.env.PATH!,
-      PORT: String(port),
-      ISOMUX_APP_DATA_DIR: dir,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  stops.push(() => child.kill());
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 50; i++) {
-    try {
-      await fetch(`${base}/api/daily/state`);
-      break;
-    } catch {
-      await Bun.sleep(100);
-    }
-  }
-  const call = async <T = { error: string }>(path: string, body?: unknown) => {
-    const res = await fetch(`${base}${path}`, {
-      method: body ? "POST" : "GET",
-      headers: { "content-type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return { status: res.status, body: (await res.json()) as T };
-  };
+  const base = await serve(dir, stub);
   interface Preview {
     previewId: string;
+    itemId: string;
     plies: string;
     state: string;
     video: { path: string; bytes: number } | null;
     error: string | null;
   }
-  const finished = async (body: unknown) => {
-    const started = await call<{ previewId: string }>(
-      "/api/daily/preview",
-      body,
-    );
+  const preview = (body: object) =>
+    call<{ previewId: string; error?: string }>(base, "/api/daily/preview", {
+      item: id,
+      ...body,
+    });
+  const finished = async (body: object) => {
+    const started = await preview(body);
     expect(started.status).toBe(200);
     for (let i = 0; i < 100; i++) {
       const p = await call<Preview>(
+        base,
         `/api/daily/preview?id=${started.body.previewId}`,
       );
       if (["done", "failed"].includes(p.body.state)) return p.body;
@@ -4104,66 +2717,43 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
     }
     throw new Error("the preview did not end");
   };
-  const day = "2026-10-26";
-  await call("/api/daily/pick", { day, cand: "A", report: REPORT });
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
 
   // No list to preview before direct, unless the call brings one.
-  const early = await call("/api/daily/preview", {
-    day,
-    cand: "A",
-    plies: "20..23",
-  });
+  const early = await preview({ plies: "20..23" });
   expect(early.status).toBe(409);
   expect(early.body.error).toContain("has no edit list yet");
-  const otherGame = await call("/api/daily/preview", {
-    day,
-    cand: "A",
+  const otherGame = await preview({
     plies: "20..23",
     edl: { ...EDL, gameId: "OTHERGAME" },
   });
   expect(otherGame.status).toBe(409);
-  expect(otherGame.body.error).toContain("candidate A's game is TESTGAME1");
+  expect(otherGame.body.error).toContain(`${id}'s game is TESTGAME1`);
 
-  const { suggestedEnding } = (
-    await call<{ suggestedEnding: string }>(`/api/daily/state?day=${day}`)
-  ).body;
-  await call("/api/daily/direct", {
-    day,
-    cand: "A",
-    edl: { ...EDL, ending: suggestedEnding },
-  });
+  await directOver(base, id);
   // The window is checked here, not after the 4090 starts.
-  const pastEnd = await call("/api/daily/preview", {
-    day,
-    cand: "A",
-    plies: "38..41",
-  });
+  const pastEnd = await preview({ plies: "38..41" });
   expect(pastEnd.status).toBe(409);
   expect(pastEnd.body.error).toContain("after the game's last ply 40");
-  expect(
-    (await call("/api/daily/preview", { day, cand: "A", plies: "22" })).status,
-  ).toBe(409);
+  expect((await preview({ plies: "22" })).status).toBe(409);
 
   // A game with no capture on the 4090 is refused before a job exists.
   writeFileSync(join(dir, "no-capture"), "");
-  const refused = await call("/api/daily/preview", {
-    day,
-    cand: "A",
-    plies: "20..23",
-  });
+  const refused = await preview({ plies: "20..23" });
   expect(refused.status).toBe(409);
   expect(refused.body.error).toBe(
-    "the 4090 has no capture of game TESTGAME1 yet: a preview reads the capture that the game's full render saves, so render the day's video first",
+    "the 4090 has no capture of game TESTGAME1 yet: a preview reads the capture that the game's full render saves, so render the item's video first",
   );
   expect(
-    (await call<{ renders: unknown[] }>("/api/daily/busy")).body.renders,
+    (await call<{ renders: unknown[] }>(base, "/api/daily/busy")).body.renders,
   ).toEqual([]);
   expect(existsSync(join(dir, "last-plies"))).toBe(false);
   unlinkSync(join(dir, "no-capture"));
 
-  const before = (await call(`/api/daily/state?day=${day}`)).body;
-  const shown = await finished({ day, cand: "A", plies: "20..23" });
+  const before = await fetchItem(base, id);
+  const shown = await finished({ plies: "20..23" });
   expect(shown.state).toBe("done");
+  expect(shown.itemId).toBe(id);
   expect(shown.plies).toBe("20..23");
   expect(shown.video!.path).toBe(
     join(dir, "daily", "previews", `${shown.previewId}.mp4`),
@@ -4171,8 +2761,6 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
   expect(readFileSync(shown.video!.path).length).toBe(shown.video!.bytes);
   // A list given with the call is previewed as given.
   const given = await finished({
-    day,
-    cand: "A",
     plies: "20..23",
     edl: {
       ...EDL,
@@ -4185,32 +2773,17 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
   expect(given.state).toBe("done");
   expect(readFileSync(join(dir, "last-plies"), "utf8")).toBe("20..23 2");
   // crew.mjs preview waits for the MP4 and prints its path.
-  const crew = Bun.spawnSync(
-    [
-      "node",
-      resolve(import.meta.dir, "crew.mjs"),
-      "preview",
-      "--day",
-      day,
-      "--cand",
-      "A",
-      "--plies",
-      "21..22",
-      "--app",
-      base,
-    ],
-    { env: { PATH: process.env.PATH! } },
+  const printed = crew(base, "preview", "--item", id, "--plies", "21..22");
+  expect(printed.code).toBe(0);
+  expect(printed.out).toMatch(
+    /preview of plies 21\.\.22: .*\/previews\/.*\.mp4 \(1 s, 0\.0 MB\)\. Not the item's video: the item did not change\./,
   );
-  expect(crew.exitCode).toBe(0);
-  expect(crew.stdout.toString()).toMatch(
-    /preview of plies 21\.\.22: .*\/previews\/.*\.mp4 \(1 s, 0\.0 MB\)\. Not the day's video/,
-  );
-  // Nothing in the cycle moved: the previews are not the day's video.
-  expect((await call(`/api/daily/state?day=${day}`)).body).toEqual(before);
-  expect((await call("/api/daily/preview?id=nope")).status).toBe(404);
+  // Nothing in the item moved: a preview is not the item's video.
+  expect(await fetchItem(base, id)).toEqual(before);
+  expect((await call(base, "/api/daily/preview?id=nope")).status).toBe(404);
   // A file step that throws ends the preview as failed, not running.
   rmSync(join(dir, "daily", "previews"), { recursive: true });
-  const lost = await finished({ day, cand: "A", plies: "20..23" });
+  const lost = await finished({ plies: "20..23" });
   expect(lost.state).toBe("failed");
   expect(lost.error).toContain("the preview step failed: ENOENT");
 }, 30_000);

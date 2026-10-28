@@ -1,55 +1,43 @@
 /**
- * The daily video's record: one file per UTC day, and the only state the
- * daily pipeline keeps.
+ * The video items: one file per video, and the only state the daily
+ * pipeline keeps (Nil's review queue, 2026-10-28). The director picks a
+ * game as an item and makes it; Nil reviews finished items on the app's
+ * /review page; an approved item posts at a slot (Wall Game Worker 1's
+ * review-post.mjs and scheduler.mjs).
  *
- * A DAY HAS UP TO THREE CANDIDATES, A, B and C (Nil, 2026-10-27: the director
- * offers a few videos and he picks the one to post). Each candidate is its
- * own game, edit list, render, check and copy block, and goes
+ *   draft -> finished -> approved -> posting -> posted
+ *     ^         |   \-> discarded           \-> post-failed
+ *     \-revise--/
  *
- *   picked -> directed -> rendering -> rendered -> checked
- *                                  \-> render-failed
- *
- * on its own: one can be directed again while another is checked. The day
- * holds the ask and the posting:
- *
- *   open -> asked -> approved -> posted
- *                \-> rejected  \-> post-failed
- *
- * The production steps (pick, direct, render, check, copy) work only while
- * the day is open or rejected: from the ask on, the ask names the videos and
- * blocks it showed, and nothing may change under it. "None today" leaves the
- * day rejected; a new ask is allowed when it offers something new.
+ * - draft: the director's production. Its steps (direct, render, check,
+ *   copy) work only in draft, except a new list or block on a finished
+ *   item, which a new list sends back to draft. Where production stands is
+ *   derived from the item's fields (stage), not stored.
+ * - finished: the director's check passed (every still ok). It is IN REVIEW
+ *   when Growth's block is for its current video (reviewState); this too is
+ *   derived, so a new render leaves review by itself.
+ * - approved, discarded, draft again (revise): Nil's review actions.
+ * - posting, posted, post-failed and posts{}: the poster's alone.
  *
  * Every step checks the state it starts from. The checks are the point of
  * this file: the steps are run by an agent woken by a schedule, possibly in a
- * different session from the one that started the day, and "post" must not
- * be reachable from anything but Nil's pick of THIS video and THIS block.
- *
- * THREE RULES THAT KEEP AN APPROVAL HONEST.
- *
- * 1. The ask records, for each candidate it offered, the video by sha256
- *    and Growth's copy block by its copySha256 (copy.mjs). Nil's pick binds
- *    the picked candidate's two; post refuses any other bytes or text.
- * 2. An approval names the posting mode (dry-run or live, per platform) that
- *    the ask told Nil about. If keys arrive between the ask and the post, the
- *    post refuses, so a "yes" to a dry run never becomes a real post.
- * 3. A platform that is posted is never posted again for the same day. A
- *    retry after a partial failure posts only what is missing. A post whose
- *    last request was SENT but not answered (a lost reply, a 5xx, an app that
- *    died in between) may exist on the platform, so it is marked uncertain
- *    and is not retried until a person has looked at the account and says
- *    it is not there.
+ * different session from the one that started the item, and a post must not
+ * be reachable from anything but Nil's approval of THIS video and THIS block.
  *
  * A COPY BLOCK BELONGS TO ONE VIDEO. It is stored with the sha256 of the
- * candidate's MP4 when it came in (copyFor). A render that makes other bytes
- * leaves the block stale, and the ask refuses it; a render of the same list
- * from the capture cache makes the same bytes, so the block stays good.
+ * item's MP4 when it came in (forVideoSha256). A render that makes other
+ * bytes leaves it stale; a render of the same list from the capture cache
+ * makes the same bytes, so the block stays good.
  *
  * Every write goes to a scratch file first and is renamed into place, so a
- * crash never leaves half a record. A day file from before the candidates
- * (version 1) is rewritten once at start-up as candidate A (migrateV1), and
- * one from before the music cues (version 2) gets cue lists (migrateV2). The
- * old file is kept next to it as <day>.v1.json or <day>.v2.json.
+ * crash never leaves half a record.
+ *
+ * THE DAY FILES (cycles/) are history: the daily flow before the review
+ * queue kept one file per UTC day with up to three candidates and an ask.
+ * At start-up an old day file is brought to version 3 (migrateV1,
+ * migrateV2; the old file is kept next to it as <day>.v1.json or
+ * <day>.v2.json), and each of its candidates becomes an item
+ * (itemFromDay). Nothing writes a day file after that.
  */
 import {
   mkdirSync,
@@ -58,14 +46,13 @@ import {
   renameSync,
   existsSync,
   readdirSync,
-  appendFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { copySha256 } from "./copy.mjs";
 
 /**
- * The record's format. migrateV1 turns a version 1 file into version 2, and
+ * A day file's format. migrateV1 turns a version 1 file into version 2, and
  * migrateV2 a version 2 file into this one.
  */
 export const VERSION = 3;
@@ -111,12 +98,11 @@ export const reviewState = (item) => {
   return fresh && afterRevise ? "in-review" : "waiting-copy";
 };
 
-/** A day's candidates, in the order the ask shows them. */
+/** A day file's candidates, in label order. */
 export const LABELS = ["A", "B", "C"];
-/** The longest reason of a recommendation in the ask (one line). */
-export const WHY_MAX = 100;
 
-export const CANDIDATE_STATES = [
+/** Where an item's production stands, derived from its fields. */
+export const STAGES = [
   "picked",
   "directed",
   "rendering",
@@ -124,15 +110,18 @@ export const CANDIDATE_STATES = [
   "render-failed",
   "checked",
 ];
-
-export const DAY_STATES = [
-  "open",
-  "asked",
-  "approved",
-  "rejected",
-  "posted",
-  "post-failed",
-];
+export const stage = (item) =>
+  !item.edl
+    ? "picked"
+    : !item.render
+      ? "directed"
+      : !item.render.finishedAt
+        ? "rendering"
+        : item.render.error
+          ? "render-failed"
+          : item.check?.ok
+            ? "checked"
+            : "rendered";
 
 export const PLATFORMS = [
   "x",
@@ -167,8 +156,11 @@ export const writeAtomic = (path, text) => {
   renameSync(scratch, path);
 };
 
-/** The candidate states a new pick, a new list or a new block may replace. */
+/** The stages a new list may replace, and an item may be dropped in. */
 const SETTLED = ["picked", "directed", "rendered", "render-failed", "checked"];
+
+/** The states of an item whose game another item may carry over. */
+const CARRY_FROM = ["discarded", "posted"];
 
 export const openStore = (dataDir) => {
   const root = join(dataDir, "daily");
@@ -298,56 +290,86 @@ export const openStore = (dataDir) => {
     return JSON.parse(readFileSync(path, "utf8"));
   };
 
-  const save = (record, what) => {
-    record.updatedAt = new Date().toISOString();
-    record.events.push({ at: record.updatedAt, state: record.state, what });
-    writeAtomic(cyclePath(record.day), JSON.stringify(record, null, 2));
-    return record;
-  };
+  const needItem = (id) => readItem(id) ?? refuse(`there is no item ${id}`);
 
-  const need = (day) => read(day) ?? refuse(`there is no cycle for ${day}`);
-
-  const expect = (record, allowed, step) => {
-    if (!allowed.includes(record.state)) {
+  /** Refuse a step unless the item's production stage is one of `stages`. */
+  const expectStage = (item, stages, step) => {
+    const now = stage(item);
+    if (!stages.includes(now)) {
       refuse(
-        `${step} needs the day ${allowed.join(" or ")}, but ${record.day} is ${record.state}`,
+        `${step} needs ${item.id} ${stages.join(" or ")}, but it is ${now}`,
       );
     }
   };
 
-  /** Production steps change a candidate; the ask must not see it move. */
-  const expectOpen = (record, step) => {
-    if (!["open", "rejected"].includes(record.state)) {
-      refuse(
-        `${step} needs the day open, but ${record.day} is ${record.state}: the ask names its videos and blocks, so nothing changes until it is answered`,
-      );
-    }
+  /** Live captures of a game today (UTC), over every item. */
+  const viewsToday = (gameId) => {
+    const counts = JSON.parse(readFileSync(rendersFile, "utf8"));
+    return counts[utcDay()]?.[gameId] ?? 0;
+  };
+  const countView = (gameId) => {
+    const counts = JSON.parse(readFileSync(rendersFile, "utf8"));
+    const day = utcDay();
+    counts[day] = {
+      ...counts[day],
+      [gameId]: (counts[day]?.[gameId] ?? 0) + 1,
+    };
+    writeAtomic(rendersFile, JSON.stringify(counts, null, 2));
   };
 
-  const labelOf = (label) =>
-    LABELS.includes(label)
-      ? label
-      : refuse(`a candidate is ${LABELS.join(", ")}, not ${label}`);
-
-  const needCand = (record, label) =>
-    record.cands[labelOf(label)] ??
-    refuse(`${record.day} has no candidate ${label}`);
-
-  const expectCand = (cand, allowed, step) => {
-    if (!allowed.includes(cand.state)) {
+  /**
+   * The one way to change an item: refuses unless its state is one of
+   * `expectStates`, then `mutate(item)` changes it in place (and may refuse
+   * before anything is written); the change is stamped, logged as the event
+   * `what` (a text, or a function of the changed item) and written
+   * atomically. The poster's transitions (posting, posted, post-failed,
+   * posts{}) use it from their own module; the review routes never write
+   * those.
+   * @param {string} id
+   * @param {string[]} expectStates
+   * @param {(item: any) => void} mutate
+   * @param {string | ((item: any) => string)} what
+   */
+  const updateItem = (id, expectStates, mutate, what) => {
+    const item = needItem(id);
+    const step = typeof what === "string" ? what : "this step";
+    if (!expectStates.includes(item.state)) {
       refuse(
-        `${step} needs candidate ${cand.label} ${allowed.join(" or ")}, but it is ${cand.state}`,
+        `${id} is ${item.state}; ${step} needs ${expectStates.join(" or ")}`,
       );
     }
+    mutate(item);
+    // A typo in a state would write an item that no list, count or queue
+    // shows, and a changed id would write a second file (Video Reviewer 2,
+    // 2026-10-28): refused, and nothing is written.
+    if (!ITEM_STATES.includes(item.state)) {
+      refuse(`${step} left ${id} in an unknown state: ${item.state}`);
+    }
+    if (item.id !== id) refuse(`${step} changed the item's id to ${item.id}`);
+    const utc = new Date().toISOString();
+    item.updatedAt = utc;
+    item.events = [
+      ...item.events,
+      { utc, what: typeof what === "string" ? what : what(item) },
+    ];
+    writeItem(item);
+    return item;
   };
 
-  /** Why the candidate's block cannot go in an ask, or null. */
-  const staleCopy = (cand) =>
-    !cand.copy
-      ? `candidate ${cand.label} has no copy block from Wall Game Growth (crew.mjs copy --cand ${cand.label})`
-      : cand.copyFor !== cand.render?.video?.sha256
-        ? `candidate ${cand.label}'s copy block was written for another video (${String(cand.copyFor).slice(0, 12)}, now ${String(cand.render?.video?.sha256).slice(0, 12)}); get a new block from Wall Game Growth`
-        : null;
+  /** Why the item's block cannot go to review, or null. */
+  const staleCopy = (item) => {
+    if (!item.copy) {
+      return `${item.id} has no copy block from Wall Game Growth (crew.mjs copy --item ${item.id})`;
+    }
+    if (item.copy.forVideoSha256 !== item.render?.video?.sha256) {
+      return `${item.id}'s copy block was written for another video (${String(item.copy.forVideoSha256).slice(0, 12)}, now ${String(item.render?.video?.sha256).slice(0, 12)}); get a new block from Wall Game Growth`;
+    }
+    const revise = item.reviews.filter((r) => r.action === "revise").at(-1);
+    if (revise && !(item.copy.storedAt > revise.at)) {
+      return `Nil asked for a revision at ${revise.at}; the block must come after it: get a new block from Wall Game Growth`;
+    }
+    return null;
+  };
 
   return {
     dirs,
@@ -361,39 +383,8 @@ export const openStore = (dataDir) => {
     item: readItem,
     items,
 
-    /**
-     * The one way to change an item: refuses unless its state is one of
-     * `expectStates`, then `mutate(item)` changes it in place; the change is
-     * stamped, logged as the event `what` and written atomically. The
-     * poster's transitions (posting, posted, post-failed, posts{}) use it
-     * from their own module; the review routes never write those.
-     * @param {string} id
-     * @param {string[]} expectStates
-     * @param {(item: any) => void} mutate
-     * @param {string} what
-     */
-    updateItem(id, expectStates, mutate, what) {
-      const item = readItem(id);
-      if (!item) refuse(`no item ${id}`);
-      if (!expectStates.includes(item.state)) {
-        refuse(
-          `${id} is ${item.state}; ${what} needs ${expectStates.join(" or ")}`,
-        );
-      }
-      mutate(item);
-      // A typo in a state would write an item that no list, count or queue
-      // shows, and a changed id would write a second file (Video Reviewer
-      // 2, 2026-10-28): refused, and nothing is written.
-      if (!ITEM_STATES.includes(item.state)) {
-        refuse(`${what} left ${id} in an unknown state: ${item.state}`);
-      }
-      if (item.id !== id) refuse(`${what} changed the item's id to ${item.id}`);
-      const utc = new Date().toISOString();
-      item.updatedAt = utc;
-      item.events = [...item.events, { utc, what }];
-      writeItem(item);
-      return item;
-    },
+    /** The one way to change an item (see above). */
+    updateItem,
 
     /** Approved items, oldest approval first (then id): the post queue. */
     approvedQueue: () =>
@@ -431,39 +422,33 @@ export const openStore = (dataDir) => {
     staleCopy,
 
     /**
-     * Start or replace one candidate of the day. A label that is taken needs
-     * `replace`, so a scheduled start cannot redo a candidate by mistake
-     * (Wall Game PM, 2026-10-26). The candidate's game may come from any
-     * day's report: an unpicked candidate can be offered again later.
+     * A new item for the director: a game from a candidate report, or the
+     * game of an earlier item that Nil discarded or that posted (carry-over,
+     * `source.carriedFrom`). Its id is v-<UTC day>-<n>, the day's next
+     * number (an item migrated from a day file has a letter instead).
      */
-    pick(day, label, { candidate, style, styleVersion, replace = false }) {
+    pick({ candidate, style, styleVersion, source }) {
+      if (source.carriedFrom !== undefined) {
+        const old = needItem(source.carriedFrom);
+        if (!CARRY_FROM.includes(old.state)) {
+          refuse(
+            `${old.id} is ${old.state}: carry over only an item that is ${CARRY_FROM.join(" or ")}; work on ${old.id} itself`,
+          );
+        }
+      }
       const now = new Date().toISOString();
-      const record = read(day) ?? {
-        version: VERSION,
-        day,
-        state: "open",
+      const day = utcDay();
+      const taken = readdirSync(dirs.items)
+        .map((f) => f.match(/^v-(\d{4}-\d{2}-\d{2})-(\d+)\.json$/))
+        .filter((m) => m && m[1] === day)
+        .map((m) => Number(m[2]));
+      const item = {
+        version: ITEM_VERSION,
+        id: itemId(day, String(Math.max(0, ...taken) + 1)),
         createdAt: now,
         updatedAt: now,
-        cands: {},
-        approval: null,
-        earlierAsks: [],
-        posts: {},
-        // Renders per game today, kept across a re-pick: each one is a view.
-        renders: {},
-        events: [],
-      };
-      expectOpen(record, "pick");
-      const old = record.cands[labelOf(label)];
-      if (old && !replace) {
-        refuse(
-          `${day} already has candidate ${label} (${old.state}, ${old.candidate.gameId}); use replace only to redo it on purpose`,
-        );
-      }
-      if (old) expectCand(old, SETTLED, "pick");
-      record.cands[label] = {
-        label,
-        state: "picked",
-        pickedAt: now,
+        gameId: candidate.gameId,
+        source,
         candidate,
         style,
         // The on-video caption style at pick time (candidate.mjs).
@@ -471,590 +456,247 @@ export const openStore = (dataDir) => {
         edl: null,
         render: null,
         check: null,
-        // Wall Game Growth's post text (copy.mjs) and the video it is for.
+        caption: null,
+        payoff: null,
         copy: null,
-        copyFor: null,
-        replaced: old ? [...(old.replaced ?? []), summarize(old)] : [],
+        state: "draft",
+        reviews: [],
+        approval: null,
+        posts: {},
+        events: [
+          {
+            utc: now,
+            what: `picked ${candidate.gameId}${source.carriedFrom ? ` (carried over from ${source.carriedFrom})` : ""}`,
+          },
+        ],
       };
-      return save(record, `${label}: picked ${candidate.gameId}`);
+      writeItem(item);
+      return item;
     },
 
     /**
-     * The director's edit decision list for a candidate: `edl` is the
-     * validated document and `text` the exact bytes the renderer will read.
-     * A new list replaces the render made from the old one.
+     * The director's edit decision list for an item: `edl` is the validated
+     * document and `text` the exact bytes the renderer will read. A new list
+     * replaces the render made from the old one, and a finished item goes
+     * back to draft: its next render and check finish it again.
      */
-    direct(day, label, { edl, text, summary }) {
-      const record = need(day);
-      expectOpen(record, "direct");
-      const cand = needCand(record, label);
-      expectCand(cand, SETTLED, "direct");
-      cand.state = "directed";
-      cand.edl = {
-        doc: edl,
-        text,
-        sha256: createHash("sha256").update(text).digest("hex"),
-        summary,
-        directedAt: new Date().toISOString(),
-      };
-      cand.render = null;
-      cand.check = null;
-      return save(
-        record,
-        `${label}: directed (edl ${cand.edl.sha256.slice(0, 12)})`,
+    direct(id, { edl, text, summary }) {
+      const sha = createHash("sha256").update(text).digest("hex");
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (item) => {
+          expectStage(item, SETTLED, "direct");
+          item.state = "draft";
+          item.edl = {
+            doc: edl,
+            text,
+            sha256: sha,
+            summary,
+            directedAt: new Date().toISOString(),
+          };
+          item.render = null;
+          item.check = null;
+          item.caption = edl.caption ?? null;
+          item.payoff = edl.payoff ?? null;
+        },
+        `directed (edl ${sha.slice(0, 12)})`,
       );
     },
 
     /**
      * A live render loads the game's replay page once, which adds one view
      * to the real game (GET /api/games/:id). A second live render of the
-     * same game on the same day is therefore refused unless it is asked for
-     * by name. A render `fromCache` reads the capture that a live render
-     * saved on the 4090: no view, so no count and no refusal.
+     * same game on the same UTC day (renders.json, over every item) is
+     * therefore refused unless it is asked for by name. A render
+     * `fromCache` reads the capture that a live render saved on the 4090:
+     * no view, so no count and no refusal.
      */
-    startRender(day, label, jobId, { force = false, fromCache = false } = {}) {
-      const record = need(day);
-      expectOpen(record, "render");
-      const cand = needCand(record, label);
-      const gameId = cand.candidate.gameId;
-      const before = record.renders[gameId] ?? 0;
-      if (!fromCache && before > 0 && !force) {
-        refuse(
-          `${gameId} was already rendered ${before} time(s) today, and each render adds one view to the real game; pass force to render it again`,
-        );
-      }
-      expectCand(cand, ["directed", "render-failed"], "render");
-      if (!fromCache) record.renders[gameId] = before + 1;
-      cand.state = "rendering";
-      cand.render = {
-        jobId,
-        fromCache,
-        requestedAt: new Date().toISOString(),
-        finishedAt: null,
-        error: null,
-        // The director's ending (edl.mjs requires one).
-        ending: cand.edl.doc.ending,
-        edlSha256: cand.edl.sha256,
-        video: null,
-        sheet: null,
-        effect: null,
-        sound: null,
-        music: null,
-        quality: null,
-      };
-      return save(
-        record,
-        `${label}: render ${jobId} queued (${fromCache ? "from the capture" : "live capture"})`,
-      );
-    },
-
-    /**
-     * The render's result. It may arrive after the day's ask opened (a
-     * candidate that the ask did not offer): it changes only that candidate.
-     */
-    finishRender(day, label, jobId, outcome) {
-      const record = need(day);
-      const cand = needCand(record, label);
-      expectCand(cand, ["rendering"], "finish render");
-      if (cand.render.jobId !== jobId) {
-        refuse(`render ${jobId} is not the current one (${cand.render.jobId})`);
-      }
-      cand.render.finishedAt = new Date().toISOString();
-      // A render asked from the capture that loaded the replay page after
-      // all (`viewed`): its view is counted here.
-      if (outcome.viewed && cand.render.fromCache) {
-        const gameId = cand.candidate.gameId;
-        record.renders[gameId] = (record.renders[gameId] ?? 0) + 1;
-      }
-      if (outcome.error) {
-        cand.state = "render-failed";
-        cand.render.error = outcome.error;
-        return save(record, `${label}: render ${jobId} failed`);
-      }
-      cand.state = "rendered";
-      cand.render.video = outcome.video;
-      cand.render.sheet = outcome.sheet;
-      cand.render.effect = outcome.effect;
-      cand.render.sound = outcome.sound;
-      cand.render.music = outcome.music;
-      cand.render.quality = outcome.quality;
-      // When and what plays (strips.mjs); null from a kit without it.
-      cand.render.timeline = outcome.timeline ?? null;
-      return save(record, `${label}: render ${jobId} done`);
-    },
-
-    /**
-     * The director looked at the contact sheet: one verdict per still, in the
-     * sheet's order, each with what the director saw. Only a candidate whose
-     * every still is ok can be offered (Nil, 2026-10-26: each FAHHH and zoom
-     * must show the save wall). The measures the app took of the render
-     * (quality.mjs) must pass too. A failed check leaves the candidate at
-     * rendered; the way on is a new edit list.
-     */
-    recordCheck(day, label, { sheetSha256, stills }) {
-      const record = need(day);
-      expectOpen(record, "check");
-      const cand = needCand(record, label);
-      expectCand(cand, ["rendered"], "check");
-      const sheet = cand.render.sheet;
-      if (cand.check && !cand.check.ok) {
-        refuse(
-          "this render already failed its check; the way on is a new edit list (direct), not a second check",
-        );
-      }
-      if (sheetSha256 !== sheet.sha256) {
-        refuse(
-          "the check is about another contact sheet than the current render's",
-        );
-      }
-      if (!Array.isArray(stills) || stills.length !== sheet.stills.length) {
-        refuse(
-          `the sheet has ${sheet.stills.length} stills; the check must give a verdict on each, in order`,
-        );
-      }
-      const verdicts = sheet.stills.map((still, i) => {
-        const v = stills[i];
-        if (v?.ply !== still.ply || v?.kind !== still.kind) {
-          refuse(
-            `verdict ${i + 1} is for ply ${v?.ply} ${v?.kind}, but still ${i + 1} is ply ${still.ply} ${still.kind}`,
-          );
-        }
-        if (typeof v.ok !== "boolean")
-          refuse(`verdict ${i + 1} needs ok: true or false`);
-        const note = String(v.note ?? "").trim();
-        if (!note)
-          refuse(`verdict ${i + 1} needs a note: what the still shows`);
-        return { ...still, ok: v.ok, note: note.slice(0, 300) };
-      });
-      const quality = cand.render.quality;
-      if (!quality) {
-        refuse(
-          "this render has no measures (it finished before the app took them); render again with force",
-        );
-      }
-      const failedMeasures = Object.entries(quality).filter(([, m]) => !m.ok);
-      const badStills = verdicts.filter((v) => !v.ok).length;
-      const ok = badStills === 0 && failedMeasures.length === 0;
-      cand.check = {
-        sheetSha256,
-        ok,
-        verdicts,
-        quality,
-        checkedAt: new Date().toISOString(),
-      };
-      if (ok) cand.state = "checked";
-      const failures = [
-        ...(badStills ? [`${badStills} of ${verdicts.length} stills`] : []),
-        ...failedMeasures.map(([name, m]) => `${name}: ${m.note}`),
-      ];
-      return save(
-        record,
-        ok
-          ? `${label}: contact sheet checked: ${verdicts.length} stills ok`
-          : `${label}: check failed: ${failures.join("; ")}`,
-      );
-    },
-
-    /**
-     * Wall Game Growth's copy block for one candidate, checked by copy.mjs,
-     * for the candidate's current video. A new block replaces the old one
-     * until the ask opens; from then on the ask names the block.
-     */
-    recordCopy(day, label, copy) {
-      const record = need(day);
-      expectOpen(record, "copy");
-      const cand = needCand(record, label);
-      expectCand(cand, ["rendered", "checked"], "copy");
-      const replaced = Boolean(cand.copy);
-      cand.copy = copy;
-      cand.copyFor = cand.render.video.sha256;
-      return save(
-        record,
-        `${label}: ${replaced ? "copy block replaced" : "copy block"} (${copy.version}, for video ${cand.copyFor.slice(0, 12)})`,
-      );
-    },
-
-    /**
-     * The crew lead opened the day's Isomux ask. `offered` is what the ask
-     * SHOWED, per label: {videoSha256, copySha256}; `modes` its posting
-     * modes and `currentModes` what the app would post with now. They must
-     * agree, or the approval would name bytes, text or a mode that the
-     * member did not see. `replacesAskId`: the same ask opened again
-     * (crew.mjs ask --reopen) while the old one is unanswered; from then on
-     * only the new id's answer counts. `modeChange`: the app's posting modes
-     * changed after the approval (e.g. a platform went live), so the
-     * approval no longer covers a post; the same video and block are asked
-     * again with the new modes, before any platform posts. `recommended`:
-     * the crew lead's pick, {label, why}, as the ask showed it, or null.
-     * @param {string} day
-     * @param {{ askId: any, modes: any, offered: any, currentModes: any,
-     *   replacesAskId?: string, modeChange?: boolean,
-     *   recommended?: { label: string, why: string } | null }} ask
-     */
-    recordAsk(
-      day,
-      {
-        askId,
-        modes,
-        offered,
-        currentModes,
-        replacesAskId,
-        modeChange,
-        recommended = null,
-      },
-    ) {
-      const record = need(day);
-      if (replacesAskId && modeChange) {
-        refuse("an ask is opened again or asked for a mode change, not both");
-      }
-      if (modeChange) {
-        expect(record, ["approved", "post-failed"], "ask for a mode change");
-        // An ok, pending or uncertain post is (or may be) public already.
-        const out = PLATFORMS.filter((p) => {
-          const post = record.posts[p];
-          return post?.ok === true || post?.pending || post?.uncertain;
-        });
-        if (out.length) {
-          refuse(
-            `${out.join(", ")} posted (or may have): a mode change is asked only before any platform posts`,
-          );
-        }
-        if (!record.approval.copy) {
-          refuse("the approval has no copy block; ask with Growth's block");
-        }
-      } else if (replacesAskId) {
-        expect(record, ["asked"], "reopen the ask");
-        if (record.approval.askId !== replacesAskId) {
-          refuse(
-            `ask ${replacesAskId} is not this day's ask (${record.approval.askId})`,
-          );
-        }
-      } else {
-        expect(record, ["open", "rejected"], "ask");
-      }
-      const labels = Object.keys(offered ?? {});
-      if (labels.length === 0) refuse("the ask offers no candidate");
-      labels.forEach(labelOf);
-      const shown = {};
-      for (const label of LABELS.filter((l) => labels.includes(l))) {
-        const cand = needCand(record, label);
-        expectCand(cand, ["checked"], "ask");
-        const stale = staleCopy(cand);
-        if (stale) refuse(stale);
-        if (offered[label]?.videoSha256 !== cand.render.video.sha256) {
-          refuse(`the ask shows another video for ${label} than its render`);
-        }
-        if (offered[label]?.copySha256 !== copySha256(cand.copy)) {
-          refuse(
-            `the ask shows another copy block for ${label} than the stored one`,
-          );
-        }
-        shown[label] = {
-          videoSha256: cand.render.video.sha256,
-          copySha256: copySha256(cand.copy),
-          copy: cand.copy,
-          gameId: cand.candidate.gameId,
-          edlSha256: cand.edl.sha256,
-          caption: cand.edl.doc.caption ?? null,
-        };
-      }
-      if (recommended !== null) {
-        const label = recommended?.label;
-        // Own labels only: a plain object also "has" constructor.
-        if (!LABELS.includes(label) || !Object.hasOwn(shown, label)) {
-          refuse(`the ask recommends ${label}, which it does not offer`);
-        }
-        const why = recommended.why;
-        if (
-          typeof why !== "string" ||
-          !why.trim() ||
-          why.length > WHY_MAX ||
-          /[\r\n]/.test(why)
-        ) {
-          refuse(
-            `a recommendation needs a reason of 1 to ${WHY_MAX} characters on one line`,
-          );
-        }
-      }
-      for (const platform of PLATFORMS) {
-        if (modes?.[platform] !== currentModes[platform]) {
-          refuse(
-            `the ask says ${platform} ${modes?.[platform]}, but the app would post ${currentModes[platform]}`,
-          );
-        }
-      }
-      if (
-        replacesAskId &&
-        offerKey(shown) !== offerKey(record.approval.offered)
-      ) {
-        refuse("a reopened ask must offer what the open ask offered");
-      }
-      // After "None today", a new ask must offer at least one video and
-      // block that Nil has not refused today: "None" refuses every pair
-      // that its ask offered (Director, 2026-10-27).
-      const rejected = record.state === "rejected" ? record.approval : null;
-      if (rejected) {
-        const refusals = [...record.earlierAsks, rejected].filter(
-          (a) => a.decision === "none",
-        );
-        const refusedIn = (o) =>
-          refusals
-            .filter((a) =>
-              Object.values(a.offered ?? {}).some(
-                (r) =>
-                  r.videoSha256 === o.videoSha256 &&
-                  r.copySha256 === o.copySha256,
-              ),
-            )
-            .map((a) => a.askId);
-        const found = Object.values(shown).map(refusedIn);
-        if (found.every((ids) => ids.length > 0)) {
-          refuse(
-            `every candidate in this ask was offered in ask ${[...new Set(found.flat())].join(" or ")}, which Nil answered with none: change a candidate, its video or its block first`,
-          );
-        }
-      }
-      // A mode change asks again for exactly what was approved.
-      const approvedAsk = modeChange ? record.approval : null;
-      // A reopened mode-change ask is still one.
-      const modeChangeOf =
-        approvedAsk?.askId ??
-        (replacesAskId ? record.approval.modeChangeOf : undefined);
-      if (approvedAsk) {
-        const was = approvedAsk.picked;
-        const key = offerKey({
-          [was]: {
-            videoSha256: approvedAsk.videoSha256,
-            copySha256: copySha256(approvedAsk.copy),
-          },
-        });
-        if (offerKey(shown) !== key) {
-          refuse(
-            `a mode-change ask offers only ${was}, with the video and the block of ask ${approvedAsk.askId}`,
-          );
-        }
-        if (PLATFORMS.every((p) => modes[p] === approvedAsk.modes[p])) {
-          refuse(
-            `the posting modes are the ones of ask ${approvedAsk.askId}: no mode change to ask for`,
-          );
-        }
-      }
-      record.state = "asked";
-      // The rejected or approved ask stays on the record.
-      const earlier = rejected ?? approvedAsk;
-      if (earlier) record.earlierAsks = [...record.earlierAsks, earlier];
-      record.approval = {
-        askId,
-        askedAt: new Date().toISOString(),
-        modes,
-        offered: shown,
-        decision: null,
-        picked: null,
-        // The picked candidate's video and block, set by the answer.
-        videoSha256: null,
-        copy: null,
-        approver: null,
-        answeredAt: null,
-        reply: null,
-        ...(replacesAskId && { replacesAskId }),
-        ...(modeChangeOf && { modeChangeOf }),
-        recommended: recommended && {
-          label: recommended.label,
-          why: recommended.why,
+    startRender(id, jobId, { force = false, fromCache = false } = {}) {
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          expectStage(item, ["directed", "render-failed"], "render");
+          const before = viewsToday(item.gameId);
+          if (!fromCache && before > 0 && !force) {
+            refuse(
+              `${item.gameId} was already rendered ${before} time(s) today, and each render adds one view to the real game; pass force to render it again`,
+            );
+          }
+          if (!fromCache) countView(item.gameId);
+          item.render = {
+            jobId,
+            fromCache,
+            requestedAt: new Date().toISOString(),
+            finishedAt: null,
+            error: null,
+            // The director's ending (edl.mjs requires one).
+            ending: item.edl.doc.ending,
+            edlSha256: item.edl.sha256,
+            video: null,
+            sheet: null,
+            effect: null,
+            sound: null,
+            music: null,
+            quality: null,
+          };
         },
-      };
-      return save(
-        record,
-        replacesAskId
-          ? `ask ${askId} opened again (was ${replacesAskId})`
-          : approvedAsk
-            ? `ask ${askId} opened for a mode change (was ${approvedAsk.askId}): ${Object.keys(shown).join(", ")}`
-            : `ask ${askId} opened: ${Object.keys(shown).join(", ")}`,
+        `render ${jobId} queued (${fromCache ? "from the capture" : "live capture"})`,
+      );
+    },
+
+    /** The render's result; only for the item's current render. */
+    finishRender(id, jobId, outcome) {
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          expectStage(item, ["rendering"], "finish render");
+          if (item.render.jobId !== jobId) {
+            refuse(
+              `render ${jobId} is not the current one (${item.render.jobId})`,
+            );
+          }
+          item.render.finishedAt = new Date().toISOString();
+          // A render asked from the capture that loaded the replay page
+          // after all (`viewed`): its view is counted here.
+          if (outcome.viewed && item.render.fromCache) countView(item.gameId);
+          if (outcome.error) {
+            item.render.error = outcome.error;
+            return;
+          }
+          item.render.video = outcome.video;
+          item.render.sheet = outcome.sheet;
+          item.render.effect = outcome.effect;
+          item.render.sound = outcome.sound;
+          item.render.music = outcome.music;
+          item.render.quality = outcome.quality;
+          // When and what plays (strips.mjs); null from a kit without it.
+          item.render.timeline = outcome.timeline ?? null;
+        },
+        `render ${jobId} ${outcome.error ? "failed" : "done"}`,
       );
     },
 
     /**
-     * Nil answered the ask; the crew lead passes the answer on. `pick` is
-     * the label Nil chose, or null for "None today". Every answer goes to
-     * the feedback log with Nil's reply, word for word.
+     * The director looked at the contact sheet: one verdict per still, in
+     * the sheet's order, each with what the director saw. Only an item
+     * whose every still is ok is finished (Nil, 2026-10-26: each FAHHH and
+     * zoom must show the save wall). The measures the app took of the
+     * render (quality.mjs) must pass too. A failed check leaves the item a
+     * rendered draft; the way on is a new edit list.
      */
-    recordAnswer(day, { askId, pick, approver, reply }) {
-      const record = need(day);
-      expect(record, ["asked"], "answer");
-      const a = record.approval;
-      if (a.askId !== askId) {
-        refuse(`ask ${askId} is not this day's ask (${a.askId})`);
-      }
-      if (pick !== null && !a.offered[pick]) {
-        refuse(
-          `the ask offered ${Object.keys(a.offered).join(", ")}, not ${pick}`,
-        );
-      }
-      if (!approver) refuse("an answer needs the approver's name");
-      Object.assign(a, {
-        decision: pick === null ? "none" : "pick",
-        picked: pick,
-        videoSha256: pick === null ? null : a.offered[pick].videoSha256,
-        copy: pick === null ? null : a.offered[pick].copy,
-        approver,
-        reply: reply ?? null,
-        answeredAt: new Date().toISOString(),
-      });
-      record.state = pick === null ? "rejected" : "approved";
-      appendFileSync(
-        feedbackLog,
-        JSON.stringify({
-          utc: a.answeredAt,
-          day,
-          askId,
-          approver,
-          picked: pick,
-          recommended: a.recommended ?? null,
-          reply: a.reply,
-          offered: Object.entries(a.offered).map(([label, o]) => ({
-            label,
-            gameId: o.gameId,
-            edlSha256: o.edlSha256,
-            videoSha256: o.videoSha256,
-            caption: o.caption,
-          })),
-        }) + "\n",
-      );
-      return save(
-        record,
-        pick === null
-          ? `none picked by ${approver}`
-          : `${pick} picked by ${approver}`,
-      );
-    },
-
-    /** The day whose record carries this ask, or null. */
-    dayOfAsk(askId) {
-      return days().find((d) => read(d)?.approval?.askId === askId) ?? null;
-    },
-
-    /**
-     * The picked candidate as one flat cycle (the day's approval and posts
-     * with the candidate's game, render and block), which is all that
-     * posting reads; null before a pick.
-     */
-    picked(day) {
-      const record = read(day);
-      const label = record?.approval?.picked;
-      if (!label) return null;
-      const { candidate, style, styleVersion, edl, render, check, copy } =
-        record.cands[label];
-      return {
-        day,
-        state: record.state,
-        label,
-        approval: record.approval,
-        posts: record.posts,
-        candidate,
-        style,
-        styleVersion,
-        edl,
-        render,
-        check,
-        copy,
-      };
-    },
-
-    /**
-     * Check that the day may post now, with these modes and this video.
-     * Returns the platforms still to post. `confirmedNotPosted` names the
-     * platforms that a person checked after an uncertain attempt.
-     */
-    checkPost(day, { modes, videoSha256, confirmedNotPosted = [] }) {
-      const record = need(day);
-      expect(record, ["approved", "post-failed"], "post");
-      const a = record.approval;
-      const cand = record.cands[a.picked];
-      if (videoSha256 !== a.videoSha256) {
-        refuse(
-          "the video on disk is not the one that was approved; render and ask again",
-        );
-      }
-      if (!a.copy) {
-        refuse(
-          "this approval has no copy block (an ask from before Growth wrote the post text); ask again with Growth's block",
-        );
-      }
-      if (!cand.copy || copySha256(cand.copy) !== copySha256(a.copy)) {
-        refuse(
-          "the copy block is not the one that was approved; ask again with it",
-        );
-      }
-      for (const platform of PLATFORMS) {
-        if (modes[platform] !== a.modes[platform]) {
-          refuse(
-            `${platform} would post ${modes[platform]}, but the approval was for ${a.modes[platform]}; ask again`,
+    recordCheck(id, { sheetSha256, stills }) {
+      let summary = "";
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          expectStage(item, ["rendered"], "check");
+          const sheet = item.render.sheet;
+          if (item.check && !item.check.ok) {
+            refuse(
+              "this render already failed its check; the way on is a new edit list (direct), not a second check",
+            );
+          }
+          if (sheetSha256 !== sheet.sha256) {
+            refuse(
+              "the check is about another contact sheet than the current render's",
+            );
+          }
+          if (!Array.isArray(stills) || stills.length !== sheet.stills.length) {
+            refuse(
+              `the sheet has ${sheet.stills.length} stills; the check must give a verdict on each, in order`,
+            );
+          }
+          const verdicts = sheet.stills.map((still, i) => {
+            const v = stills[i];
+            if (v?.ply !== still.ply || v?.kind !== still.kind) {
+              refuse(
+                `verdict ${i + 1} is for ply ${v?.ply} ${v?.kind}, but still ${i + 1} is ply ${still.ply} ${still.kind}`,
+              );
+            }
+            if (typeof v.ok !== "boolean")
+              refuse(`verdict ${i + 1} needs ok: true or false`);
+            const note = String(v.note ?? "").trim();
+            if (!note)
+              refuse(`verdict ${i + 1} needs a note: what the still shows`);
+            return { ...still, ok: v.ok, note: note.slice(0, 300) };
+          });
+          const quality = item.render.quality;
+          if (!quality) {
+            refuse(
+              "this render has no measures (it finished before the app took them); render again with force",
+            );
+          }
+          const failedMeasures = Object.entries(quality).filter(
+            ([, m]) => !m.ok,
           );
-        }
-      }
-      const todo = PLATFORMS.filter((p) => record.posts[p]?.ok !== true);
-      for (const p of todo) {
-        const last = record.posts[p];
-        if (
-          (last?.pending || last?.uncertain) &&
-          !confirmedNotPosted.includes(p)
-        ) {
-          refuse(
-            `${p} may already have this post (${last.pending ? "the app stopped during" : "no clear answer to"} its final request at ${last.at}); check the account, then post again with --confirm-not-posted ${p}`,
-          );
-        }
-      }
-      return todo;
+          const badStills = verdicts.filter((v) => !v.ok).length;
+          const ok = badStills === 0 && failedMeasures.length === 0;
+          item.check = {
+            sheetSha256,
+            ok,
+            verdicts,
+            quality,
+            checkedAt: new Date().toISOString(),
+          };
+          if (ok) item.state = "finished";
+          const failures = [
+            ...(badStills ? [`${badStills} of ${verdicts.length} stills`] : []),
+            ...failedMeasures.map(([name, m]) => `${name}: ${m.note}`),
+          ];
+          summary = ok
+            ? `contact sheet checked: ${verdicts.length} stills ok; finished`
+            : `check failed: ${failures.join("; ")}`;
+        },
+        () => summary,
+      );
     },
 
-    /** Mark the moment before a platform's final, public request. */
-    markPending(day, platform, mode) {
-      const record = need(day);
-      expect(record, ["approved", "post-failed"], "post");
-      record.posts[platform] = {
-        ok: null,
-        pending: true,
-        mode,
-        at: new Date().toISOString(),
-      };
-      return save(record, `${platform} final request sent`);
+    /**
+     * Wall Game Growth's copy block for an item's current video, checked by
+     * copy.mjs. A new block replaces the old one until Nil approves the
+     * item; a render that makes other bytes leaves it stale (reviewState).
+     */
+    recordCopy(id, copy) {
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (item) => {
+          expectStage(item, ["rendered", "checked"], "copy");
+          item.copy = {
+            block: copy,
+            sha256: copySha256(copy),
+            forVideoSha256: item.render.video.sha256,
+            storedAt: new Date().toISOString(),
+          };
+        },
+        `copy block (${copy.version})`,
+      );
     },
 
-    /** Record one platform's result, and the log row when it posted. */
-    recordPost(day, platform, result, logRow) {
-      const record = need(day);
-      expect(record, ["approved", "post-failed"], "record post");
-      record.posts[platform] = result;
-      if (result.ok && logRow) {
-        const file = result.mode === "live" ? postLog.live : postLog.dryRun;
-        appendFileSync(file, JSON.stringify(logRow) + "\n");
-      }
-      const done = PLATFORMS.every((p) => record.posts[p]?.ok === true);
-      const failed = PLATFORMS.some((p) => record.posts[p]?.ok === false);
-      if (done) record.state = "posted";
-      else if (failed) record.state = "post-failed";
-      return save(
-        record,
-        `${platform} ${result.ok ? `posted (${result.mode})` : `failed: ${result.error}`}`,
+    /**
+     * The director stops work on an item that Nil has not reviewed (a game
+     * that does not make a video). It is discarded with the director's
+     * reason as an event; Nil's discards are review actions instead.
+     */
+    drop(id, why) {
+      const reason = String(why ?? "").trim();
+      if (!reason) refuse("drop needs the reason");
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (item) => {
+          expectStage(item, SETTLED, "drop");
+          item.state = "discarded";
+        },
+        `dropped by the director: ${reason.slice(0, 300)}`,
       );
     },
   };
 };
-
-/** What the ask offered, as one comparable string: labels, videos, blocks. */
-const offerKey = (offered) =>
-  JSON.stringify(
-    Object.entries(offered ?? {})
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([label, o]) => [label, o.videoSha256, o.copySha256]),
-  );
-
-/** What is kept of a replaced candidate: enough to see that it existed. */
-const summarize = (cand) => ({
-  gameId: cand.candidate?.gameId ?? null,
-  state: cand.state,
-  edlSha256: cand.edl?.sha256 ?? null,
-});
 
 /** Version 1's day states that were a candidate's production states. */
 const V1_PRODUCTION = [
