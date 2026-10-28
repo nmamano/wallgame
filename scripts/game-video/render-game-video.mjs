@@ -3236,19 +3236,35 @@ const renderStyle = async (styleName) => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
       const fast = w.closesOnBoard !== null;
+      /*
+        A bar avoids what the ending draws; on a replay ending also the
+        pawns and walls in play, because the replay shows the capture again
+        and the bar must never cover it (Wall Game Director, 2026-10-28).
+        On gg and ko the ending covers the board, so its own boxes are all.
+      */
       const busy =
         w.asset.form === "bar"
-          ? w.avoid
+          ? [
+              ...w.avoid,
+              ...(style.ending === "replay"
+                ? w.frames.flatMap((f) => inPlay(f.state, false))
+                : []),
+            ]
           : w.frames.flatMap((f) => inPlay(f.state, fast));
       const place = fast
         ? quietestPlace(w.asset, busy)
         : placeOverlay(w.asset, busy);
       if (!place && w.asset.form === "bar") {
-        const boxes = w.avoid.map((b) =>
-          [b.x0, b.y0, b.x1, b.y1].map((v) => v.toFixed(2)).join(","),
-        );
+        // Each different box once: the ending repeats most frame to frame.
+        const boxes = [
+          ...new Set(
+            busy.map((b) =>
+              [b.x0, b.y0, b.x1, b.y1].map((v) => v.toFixed(2)).join(","),
+            ),
+          ),
+        ];
         throw new Error(
-          `${where} has no free place: the ending covers both strips of the board (its boxes, 0..1: ${boxes.join(" ")})`,
+          `${where} has no free place: the ending${style.ending === "replay" ? " and the move it replays" : ""} cover every band of the board (the boxes, 0..1: ${boxes.join(" ")})`,
         );
       }
       if (!place) {
@@ -4039,9 +4055,12 @@ const renderStyle = async (styleName) => {
             1 / FPS,
             { kind: "ending", ply: plyIndex },
           );
-          // What the ending draws, at its impact and at rest: the bar
-          // goes where none of it is.
-          if (bar && (i === impactFrame || i === endingFrames - 1)) {
+          // What the ending draws on every frame the bar shows: the bar
+          // goes where none of it is. Not only at the impact and at rest:
+          // the ko banner sweeps in and the replay's badge and stamp pop,
+          // and between two moments they cross other bands (Video Reviewer
+          // 1, review 30; Wall Game Director, 2026-10-28).
+          if (bar && i >= impactFrame) {
             liveOverlay().avoid.push(...(await endingBoxes()));
           }
         }
