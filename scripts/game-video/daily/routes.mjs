@@ -1743,7 +1743,12 @@ export const createDaily = ({
           });
           result = await instagramAuthCheck({ transport, creds: meta });
         } catch (err) {
-          result = { ok: false, error: err.message };
+          // A MetaRefused message holds only codes; any other is not shown.
+          result = {
+            ok: false,
+            error:
+              err instanceof MetaRefused ? err.message : (err?.name ?? "error"),
+          };
         }
       }
       json(res, 200, { platform, missing, ...shape, result });

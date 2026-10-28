@@ -2589,8 +2589,11 @@ describe("Instagram", () => {
     expect(steps).not.toContain("COMMIT");
   });
 
-  /** media_publish answers 400; the container check after it says `after`. */
-  const publishRefused = (after: string) => {
+  /**
+   * media_publish answers 400; the container reads after it say `after`, one
+   * by one, and the last one again.
+   */
+  const publishRefused = (...after: string[]) => {
     let publishSeen = false;
     return (req: { url: string }) => {
       if (req.url.endsWith("/media_publish")) {
@@ -2601,7 +2604,8 @@ describe("Instagram", () => {
         };
       }
       if (publishSeen && req.url.includes("fields=status_code")) {
-        return { status: 200, json: { status_code: after } };
+        const code = after.length > 1 ? after.shift() : after[0];
+        return { status: 200, json: { status_code: code } };
       }
       return instagramDryRunReply(req);
     };
@@ -2612,9 +2616,19 @@ describe("Instagram", () => {
     expect(r).toEqual({ postId: null, url: null });
   });
 
-  test("a refused media_publish whose container is FINISHED is a clear no", async () => {
-    const { e } = await run(publishRefused("FINISHED"));
-    expect(e).toBeInstanceOf(PostFailed);
+  test("a refused media_publish whose container stays FINISHED is a clear no", async () => {
+    const { e, steps } = await run(publishRefused("FINISHED"));
+    expect(e).toBeInstanceOf(NotPosted);
+    // Three reads after the refused publish (SETTLE_READS).
+    const reads = steps.slice(steps.indexOf("media_publish") + 1);
+    expect(reads.filter((s) => s.includes("fields=status_code"))).toHaveLength(
+      3,
+    );
+  });
+
+  test("an accepted publish that reads FINISHED for a moment, then PUBLISHED, is a posted Reel", async () => {
+    const { r } = await run(publishRefused("FINISHED", "PUBLISHED"));
+    expect(r).toEqual({ postId: null, url: null });
   });
 
   test("a refused media_publish with any other container state is uncertain", async () => {

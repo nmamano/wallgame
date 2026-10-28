@@ -50,14 +50,21 @@
  * after 24 hours and nobody sees it. After a 2xx from media_publish the post
  * exists: the permalink is asked for once, and a failure there leaves url
  * null, not a failed post. After a failed media_publish the container's
- * status decides (Reviewer 3, 2026-10-26): see postToInstagram.
+ * status decides, read SETTLE_READS times (Reviewer 3, 2026-10-26; Reviewer
+ * 1, 2026-10-28): see postToInstagram.
  *
  * NEXT LIVE POST CHECKLIST (for Wall Game Growth):
  * - If the container status ends in ERROR, the cycle record has the reason
  *   in the error; report it to the code owner.
  * - The R2 bucket is empty after the post: the poster deletes its copy.
  */
-import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
+import {
+  NotPosted,
+  PostFailed,
+  ok,
+  settleAfterFailedCommit,
+  sha256,
+} from "./transport.mjs";
 import { R2_HOST_SUFFIX, r2DryRunReply } from "./public-url-r2.mjs";
 import { withoutSignedUrl } from "./post-threads.mjs";
 
@@ -66,6 +73,8 @@ export const GRAPH = `https://graph.facebook.com/${VERSION}`;
 
 const STATUS_POLL_MS = 60_000;
 const STATUS_POLLS = 5;
+/** Reads of the container after a failed media_publish, 60 s apart. */
+const SETTLE_READS = 3;
 
 export const instagramDryRunReply = (req) => {
   const path = req.url.split("?")[0];
@@ -169,21 +178,34 @@ export const postToInstagram = async ({
     const mediaId = published.json?.id;
     if (!ok(published) || !mediaId) {
       // The Graph API answers most errors with HTTP 400, transient ones too,
-      // so a 400 alone does not prove that no Reel went out. The container
-      // says: PUBLISHED is a Reel whose media id is unknown, FINISHED is
-      // clearly not published, and anything else leaves the post uncertain.
+      // and an accepted publish can show FINISHED for a moment, so one read
+      // cannot prove "not posted": read the container for SETTLE_READS polls
+      // (Reviewer 1, 2026-10-28, as for Facebook and Threads).
       const failed = new PostFailed("instagram publish", published);
-      let code;
-      try {
-        const status = await containerStatus(containerId);
-        code = ok(status) ? status.json?.status_code : undefined;
-      } catch {
-        code = undefined;
+      const { outcome, state } = await settleAfterFailedCommit({
+        read: async () => {
+          const status = await containerStatus(containerId);
+          if (!ok(status)) throw new PostFailed("instagram status", status);
+          return status.json ?? {};
+        },
+        classify: ({ status_code: code }) =>
+          code === "PUBLISHED"
+            ? "posted"
+            : code === "FINISHED"
+              ? "not-posted"
+              : "unknown",
+        reads: SETTLE_READS,
+        waitMs: STATUS_POLL_MS,
+        sleep: dry ? async () => {} : sleep,
+      });
+      if (outcome === "posted") return { postId: null, url: null };
+      if (outcome === "not-posted") {
+        throw new NotPosted(
+          `${failed.message}; the container stayed FINISHED, not published`,
+        );
       }
-      if (code === "PUBLISHED") return { postId: null, url: null };
-      if (code === "FINISHED") throw failed;
       throw new Error(
-        `${failed.message}; the container ${containerId} is ${code ?? "unknown"}: look at the Instagram profile before you post again`,
+        `${failed.message}; the container ${containerId} is ${state?.status_code ?? "unknown"}: look at the Instagram profile before you post again`,
       );
     }
 
