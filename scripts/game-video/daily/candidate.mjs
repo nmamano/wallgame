@@ -29,7 +29,7 @@ import { ENDINGS, fastForwardTag } from "../edl.mjs";
  * name the new value in DIRECTOR.md. The post text has its own version, from
  * Growth (copy.mjs).
  */
-export const CAPTION_STYLE_VERSION = "wallz-lingo-1";
+export const CAPTION_STYLE_VERSION = "wallz-lingo-2";
 
 /**
  * The renderer's daily look (Wall Game Worker 2, 2026-10-26): the WallzGame
