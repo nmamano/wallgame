@@ -52,7 +52,6 @@ interface Item {
   posts: Record<string, unknown>;
   events: { what: string }[];
   posting?: unknown;
-  directorNote: { text: string; at: string } | null;
 }
 
 interface FeedbackRow {
@@ -132,7 +131,6 @@ const withItemInReview = (id = "v-2026-10-28-1") => {
       forVideoSha256: video,
       storedAt: "2026-10-27T09:10:00.000Z",
     },
-    directorNote: null,
     state: "finished",
     reviews: [],
     approval: null,
@@ -517,35 +515,9 @@ describe("withdraw: Nil takes back an approval that no slot took", () => {
   });
 });
 
-describe("the director's note", () => {
-  test("one line of at most 100 characters, set in production, frozen in review; not on Nil's page", () => {
+describe("the review page's view", () => {
+  test("Nil, 2026-10-28: the page gets only the video, its caption and what the card needs", () => {
     const { store } = withItemInReview();
-    const id = "v-2026-10-28-1";
-    // The fixture is in review: frozen.
-    expect(() => void store.setNote(id, "watch the save at 0:18")).toThrow(
-      `${id} is in review: its note is frozen`,
-    );
-    // Revised, it is a draft again: the note opens.
-    const it = store.item(id) as Item;
-    writeFileSync(
-      join(store.dirs.items, `${id}.json`),
-      JSON.stringify({ ...it, state: "draft" }),
-    );
-    for (const bad of ["", "  ", "two\nlines", "x".repeat(101)]) {
-      expect(() => void store.setNote(id, bad)).toThrow(
-        "the director's note is one line of 1 to 100 characters",
-      );
-    }
-    const out = store.setNote(id, " watch the save at 0:18 ") as Item;
-    expect(out.directorNote?.text).toBe("watch the save at 0:18");
-    expect(out.events.at(-1)?.what).toBe(
-      "director's note: watch the save at 0:18",
-    );
-    writeFileSync(
-      join(store.dirs.items, `${id}.json`),
-      JSON.stringify({ ...out, state: "finished" }),
-    );
-    // Nil, 2026-10-28: the page shows only the video and its caption.
     expect(Object.keys(viewOf(store).items[0]).sort()).toEqual([
       "approveProblem",
       "caption",
@@ -556,9 +528,7 @@ describe("the director's note", () => {
       "youtubeTitle",
     ]);
   });
-});
 
-describe("the review page's view", () => {
   test("every item in review, oldest first, with its caption: the post's X line without the music credit", () => {
     const { store } = withItemInReview("v-2026-10-28-2");
     // A second item in review, older, whose block carries a music credit.

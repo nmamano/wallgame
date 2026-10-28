@@ -249,8 +249,6 @@ const AFTER_REVIEW = {
 };
 /** Nil's notes on one action, at most. */
 const NOTES_MAX = 4000;
-/** The director's note on an item, at most (one line). */
-export const DIRECTOR_NOTE_MAX = 100;
 /** The review target when queue.json sets none (Growth, 2026-10-28). */
 export const DEFAULT_REVIEW_TARGET = 3;
 const REVIEW_TARGET_MAX = 50;
@@ -752,36 +750,6 @@ export const openStore = (dataDir) => {
     },
 
     /**
-     * The director's note on an item (Wall Game Director, 2026-10-28;
-     * e.g. "watch the save at 0:18"): one line of at most
-     * DIRECTOR_NOTE_MAX characters. Only the agents read it (`status`): the
-     * review page shows Nil only the video and its caption (Nil,
-     * 2026-10-28). Production may set it until the item is in review; it
-     * is frozen after that. A revise opens it again.
-     */
-    setNote(id, text) {
-      const line = typeof text === "string" ? text.trim() : "";
-      if (!line || /[\r\n]/.test(line) || line.length > DIRECTOR_NOTE_MAX) {
-        refuse(
-          `the director's note is one line of 1 to ${DIRECTOR_NOTE_MAX} characters`,
-        );
-      }
-      return updateItem(
-        id,
-        ["draft", "finished"],
-        (it) => {
-          if (reviewState(it) === "in-review") {
-            refuse(
-              `${id} is in review: its note is frozen (Nil may be reading it)`,
-            );
-          }
-          it.directorNote = { text: line, at: new Date().toISOString() };
-        },
-        `director's note: ${line}`,
-      );
-    },
-
-    /**
      * A new item for the director: a game from a candidate report, or the
      * game of an earlier item that Nil discarded or that posted (carry-over,
      * `source.carriedFrom`). Its id is v-<UTC day>-<n>, the day's next
@@ -825,8 +793,6 @@ export const openStore = (dataDir) => {
         caption: null,
         payoff: null,
         copy: null,
-        // The director's one line to Nil (setNote).
-        directorNote: null,
         state: "draft",
         reviews: [],
         approval: null,
@@ -1359,7 +1325,6 @@ export const itemFromDay = (record, label) => {
     caption: cand.edl?.doc?.caption ?? null,
     payoff: cand.edl?.doc?.payoff ?? null,
     copy,
-    directorNote: null,
     state,
     reviews: approved
       ? [review(approved, "approve")]
