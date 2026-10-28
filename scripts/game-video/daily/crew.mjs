@@ -24,7 +24,10 @@
  *                                  Prints its id. No post text: Wall Game
  *                                  Growth writes it (copy)
  *   pick --from ID [--style S]     a new item with the game of item ID, which
- *                                  Nil discarded (or which posted): carry-over
+ *                                  Nil discarded: carry-over. A game posts
+ *                                  once: pick refuses a game with an item
+ *                                  approved, posting, posted or post-failed,
+ *                                  and names one in work or in review
  *   storyboard --item ID [--edl F] one image of every position of the item's
  *                                  game (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
@@ -92,6 +95,10 @@
  *                                  stop an item Nil has not reviewed (a game
  *                                  that does not make a video): discarded,
  *                                  with your reason
+ *   note --item ID --text "<line>" your one line to Nil above the video on
+ *                                  /review (at most 100 characters, e.g.
+ *                                  "watch the save at 0:18"). Set it before
+ *                                  the item is in review: it is frozen there
  *   queue --review-target N        (Growth or the director) how many items
  *                                  Growth wants in review (Growth,
  *                                  2026-10-28: 3, growing to 10); the
@@ -272,6 +279,7 @@ const itemLines = (k, progress = null) => {
         ]
       : ["no copy block from Wall Game Growth yet"]),
   );
+  if (k.directorNote) lines.push(`your note to Nil: ${k.directorNote.text}`);
   for (const [p, r] of Object.entries(k.posts)) {
     lines.push(
       `${p}: ${r.ok ? `${r.mode} ${r.postId} ${r.url}` : `FAILED ${r.error ?? "pending"}`}`,
@@ -451,7 +459,7 @@ const commands = {
     console.log(`picked: ${item.id}`);
     for (const o of item.sameGame) {
       console.log(
-        `NOTE: another video of this game is ${o.id} (${o.state}); Nil could approve both`,
+        `NOTE: another video of this game is ${o.id} (${o.state}); only one of them can be approved`,
       );
     }
     console.log(await itemSummary(item.id));
@@ -540,6 +548,13 @@ const commands = {
     const why = flag("why") ?? die('drop needs --why "<reason>"');
     await app("POST", "/api/daily/drop", { item: id, why });
     console.log(`${id} dropped: ${why}`);
+  },
+
+  async note() {
+    const id = itemFlag();
+    const text = flag("text") ?? die('note needs --text "<one line>"');
+    await app("POST", "/api/daily/note", { item: id, text });
+    console.log(`${id} note: ${text}`);
   },
 
   async storyboard() {

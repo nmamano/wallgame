@@ -51,6 +51,7 @@ interface Item {
   posts: Record<string, unknown>;
   events: { what: string }[];
   posting?: unknown;
+  directorNote: { text: string; at: string } | null;
 }
 
 interface FeedbackRow {
@@ -72,9 +73,10 @@ interface View {
     copySha256: string;
     copy: string[];
     music: { track: string; credit: string | null }[];
+    directorNote: string | null;
   } | null;
   review: { count: number; target: number };
-  ready: { count: number; days: number };
+  ready: { count: number; days: number; items: { id: string }[] };
   lastReview: { stale: boolean; action: string } | null;
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
@@ -126,6 +128,7 @@ const withItemInReview = (id = "v-2026-10-28-1") => {
       forVideoSha256: video,
       storedAt: "2026-10-27T09:10:00.000Z",
     },
+    directorNote: null,
     state: "finished",
     reviews: [],
     approval: null,
@@ -279,6 +282,203 @@ describe("store.review: Nil's action on an item in review", () => {
   });
 });
 
+/** A copy of the item in review as another item of the same game. */
+const sameGameItem = (
+  store: ReturnType<typeof openStore>,
+  id: string,
+  state: string,
+) => {
+  const it = store.item("v-2026-10-28-1") as Item;
+  // An item that posts or posted has Nil's approval.
+  const approved = ["approved", "posting", "posted", "post-failed"];
+  const other = {
+    ...it,
+    id,
+    state,
+    createdAt: "2026-10-27T07:00:00.000Z",
+    approval: approved.includes(state)
+      ? {
+          videoSha256: it.render.video.sha256,
+          copySha256: it.copy.sha256,
+          by: "Nil",
+          at: "2026-10-27T10:00:00.000Z",
+        }
+      : null,
+  };
+  writeFileSync(join(store.dirs.items, `${id}.json`), JSON.stringify(other));
+};
+
+const approveAs = (
+  store: ReturnType<typeof openStore>,
+  video: string,
+  block: string,
+  id = "v-2026-10-28-1",
+) =>
+  store.review(id, {
+    action: "approve",
+    notes: "",
+    videoSha256: video,
+    copySha256: block,
+    by: "Nil",
+    memberId: REVIEWER_MEMBER_ID,
+  }) as Item;
+
+describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () => {
+  test("approve is refused while another item of the game is approved, posting, posted or post-failed; nothing is written", () => {
+    for (const [state, why] of [
+      ["approved", "withdraw and discard it first"],
+      ["posting", "only one video of a game posts; discard this one"],
+      ["posted", "only one video of a game posts; discard this one"],
+      ["post-failed", "only one video of a game posts; discard this one"],
+    ]) {
+      const { store, video, block } = withItemInReview();
+      sameGameItem(store, "v-2026-10-27-2", state);
+      expect(() => approveAs(store, video, block)).toThrow(
+        `another video of this game is ${state} (v-2026-10-27-2): ${why}`,
+      );
+      const it = store.item("v-2026-10-28-1") as Item;
+      expect([it.state, it.approval, it.reviews]).toEqual([
+        "finished",
+        null,
+        [],
+      ]);
+      expect(feedbackOf(store)).toEqual([]);
+    }
+  });
+
+  test("two videos of a game may be in work or in review together, and one of them is approved", () => {
+    for (const state of ["draft", "finished", "discarded"]) {
+      const { store, video, block } = withItemInReview();
+      sameGameItem(store, "v-2026-10-27-2", state);
+      expect(approveAs(store, video, block).state).toBe("approved");
+    }
+  });
+
+  test("pick refuses a game that posts or posted, and names an item of it in work or in review", () => {
+    const candidate = {
+      gameId: "GAME1",
+      seats: [{ name: "Guest Tuatara" }, { name: "Ruby" }],
+    };
+    const pick = (store: ReturnType<typeof openStore>) =>
+      store.pick({
+        candidate,
+        style: "daily",
+        styleVersion: "caption-1",
+        source: { report: null, reportCreatedAt: null, gameId: "GAME1" },
+      }) as { id: string; gameId: string };
+    for (const state of ["approved", "posting", "posted", "post-failed"]) {
+      const { store } = withItemInReview();
+      sameGameItem(store, "v-2026-10-27-2", state);
+      expect(() => pick(store)).toThrow(
+        `another video of GAME1 is ${state} (v-2026-10-27-2): only one video of a game posts`,
+      );
+      expect(store.items().length).toBe(2);
+    }
+    // In review (the fixture) and in work: picked, with both named.
+    const { store } = withItemInReview();
+    sameGameItem(store, "v-2026-10-27-2", "draft");
+    const item = pick(store);
+    expect(store.sameGame(item)).toEqual([
+      { id: "v-2026-10-27-2", state: "draft" },
+      { id: "v-2026-10-28-1", state: "finished" },
+    ]);
+    // A posted game is done: no carry-over from it.
+    sameGameItem(store, "v-2026-10-27-3", "posted");
+    expect(() =>
+      store.pick({
+        candidate,
+        style: "daily",
+        styleVersion: "caption-1",
+        source: { carriedFrom: "v-2026-10-27-3" },
+      }),
+    ).toThrow("another video of GAME1 is posted (v-2026-10-27-3)");
+  });
+});
+
+describe("withdraw: Nil takes back an approval that no slot took", () => {
+  test("the item is in review again with the same video and block; a feedback row, notes optional", () => {
+    const { store, video, block } = withItemInReview();
+    approveAs(store, video, block);
+    const out = store.withdraw("v-2026-10-28-1", {
+      notes: "",
+      by: "Nil",
+      memberId: REVIEWER_MEMBER_ID,
+    }) as Item;
+    expect(out.state).toBe("finished");
+    expect(out.approval).toBeNull();
+    expect(reviewState(out)).toBe("in-review");
+    expect(store.approvedQueue()).toEqual([]);
+    expect(out.reviews.map((r) => r.action)).toEqual(["approve", "withdraw"]);
+    expect(feedbackOf(store).map((r) => [r.action, r.notes])).toEqual([
+      ["approve", ""],
+      ["withdraw", ""],
+    ]);
+    // Approved again: it binds the same content.
+    expect(approveAs(store, video, block).approval?.videoSha256).toBe(video);
+  });
+
+  test("refused once a slot took the item, and for an item that is not approved", () => {
+    for (const state of ["posting", "posted", "post-failed"]) {
+      const { store } = withItemInReview();
+      sameGameItem(store, "v-2026-10-27-2", state);
+      expect(
+        () =>
+          void store.withdraw("v-2026-10-27-2", {
+            notes: "",
+            by: "Nil",
+            memberId: "x",
+          }),
+      ).toThrow(
+        `a slot took v-2026-10-27-2 already (${state}): it can no longer be withdrawn`,
+      );
+      expect((store.item("v-2026-10-27-2") as Item).state).toBe(state);
+    }
+    const { store } = withItemInReview();
+    expect(
+      () =>
+        void store.withdraw("v-2026-10-28-1", {
+          notes: "",
+          by: "Nil",
+          memberId: "x",
+        }),
+    ).toThrow("v-2026-10-28-1 is finished; only an approved item is withdrawn");
+    expect(feedbackOf(store)).toEqual([]);
+  });
+});
+
+describe("the director's note", () => {
+  test("one line of at most 100 characters, set in production, shown above the video, frozen in review", () => {
+    const { store } = withItemInReview();
+    const id = "v-2026-10-28-1";
+    // The fixture is in review: frozen.
+    expect(() => void store.setNote(id, "watch the save at 0:18")).toThrow(
+      `${id} is in review: its note is frozen`,
+    );
+    // Revised, it is a draft again: the note opens.
+    const it = store.item(id) as Item;
+    writeFileSync(
+      join(store.dirs.items, `${id}.json`),
+      JSON.stringify({ ...it, state: "draft" }),
+    );
+    for (const bad of ["", "  ", "two\nlines", "x".repeat(101)]) {
+      expect(() => void store.setNote(id, bad)).toThrow(
+        "the director's note is one line of 1 to 100 characters",
+      );
+    }
+    const out = store.setNote(id, " watch the save at 0:18 ") as Item;
+    expect(out.directorNote?.text).toBe("watch the save at 0:18");
+    expect(out.events.at(-1)?.what).toBe(
+      "director's note: watch the save at 0:18",
+    );
+    writeFileSync(
+      join(store.dirs.items, `${id}.json`),
+      JSON.stringify({ ...out, state: "finished" }),
+    );
+    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
+    expect(v.item?.directorNote).toBe("watch the save at 0:18");
+  });
+});
+
 describe("the review page's view", () => {
   test("the line next to Approve names what is live now, not a slot time", () => {
     const dry = {
@@ -314,7 +514,7 @@ describe("the review page's view", () => {
       }),
     ]);
     expect(v.review).toEqual({ count: 1, target: 5 });
-    expect(v.ready).toEqual({ count: 0, days: 0 });
+    expect(v.ready).toEqual({ count: 0, days: 0, items: [] });
     expect(v.lastReview).toBeNull();
     store.review("v-2026-10-28-1", {
       action: "approve",
@@ -326,7 +526,17 @@ describe("the review page's view", () => {
     });
     const after = viewOf(store, { modes: {}, nowMs });
     expect(after.item).toBeNull();
-    expect(after.ready).toEqual({ count: 1, days: 1 });
+    expect(after.ready).toMatchObject({
+      count: 1,
+      days: 1,
+      items: [
+        {
+          id: "v-2026-10-28-1",
+          players: ["Guest Tuatara", "Ruby"],
+          caption: "bro thought he was safe",
+        },
+      ],
+    });
     // Today's review, read three days later: over 48 h, marked.
     expect(after.lastReview?.stale).toBe(true);
     expect(after.lastReview?.action).toBe("approve");
@@ -479,6 +689,47 @@ describe("the review routes", () => {
     expect(readPostLog(store.feedbackLog)).toHaveLength(1);
   });
 
+  test("Withdraw on a READY item: only Nil, back in review, the director told; the page lists the READY items", async () => {
+    const { dir, store, video, block } = withItemInReview();
+    const { call, sent } = await serve(dir);
+    approveAs(store, video, block);
+    const view = JSON.parse(
+      (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
+    ) as View;
+    expect(view.item).toBeNull();
+    expect(view.ready.items.map((r) => r.id)).toEqual(["v-2026-10-28-1"]);
+    const path = "/api/review/v-2026-10-28-1/withdraw";
+    const other = await call(path, {
+      method: "POST",
+      member: "someone-else",
+      body: { notes: "" },
+    });
+    expect(other.status).toBe(403);
+    const res = await call(path, {
+      method: "POST",
+      member: REVIEWER_MEMBER_ID,
+      body: { notes: "mis-tap" },
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.text)).toEqual({
+      id: "v-2026-10-28-1",
+      state: "finished",
+      directorTold: true,
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).toContain("WITHDRAW on v-2026-10-28-1");
+    expect(sent[0].text).toContain('Notes, verbatim: "mis-tap"');
+    expect(sent[0].text).toContain("in review again");
+    // Twice: refused, nothing more is sent.
+    const again = await call(path, {
+      method: "POST",
+      member: REVIEWER_MEMBER_ID,
+      body: { notes: "" },
+    });
+    expect(again.status).toBe(409);
+    expect(sent).toHaveLength(1);
+  });
+
   test("crew.mjs cannot reach the review actions: it never sends the member header", () => {
     const crew = readFileSync(join(import.meta.dir, "crew.mjs"), "utf8");
     expect(crew).not.toMatch(/x-isomux-member/i);
@@ -545,20 +796,8 @@ describe("what the director reads", () => {
 
   test("another live video of the same game is named, so Nil does not approve both", () => {
     const { store } = withItemInReview("v-2026-10-28-1");
-    const other = {
-      ...(store.item("v-2026-10-28-1") as object),
-      id: "v-2026-10-28-2",
-      state: "approved",
-    };
-    writeFileSync(
-      join(store.dirs.items, "v-2026-10-28-2.json"),
-      JSON.stringify(other),
-    );
-    const gone = { ...other, id: "v-2026-10-28-3", state: "discarded" };
-    writeFileSync(
-      join(store.dirs.items, "v-2026-10-28-3.json"),
-      JSON.stringify(gone),
-    );
+    sameGameItem(store, "v-2026-10-28-2", "approved");
+    sameGameItem(store, "v-2026-10-28-3", "discarded");
     const v = reviewView(store, { modes: {}, nowMs: Date.now() }) as {
       item: { id: string; sameGame: { id: string; state: string }[] };
     };

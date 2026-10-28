@@ -1013,6 +1013,31 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
     ).toBe("the approved copy block of v-2026-10-20-A has no Threads line");
   });
 
+  test("the app stopped during the final request (pending): no post until a person confirms", () => {
+    const item = {
+      id: "v-2026-10-20-A",
+      state: "posting",
+      approval: {
+        videoSha256: "v",
+        copySha256: copySha256(COPY),
+        by: "Nil",
+        at: "t",
+      },
+      copy: { block: COPY },
+      posts: {
+        x: { ok: false, pending: true, at: "2026-10-28T12:00:00.000Z" },
+      },
+    };
+    expect(
+      postProblem(item, "x", { videoSha256: "v", confirmedNotPosted: false }),
+    ).toBe(
+      "x may already have v-2026-10-20-A (the app stopped during its final request at 2026-10-28T12:00:00.000Z); check the account, then post again with the confirmation that it is not there",
+    );
+    expect(
+      postProblem(item, "x", { videoSha256: "v", confirmedNotPosted: true }),
+    ).toBeNull();
+  });
+
   describe("the TikTok refresh after a connect", () => {
     /**
      * An approved item with TikTok connected and live, while the env still
@@ -2496,19 +2521,29 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   expect((await call<LogRow[]>(base, "/api/daily/post-log")).body).toEqual([]);
   expect(readPostLog(daily.store.postLog.dryRun)).toHaveLength(7);
 
+  // A game posts once (Wall Game Director, 2026-10-28): it is not picked
+  // again, and each item from here on has its own game. (No poster runs
+  // here, so the first item is still approved.)
+  expect((await post("pick", { report: REPORT })).body.error).toBe(
+    `another video of TESTGAME1 is approved (${id}): only one video of a game posts; Nil may withdraw it on /review`,
+  );
+  const game = (gameId: string) => ({
+    report: { ...REPORT, ranked: [{ ...REPORT.ranked[0], gameId }] },
+  });
   // The next item's default reads the log and is the next ending.
-  const next = (await post("pick", { report: REPORT })).body.id;
+  const next = (await post("pick", game("TESTGAME2"))).body.id;
   // The director sees the last posted track, to pick another.
   expect((await dailyState(base)).lastMusic).toEqual(["deja-vus"]);
-  expect((await directOver(base, next)).status).toBe(200);
-  // The 4090 has the game's capture now: no view, no force.
+  expect((await directOver(base, next, { gameId: "TESTGAME2" })).status).toBe(
+    200,
+  );
   let second = (await renderAndWait(base, next)).it;
   expect(stage(second)).toBe("rendered");
   expect(second.render?.ending).toBe("gg");
 
   // The second item is only rendered: an unapproved video takes no ending
   // from a third.
-  const third = (await post("pick", { report: REPORT })).body.id;
+  const third = (await post("pick", game("TESTGAME3"))).body.id;
   expect((await dailyState(base)).suggestedEnding).toBe("gg");
   // Nil approves the second video, which waits to post: now its ending is
   // taken.
@@ -2528,11 +2563,14 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   approveItem(daily.store, next);
   expect((await dailyState(base)).suggestedEnding).toBe("ko");
   // A list with no event has no still to check, so it is refused.
-  expect((await directOver(base, third, { events: [] })).status).toBe(409);
+  expect(
+    (await directOver(base, third, { gameId: "TESTGAME3", events: [] })).status,
+  ).toBe(409);
   // The most events edl.mjs allows: 40 stills come back whole.
   expect(
     (
       await directOver(base, third, {
+        gameId: "TESTGAME3",
         events: Array.from({ length: 40 }, (_, ply) => ({
           ply,
           kind: "zoom",
@@ -2550,7 +2588,7 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
 
   // The music the video played must be the list's cues, each a track the
   // site has.
-  const fourth = (await post("pick", { report: REPORT })).body.id;
+  const fourth = (await post("pick", game("TESTGAME4"))).body.id;
   const renderWith = async (
     played: { fromPly: number; track: string; at: number }[],
   ) => {
@@ -2558,11 +2596,11 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     return (await renderAndWait(base, fourth)).it;
   };
   const one = (track: string) => [{ fromPly: 0, track, at: 0 }];
-  await directOver(base, fourth);
+  await directOver(base, fourth, { gameId: "TESTGAME4" });
   let wrong = await renderWith(one("tea-for-two"));
   expect(stage(wrong)).toBe("render-failed");
   expect(wrong.render?.error).toMatch(/music tea-for-two, not deja-vus/);
-  await directOver(base, fourth);
+  await directOver(base, fourth, { gameId: "TESTGAME4" });
   wrong = await renderWith(one("elevator-jazz"));
   expect(wrong.render?.error).toMatch(/music elevator-jazz/);
 }, 30_000);
@@ -2716,7 +2754,7 @@ test("a carry-over: a new item with the game of one that was dropped", async () 
   // draft or a finished item itself.
   const carry = (from: string) => crew(base, "pick", "--from", from);
   expect(carry(first).err).toContain(
-    `${first} is draft: carry over only an item that is discarded or posted`,
+    `${first} is draft: carry over only an item that is discarded;`,
   );
   await ok("/api/daily/direct", {
     item: first,

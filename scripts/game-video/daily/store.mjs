@@ -16,7 +16,8 @@
  * - finished: the director's check passed (every still ok). It is IN REVIEW
  *   when Growth's block is for its current video (reviewState); this too is
  *   derived, so a new render leaves review by itself.
- * - approved, discarded, draft again (revise): Nil's review actions.
+ * - approved, discarded, draft again (revise): Nil's review actions; an
+ *   approved item that no slot took yet goes back to finished (withdraw).
  * - posting, posted, post-failed and posts{}: the poster's alone.
  *
  * Every step checks the state it starts from. The checks are the point of
@@ -98,6 +99,15 @@ export const reviewState = (item) => {
     (item.render?.finishedAt > revise.at && item.copy?.storedAt > revise.at);
   return fresh && afterRevise ? "in-review" : "waiting-copy";
 };
+
+/**
+ * The states of an item that posts, may post or did post. Only ONE video of
+ * a game ever posts (Wall Game Director, 2026-10-28): Nil cannot approve an
+ * item, and the director cannot pick a game, while another item of the
+ * game is in one of these. Two videos of a game may be in work or in review
+ * together (an A/B of edits).
+ */
+export const ONE_POST_STATES = ["approved", "posting", "posted", "post-failed"];
 
 /** Item states that a post may come from: the poster's own steps. */
 const POSTABLE = ["approved", "posting"];
@@ -216,6 +226,8 @@ const AFTER_REVIEW = {
 };
 /** Nil's notes on one action, at most. */
 const NOTES_MAX = 4000;
+/** The director's note on an item, at most (one line). */
+export const DIRECTOR_NOTE_MAX = 100;
 /** The review target when queue.json sets none (Growth, 2026-10-28). */
 export const DEFAULT_REVIEW_TARGET = 3;
 const REVIEW_TARGET_MAX = 50;
@@ -227,8 +239,11 @@ const blockSha256 = copySha256;
 const fileSha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
 
-/** The states of an item whose game another item may carry over. */
-const CARRY_FROM = ["discarded", "posted"];
+/**
+ * The states of an item whose game another item may carry over: a posted
+ * game is done (ONE_POST_STATES).
+ */
+const CARRY_FROM = ["discarded"];
 
 export const openStore = (dataDir) => {
   const root = join(dataDir, "daily");
@@ -451,6 +466,21 @@ export const openStore = (dataDir) => {
     return null;
   };
 
+  /** The other items of `item`'s game that are not discarded. */
+  const sameGame = (item) =>
+    items()
+      .filter(
+        (o) =>
+          o.gameId === item.gameId &&
+          o.id !== item.id &&
+          o.state !== "discarded",
+      )
+      .map((o) => ({ id: o.id, state: o.state }));
+
+  /** The other item of the game that posts, may post or did post, or null. */
+  const postOfGame = (item) =>
+    sameGame(item).find((o) => ONE_POST_STATES.includes(o.state)) ?? null;
+
   return {
     dirs,
     postLog,
@@ -502,19 +532,10 @@ export const openStore = (dataDir) => {
     staleCopy,
 
     /**
-     * The other items of the same game that are not discarded: two videos
-     * of one game could both be approved and post (Video Reviewer 2,
-     * 2026-10-28), so pick and the review page name them.
+     * The other items of the same game that are not discarded: pick and the
+     * review page name them. Only one of them may post (ONE_POST_STATES).
      */
-    sameGame: (item) =>
-      items()
-        .filter(
-          (o) =>
-            o.gameId === item.gameId &&
-            o.id !== item.id &&
-            o.state !== "discarded",
-        )
-        .map((o) => ({ id: o.id, state: o.state })),
+    sameGame,
 
     /** Items in review, oldest first: the order Nil reviews them in. */
     inReview: () =>
@@ -591,6 +612,13 @@ export const openStore = (dataDir) => {
               `${id} has a new copy block since the page showed it; reload the page`,
             );
           }
+          // Only one video of a game posts.
+          const other = action === "approve" ? postOfGame(it) : null;
+          if (other) {
+            refuse(
+              `another video of this game is ${other.state} (${other.id}): ${other.state === "approved" ? "withdraw and discard it first" : "only one video of a game posts; discard this one"}`,
+            );
+          }
           // The bytes Nil approves are the bytes that post: the file must
           // still be the record's video.
           if (
@@ -629,12 +657,106 @@ export const openStore = (dataDir) => {
     },
 
     /**
+     * Nil takes back an approval that no slot took yet (Wall Game Director,
+     * 2026-10-28: Approve is one tap, so a mis-tap on a phone must be
+     * fixable without a confirm dialog). The item is finished again with
+     * the same video and block, so it is in review again. Notes are
+     * optional. A feedback row like the other actions. Once a slot took
+     * the item (posting, posted, post-failed), it is refused.
+     */
+    withdraw(id, { notes, by, memberId }) {
+      if (typeof notes !== "string" || notes.length > NOTES_MAX) {
+        refuse(`the notes are a text of at most ${NOTES_MAX} characters`);
+      }
+      const now = needItem(id).state;
+      if (now !== "approved") {
+        refuse(
+          ["posting", "posted", "post-failed"].includes(now)
+            ? `a slot took ${id} already (${now}): it can no longer be withdrawn`
+            : `${id} is ${now}; only an approved item is withdrawn`,
+        );
+      }
+      let row = null;
+      const item = updateItem(
+        id,
+        ["approved"],
+        (it) => {
+          const at = new Date().toISOString();
+          const { videoSha256, copySha256 } = it.approval;
+          it.reviews = [
+            ...it.reviews,
+            {
+              action: "withdraw",
+              notes,
+              by,
+              memberId,
+              at,
+              videoSha256,
+              copySha256,
+            },
+          ];
+          it.state = "finished";
+          it.approval = null;
+          row = {
+            utc: at,
+            itemId: id,
+            gameId: it.gameId,
+            edlSha256: it.edl.sha256,
+            videoSha256,
+            copySha256,
+            action: "withdraw",
+            notes,
+            by,
+          };
+        },
+        `withdraw by ${by}`,
+      );
+      appendFileSync(feedbackLog, JSON.stringify(row) + "\n");
+      return item;
+    },
+
+    /**
+     * The director's note to Nil on an item, shown above its video on
+     * /review (Wall Game Director, 2026-10-28; e.g. "watch the save at
+     * 0:18"): one line of at most DIRECTOR_NOTE_MAX characters. Production
+     * may set it until the item is in review; it is frozen after that, so
+     * Nil reviews what he reads. A revise opens it again.
+     */
+    setNote(id, text) {
+      const line = typeof text === "string" ? text.trim() : "";
+      if (!line || /[\r\n]/.test(line) || line.length > DIRECTOR_NOTE_MAX) {
+        refuse(
+          `the director's note is one line of 1 to ${DIRECTOR_NOTE_MAX} characters`,
+        );
+      }
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (it) => {
+          if (reviewState(it) === "in-review") {
+            refuse(
+              `${id} is in review: its note is frozen (Nil may be reading it)`,
+            );
+          }
+          it.directorNote = { text: line, at: new Date().toISOString() };
+        },
+        `director's note: ${line}`,
+      );
+    },
+
+    /**
      * A new item for the director: a game from a candidate report, or the
      * game of an earlier item that Nil discarded or that posted (carry-over,
      * `source.carriedFrom`). Its id is v-<UTC day>-<n>, the day's next
      * number (an item migrated from a day file has a letter instead).
      */
     pick({ candidate, style, styleVersion, source }) {
+      const posts = postOfGame({ gameId: candidate.gameId, id: null });
+      if (posts) {
+        refuse(
+          `another video of ${candidate.gameId} is ${posts.state} (${posts.id}): only one video of a game posts${posts.state === "approved" ? "; Nil may withdraw it on /review" : ""}`,
+        );
+      }
       if (source.carriedFrom !== undefined) {
         const old = needItem(source.carriedFrom);
         if (!CARRY_FROM.includes(old.state)) {
@@ -666,6 +788,8 @@ export const openStore = (dataDir) => {
         caption: null,
         payoff: null,
         copy: null,
+        // The director's one line to Nil (setNote).
+        directorNote: null,
         state: "draft",
         reviews: [],
         approval: null,
@@ -1198,6 +1322,7 @@ export const itemFromDay = (record, label) => {
     caption: cand.edl?.doc?.caption ?? null,
     payoff: cand.edl?.doc?.payoff ?? null,
     copy,
+    directorNote: null,
     state,
     reviews: approved
       ? [review(approved, "approve")]

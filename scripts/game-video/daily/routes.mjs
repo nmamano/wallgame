@@ -21,6 +21,8 @@
  *   crew.mjs copy    -> POST /api/daily/copy     Wall Game Growth's copy block
  *                       for the item's video (copy.mjs)
  *   crew.mjs drop    -> POST /api/daily/drop     the director stops an item
+ *   crew.mjs note    -> POST /api/daily/note     the director's line to Nil
+ *                       above the video on /review
  *
  * A finished item with a fresh block is in review: Nil approves, discards
  * or revises it on /review. An approved item posts at a slot (Wall Game
@@ -1432,6 +1434,12 @@ export const createDaily = ({
     "POST /api/daily/drop": async (req, res) => {
       const body = await readJson(req);
       json(res, 200, store.drop(itemOf(body.item).id, body.why));
+    },
+
+    /** {item, text}: the director's one line to Nil (store.setNote). */
+    "POST /api/daily/note": async (req, res) => {
+      const body = await readJson(req);
+      json(res, 200, store.setNote(itemOf(body.item).id, body.text));
     },
 
     /** {item, force?, live?} */

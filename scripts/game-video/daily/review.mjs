@@ -10,9 +10,17 @@
  *               (required); it is in review again only with a new render
  *               AND a new block
  *
+ * Below it, the READY items (approved, no slot took them yet), each with
+ *
+ *   Withdraw -> in review again (Nil's notes optional): Approve is one tap,
+ *               so a mis-tap is undone without a confirm dialog
+ *
+ * Only one video of a game posts: Approve is refused while another item of
+ * the game is approved, posting, posted or post-failed (ONE_POST_STATES).
+ *
  * POST /api/review/<id>/approve|discard|revise takes {notes, videoSha256,
  * copySha256}: the hashes of what the page showed, so Nil approves what he
- * saw, not a newer render. Every action goes to the feedback log, and the
+ * saw, not a newer render. POST /api/review/<id>/withdraw takes {notes}. Every action goes to the feedback log, and the
  * app tells the director AT ONCE (Nil, 2026-10-28: "the feedback i enter in
  * the app should go straight to director"). A failed message does not undo
  * the action: the row is stored and the page says "Director not told".
@@ -38,7 +46,7 @@ export const REVIEWER_MEMBER_ID = "6f26107a";
 
 /** POST /api/review/<item id>/<action>. */
 export const REVIEW_ACTION_PATH =
-  /^\/api\/review\/(v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+)\/(approve|discard|revise)$/;
+  /^\/api\/review\/(v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+)\/(approve|discard|revise|withdraw)$/;
 
 /** One post every 24 h (Growth's cadence), so n approved items are n days. */
 const POSTS_PER_DAY = 1;
@@ -97,6 +105,8 @@ export const reviewView = (store, { modes, nowMs }) => {
       gameId: next.gameId,
       players: next.candidate.seats.map((s) => s.name),
       caption: next.caption,
+      // The director's one line to Nil (store.setNote), frozen in review.
+      directorNote: next.directorNote?.text ?? null,
       payoff: next.payoff?.text ?? null,
       videoSha256: next.render.video.sha256,
       copySha256: next.copy.sha256,
@@ -118,6 +128,13 @@ export const reviewView = (store, { modes, nowMs }) => {
     ready: {
       count: counts.approved,
       days: counts.approved / POSTS_PER_DAY,
+      // In the order they post; each one Nil may withdraw.
+      items: store.approvedQueue().map((it) => ({
+        id: it.id,
+        players: it.candidate.seats.map((s) => s.name),
+        caption: it.caption,
+        approvedAt: it.approval.at,
+      })),
     },
     lastReview: last && {
       at: last.at,
@@ -136,11 +153,14 @@ export const directorText = (item, action, notes) =>
     `REVIEW: Nil chose ${action.toUpperCase()} on ${item.id} (game ${item.gameId}).`,
     `Notes, verbatim: ${notes ? JSON.stringify(notes) : "(none)"}`,
     `Video: ${item.render.video.path}`,
-    action === "revise"
-      ? `It is a draft again: make a new render, then get a new block from Wall Game Growth (both after this revise).`
-      : action === "approve"
-        ? "It is approved and posts at the next slot."
-        : "It is discarded; carry its game over to a new item only if Nil's notes ask for it.",
+    {
+      revise: `It is a draft again: make a new render, then get a new block from Wall Game Growth (both after this revise).`,
+      approve: "It is approved and posts at the next slot.",
+      discard:
+        "It is discarded; carry its game over to a new item only if Nil's notes ask for it.",
+      withdraw:
+        "Nil took back his approval: it is in review again, with the same video and block. Nothing posts.",
+    }[action],
   ].join("\n");
 
 /** A refusal with its HTTP status (403: who; 409: the item's state). */
@@ -160,7 +180,7 @@ export class ReviewRefused extends Error {
  * @param {ReturnType<import("./store.mjs").openStore>} deps.store
  * @param {{ id: string, name: string } | null} deps.member
  * @param {string} deps.id
- * @param {"approve" | "discard" | "revise"} deps.action
+ * @param {"approve" | "discard" | "revise" | "withdraw"} deps.action
  * @param {{ notes?: unknown, videoSha256?: unknown, copySha256?: unknown }} deps.body
  * @param {(targetAgentId: string, text: string) => Promise<void>} deps.send
  * @param {{ warn: (m: string) => void }} [deps.log]
@@ -186,14 +206,17 @@ export const reviewAction = async ({
   const notes = typeof body.notes === "string" ? body.notes : "";
   let item;
   try {
-    item = store.review(id, {
-      action,
-      notes,
-      videoSha256: body.videoSha256,
-      copySha256: body.copySha256,
-      by: member.name,
-      memberId: member.id,
-    });
+    item =
+      action === "withdraw"
+        ? store.withdraw(id, { notes, by: member.name, memberId: member.id })
+        : store.review(id, {
+            action,
+            notes,
+            videoSha256: body.videoSha256,
+            copySha256: body.copySha256,
+            by: member.name,
+            memberId: member.id,
+          });
   } catch (err) {
     if (err instanceof StepRefused) throw new ReviewRefused(409, err.message);
     throw err;
@@ -236,12 +259,18 @@ export const REVIEW_PAGE = `<!doctype html>
   button:disabled { opacity: 0.5; cursor: default; }
   .approve { background: #16a34a; color: #fff; } .revise { background: #ca8a04; color: #1a1005; }
   .discard { background: #475569; color: #fff; }
+  .note { background: #1e3a5f; border-color: #3b82f6; font-weight: 600; }
+  h2 { font-size: 16px; margin: 18px 0 8px; }
+  .ready { display: flex; align-items: center; gap: 10px; }
+  .ready div { flex: 1; }
+  .withdraw { flex: 0 0 auto; padding: 8px 12px; font-size: 14px; background: #334155; color: #fff; }
 </style></head>
 <body><main>
   <h1>Wall Game videos: review</h1>
   <div id="counts" class="counts"></div>
   <div id="result"></div>
   <div id="item"></div>
+  <div id="ready"></div>
 <script>
   // NOTHING HERE MAY USE innerHTML: player names, captions and notes are untrusted.
   const $ = (id) => document.getElementById(id);
@@ -271,6 +300,7 @@ export const REVIEW_PAGE = `<!doctype html>
     for (const o of it.sameGame) head.append(el("div", "err", "Another video of this game: " + o.id + " (" + o.state + ")"));
     const video = el("video"); video.controls = true; video.playsInline = true;
     video.src = "/api/daily/video?item=" + encodeURIComponent(it.id);
+    if (it.directorNote) box.append(el("div", "box note", "Director: " + it.directorNote));
     const copy = el("div", "box");
     copy.append(el("div", "muted", "Post text by Wall Game Growth (" + it.copyVersion + "), word for word:"));
     for (const l of it.copy) copy.append(el("div", "cap", l));
@@ -290,6 +320,24 @@ export const REVIEW_PAGE = `<!doctype html>
     }
     act.append(row);
     box.append(video, head, copy, act);
+  };
+
+  const showReady = (v) => {
+    const box = $("ready"); box.replaceChildren();
+    if (!v.ready.items.length) return;
+    box.append(el("h2", null, "Ready to post (oldest first)"));
+    const notes = el("textarea"); notes.placeholder = "Notes for the director (optional for Withdraw)";
+    notes.style.minHeight = "40px";
+    const buttons = [];
+    for (const r of v.ready.items) {
+      const row = el("div", "box ready");
+      row.append(el("div", null, r.id + ": " + r.players.join(" vs ") + (r.caption ? " / " + r.caption : "")));
+      const b = el("button", "withdraw", "Withdraw");
+      b.disabled = !v.canReview;
+      b.onclick = () => send(r, "withdraw", notes.value, buttons);
+      buttons.push(b); row.append(b); box.append(row);
+    }
+    box.append(notes);
   };
 
   const send = async (it, action, notes, buttons) => {
@@ -312,7 +360,7 @@ export const REVIEW_PAGE = `<!doctype html>
 
   const load = async () => {
     const v = await (await fetch("/api/review/queue")).json();
-    showCounts(v); showItem(v);
+    showCounts(v); showItem(v); showReady(v);
   };
   load();
 </script></main></body></html>`;
