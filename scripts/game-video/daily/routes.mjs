@@ -55,6 +55,7 @@ import {
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pipeline } from "node:stream";
 import {
   openStore,
   readPostLog,
@@ -1111,7 +1112,9 @@ export const createDaily = ({
       ...(range && { "content-range": `bytes ${start}-${end}/${size}` }),
     });
     if (size === 0) return res.end();
-    createReadStream(path, { start, end }).pipe(res);
+    // pipeline, not pipe: a browser aborts a ranged request at each seek,
+    // and pipe would keep the file open; a read error would crash the app.
+    pipeline(createReadStream(path, { start, end }), res, () => {});
   };
 
   const html = (res, code, body) => {
