@@ -10,13 +10,17 @@
  *              "the baby cry and the initial shotgun, are a bit too loud").
  *   safeArea   each box the renderer measured in the page (board, caption,
  *              race counter, goal line) lies inside SAFE_AREA (edl.mjs),
- *              where the apps paint no buttons or captions (audit item 3).
+ *              where the apps paint no buttons or captions (audit item 3);
+ *              the players strip lies inside STRIP_AREA, the band under it
+ *              (edl.mjs areaOf).
  *   captionLines
  *              each caption beat (the caption and the payoff) is one line as
  *              the page wraps it (stage.html __captionText): a two-line beat
  *              makes the board smaller for the whole video (DIRECTOR.md,
  *              measured 2026-10-26: 720 px against 785 px).
  */
+import { SAFE_AREA, STRIP_AREA, areaOf } from "../edl.mjs";
+
 /**
  * The loudness rule (Wall Game Director, 2026-10-26, rule A1). A meme
  * sound fails when its own loudest 400 ms in the final mix is over
@@ -77,6 +81,12 @@ export const loudnessVerdict = (report) => {
       };
 };
 
+/** How a note names each area a box can be held to. */
+const AREA_NAMES = new Map([
+  [SAFE_AREA, "the safe area"],
+  [STRIP_AREA, "the strip area"],
+]);
+
 const inside = (box, area) =>
   box.x >= area.x &&
   box.y >= area.y &&
@@ -89,13 +99,14 @@ const span = (b) => `x ${b.x}-${b.x + b.w}, y ${b.y}-${b.y + b.h}`;
  * The safe-area verdict on the layout a render reported:
  * `{frame: {w, h}, boxes: {name: {x, y, w, h}}}`, measured in the page at
  * rest. Every daily render reports one, with the board in it; a render
- * without one fails, so a renderer that stops measuring cannot pass.
+ * without one fails, so a renderer that stops measuring cannot pass. Each
+ * box is held to its own area (areaOf): the players strip to STRIP_AREA,
+ * every other box to SAFE_AREA.
  * @param {{ frame?: { w: number, h: number },
  *           boxes?: Record<string, { x: number, y: number, w: number, h: number }> } | undefined} layout
  * @param {{ w: number, h: number }} frame
- * @param {{ x: number, y: number, w: number, h: number }} area
  */
-export const safeAreaVerdict = (layout, frame, area) => {
+export const safeAreaVerdict = (layout, frame) => {
   const fail = (note) => ({ ok: false, note });
   if (!layout?.boxes?.board) return fail("the render reported no layout");
   if (layout.frame?.w !== frame.w || layout.frame?.h !== frame.h) {
@@ -103,19 +114,32 @@ export const safeAreaVerdict = (layout, frame, area) => {
       `the frame is ${layout.frame?.w}x${layout.frame?.h}, not ${frame.w}x${frame.h}`,
     );
   }
-  const outside = Object.entries(layout.boxes).filter(
-    ([, box]) => !inside(box, area),
-  );
-  return outside.length === 0
-    ? {
-        ok: true,
-        note: `${Object.keys(layout.boxes).join(", ")} inside the safe area`,
-      }
-    : fail(
-        outside
-          .map(([name, box]) => `${name} (${span(box)}) is outside`)
-          .join("; ") + ` the safe area (${span(area)})`,
-      );
+  const boxes = Object.entries(layout.boxes);
+  const outside = boxes.filter(([name, box]) => !inside(box, areaOf(name)));
+  if (outside.length) {
+    return fail(
+      outside
+        .map(([name, box]) => {
+          const area = areaOf(name);
+          return `${name} (${span(box)}) is outside ${AREA_NAMES.get(area)} (${span(area)})`;
+        })
+        .join("; "),
+    );
+  }
+  // One clause per area, in the order its first box was measured.
+  const byArea = new Map();
+  for (const [name] of boxes) {
+    const area = areaOf(name);
+    byArea.set(area, [...(byArea.get(area) ?? []), name]);
+  }
+  return {
+    ok: true,
+    note: [...byArea]
+      .map(
+        ([area, names]) => `${names.join(", ")} inside ${AREA_NAMES.get(area)}`,
+      )
+      .join("; "),
+  };
 };
 
 /**

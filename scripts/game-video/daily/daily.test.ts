@@ -83,7 +83,7 @@ import {
   captionLinesVerdict,
   MAX_MEME_LUFS,
 } from "./quality.mjs";
-import { FRAME, SAFE_AREA, validateEdl } from "../edl.mjs";
+import { FRAME, STRIP_AREA, validateEdl } from "../edl.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -1109,7 +1109,7 @@ describe("the app's measures of a render", () => {
     const board = { x: 81, y: 380, w: 918, h: 852 };
     const caption = { x: 81, y: 285, w: 918, h: 60 };
     const layout = { frame: { w: 1080, h: 1920 }, boxes: { board, caption } };
-    expect(safeAreaVerdict(layout, FRAME, SAFE_AREA)).toEqual({
+    expect(safeAreaVerdict(layout, FRAME)).toEqual({
       ok: true,
       note: "board, caption inside the safe area",
     });
@@ -1118,21 +1118,54 @@ describe("the app's measures of a render", () => {
       ...layout,
       boxes: { board: { x: 16, y: 436, w: 1048, h: 1048 } },
     };
-    const v = safeAreaVerdict(low, FRAME, SAFE_AREA);
+    const v = safeAreaVerdict(low, FRAME);
     expect(v.ok).toBe(false);
     expect(v.note).toBe(
       "board (x 16-1064, y 436-1484) is outside the safe area (x 65-1015, y 269-1248)",
     );
-    expect(safeAreaVerdict(undefined, FRAME, SAFE_AREA).note).toBe(
+    expect(safeAreaVerdict(undefined, FRAME).note).toBe(
       "the render reported no layout",
     );
     expect(
-      safeAreaVerdict(
-        { ...layout, frame: { w: 1080, h: 1080 } },
-        FRAME,
-        SAFE_AREA,
-      ).note,
+      safeAreaVerdict({ ...layout, frame: { w: 1080, h: 1080 } }, FRAME).note,
     ).toBe("the frame is 1080x1080, not 1080x1920");
+  });
+
+  test("the players strip lies in the strip area under the safe area; no other box may", () => {
+    const board = { x: 81, y: 380, w: 918, h: 852 };
+    // The strip of ec1109cb's renders, about y 1248-1351.
+    const strip = { x: 140, y: 1248, w: 800, h: 103 };
+    interface Box {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }
+    const layout = (boxes: Record<string, Box>) => ({
+      frame: { w: 1080, h: 1920 },
+      boxes,
+    });
+    expect(safeAreaVerdict(layout({ board, strip }), FRAME)).toEqual({
+      ok: true,
+      note: "board inside the safe area; strip inside the strip area",
+    });
+    // A strip up in the safe area's band is out of its own area.
+    expect(
+      safeAreaVerdict(layout({ board, strip: { ...strip, y: 1100 } }), FRAME),
+    ).toEqual({
+      ok: false,
+      note: "strip (x 140-940, y 1100-1203) is outside the strip area (x 140-940, y 1248-1436)",
+    });
+    // Any other box in the strip's band is below the safe area.
+    expect(
+      safeAreaVerdict(
+        layout({ board, caption: { ...strip, y: STRIP_AREA.y + 10 } }),
+        FRAME,
+      ),
+    ).toEqual({
+      ok: false,
+      note: "caption (x 140-940, y 1258-1361) is outside the safe area (x 65-1015, y 269-1248)",
+    });
   });
 
   test("each caption beat must be one line inside its box", () => {

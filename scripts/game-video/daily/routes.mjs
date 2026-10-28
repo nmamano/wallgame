@@ -82,7 +82,6 @@ import {
   parsePlyWindow,
   DEFAULT_SLOT_SOUNDS,
   FRAME,
-  SAFE_AREA,
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
@@ -655,7 +654,7 @@ export const createDaily = ({
       timeline: timelineOf(result.timeline),
       quality: {
         loudness: loudnessVerdict(result.loudness),
-        safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
+        safeArea: safeAreaVerdict(result.layout, FRAME),
         captionLines: captionLinesVerdict(result.layout),
       },
     });
