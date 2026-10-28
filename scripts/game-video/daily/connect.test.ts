@@ -1061,10 +1061,11 @@ describe("/daily/connect through the app", () => {
     }
   });
 
-  test("the ids in code: the Bluesky DID, the TikTok, Threads and R2 ids; YouTube not yet", () => {
+  test("the ids in code: the Bluesky DID and the YouTube, TikTok, Threads and R2 ids", () => {
     expect(PUBLIC_IDS).toEqual({
       BLUESKY_IDENTIFIER: "did:plc:7hk4ouyq7rfod3qatg2pbjln",
-      YOUTUBE_CLIENT_ID: null,
+      YOUTUBE_CLIENT_ID:
+        "487593560695-qdu8rjjistmaq4iouds76ffsiameggu0.apps.googleusercontent.com",
       TIKTOK_CLIENT_KEY: "sbawgnt7vpik5zdozp",
       THREADS_APP_ID: "2049959042384724",
       R2_ACCOUNT_ID: "1f1a89fa2a45aeb655275b923202a800",

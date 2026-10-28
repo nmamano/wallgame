@@ -22,7 +22,12 @@ export const PUBLIC_IDS = Object.freeze({
   // The account's DID, not its handle: it stays the same when the handle
   // changes (to wallgame.io). createSession takes either.
   BLUESKY_IDENTIFIER: "did:plc:7hk4ouyq7rfod3qatg2pbjln",
-  YOUTUBE_CLIENT_ID: null,
+  // The OAuth client "Wall Game Poster" (Web application) of the Google
+  // project wall-game-poster, owned by thewallgameio@gmail.com. The app is
+  // "In production" but unverified: Connect shows Google's unverified-app
+  // screen (Personal Assistant, 2026-10-28).
+  YOUTUBE_CLIENT_ID:
+    "487593560695-qdu8rjjistmaq4iouds76ffsiameggu0.apps.googleusercontent.com",
   // The SANDBOX key of the TikTok app "Wall Game Poster" (sandbox "Wall Game
   // sandbox"). The production key replaces it when the app is approved.
   TIKTOK_CLIENT_KEY: "sbawgnt7vpik5zdozp",
