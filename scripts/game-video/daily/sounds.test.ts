@@ -175,10 +175,19 @@ describe("claim risk", () => {
   test("only the notes that say high claim risk count, and the list shows it", () => {
     const risky = Object.keys(MEME_SOUNDS).filter((k) => claimRisk(k));
     expect(risky.sort()).toEqual([
+      "alert-1",
+      "bell-1",
+      "fail-1",
+      "horn-1",
       "laugh-1",
+      "pointing-1",
+      "reveal-1",
       "shotgun-1",
       "shotgun-4",
+      "violin-1",
       "win-2",
+      "wow-1",
+      "wow-2",
     ]);
     expect(claimRisk("shotgun-1")).toBe(MEME_SOURCE_NOTES["shotgun-1"]);
     expect(claimRisk("boom-2")).toBeNull();

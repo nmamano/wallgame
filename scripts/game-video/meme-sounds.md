@@ -115,6 +115,48 @@ Refused: a "whoosh away" (three CC0 candidates): each page says only "made
 in audacity" or "a remix of a remix", so none says where its sound came
 from.
 
+## Famous meme bites (families alert to ambulance, and boom-4, bruh-3)
+
+Wall Game Director, 2026-10-28, from its research for the model video
+("UFC 333 in 6 Minutes"): the famous bites that meme editors use, one
+moment each (`MEME_FAMILIES`). Unlike the families above, these are the
+real meme clips, not CC0 sound-alikes, so most have an owner. Each is the
+most-played upload on myinstants.com (views on 2026-10-28), or a cleaner
+second upload. The files are those uploads; reveal-1 and violin-1 are
+copied without their extra stream (cover art in reveal-1, an empty one in
+violin-1), with the same audio bytes.
+`boom-4` is the real vine boom and `bruh-3` the real bruh clip, next to the
+CC0 sound-alikes of those families.
+
+The app refuses a high claim risk sound in a list unless the director names
+it in `claimRiskOk` (routes.mjs). None of the High ones goes in a video
+without Nil's OK. A Medium or Low rating is not a promise: any upload can be
+claimed.
+
+| Key         | What it is                                                 | Length | Views      | Source page                                                                   | Origin                                                                                                                                                                                                                    | Claim risk                                           |
+| ----------- | ---------------------------------------------------------- | ------ | ---------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| boom-4      | Vine Boom: one deep bass "boom" hit.                       | 1.3 s  | 11,789,848 | https://www.myinstants.com/en/instant/vine-boom-sound-70972/                  | Bluezone Corporation sound library, 2012 ("Cinematic Session", file Bluezone-Cimpact-sound-001). King Bach made it popular on Vine.                                                                                       | Medium (commercial library effect; Bluezone owns it) |
+| alert-1     | Metal Gear Solid alert "!" sting.                          | 1.6 s  | 1,406,327  | https://www.myinstants.com/en/instant/metal-gear-solid-alert/                 | Metal Gear Solid game series, Konami.                                                                                                                                                                                     | High (Konami game audio)                             |
+| clang-1     | Metal pipe falls and clangs on the floor.                  | 2.8 s  | 1,982,630  | https://www.myinstants.com/en/instant/metal-pipe-clang-80894/                 | YouTuber Jixaw used it first, 17 Sep 2020 (Know Your Meme). The source of the audio is not known. Some people say it is a Battlefield 4 asset. Nobody confirmed this.                                                     | Low (no known owner; game claim unconfirmed)         |
+| bell-1      | Undertaker bell: one deep gong hit.                        | 4.2 s  | 938,728    | https://www.myinstants.com/en/instant/the-undertaker-bell-30938/              | The Undertaker entrance theme, WWE (music by Jim Johnston).                                                                                                                                                               | High (WWE entrance music, WWE claims actively)       |
+| dundun-1    | "Dun dun dunnn" dramatic brass sting.                      | 5.1 s  | 1,645,106  | https://www.myinstants.com/en/instant/dun-dun-dunnnnnnnn-68584/               | Old stock sting. The meme version is usually "Shock Horror (a)" by Dick Walter, KPM music library, 1983. We did not confirm that this file is that cue.                                                                   | Medium (possibly KPM library cue; unconfirmed)       |
+| dundun-2    | Shorter "dun dun duuun" sting.                             | 2.4 s  | 60,727     | https://www.myinstants.com/en/instant/dun-dun-duuun/                          | Same as dundun-1. Not confirmed.                                                                                                                                                                                          | Medium (possibly KPM library cue; unconfirmed)       |
+| reveal-1    | Among Us role reveal ("shhh", then the reveal sting).      | 4.6 s  | 3,403,235  | https://www.myinstants.com/en/instant/among-us-role-reveal-sound-34956/       | Among Us game (Innersloth, 2018). The sound plays at the start of a round.                                                                                                                                                | High (Innersloth game audio)                         |
+| wow-1       | Anime "Wow!" female voice, with echo and sparkle effects.  | 4.2 s  | 4,625,201  | https://www.myinstants.com/en/instant/anime-wow/                              | Konami arcade game Parodius Da! (1990). The echo version is from the Fairy Tail OVA 3 "Memory Days" (2012) (Know Your Meme).                                                                                              | High (Konami game and anime audio)                   |
+| wow-2       | Anime "Wow!" voice only, with no background.               | 1.5 s  | 24,417     | https://www.myinstants.com/en/instant/anime-wow-no-background/                | Same as wow-1.                                                                                                                                                                                                            | High (Konami game and anime audio)                   |
+| bruh-3      | A man says "Bruh."                                         | 0.9 s  | 5,797,106  | https://www.myinstants.com/en/instant/bruh/                                   | Voice of Viner Headgraphix, in a Vine by CallHimBzar, 1 May 2014 ("Bruh Sound Effect #2", Know Your Meme).                                                                                                                | Medium (voice clip of a known creator)               |
+| fail-1      | SpongeBob "fail" / disappointed lap-steel sting.           | 3.4 s  | 2,871,115  | https://www.myinstants.com/en/instant/spongebob-fail-11236/                   | SpongeBob SquarePants (Nickelodeon). The cue is usually called "Steel Sting". It is possibly a production-library cue. Not confirmed.                                                                                     | High (Nickelodeon TV show music cue)                 |
+| horn-1      | The Price Is Right losing horn ("wah wah wah wahhh").      | 5.1 s  | 505,792    | https://www.myinstants.com/en/instant/the-price-is-right-losing-horn/         | The Price Is Right (CBS / Fremantle) game show. Cue "The Lose" by Edd Kalehoff.                                                                                                                                           | High (TV game show music cue)                        |
+| getout-1    | A man screams "GET OUT!"                                   | 1.0 s  | 3,040,298  | https://www.myinstants.com/en/instant/tuco-get-out-30566/                     | NOT from Breaking Bad. Know Your Meme: the voice only sounds like Tuco. It is an unknown streamer in a GTA 5 roleplay server (Paradise State RP). First known post 10 May 2023.                                           | Medium (unknown streamer's clip; not AMC audio)      |
+| pointing-1  | Spider-Man meme song (a short part of a Spider-Man theme). | 12.4 s | 1,966,609  | https://www.myinstants.com/en/instant/spiderman-meme-song-37638/              | Most likely the 1967 Spider-Man TV theme (Bob Harris and Paul Francis Webster). The pointing image is from the 1967 episode "Double Identity". We did not confirm which recording this file uses.                         | High (Marvel / Disney theme song)                    |
+| violin-1    | Sad violin phrase ("the meme one").                        | 4.6 s  | 3,423,188  | https://www.myinstants.com/en/instant/sad-violin-the-meme-one/                | Know Your Meme: "Sad Violin" is "Sad Romance" by Ji Pyeong-keyon, from the 2003 Korean TV drama "Over the Green Fields". The file name is "tf_nemesis.mp3". This can mean a Team Fortress 2 (Valve) asset. Not confirmed. | High (TV drama soundtrack or game audio)             |
+| ambulance-1 | "Call an ambulance! ... But not for me."                   | 5.0 s  | 15,287     | https://www.myinstants.com/en/instant/call-an-ambulance-but-not-for-me-55557/ | 2018 ad for Silver Series Self-Defense (a Las Vegas class for people 65 and older). Facebook page "Las Vegas Gunfights" posted it on 30 Aug 2018 (Know Your Meme).                                                        | Medium (ad of a small company)                       |
+
+Findings that change the research file: the "GET OUT" voice is not from
+Breaking Bad (Know Your Meme: a GTA 5 roleplay streamer who sounds like
+Tuco, 2023); the vine boom comes from a commercial sound library (Bluezone,
+2012); the metal pipe has no known owner.
+
 ## Copyright risk
 
 A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, or swap the clip in `SOUNDS`.

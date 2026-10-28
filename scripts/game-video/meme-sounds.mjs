@@ -75,6 +75,25 @@ export const MEME_SOUNDS = {
   "seeya-1": { lufs: -15.4, truePeak: -3.8 },
   "seeya-2": { lufs: -19.7, truePeak: -3.3 },
   "seeya-3": { lufs: -13.4, truePeak: -3.3 },
+  // The famous meme bites, the most-played uploads on myinstants.com
+  // (meme-sounds.md), measured 2026-10-28. Most have an owner: see
+  // MEME_SOURCE_NOTES.
+  "boom-4": { lufs: -8.0, truePeak: -0.4 },
+  "bruh-3": { lufs: -8.5, truePeak: -2.7 },
+  "alert-1": { lufs: -11.3, truePeak: -2.7 },
+  "clang-1": { lufs: -1.0, truePeak: 1.9 },
+  "bell-1": { lufs: -12.1, truePeak: -5.1 },
+  "dundun-1": { lufs: -7.2, truePeak: 0.4 },
+  "dundun-2": { lufs: -12.9, truePeak: -3.4 },
+  "reveal-1": { lufs: -16.3, truePeak: -3.9 },
+  "wow-1": { lufs: -11.6, truePeak: -4.5 },
+  "wow-2": { lufs: -29.5, truePeak: -24.8 },
+  "fail-1": { lufs: -6.3, truePeak: -0.1 },
+  "horn-1": { lufs: -5.8, truePeak: -1.2 },
+  "getout-1": { lufs: -12.5, truePeak: -5.0 },
+  "pointing-1": { lufs: -9.3, truePeak: -0.7 },
+  "violin-1": { lufs: -6.8, truePeak: 0.0 },
+  "ambulance-1": { lufs: -13.2, truePeak: -4.5 },
 };
 
 /**
@@ -99,6 +118,18 @@ export const MEME_FAMILIES = {
   ding: "a good move",
   ooh: "a close call",
   seeya: "the prey gets away",
+  alert: "danger: the hunter sees the prey (the ! alert)",
+  clang: "a wall drops",
+  bell: "danger: the hunter closes in",
+  dundun: "danger, or the trap is revealed",
+  reveal: "the trap is revealed",
+  wow: "a brilliant move",
+  fail: "a blunder",
+  horn: "a blunder, or the loss",
+  getout: "the capture",
+  pointing: "a stand-off: face to face",
+  violin: "the loser, at the end",
+  ambulance: "the reversal: the saved side wins",
 };
 
 /**
@@ -122,6 +153,23 @@ export const MEME_SOURCE_NOTES = {
   "ooh-2": "weaker source: the page does not say how it was made",
   "ooh-3": "weaker source: the page does not say how it was made",
   "seeya-1": 'weaker source: the page says only "ending a phone call"',
+  "alert-1": "high claim risk: Metal Gear Solid game audio (Konami)",
+  "bell-1": "high claim risk: the Undertaker's WWE entrance theme",
+  "reveal-1": "high claim risk: Among Us game audio (Innersloth)",
+  "wow-1": "high claim risk: a Konami game and anime voice",
+  "wow-2": "high claim risk: a Konami game and anime voice",
+  "fail-1": "high claim risk: a SpongeBob (Nickelodeon) music cue",
+  "horn-1": "high claim risk: The Price Is Right losing horn (TV)",
+  "pointing-1":
+    "high claim risk: a Spider-Man theme song (Marvel); 12.4 s long",
+  "violin-1": "high claim risk: a TV drama theme, or a Team Fortress 2 sound",
+  "boom-4": "medium claim risk: a Bluezone library effect (the real vine boom)",
+  "bruh-3": "medium claim risk: a creator's voice (the real bruh clip)",
+  "dundun-1": "medium claim risk: may be the KPM library sting",
+  "dundun-2": "medium claim risk: may be the KPM library sting",
+  "getout-1": "medium claim risk: a GTA roleplay streamer, not Breaking Bad",
+  "ambulance-1": "medium claim risk: a small company's 2018 ad",
+  "clang-1": "low claim risk: no known owner",
 };
 
 /** "boom-2" -> "boom". @type {(key: string) => string} */
