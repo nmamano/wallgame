@@ -1859,10 +1859,14 @@ export const createDaily = ({
             tokens,
             keepRefreshToken,
           });
-          writeFileSync(
-            followersCachePath,
-            JSON.stringify({ at: new Date().toISOString(), counts }),
-          );
+          // A read where no platform gave a count (a short network loss)
+          // is not kept, so the next request tries again (Reviewer 1).
+          if (Object.values(counts).some((c) => c.followers !== null)) {
+            writeFileSync(
+              followersCachePath,
+              JSON.stringify({ at: new Date().toISOString(), counts }),
+            );
+          }
           return counts;
         } finally {
           followersRun = null;

@@ -371,4 +371,34 @@ describe("GET /api/daily/followers", () => {
       server.close();
     }
   });
+
+  test("a read where no platform gave a count is not kept: the next request reads again", async () => {
+    const transport = fakeLive(() => ({ status: 503, json: null }));
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env: ENV,
+      live: () => transport,
+    });
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const get = () =>
+        fetch(`http://127.0.0.1:${port}/api/daily/followers`).then((r) =>
+          r.json(),
+        );
+      const first = (await get()) as Record<string, { followers: unknown }>;
+      expect(Object.values(first).every((c) => c.followers === null)).toBe(
+        true,
+      );
+      const calls = transport.sent.length;
+      await get();
+      expect(transport.sent.length).toBeGreaterThan(calls);
+    } finally {
+      daily.stop();
+      server.close();
+    }
+  });
 });
