@@ -738,7 +738,7 @@ describe("the overlay event", () => {
       'events[0]: chat-toast needs "text"',
     ]);
     expect(
-      errorsOf(overlay({ form: "panel", asset: "path-compare", text: "x" })),
+      errorsOf(overlay({ form: "clip", asset: "path-compare", text: "x" })),
     ).toEqual(["events[0]: path-compare shows no text"]);
     expect(errorsOf(overlay({ ...toast, text: "{me}{red}{red}" }))).toEqual([
       "events[0]: {me} is not a name; use {red} or {blue}",
@@ -754,21 +754,30 @@ describe("the overlay event", () => {
     ]);
   });
 
-  test("in a fast-forward, one panel on its first ply that lasts the range", () => {
+  test("in a fast-forward, one overlay on its first ply that lasts the range", () => {
     const ff = (fromPly: number, toPly: number) => [
       { fromPly, toPly, secondsPerMove: 0.2, fastForward: true },
     ];
-    const panel = { form: "panel", asset: "do-something", seat: "blue" };
-    expect(accept(overlay(panel, ff(3, 8))).events[0]).toMatchObject({
+    // do-something is a cut-out clip since 2026-10-29; a clip or a panel
+    // may cover the range.
+    const clip = { form: "clip", asset: "do-something", seat: "blue" };
+    expect(accept(overlay(clip, ff(3, 8))).events[0]).toMatchObject({
       seconds: null,
     });
-    expect(errorsOf(overlay(panel, ff(2, 8)))[0]).toContain(
-      "only one panel on its first ply",
+    expect(accept(overlay(toast, ff(3, 8))).events[0]).toMatchObject({
+      seconds: null,
+    });
+    expect(errorsOf(overlay(clip, ff(2, 8)))[0]).toContain(
+      "only one overlay on its first ply",
     );
-    expect(errorsOf(overlay(toast, ff(3, 8)))[0]).toContain(
-      "only one panel on its first ply",
-    );
-    expect(errorsOf(overlay({ ...panel, seconds: 2 }, ff(3, 8)))[0]).toContain(
+    expect(
+      errorsOf({
+        ...base,
+        pace: ff(3, 8),
+        events: [{ ply: 3, kind: "scared", cell: "e7" }],
+      })[0],
+    ).toContain("only one overlay on its first ply");
+    expect(errorsOf(overlay({ ...clip, seconds: 2 }, ff(3, 8)))[0]).toContain(
       "lasts the range",
     );
     expect(
@@ -776,24 +785,18 @@ describe("the overlay event", () => {
         overlay({ form: "panel", asset: "capture-loading" }, ff(3, 8)),
       )[0],
     ).toContain("lasts the range");
-    expect(errorsOf(overlay(panel, ff(3, 6)))).toEqual([
-      "events[0]: the fastForward range 3-6 is on screen 0.80 s; a panel needs 1 s to be read",
+    expect(errorsOf(overlay(clip, ff(3, 6)))).toEqual([
+      "events[0]: the fastForward range 3-6 is on screen 0.80 s; an overlay needs 1 s to be read",
     ]);
     const two = {
-      ...overlay(panel, ff(3, 8)),
+      ...overlay(clip, ff(3, 8)),
       events: [
-        { ply: 3, kind: "overlay", ...panel },
-        {
-          ply: 3,
-          kind: "overlay",
-          form: "panel",
-          asset: "do-something",
-          seat: "red",
-        },
+        { ply: 3, kind: "overlay", ...clip },
+        { ply: 3, kind: "overlay", ...toast },
       ],
     };
     expect(errorsOf(two)).toEqual([
-      "events[1]: the fastForward range 3-8 has a panel already; it shows one",
+      "events[1]: the fastForward range 3-8 has an overlay already; it shows one",
     ]);
   });
 

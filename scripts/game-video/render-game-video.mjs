@@ -100,8 +100,8 @@ import {
   boxOnScreen,
   coveredBy,
   loadingPercent,
+  overlayPlaces,
   placeOverlay,
-  quietestPlace,
 } from "./overlays.mjs";
 import { pawnCell } from "../../shared/domain/pawns.ts";
 import {
@@ -2795,17 +2795,12 @@ const sha256Of = (file) =>
  * some boxes has no drawtext.
  */
 const SHEET_TILE_WIDTH = 360;
-/** An overlay's corner on its tile: "bottom-left, over 1 still pawn". */
-const placeLabel = ({ where, stillPawns }) =>
-  stillPawns === null
-    ? where
-    : `${where}, over ${stillPawns} still pawn${stillPawns === 1 ? "" : "s"}`;
 const writeContactSheet = async (stills, out) => {
   if (stills.length === 0) return null;
   const png = out.replace(/(\.mp4)?$/, "-sheet.png");
   const tiles = stills.map((st) => ({
     src: `data:image/png;base64,${readFileSync(st.file).toString("base64")}`,
-    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${placeLabel(st.place)}` : ""} - ${st.at.toFixed(1)}s`,
+    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${st.place.where}` : ""} - ${st.at.toFixed(1)}s`,
   }));
   const page = await browser.newPage({
     viewport: { width: 400, height: 400 },
@@ -3170,7 +3165,7 @@ const renderStyle = async (styleName) => {
       .replace("{blue}", stripSide(blueSeat).name);
   /**
    * Open the overlay `ev` as its move lands. It closes after its seconds;
-   * the loading bar after the save (overlayFrame); a fast-forward's panel
+   * the loading bar after the save (overlayFrame); a fast-forward's overlay
    * when the move after its range lands; any of them when the ending starts.
    */
   const openOverlay = (ev) => {
@@ -3229,7 +3224,7 @@ const renderStyle = async (styleName) => {
       ...(w.asset.draw === "toast" || w.asset.draw === "whitebar"
         ? { text: overlayText(w.ev) }
         : {}),
-      ...(w.asset.draw === "meme" || w.asset.draw === "reactor"
+      ...(w.asset.draw === "reactor"
         ? {
             text: overlayText(w.ev),
             portrait: side(seat).portrait,
@@ -3275,30 +3270,32 @@ const renderStyle = async (styleName) => {
   });
   /**
    * Every pawn of a frame, as boxes in the board as the camera shows it,
-   * each with its cell (`cell`), so a pawn on many frames counts once.
+   * each named by its cell ("pawn on e7"), for the message of an overlay
+   * with no free place.
    */
   const pawnBoxes = (state) =>
     (pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
       const box = boxOnScreen(around(p), state.zoom);
-      return box
-        ? [{ ...box, cell: `${p.x.toFixed(3)},${p.y.toFixed(3)}` }]
-        : [];
+      const cell = termOfCell([
+        Math.round((p.y - GRID.y(0)) / GRID.pitchY - 0.5),
+        Math.round((p.x - GRID.x(0)) / GRID.pitchX - 0.5),
+      ]);
+      return box ? [{ ...box, what: `pawn on ${cell}` }] : [];
     });
   /**
    * What a frame shows in play, as boxes in the board as the camera shows
    * it: the cells the last move's pawns left and reached, its walls, the
    * closest hunt's hunter and target, a path's cells and a cell effect's
-   * cell. With `everyPawn`, every pawn's cell instead of the moved ones.
+   * cell.
    */
-  const inPlay = (state, everyPawn) => {
+  const inPlay = (state) => {
     const b = boardIndexOf.get(state.board);
     const spots = (i) => pawnSpots.get(i) ?? [];
     const same = (p, q) =>
       Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
     const notIn = (list) => (p) => !list.some((q) => same(p, q));
-    const pawns = everyPawn
-      ? spots(b)
-      : b > 0
+    const pawns =
+      b > 0
         ? [
             ...spots(b).filter(notIn(spots(b - 1))),
             ...spots(b - 1).filter(notIn(spots(b))),
@@ -3316,15 +3313,20 @@ const renderStyle = async (styleName) => {
           y1: GRID.y(bottom),
         };
       });
-    return [
-      ...pawns.map(around),
-      ...closestHuntAt(b).map((c) => around(cellAt(c))),
-      ...walls,
-      ...(state.path?.lines ?? []).flatMap((l) => l.points.map(around)),
-      ...(state.cellFx ? [around(state.cellFx.cell)] : []),
-    ]
-      .map((box) => boxOnScreen(box, state.zoom))
-      .filter(Boolean);
+    /** @type {[string, { x0: number, y0: number, x1: number, y1: number }][]} */
+    const named = [
+      ...pawns.map((p) => ["the move's pawn", around(p)]),
+      ...closestHuntAt(b).map((c) => ["the closest hunt", around(cellAt(c))]),
+      ...walls.map((w) => ["a new wall", w]),
+      ...(state.path?.lines ?? []).flatMap((l) =>
+        l.points.map((p) => ["a path", around(p)]),
+      ),
+      ...(state.cellFx ? [["an effect", around(state.cellFx.cell)]] : []),
+    ];
+    return named.flatMap(([what, box]) => {
+      const shown = boxOnScreen(box, state.zoom);
+      return shown ? [{ ...shown, what }] : [];
+    });
   };
   /**
    * The boxes the ending draws over the board now (the main page shows the
@@ -3357,59 +3359,41 @@ const renderStyle = async (styleName) => {
   const placeOverlays = async () => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
-      const fast = w.closesOnBoard !== null;
       /*
         A bar avoids what the ending draws; on a replay ending also the
         pawns and walls in play, because the replay shows the capture again
         and the bar must never cover it (Wall Game Director, 2026-10-28).
         On gg and ko the ending covers the board, so its own boxes are all.
+        Every other overlay hides no pawn and nothing in play on any frame
+        it shows, a fast-forward's included (Nil, 2026-10-28: "Overlays
+        should never cover the pawns").
       */
       const busy =
         w.asset.form === "bar"
           ? [
-              ...w.avoid,
+              ...w.avoid.map((b) => ({ ...b, what: "the ending" })),
               ...(style.ending === "replay"
-                ? w.frames.flatMap((f) => inPlay(f.state, false))
+                ? w.frames.flatMap((f) => inPlay(f.state))
                 : []),
             ]
-          : w.frames.flatMap((f) => inPlay(f.state, fast));
-      /*
-        A clip also keeps off the pawns that stand still where a corner
-        allows it: among the free corners, the one over the fewest. They
-        never stop a render (Wall Game Director, 2026-10-28: on 8FroT1GU
-        ply 14 a reactor hid the guest's mouse, far from the hunt).
-      */
-      const still =
-        w.asset.form === "clip"
-          ? w.frames.flatMap((f) => pawnBoxes(f.state))
-          : [];
-      const place = fast
-        ? quietestPlace(w.asset, busy)
-        : placeOverlay(w.asset, busy, still);
-      if (!place && w.asset.form === "bar") {
-        // Each different box once: the ending repeats most frame to frame.
-        const boxes = [
-          ...new Set(
-            busy.map((b) =>
-              [b.x0, b.y0, b.x1, b.y1].map((v) => v.toFixed(2)).join(","),
-            ),
-          ),
-        ];
-        throw new Error(
-          `${where} has no free place: the ending${style.ending === "replay" ? " and the move it replays" : ""} cover every band of the board (the boxes, 0..1: ${boxes.join(" ")})`,
-        );
-      }
+          : w.frames.flatMap((f) => [
+              ...inPlay(f.state),
+              ...pawnBoxes(f.state),
+            ]);
+      const place = placeOverlay(w.asset, busy);
       if (!place) {
+        // What is under each place, each thing once: the director moves the
+        // overlay to a ply where one place is free.
+        const under = overlayPlaces(w.asset).map(
+          (p) =>
+            `${p.where}: ${[...new Set(coveredBy(p, busy).map((b) => b.what))].join(", ")}`,
+        );
         throw new Error(
-          `${where} has no free place: every ${w.asset.form === "panel" ? "half" : "corner"} of the board holds a moved pawn, a new wall, the closest hunt or an effect while it shows`,
+          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s); under each place:\n  ${under.join("\n  ")}`,
         );
       }
       Object.assign(w.place, place);
-      const stillPawns =
-        w.asset.form === "clip"
-          ? new Set(coveredBy(place, still).map((b) => b.cell)).size
-          : null;
-      log(`${where}: ${placeLabel({ where: place.where, stillPawns })}`);
+      log(`${where}: ${place.where}`);
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
@@ -3464,7 +3448,7 @@ const renderStyle = async (styleName) => {
           ply: w.ev.ply,
           kind: "overlay",
           sound: w.ev.sound ?? null,
-          place: { where: place.where, stillPawns },
+          place: { where: place.where },
           file: timeline[mid.image].file,
           at: mid.at,
         });
@@ -4118,7 +4102,7 @@ const renderStyle = async (styleName) => {
     if (lead) await playLeadZoom(ply, plyIndex, lead);
     else land(plyIndex);
     if (wallz) {
-      // A fast-forward's panel closes as the move after its range lands.
+      // A fast-forward's overlay closes as the move after its range lands.
       const live = liveOverlay();
       if (live && live.closesOnBoard !== null && ply >= live.closesOnBoard) {
         closeOverlay();

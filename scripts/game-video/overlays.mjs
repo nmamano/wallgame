@@ -4,8 +4,10 @@
  * Wall Game Director, 2026-10-28, from the model video ("UFC 333 in 6
  * Minutes"): a meme every few seconds, tied to a real moment. Two forms:
  *
- *   clip   a small thing in a free corner of the board (a reactor, a toast).
- *   panel  a still panel over the top or bottom half of the board.
+ *   clip   a small thing in a free corner of the board: a cut-out (a
+ *          reactor, the compare numbers) or a toast.
+ *   panel  a band across the board, as tall as its content (the loading
+ *          bar), at the top, the bottom, or any height between.
  *   bar    the ending's white caption bar (the model video's last beat):
  *          on the last move only, from the ending's impact to its end, in
  *          the top or bottom strip of the board, or else the highest band,
@@ -14,13 +16,15 @@
  *
  * An overlay rides over the board while the game goes on under it: it opens
  * as its ply's move lands and closes after its seconds (or as its asset
- * says). The renderer then puts it in the first place that hides nothing in
- * play on any frame it covered (placeOverlay); with no such place the render
- * stops. In play is what the moment is about: the pawns the last move moved,
- * its walls, the effects on screen, and the hunter and target of the closest
- * hunt. A fast-forward's panel covers a quiet stretch on purpose, so it goes
- * where it hides the fewest pawns and walls (quietestPlace). Places lie inside the board, and the board inside SAFE_AREA, so an
- * overlay never covers the head row, the strip or an app's buttons.
+ * says). The renderer then puts it in the first place that hides nothing on
+ * any frame it covered (placeOverlay); with no such place the render stops
+ * and names what is under each place. Nothing is every pawn (Nil,
+ * 2026-10-28: "Overlays should never cover the pawns") and what is in play:
+ * the walls the last move placed, the effects on screen, and the hunter and
+ * target of the closest hunt. The ending's bar avoids the ending's own
+ * boxes instead (and, on a replay ending, what the replay shows). Places lie
+ * inside the board, and the board inside SAFE_AREA, so an overlay never
+ * covers the head row, the strip or an app's buttons.
  *
  * Each asset records where it comes from and its risks, as meme-sounds.mjs
  * does for sounds: `claim` is the Content ID risk, `likeness` the risk of
@@ -34,14 +38,16 @@
  *            loading  "CAPTURE LOADING" and a bar at 96..99% as the closest
  *                     hunter's steps fall; ERROR when they rise (the save).
  *                     It lasts until that rise, so the EDL sets no seconds;
- *            compare  the comparison meme: a side's steps before the move vs
- *                     after it ("2 vs 12"), the side whose steps rose most;
- *            meme     a white panel with a black line (the EDL's `text`, or
- *                     the asset's) and a seat's portrait, waiting.
+ *            compare  a side's steps before the move and after it, as a
+ *                     cut-out: "2 -> 12" big and outlined, one small "steps
+ *                     to catch" line under it, no box (Nil, 2026-10-28: a
+ *                     cut-out is "better than the cards"); the side whose
+ *                     steps rose most;
  *            reactor  a seat's portrait reacting in a corner (`motion`:
  *                     shock shakes and punches in, laugh bounces, stare
- *                     creeps in), with the EDL's `text` as its label under
- *                     it, if any ("the bot's last brain cell").
+ *                     creeps in), with the EDL's `text` (or the asset's
+ *                     `line`) as its label under it, if any ("the bot's
+ *                     last brain cell").
  *            whitebar black text on a white bar, the EDL's `text`. (Not
  *                     "caption": stage.html's #play .caption would win.)
  *            sequence a clip with alpha (a reaction cut-out), one frame of
@@ -59,7 +65,8 @@
  *            line under the portrait, so it is shorter.
  *   seconds  how long it shows where the EDL sets none (null: the asset
  *            decides, as the loading bar does).
- *   size     a clip's box, as fractions of the board's width and height.
+ *   size     a clip's box, or a panel's band, as fractions of the board's
+ *            width and height.
  *   sequence a "sequence" draw's frames: their folder in assets/overlays,
  *            fps, count, and the sha256 of the manifest that
  *            prepare-overlay-clip.mjs printed (the render stops if the
@@ -75,7 +82,6 @@ export const OVERLAY_FORMS = ["clip", "panel", "bar"];
  *     | "toast"
  *     | "loading"
  *     | "compare"
- *     | "meme"
  *     | "reactor"
  *     | "whitebar"
  *     | "sequence",
@@ -110,16 +116,18 @@ export const OVERLAYS = {
     draw: "loading",
     text: "none",
     seconds: null,
+    size: { w: 0.95, h: 0.28 },
     source: "drawn by us (stage.html)",
     claim: "None",
     likeness: "None",
     rating: null,
   },
   "path-compare": {
-    form: "panel",
+    form: "clip",
     draw: "compare",
     text: "none",
     seconds: 1.8,
+    size: { w: 0.5, h: 0.3 },
     source: "drawn by us (stage.html)",
     claim: "None",
     likeness: "None",
@@ -176,11 +184,14 @@ export const OVERLAYS = {
     rating: null,
   },
   "do-something": {
-    form: "panel",
-    draw: "meme",
+    form: "clip",
+    draw: "reactor",
+    motion: "stare",
     text: "optional",
+    chars: 28,
     line: "c'mon, do something...",
     seconds: 1.8,
+    size: { w: 0.46, h: 0.42 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -189,7 +200,7 @@ export const OVERLAYS = {
 };
 
 /** The draws that show a seat's portrait, so an EDL may name the seat. */
-export const PORTRAIT_DRAWS = ["meme", "reactor"];
+export const PORTRAIT_DRAWS = ["reactor"];
 
 /** An overlay's text: at most this many characters, names put in. */
 export const OVERLAY_TEXT_CHARS = 40;
@@ -211,33 +222,27 @@ const INSET = 0.025;
  * @returns {{ where: string, x: number, y: number, w: number, h: number }[]}
  */
 export const overlayPlaces = (asset) => {
-  if (asset.form === "bar") {
-    // The edges first; then, for an ending that covers both (ko: its pawn
-    // on top, its banner below), every band from the top down.
-    const h = 0.13;
-    const w = 1 - 2 * INSET;
+  if (asset.form === "bar" || asset.form === "panel") {
+    // The edges first; then every band from the top down: for an ending
+    // that covers both edges (ko: its pawn on top, its banner below), and
+    // for a panel between the pawns.
+    const h = asset.form === "bar" ? 0.13 : asset.size.h;
+    const w = asset.form === "bar" ? 1 - 2 * INSET : asset.size.w;
+    const x = (1 - w) / 2;
     const bands = [];
     for (let k = 1; 0.05 * k + h < 1 - INSET; k += 1) {
       bands.push({
         where: `band ${(0.05 * k).toFixed(2)}`,
-        x: INSET,
+        x,
         y: 0.05 * k,
         w,
         h,
       });
     }
     return [
-      { where: "top", x: INSET, y: INSET, w, h },
-      { where: "bottom", x: INSET, y: 1 - INSET - h, w, h },
+      { where: "top", x, y: INSET, w, h },
+      { where: "bottom", x, y: 1 - INSET - h, w, h },
       ...bands,
-    ];
-  }
-  if (asset.form === "panel") {
-    const w = 1 - 2 * INSET;
-    const h = 0.5 - 1.5 * INSET;
-    return [
-      { where: "top", x: INSET, y: INSET, w, h },
-      { where: "bottom", x: INSET, y: 0.5 + INSET / 2, w, h },
     ];
   }
   const { w, h } = asset.size;
@@ -283,40 +288,14 @@ export const coveredBy = (p, boxes) =>
     (b) => b.x1 > p.x && b.x0 < p.x + p.w && b.y1 > p.y && b.y0 < p.y + p.h,
   );
 
-/** How many of the `busy` boxes a place overlaps. */
-const hidden = (p, busy) => coveredBy(p, busy).length;
-
 /**
- * The place for `asset` that overlaps none of the `busy` boxes (in the
- * board as shown, 0..1), or null when every place hides something. Among
- * the free places, the one that overlaps the fewest `soft` boxes, the
- * earlier on a tie: a clip's still pawns, which it may cover when no free
- * corner avoids them (Wall Game Director, 2026-10-28), so they never stop
- * a render.
- * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
- * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
- * @param {{ x0: number, y0: number, x1: number, y1: number }[]} [soft]
- */
-export const placeOverlay = (asset, busy, soft = []) =>
-  overlayPlaces(asset)
-    .filter((p) => hidden(p, busy) === 0)
-    .reduce(
-      (best, p) =>
-        best === null || hidden(p, soft) < hidden(best, soft) ? p : best,
-      null,
-    );
-
-/**
- * The place for `asset` that overlaps the fewest `busy` boxes, the earlier
- * on a tie: for a fast-forward's panel, whose purpose is to cover a quiet
- * stretch, so it hides the least of it and never stops the render.
+ * The first place for `asset` that overlaps none of the `busy` boxes (in
+ * the board as shown, 0..1), or null when every place hides something.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  */
-export const quietestPlace = (asset, busy) =>
-  overlayPlaces(asset).reduce((best, p) =>
-    hidden(p, busy) < hidden(best, busy) ? p : best,
-  );
+export const placeOverlay = (asset, busy) =>
+  overlayPlaces(asset).find((p) => coveredBy(p, busy).length === 0) ?? null;
 
 /**
  * The loading bar's percent for a hunter `steps` from its target: 99% one

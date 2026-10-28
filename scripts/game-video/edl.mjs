@@ -117,18 +117,19 @@
  *             `holdSeconds` (default 0.8) holds the last walk.
  *     overlay a meme over the board while the game goes on under it
  *             (overlays.mjs): `asset` names it and `form` repeats its form
- *             ("clip": a small thing in a free corner; "panel": the top or
- *             bottom half). It opens as the move lands and shows for
+ *             ("clip": a cut-out or a toast in a free corner; "panel": a
+ *             band across the board). It opens as the move lands and shows for
  *             `seconds` (default the asset's; the capture loading bar lasts
  *             until the save and takes none). `text` is the asset's line,
  *             where it takes one; {red} and {blue} in it become the seats'
  *             names. `seat` ("red" or "blue") is required on an asset that
- *             shows a seat's portrait: who reacts is the story. The renderer puts it where it hides nothing in play on
- *             any frame it covers, or stops. One overlay at a time, and the
+ *             shows a seat's portrait: who reacts is the story. The renderer puts it where it hides no pawn and
+ *             nothing in play on any frame it covers, or stops and names
+ *             what is under each place. One overlay at a time, and the
  *             ending cuts one still open. In a fastForward range the only
- *             event allowed is one panel on the range's first ply, with no
- *             seconds: it lasts the range, which must be on screen for
- *             EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
+ *             event allowed is one overlay (not the bar) on the range's
+ *             first ply, with no seconds: it lasts the range, which must
+ *             be on screen for EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
  *             caption) is on the last move only and shows from the ending's
  *             impact to its end, so it takes no seconds.
  *
@@ -336,7 +337,7 @@ export const EDL_LIMITS = {
   freezeHoldSeconds: [0.4, 2],
   pathHoldSeconds: [0.3, 2],
   overlaySeconds: [0.6, 4],
-  /** A fast-forward's panel must be on screen this long to be read. */
+  /** A fast-forward's overlay must be on screen this long to be read. */
   overlayFastSeconds: 1,
   events: 40,
   musicCues: 3,
@@ -766,25 +767,25 @@ export const validateEdl = (raw) => {
   }
 
   // A fast-forward stretch is quiet: no moment, and no cold open, in it,
-  // but one panel on its first ply, which lasts the range.
+  // but one overlay on its first ply, which lasts the range.
   const fastRanges = Array.isArray(pace)
     ? pace.filter((s) => s?.fastForward === true)
     : [];
   const fastRangeOf = (ply) =>
     fastRanges.find((r) => r.fromPly <= ply && ply <= r.toPly);
-  const isFastPanel = (e, r) =>
-    e.kind === "overlay" && e.form === "panel" && e.ply === r.fromPly;
+  const isFastOverlay = (e, r) =>
+    e.kind === "overlay" && e.form !== "bar" && e.ply === r.fromPly;
   filled.forEach((e, i) => {
     const r = fastRangeOf(e.ply);
     if (!r) return;
-    if (!isFastPanel(e, r)) {
+    if (!isFastOverlay(e, r)) {
       return fail(
-        `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments, only one panel on its first ply`,
+        `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments, only one overlay on its first ply`,
       );
     }
-    if (filled.findIndex((x) => isFastPanel(x, r)) !== i) {
+    if (filled.findIndex((x) => isFastOverlay(x, r)) !== i) {
       return fail(
-        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} has a panel already; it shows one`,
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} has an overlay already; it shows one`,
       );
     }
     if (
@@ -792,13 +793,13 @@ export const validateEdl = (raw) => {
       OVERLAYS[e.asset]?.seconds === null
     ) {
       fail(
-        `events[${i}]: a fast-forward's panel lasts the range, so it takes no seconds, and ${e.asset} cannot`,
+        `events[${i}]: a fast-forward's overlay lasts the range, so it takes no seconds, and ${e.asset} cannot`,
       );
     }
     const onScreen = (r.toPly - r.fromPly + 1) * r.secondsPerMove;
     if (onScreen < EDL_LIMITS.overlayFastSeconds) {
       fail(
-        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; a panel needs ${EDL_LIMITS.overlayFastSeconds} s to be read`,
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; an overlay needs ${EDL_LIMITS.overlayFastSeconds} s to be read`,
       );
     }
     e.seconds = null;

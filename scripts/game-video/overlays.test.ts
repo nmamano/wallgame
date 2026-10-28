@@ -7,7 +7,6 @@ import {
   loadingPercent,
   overlayPlaces,
   placeOverlay,
-  quietestPlace,
 } from "./overlays.mjs";
 
 const cell = (x: number, y: number, size = 0.125) => ({
@@ -47,21 +46,25 @@ describe("overlays", () => {
     }
   });
 
-  test("a panel takes the first free half; none free, null", () => {
-    const panel = OVERLAYS["do-something"];
+  test("a panel is a band: top, bottom, then every height; none free, null", () => {
+    const panel = OVERLAYS["capture-loading"];
     expect(placeOverlay(panel, [])?.where).toBe("top");
     expect(placeOverlay(panel, [cell(0.4, 0.1)])?.where).toBe("bottom");
-    expect(placeOverlay(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])).toBeNull();
-    // A cell that only touches the line between the halves blocks neither.
-    expect(placeOverlay(panel, [cell(0.4, 0.375)])?.where).toBe("bottom");
-  });
-
-  test("a fast-forward's panel takes the half that hides the least", () => {
-    const panel = OVERLAYS["do-something"];
-    expect(quietestPlace(panel, []).where).toBe("top");
-    const busy = [cell(0.1, 0.1), cell(0.4, 0.1), cell(0.4, 0.8)];
-    expect(quietestPlace(panel, busy).where).toBe("bottom");
-    expect(quietestPlace(panel, busy.slice(1)).where).toBe("top");
+    // Pawns near both edges: the band between them (Nil, 2026-10-28: an
+    // overlay never covers a pawn, so a half-board panel rarely fit).
+    expect(placeOverlay(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])?.where).toBe(
+      "band 0.25",
+    );
+    const band = placeOverlay(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])!;
+    expect(band.y).toBeGreaterThanOrEqual(0.225);
+    expect(band.y + band.h).toBeLessThanOrEqual(0.8);
+    // A pawn on every row band: none.
+    expect(
+      placeOverlay(
+        panel,
+        [0.05, 0.3, 0.55, 0.8].map((y) => cell(0.4, y)),
+      ),
+    ).toBeNull();
   });
 
   test("the ending's bar takes the strip the ending leaves free", () => {
@@ -92,34 +95,6 @@ describe("overlays", () => {
     expect(
       placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)])?.where,
     ).toBeUndefined();
-  });
-
-  test("a clip keeps off still pawns where a free corner allows it", () => {
-    const clip = OVERLAYS["chat-toast"];
-    const mouse = cell(0.875, 0.875);
-    // A still pawn moves the clip to the next free corner.
-    expect(placeOverlay(clip, [], [mouse])?.where).toBe("bottom-left");
-    // In play stays hard: the corner with fewer still pawns is taken only
-    // when it is free of what is in play.
-    expect(
-      placeOverlay(clip, [cell(0.0, 0.875)], [mouse, cell(0.875, 0)])?.where,
-    ).toBe("top-left");
-    // A still pawn in every free corner: the fewest, never a stop.
-    const everywhere = [
-      mouse,
-      cell(0, 0.875),
-      cell(0, 0.875),
-      cell(0.875, 0),
-      cell(0, 0),
-    ];
-    expect(placeOverlay(clip, [], everywhere)?.where).toBe("bottom-right");
-    expect(placeOverlay(clip, [], [...everywhere, mouse, mouse])?.where).toBe(
-      "top-right",
-    );
-    // Still pawns never make a free corner busy.
-    expect(
-      placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)], everywhere),
-    ).toBeNull();
   });
 
   test("coveredBy gives the boxes a place overlaps", () => {
