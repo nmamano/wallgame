@@ -3,6 +3,7 @@ import {
   OVERLAYS,
   OVERLAY_FORMS,
   boxOnScreen,
+  coveredBy,
   loadingPercent,
   overlayPlaces,
   placeOverlay,
@@ -91,6 +92,41 @@ describe("overlays", () => {
     expect(
       placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)])?.where,
     ).toBeUndefined();
+  });
+
+  test("a clip keeps off still pawns where a free corner allows it", () => {
+    const clip = OVERLAYS["chat-toast"];
+    const mouse = cell(0.875, 0.875);
+    // A still pawn moves the clip to the next free corner.
+    expect(placeOverlay(clip, [], [mouse])?.where).toBe("bottom-left");
+    // In play stays hard: the corner with fewer still pawns is taken only
+    // when it is free of what is in play.
+    expect(
+      placeOverlay(clip, [cell(0.0, 0.875)], [mouse, cell(0.875, 0)])?.where,
+    ).toBe("top-left");
+    // A still pawn in every free corner: the fewest, never a stop.
+    const everywhere = [
+      mouse,
+      cell(0, 0.875),
+      cell(0, 0.875),
+      cell(0.875, 0),
+      cell(0, 0),
+    ];
+    expect(placeOverlay(clip, [], everywhere)?.where).toBe("bottom-right");
+    expect(placeOverlay(clip, [], [...everywhere, mouse, mouse])?.where).toBe(
+      "top-right",
+    );
+    // Still pawns never make a free corner busy.
+    expect(
+      placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)], everywhere),
+    ).toBeNull();
+  });
+
+  test("coveredBy gives the boxes a place overlaps", () => {
+    const [bottomRight] = overlayPlaces(OVERLAYS["chat-toast"]);
+    const far = { ...cell(0.1, 0.1), cell: "far" };
+    const near = { ...cell(0.875, 0.875), cell: "near" };
+    expect(coveredBy(bottomRight, [far, near])).toEqual([near]);
   });
 
   test("a zoom moves a box away from its point and cuts it to the board", () => {

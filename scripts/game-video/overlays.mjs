@@ -271,20 +271,40 @@ export const boxOnScreen = (box, zoom) => {
   return x0 < x1 && y0 < y1 ? { x0, y0, x1, y1 } : null;
 };
 
-/** How many of the `busy` boxes a place overlaps. */
-const hidden = (p, busy) =>
-  busy.filter(
+/**
+ * The boxes a place overlaps.
+ * @template {{ x0: number, y0: number, x1: number, y1: number }} B
+ * @param {{ x: number, y: number, w: number, h: number }} p
+ * @param {B[]} boxes
+ * @returns {B[]}
+ */
+export const coveredBy = (p, boxes) =>
+  boxes.filter(
     (b) => b.x1 > p.x && b.x0 < p.x + p.w && b.y1 > p.y && b.y0 < p.y + p.h,
-  ).length;
+  );
+
+/** How many of the `busy` boxes a place overlaps. */
+const hidden = (p, busy) => coveredBy(p, busy).length;
 
 /**
- * The first place for `asset` that overlaps none of the `busy` boxes (in
- * the board as shown, 0..1), or null when every place hides something.
+ * The place for `asset` that overlaps none of the `busy` boxes (in the
+ * board as shown, 0..1), or null when every place hides something. Among
+ * the free places, the one that overlaps the fewest `soft` boxes, the
+ * earlier on a tie: a clip's still pawns, which it may cover when no free
+ * corner avoids them (Wall Game Director, 2026-10-28), so they never stop
+ * a render.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
+ * @param {{ x0: number, y0: number, x1: number, y1: number }[]} [soft]
  */
-export const placeOverlay = (asset, busy) =>
-  overlayPlaces(asset).find((p) => hidden(p, busy) === 0) ?? null;
+export const placeOverlay = (asset, busy, soft = []) =>
+  overlayPlaces(asset)
+    .filter((p) => hidden(p, busy) === 0)
+    .reduce(
+      (best, p) =>
+        best === null || hidden(p, soft) < hidden(best, soft) ? p : best,
+      null,
+    );
 
 /**
  * The place for `asset` that overlaps the fewest `busy` boxes, the earlier

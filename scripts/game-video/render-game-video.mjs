@@ -97,6 +97,7 @@ import { huntPath, huntsFor, replayDistances } from "./race-replay.ts";
 import {
   OVERLAYS,
   boxOnScreen,
+  coveredBy,
   loadingPercent,
   placeOverlay,
   quietestPlace,
@@ -2766,12 +2767,17 @@ const sha256Of = (file) =>
  * some boxes has no drawtext.
  */
 const SHEET_TILE_WIDTH = 360;
+/** An overlay's corner on its tile: "bottom-left, over 1 still pawn". */
+const placeLabel = ({ where, stillPawns }) =>
+  stillPawns === null
+    ? where
+    : `${where}, over ${stillPawns} still pawn${stillPawns === 1 ? "" : "s"}`;
 const writeContactSheet = async (stills, out) => {
   if (stills.length === 0) return null;
   const png = out.replace(/(\.mp4)?$/, "-sheet.png");
   const tiles = stills.map((st) => ({
     src: `data:image/png;base64,${readFileSync(st.file).toString("base64")}`,
-    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""} - ${st.at.toFixed(1)}s`,
+    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${placeLabel(st.place)}` : ""} - ${st.at.toFixed(1)}s`,
   }));
   const page = await browser.newPage({
     viewport: { width: 400, height: 400 },
@@ -2805,7 +2811,12 @@ const writeContactSheet = async (stills, out) => {
   return {
     png,
     sha256: sha256Of(png),
-    stills: stills.map(({ ply, kind, sound }) => ({ ply, kind, sound })),
+    stills: stills.map(({ ply, kind, sound, place }) => ({
+      ply,
+      kind,
+      sound,
+      place: place ?? null,
+    })),
   };
 };
 
@@ -3227,6 +3238,24 @@ const renderStyle = async (styleName) => {
     w.frames.push({ o, state, at: elapsed, image: timeline.length });
     return o;
   };
+  /** The box of the cell around a point of the board. */
+  const around = (p) => ({
+    x0: p.x - GRID.pitchX / 2,
+    y0: p.y - GRID.pitchY / 2,
+    x1: p.x + GRID.pitchX / 2,
+    y1: p.y + GRID.pitchY / 2,
+  });
+  /**
+   * Every pawn of a frame, as boxes in the board as the camera shows it,
+   * each with its cell (`cell`), so a pawn on many frames counts once.
+   */
+  const pawnBoxes = (state) =>
+    (pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
+      const box = boxOnScreen(around(p), state.zoom);
+      return box
+        ? [{ ...box, cell: `${p.x.toFixed(3)},${p.y.toFixed(3)}` }]
+        : [];
+    });
   /**
    * What a frame shows in play, as boxes in the board as the camera shows
    * it: the cells the last move's pawns left and reached, its walls, the
@@ -3247,12 +3276,6 @@ const renderStyle = async (styleName) => {
             ...spots(b - 1).filter(notIn(spots(b))),
           ]
         : [];
-    const around = (p) => ({
-      x0: p.x - GRID.pitchX / 2,
-      y0: p.y - GRID.pitchY / 2,
-      x1: p.x + GRID.pitchX / 2,
-      y1: p.y + GRID.pitchY / 2,
-    });
     const walls = String(history[b - 1]?.notation ?? "")
       .split(".")
       .filter((t) => t.startsWith(">") || t.startsWith("^"))
@@ -3322,9 +3345,19 @@ const renderStyle = async (styleName) => {
                 : []),
             ]
           : w.frames.flatMap((f) => inPlay(f.state, fast));
+      /*
+        A clip also keeps off the pawns that stand still where a corner
+        allows it: among the free corners, the one over the fewest. They
+        never stop a render (Wall Game Director, 2026-10-28: on 8FroT1GU
+        ply 14 a reactor hid the guest's mouse, far from the hunt).
+      */
+      const still =
+        w.asset.form === "clip"
+          ? w.frames.flatMap((f) => pawnBoxes(f.state))
+          : [];
       const place = fast
         ? quietestPlace(w.asset, busy)
-        : placeOverlay(w.asset, busy);
+        : placeOverlay(w.asset, busy, still);
       if (!place && w.asset.form === "bar") {
         // Each different box once: the ending repeats most frame to frame.
         const boxes = [
@@ -3344,6 +3377,11 @@ const renderStyle = async (styleName) => {
         );
       }
       Object.assign(w.place, place);
+      const stillPawns =
+        w.asset.form === "clip"
+          ? new Set(coveredBy(place, still).map((b) => b.cell)).size
+          : null;
+      log(`${where}: ${placeLabel({ where: place.where, stillPawns })}`);
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
@@ -3398,6 +3436,7 @@ const renderStyle = async (styleName) => {
           ply: w.ev.ply,
           kind: "overlay",
           sound: w.ev.sound ?? null,
+          place: { where: place.where, stillPawns },
           file: timeline[mid.image].file,
           at: mid.at,
         });
