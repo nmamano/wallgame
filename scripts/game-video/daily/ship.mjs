@@ -91,17 +91,20 @@ export const gpuHostOf = (env, command) => {
 };
 
 /**
- * Every file of the kit, repo-relative: the code and each file under KIT_DATA.
+ * Every file of the kit, repo-relative: the code and each file under `data`
+ * (KIT_DATA). A missing path throws: a kit without it renders wrong.
+ * @param {string} [repo]
+ * @param {string[]} [data]
  * @returns {string[]}
  */
-export const kitFiles = (repo = REPO) => {
+export const kitFiles = (repo = REPO, data = KIT_DATA) => {
   const walk = (path) =>
     statSync(join(repo, path)).isDirectory()
       ? readdirSync(join(repo, path))
           .sort()
           .flatMap((name) => walk(`${path}/${name}`))
       : [path];
-  return [...renderKitFiles(KIT_ENTRIES, repo), ...KIT_DATA.flatMap(walk)];
+  return [...renderKitFiles(KIT_ENTRIES, repo), ...data.flatMap(walk)];
 };
 
 /** `sha256sum -c` input for `files`, as this tree has them. */

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "../render-kit.mjs";
@@ -184,7 +190,18 @@ describe("ship", () => {
   );
 
   test("the checksums pass sha256sum -c on this tree", () => {
-    const files = kitFiles();
+    // A CI checkout has no gitignored kit data (stings, meme sounds,
+    // overlays are built or kept on the render boxes): skip such a folder
+    // when it is missing. A missing tracked path still fails.
+    // The trailing "/": .gitignore names these as folders ("/assets/stings/"),
+    // and git cannot know that a missing path is a folder.
+    const ignored = (path: string) =>
+      spawnSync("git", ["-C", REPO, "check-ignore", "-q", `${path}/`])
+        .status === 0;
+    const files = kitFiles(
+      REPO,
+      KIT_DATA.filter((p) => existsSync(join(REPO, p)) || !ignored(p)),
+    );
     expect(files).toContain("scripts/game-video/render-game-video.mjs");
     expect(files).toContain("scripts/game-video/stage.html");
     const sample = files.filter((f) => f.endsWith(".mjs")).slice(0, 5);
