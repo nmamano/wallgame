@@ -457,6 +457,21 @@
         font-size: calc(var(--caption-size) * 0.62);
         text-align: center;
       }
+      /*
+        The credit line (music-tracks.mjs creditLine): over the ending and
+        its hold, the head row is the credit's. One line, its size fitted
+        by __fitWallz (--credit-size).
+      */
+      #credit {
+        max-width: 100%;
+        white-space: nowrap;
+        font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
+        font-weight: 700;
+        font-size: var(--credit-size);
+        color: #e2e8f0;
+        text-align: center;
+        visibility: hidden;
+      }
 
       /* ---------- the endings (wallz look) ---------- */
       /*
@@ -803,6 +818,7 @@
             </div>
           </div>
           <div id="goal"></div>
+          <div id="credit"></div>
         </div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
@@ -1342,9 +1358,18 @@
        *         absent }
        *   goal = the goal line to show instead, or null
        */
-      const paintHud = (r, goal) => {
-        $("race").style.visibility = r && !goal ? "visible" : "hidden";
+      /**
+       * The head row: the race counter `r`, or the goal line `goal`, or the
+       * credit c = { a: 0..1 }, which fades in over the race counter as it
+       * fades out. The credit's text is set once, by __fitWallz.
+       */
+      const paintHud = (r, goal, c) => {
+        const a = c ? c.a : 0;
+        $("race").style.visibility = r && !goal && a < 1 ? "visible" : "hidden";
+        $("race").style.opacity = a > 0 ? String(1 - a) : "";
         $("goal").style.visibility = goal ? "visible" : "hidden";
+        $("credit").style.visibility = a > 0 ? "visible" : "hidden";
+        $("credit").style.opacity = a > 0 ? String(a) : "";
         if (goal) $("goal").textContent = goal;
         if (!r) return;
         // The flash: the counter swells and glows, twice, over 0.8 s.
@@ -1382,7 +1407,7 @@
        * long, so the board does not move when the beat changes. Returns the
        * board's side in px.
        */
-      window.__fitWallz = async ({ captions, hud, goal }) => {
+      window.__fitWallz = async ({ captions, hud, goal, credit }) => {
         $("root").classList.add("wallz");
         show($("play"), true);
         $("goal").textContent = goal ?? "";
@@ -1398,7 +1423,28 @@
         root.setProperty("--caption-h", captionH + "px");
         $("caption").textContent = captions[0] ?? "";
         await document.fonts.ready;
-        $("hud").classList.toggle("on", hud);
+        $("hud").classList.toggle("on", hud || !!credit);
+        /*
+          The credit on one line: it shrinks from half the caption size until
+          it fits the row, measured, not predicted from its length.
+        */
+        $("credit").textContent = credit ?? "";
+        const captionSize = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--caption-size",
+          ),
+        );
+        let creditSize = captionSize * 0.5;
+        const creditFloor = captionSize * 0.36;
+        root.setProperty("--credit-size", creditSize + "px");
+        while (
+          credit &&
+          $("credit").scrollWidth > $("credit").clientWidth &&
+          creditSize > creditFloor
+        ) {
+          creditSize = Math.max(creditFloor, creditSize - 1);
+          root.setProperty("--credit-size", creditSize + "px");
+        }
         $("raceNa").textContent = "88";
         $("raceNb").textContent = "88";
         $("raceWa").textContent = "BLUE";
@@ -1432,7 +1478,7 @@
        * the safe-area check: {x, y, w, h} rounded outward, and only the ones
        * this video shows.
        */
-      window.__layoutBoxes = ({ captions, race, goal }) => {
+      window.__layoutBoxes = ({ captions, race, goal, credit }) => {
         const box = (el) => {
           const r = el.getBoundingClientRect();
           const x = Math.floor(r.left);
@@ -1456,51 +1502,60 @@
           ...(captions[1] && { payoff: captionBox(captions[1]) }),
           ...(race && { race: box($("race")) }),
           ...(goal && { goalLine: box($("goal")) }),
+          ...(credit && { credit: box($("credit")) }),
         };
       };
 
       /**
-       * Each caption beat as the page wraps it: { lines, width } with the
-       * width of its widest line in px, MEASURED from the text's own line
+       * A text as the page wraps it (a caption beat, the credit): { lines,
+       * width } with the width of its widest line in px, MEASURED from the
+       * text's own line
        * boxes (emoji widths vary, so a character count cannot tell). Text
        * runs in two fonts on one line can sit at different heights, so a
        * run joins a line when their middles are within half a run's height.
        */
+      const textLines = (el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const lines = [];
+        for (const r of range.getClientRects()) {
+          if (r.width === 0) continue;
+          const mid = r.top + r.height / 2;
+          const line = lines.find(
+            (l) => Math.abs(l.mid - mid) < Math.min(l.height, r.height) / 2,
+          );
+          if (line) {
+            line.left = Math.min(line.left, r.left);
+            line.right = Math.max(line.right, r.right);
+          } else {
+            lines.push({
+              mid,
+              height: r.height,
+              left: r.left,
+              right: r.right,
+            });
+          }
+        }
+        return {
+          lines: lines.length,
+          width: Math.ceil(Math.max(0, ...lines.map((l) => l.right - l.left))),
+        };
+      };
+      /** Each caption beat as the page wraps it (textLines). */
       window.__captionText = (captions) => {
         const el = $("caption");
         const out = captions.map((text) => {
           el.textContent = text;
-          const range = document.createRange();
-          range.selectNodeContents(el);
-          const lines = [];
-          for (const r of range.getClientRects()) {
-            if (r.width === 0) continue;
-            const mid = r.top + r.height / 2;
-            const line = lines.find(
-              (l) => Math.abs(l.mid - mid) < Math.min(l.height, r.height) / 2,
-            );
-            if (line) {
-              line.left = Math.min(line.left, r.left);
-              line.right = Math.max(line.right, r.right);
-            } else {
-              lines.push({
-                mid,
-                height: r.height,
-                left: r.left,
-                right: r.right,
-              });
-            }
-          }
-          return {
-            lines: lines.length,
-            width: Math.ceil(
-              Math.max(0, ...lines.map((l) => l.right - l.left)),
-            ),
-          };
+          return textLines(el);
         });
         el.textContent = captions[0] ?? "";
         return out;
       };
+      /** The credit line as the page lays it out: { lines, width, size }. */
+      window.__creditText = () => ({
+        ...textLines($("credit")),
+        size: parseFloat(getComputedStyle($("credit")).fontSize),
+      });
 
       /**
        * A freeze before a move lands: the position before it in grey, and a
@@ -1743,7 +1798,7 @@
             down until the top banner's box starts below both.
           */
           $("caption").textContent = s.caption ?? "";
-          paintHud(s.race, goalNow);
+          paintHud(s.race, goalNow, s.credit);
           const above = [$("caption"), $("hud")]
             .filter((el) => el.offsetHeight > 0)
             .map((el) => el.getBoundingClientRect().bottom);
@@ -1776,7 +1831,7 @@
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
-          paintHud(s.race, goalNow);
+          paintHud(s.race, goalNow, s.credit);
           paintFreeze(s.freeze);
           show($("ffBadge"), !!s.fastForward);
           if (s.fastForward)

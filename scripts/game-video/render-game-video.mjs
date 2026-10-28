@@ -93,7 +93,7 @@ import {
 import { replayDistances } from "./race-replay.ts";
 import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
-import { MUSIC_TRACKS } from "./music-tracks.mjs";
+import { MUSIC_TRACKS, creditLine, mayPlay } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import { memeLoudness, mixGraph } from "./mix-loudness.mjs";
@@ -431,22 +431,31 @@ const CAPTURE_DPR = 3;
  * `--music <name>` pins one - which is what made the four-way comparison
  * possible - and `--no-music` turns it off.
  *
- * NOTE ON RIGHTS, which is a separate question from whether it plays: three of
- * the four songs are Uppbeat tracks and one is from itch.io, and what we hold
- * in credits.txt is licence CODES and links, not the grants themselves. Music
- * inside our own web app and music inside a video posted to someone else's
- * platform are different uses. Nothing here establishes the second one.
+ * RIGHTS: music inside our own web app and music inside a video posted to
+ * someone else's platform are different uses. A video plays only a track
+ * whose license lets it (mayPlay, music-tracks.mjs; the sources are in
+ * MUSIC-LICENSES.md): the random pick is among those, and a named track that
+ * may not play stops the render. A file given by path has no license record;
+ * it is for hand renders, which an EDL cannot ask for.
  */
 const SONG_DIR = join(REPO, "frontend/public/audio/songs");
 
 const pickTrack = () => {
   if (flag("no-music")) return null;
   const asked = arg("music");
-  if (!asked)
-    return MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
+  if (!asked) {
+    const playable = MUSIC_TRACKS.filter(mayPlay);
+    return playable[Math.floor(Math.random() * playable.length)];
+  }
   const hit = MUSIC_TRACKS.find(
     (t) => t.file === asked || t.file === `${asked}.mp3` || t.slug === asked,
   );
+  if (hit && !mayPlay(hit)) {
+    console.error(
+      `--music ${asked} may not play in a video (license ${hit.license}; see scripts/game-video/MUSIC-LICENSES.md)`,
+    );
+    process.exit(2);
+  }
   if (hit) return hit;
   // Any path is allowed too, for a track that is not in the playlist.
   if (existsSync(resolve(asked))) {
@@ -462,6 +471,14 @@ const pickTrack = () => {
   process.exit(2);
 };
 const TRACK = pickTrack();
+/**
+ * The daily look's credit line (music-tracks.mjs creditLine): the played
+ * track and the game sounds, on the video over its ending (stage.html
+ * #credit) and in RESULT, so the post can carry the same words.
+ */
+const CREDIT = EDL ? creditLine(TRACK) : null;
+/** How long the credit takes to fade in over the race counter. */
+const CREDIT_FADE_SECONDS = 0.3;
 const MUSIC = TRACK
   ? existsSync(TRACK.file)
     ? TRACK.file
@@ -2522,6 +2539,7 @@ const renderStyle = async (styleName) => {
           captions: CAPTIONS,
           hud: Boolean(RACE_DISTANCES || GOAL_LINE),
           goal: GOAL_LINE,
+          credit: CREDIT,
         })
       : null;
     return { page, board };
@@ -2925,6 +2943,7 @@ const renderStyle = async (styleName) => {
         captions: CAPTIONS,
         race: Boolean(RACE_DISTANCES),
         goal: Boolean(GOAL_LINE),
+        credit: Boolean(CREDIT),
       })
     : null;
   for (const [name, b] of Object.entries(layoutBoxes ?? {})) {
@@ -2954,6 +2973,21 @@ const renderStyle = async (styleName) => {
           ...(payoff && { payoff }),
         }))
     : null;
+
+  /**
+   * The credit line as the stage fitted it (stage.html __creditText): it
+   * must stay on one line, or the render stops here, before any frame.
+   */
+  const creditText =
+    wallz && CREDIT ? await stage.evaluate(() => window.__creditText()) : null;
+  if (creditText && creditText.lines !== 1) {
+    throw new Error(
+      `the credit line takes ${creditText.lines} lines at its smallest size: ${CREDIT}`,
+    );
+  }
+  /** The credit over the ending, `t` seconds after the ending began. */
+  const creditAt = (t) =>
+    creditText ? { a: Math.min(1, t / CREDIT_FADE_SECONDS) } : undefined;
 
   /**
    * Where each stamp and trap word lands (stampSpot) and how much it shrinks
@@ -3335,14 +3369,39 @@ const renderStyle = async (styleName) => {
         cue(sounds.finish, "finish", { at: elapsed + timing.impact });
         const endingFrames = Math.round(timing.seconds * FPS);
         for (let i = 0; i < endingFrames; i += 1) {
-          await emit(playState(ply, { ending: ending(i / FPS) }), 1 / FPS, {
-            kind: "ending",
+          await emit(
+            playState(ply, {
+              ending: ending(i / FPS),
+              credit: creditAt(i / FPS),
+            }),
+            1 / FPS,
+            { kind: "ending", ply: plyIndex },
+          );
+        }
+        await emit(
+          playState(ply, {
+            ending: ending(timing.seconds),
+            credit: creditAt(timing.seconds),
+          }),
+          timing.hold,
+          { kind: "ending-hold", ply: plyIndex },
+        );
+      } else if (creditText) {
+        /*
+          A draw has no ending, so its hold carries the credit: faded in
+          frame by frame, then held. Not "move" frames: a plain position
+          has no credit over it.
+        */
+        const fade = Math.round(CREDIT_FADE_SECONDS * FPS);
+        for (let i = 0; i < fade; i += 1) {
+          await emit(playState(ply, { credit: creditAt(i / FPS) }), 1 / FPS, {
+            kind: "ending-hold",
             ply: plyIndex,
           });
         }
         await emit(
-          playState(ply, { ending: ending(timing.seconds) }),
-          timing.hold,
+          playState(ply, { credit: creditAt(CREDIT_FADE_SECONDS) }),
+          DRAW_HOLD_SECONDS - fade / FPS,
           { kind: "ending-hold", ply: plyIndex },
         );
       } else {
@@ -3723,6 +3782,11 @@ const renderStyle = async (styleName) => {
       edlSha256: PLY_WINDOW ? null : EDL_SHA256,
       sheet,
       layout: { frame: DAILY_FRAME, boxes: layoutBoxes, captionText },
+      /*
+        The credit line on the video's ending (the box is layout.boxes.credit):
+        the words a COPY REQUEST names. Null in a render with no EDL.
+      */
+      credit: creditText ? { text: CREDIT, ...creditText } : null,
       loudness,
     }),
   };

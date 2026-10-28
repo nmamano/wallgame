@@ -14,7 +14,7 @@
  *     "gameId": "eeFSMEmL",
  *     "caption": "the bot was 97% winning 💀",
  *     "ending": "replay",
- *     "music": "a-legend",
+ *     "music": "deja-vus",
  *     "pace": [{ "fromPly": 13, "toPly": 17, "secondsPerMove": 1.1 }],
  *     "events": [
  *       { "ply": 14, "kind": "scared", "cell": "g4", "sound": "scared-2" },
@@ -41,8 +41,10 @@
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
  *   music    optional: one of the site's tracks by slug (deja-vus,
- *            tea-for-two, a-legend, skippy). Absent (null after validation)
- *            means a random one, as the site and hand renders do.
+ *            tea-for-two, a-legend, skippy). The renderer refuses one whose
+ *            license does not let a video play it (music-tracks.mjs
+ *            `license`, MUSIC-LICENSES.md). Absent (null after validation)
+ *            means a random one of those that may play.
  *   startPly optional: the first ply the video plays (default 0). It opens
  *            on the position before it, so a quiet opening is cut. Every
  *            event and pace range must be at startPly or later.
