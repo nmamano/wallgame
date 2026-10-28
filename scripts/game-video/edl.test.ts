@@ -220,10 +220,67 @@ describe("checkEdlAgainstGame", () => {
 });
 
 describe("music", () => {
-  test("is optional, null when absent, and only a site track", () => {
+  const cue = (fromPly: number, track: string) => ({ fromPly, track });
+  const ok = (music: unknown, more = {}) =>
+    validateEdl({ ...base, ...more, music }).ok;
+
+  test("is optional, null when absent, and a list of cues of site tracks", () => {
     expect(accept(base).music).toBe(null);
-    expect(validateEdl({ ...base, music: "a-legend" }).ok).toBe(true);
-    expect(validateEdl({ ...base, music: "darude" }).ok).toBe(false);
+    expect(accept({ ...base, music: [cue(0, "a-legend")] }).music).toEqual([
+      cue(0, "a-legend"),
+    ]);
+    expect(ok([cue(0, "deja-vus"), cue(9, "a-legend")])).toBe(true);
+    // A track may come back; a third different one has no credit line.
+    expect(
+      ok([cue(0, "deja-vus"), cue(9, "a-legend"), cue(20, "deja-vus")]),
+    ).toBe(true);
+    expect(
+      ok([cue(0, "deja-vus"), cue(9, "a-legend"), cue(20, "skippy")]),
+    ).toBe(false);
+    expect(
+      ok([
+        cue(0, "deja-vus"),
+        cue(9, "a-legend"),
+        cue(20, "deja-vus"),
+        cue(25, "a-legend"),
+      ]),
+    ).toBe(false);
+    expect(ok([])).toBe(false);
+    expect(ok([cue(0, "darude")])).toBe(false);
+    expect(ok([{ ...cue(0, "a-legend"), volume: 1 }])).toBe(false);
+  });
+
+  test("refuses the string form of before cues with the cue to write", () => {
+    expect(
+      validateEdl({ ...base, startPly: 2, music: "deja-vus" }).errors,
+    ).toEqual([
+      'music is a cue list now: [{ "fromPly": 2, "track": "deja-vus" }]',
+    ]);
+  });
+
+  test("opens at startPly, then changes the track at later plies", () => {
+    expect(ok([cue(4, "deja-vus")], { startPly: 4 })).toBe(true);
+    expect(ok([cue(0, "deja-vus")], { startPly: 4 })).toBe(false);
+    expect(ok([cue(1, "deja-vus")])).toBe(false);
+    expect(ok([cue(0, "deja-vus"), cue(0, "a-legend")])).toBe(false);
+    expect(ok([cue(4, "deja-vus"), cue(3, "a-legend")], { startPly: 4 })).toBe(
+      false,
+    );
+    expect(ok([cue(0, "deja-vus"), cue(9, "deja-vus")])).toBe(false);
+    expect(ok([cue(0, "deja-vus"), cue(1.5, "a-legend")])).toBe(false);
+  });
+
+  test("a cue past the last move fails against the game", () => {
+    const game = { notations: ["Ce7", "Cf7", "^a4.^h4"], cols: 8, rows: 8 };
+    const at = (ply: number) =>
+      checkEdlAgainstGame(
+        accept({ ...base, music: [cue(0, "deja-vus"), cue(ply, "a-legend")] }),
+        { ...game, initialState: START_8 },
+      );
+    expect(at(2)).toEqual([]);
+    expect(at(3)).toEqual([
+      "ply 3 is past the last move (the game has 3 plies, 0-based)",
+    ]);
   });
 });
 

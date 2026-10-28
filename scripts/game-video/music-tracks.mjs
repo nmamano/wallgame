@@ -63,9 +63,23 @@ export const mayPlay = (track) =>
 export const SOUNDS_CREDIT = "Sounds: JDSherbert";
 
 /**
- * The one credit line a video carries for its soundtrack: the track's
- * credit, then the game sounds'. Null music (a silent bed) credits the
- * sounds only.
+ * The credit a video carries for its soundtrack, as the lines it shows over
+ * the ending: one per track that played, in play order, "Music: " before the
+ * first and the game sounds' credit after the last. No tracks (a silent bed)
+ * credits the sounds only. A track given by path has no license record, so
+ * its title stands in for a credit (hand renders only).
+ * @param {{ credit?: string, title: string }[]} tracks
+ * @returns {string[]}
  */
-export const creditLine = (track) =>
-  track ? `Music: ${track.credit} · ${SOUNDS_CREDIT}` : SOUNDS_CREDIT;
+export const creditLines = (tracks) =>
+  tracks.length === 0
+    ? [SOUNDS_CREDIT]
+    : tracks.map(
+        (t, i) =>
+          (i === 0 ? "Music: " : "") +
+          (t.credit ?? t.title) +
+          (i === tracks.length - 1 ? ` · ${SOUNDS_CREDIT}` : ""),
+      );
+
+/** The same credit as one line of text, for the post (creditLines). */
+export const creditLine = (tracks) => creditLines(tracks).join(", ");

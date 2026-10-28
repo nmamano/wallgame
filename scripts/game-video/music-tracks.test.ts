@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   creditLine,
+  creditLines,
   mayPlay,
   MUSIC_TRACKS,
   SOUNDS_CREDIT,
@@ -29,11 +30,18 @@ describe("the music license table", () => {
     });
   });
 
-  test("builds one credit line: the track, then the game sounds", () => {
-    const dejaVus = MUSIC_TRACKS.find((t) => t.slug === "deja-vus");
-    expect(creditLine(dejaVus)).toBe(
+  test("builds one credit line: each track in play order, then the game sounds", () => {
+    const track = (slug: string) => MUSIC_TRACKS.find((t) => t.slug === slug)!;
+    expect(creditLine([track("deja-vus")])).toBe(
       "Music: Deja Vus by YannZ (CC BY 4.0) · Sounds: JDSherbert",
     );
-    expect(creditLine(null)).toBe(SOUNDS_CREDIT);
+    expect(creditLine([track("a-legend"), track("deja-vus")])).toBe(
+      "Music: A Legend by Ian Aisling (Uppbeat), Deja Vus by YannZ (CC BY 4.0) · Sounds: JDSherbert",
+    );
+    expect(creditLines([track("a-legend"), track("deja-vus")])).toEqual([
+      "Music: A Legend by Ian Aisling (Uppbeat)",
+      "Deja Vus by YannZ (CC BY 4.0) · Sounds: JDSherbert",
+    ]);
+    expect(creditLine([])).toBe(SOUNDS_CREDIT);
   });
 });

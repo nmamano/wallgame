@@ -20,6 +20,7 @@ import { spawnSync } from "node:child_process";
  *             meme: string | null }} Cue
  * @typedef {{ file: string, start: number, endAt: number, bed: number,
  *             volume: number, fadeIn: number, fadeOut: number }} Music
+ *   One track's part of the music: the renderer gives one per music cue.
  */
 
 const FORMAT =
@@ -29,14 +30,18 @@ const FORMAT =
  * The filter graph of the mix, before the limiter: `inputs` for ffmpeg, and
  * `chains` that end in the label [mix], totalSeconds long.
  *
- * The music starts at `start` and its fade COMPLETES at `endAt`. The fade
- * goes to `bed` (a share of the level) rather than to silence when bed > 0:
- * a linear ramp from 1 to bed over the fade, then bed to the end. With bed 0
- * it is a plain fade.
- * @param {{ cues: Cue[], totalSeconds: number, music: Music | null }} mix
+ * Each music part starts at `start`, from the start of its file, and its
+ * fade COMPLETES at `endAt`. The fade goes to `bed` (a share of the level)
+ * rather than to silence when bed > 0: a linear ramp from 1 to bed over the
+ * fade, then bed to the end. With bed 0 it is a plain fade. The parts add
+ * up, so where one fades out as the next fades in, that is the crossfade.
+ * One part gives the same graph as before there were cues.
+ * @param {{ cues: Cue[], totalSeconds: number, music: Music[] }} mix
  */
 export const mixGraph = ({ cues, totalSeconds, music }) => {
-  if (cues.length === 0 && !music) throw new Error("nothing to mix");
+  if (cues.length === 0 && music.length === 0) {
+    throw new Error("nothing to mix");
+  }
   const end = totalSeconds.toFixed(3);
   const inputs = cues.flatMap((e) => ["-i", e.file]);
   const chains = cues.map(
@@ -53,32 +58,41 @@ export const mixGraph = ({ cues, totalSeconds, music }) => {
     chains.push(
       cues.map((_, i) => `[a${i}]`).join("") +
         `amix=inputs=${cues.length}:normalize=0:dropout_transition=0,` +
-        `apad,atrim=0:${end}${music ? "[fx]" : "[mix]"}`,
+        `apad,atrim=0:${end}${music.length > 0 ? "[fx]" : "[mix]"}`,
     );
   }
-  if (music) {
-    const musicSeconds = totalSeconds - music.start;
-    const fadeOutAt = Math.max(0, music.endAt - music.start - music.fadeOut);
+  if (music.length === 0) return { inputs, chains };
+  // The music bus: one part goes straight to it, several are mixed first.
+  const toMix = cues.length > 0 ? "[mus]" : `,apad,atrim=0:${end}[mix]`;
+  const one = music.length === 1;
+  music.forEach((part, k) => {
+    const musicSeconds = totalSeconds - part.start;
+    const fadeOutAt = Math.max(0, part.endAt - part.start - part.fadeOut);
     const a = fadeOutAt.toFixed(3);
-    const b = (fadeOutAt + music.fadeOut).toFixed(3);
+    const b = (fadeOutAt + part.fadeOut).toFixed(3);
     const fadeOut =
-      music.bed > 0
-        ? `volume='if(lt(t,${a}),1,if(lt(t,${b}),1-(1-${music.bed})*(t-${a})/${music.fadeOut},${music.bed}))':eval=frame,`
-        : `afade=t=out:st=${a}:d=${music.fadeOut},`;
-    inputs.push("-i", music.file);
+      part.bed > 0
+        ? `volume='if(lt(t,${a}),1,if(lt(t,${b}),1-(1-${part.bed})*(t-${a})/${part.fadeOut},${part.bed}))':eval=frame,`
+        : `afade=t=out:st=${a}:d=${part.fadeOut},`;
+    inputs.push("-i", part.file);
     chains.push(
-      `[${cues.length}:a]${FORMAT},` +
+      `[${cues.length + k}:a]${FORMAT},` +
         `atrim=0:${musicSeconds.toFixed(3)},` +
-        `afade=t=in:st=0:d=${music.fadeIn},` +
+        `afade=t=in:st=0:d=${part.fadeIn},` +
         fadeOut +
-        `volume=${music.volume},adelay=${Math.round(music.start * 1000)}:all=1` +
+        `volume=${part.volume},adelay=${Math.round(part.start * 1000)}:all=1` +
+        (one ? toMix : `[m${k}]`),
+    );
+  });
+  if (!one) {
+    chains.push(
+      music.map((_, k) => `[m${k}]`).join("") +
+        `amix=inputs=${music.length}:normalize=0:dropout_transition=0` +
         (cues.length > 0 ? "[mus]" : `,apad,atrim=0:${end}[mix]`),
     );
-    if (cues.length > 0) {
-      chains.push(
-        `[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mix]`,
-      );
-    }
+  }
+  if (cues.length > 0) {
+    chains.push(`[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mix]`);
   }
   return { inputs, chains };
 };
@@ -175,21 +189,21 @@ const measurePart = (ffmpeg, graph) => {
 /**
  * Each meme sound of the mix against the bed, in cue order.
  * @param {{ ffmpeg: string, cues: Cue[], totalSeconds: number,
- *           music: Music | null }} mix
+ *           music: Music[] }} mix
  */
 export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
   const memes = cues.filter((c) => c.meme !== null);
   if (memes.length === 0) return { memes: [] };
   const bedCues = cues.filter((c) => c.meme === null);
   const bed =
-    bedCues.length > 0 || music
+    bedCues.length > 0 || music.length > 0
       ? measurePart(ffmpeg, mixGraph({ cues: bedCues, totalSeconds, music }))
       : null;
   return {
     memes: memes.map((c) =>
       memeOverBed(
         { key: c.meme, at: c.at },
-        measurePart(ffmpeg, mixGraph({ cues: [c], totalSeconds, music: null })),
+        measurePart(ffmpeg, mixGraph({ cues: [c], totalSeconds, music: [] })),
         bed,
       ),
     ),

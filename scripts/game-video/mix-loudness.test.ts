@@ -3,7 +3,12 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { memeLoudness, memeOverBed, parseMomentary } from "./mix-loudness.mjs";
+import {
+  memeLoudness,
+  memeOverBed,
+  mixGraph,
+  parseMomentary,
+} from "./mix-loudness.mjs";
 
 const parts = (series: [number, number][]) => ({
   windows: series.map(([t, m]) => ({ t, m })),
@@ -101,19 +106,85 @@ test("memeLoudness rebuilds the meme alone and the bed, and measures each", () =
       { file: meme, gain: 1, at: 2, rate: 1, meme: "boom-1" },
     ],
     totalSeconds: 4,
-    music: {
-      file: music,
-      start: 0,
-      endAt: 4,
-      bed: 1,
-      volume: 1,
-      fadeIn: 0.01,
-      fadeOut: 0.01,
-    },
+    music: [
+      {
+        file: music,
+        start: 0,
+        endAt: 4,
+        bed: 1,
+        volume: 1,
+        fadeIn: 0.01,
+        fadeOut: 0.01,
+      },
+    ],
   });
   expect(r.memes).toHaveLength(1);
   const [m] = r.memes;
   expect(m.key).toBe("boom-1");
   expect(m.at).toBe(2);
   expect(m.overLU).toBeCloseTo(20 * Math.log10(0.2 / 0.05), 0);
+});
+
+describe("mixGraph", () => {
+  const FORMAT =
+    "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo";
+  const cues = [{ file: "/a/pawn.wav", gain: 0.5, at: 2, rate: 1, meme: null }];
+  const part = {
+    file: "/s/song1.mp3",
+    start: 1.25,
+    endAt: 30.5,
+    bed: 0.35,
+    volume: 0.3,
+    fadeIn: 1.6,
+    fadeOut: 2,
+  };
+
+  test("one music part gives the graph of the renders before music cues", () => {
+    // The chains of 2026-10-28 main (d4b3e30e): a one-cue EDL renders the
+    // same MP4 as the string "music" did.
+    expect(mixGraph({ cues, totalSeconds: 33, music: [part] }).chains).toEqual([
+      `[0:a]${FORMAT},adelay=2000:all=1,volume=0.5[a0]`,
+      "[a0]amix=inputs=1:normalize=0:dropout_transition=0,apad,atrim=0:33.000[fx]",
+      `[1:a]${FORMAT},atrim=0:31.750,afade=t=in:st=0:d=1.6,volume='if(lt(t,27.250),1,if(lt(t,29.250),1-(1-0.35)*(t-27.250)/2,0.35))':eval=frame,volume=0.3,adelay=1250:all=1[mus]`,
+      "[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mix]",
+    ]);
+  });
+
+  test("several parts each start at their own second and add up under the effects", () => {
+    const second = { ...part, file: "/s/song5.mp3", start: 12, fadeIn: 0.25 };
+    const first = { ...part, endAt: 13, bed: 0, fadeOut: 1 };
+    const { inputs, chains } = mixGraph({
+      cues,
+      totalSeconds: 33,
+      music: [first, second],
+    });
+    expect(inputs).toEqual([
+      "-i",
+      "/a/pawn.wav",
+      "-i",
+      "/s/song1.mp3",
+      "-i",
+      "/s/song5.mp3",
+    ]);
+    expect(chains.slice(2)).toEqual([
+      `[1:a]${FORMAT},atrim=0:31.750,afade=t=in:st=0:d=1.6,afade=t=out:st=10.750:d=1,volume=0.3,adelay=1250:all=1[m0]`,
+      `[2:a]${FORMAT},atrim=0:21.000,afade=t=in:st=0:d=0.25,volume='if(lt(t,16.500),1,if(lt(t,18.500),1-(1-0.35)*(t-16.500)/2,0.35))':eval=frame,volume=0.3,adelay=12000:all=1[m1]`,
+      "[m0][m1]amix=inputs=2:normalize=0:dropout_transition=0[mus]",
+      "[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mix]",
+    ]);
+  });
+
+  test("music with no cues ends the music bus at [mix]", () => {
+    const { chains } = mixGraph({
+      cues: [],
+      totalSeconds: 33,
+      music: [part, { ...part, start: 12 }],
+    });
+    expect(chains.at(-1)).toBe(
+      "[m0][m1]amix=inputs=2:normalize=0:dropout_transition=0,apad,atrim=0:33.000[mix]",
+    );
+    expect(() => mixGraph({ cues: [], totalSeconds: 33, music: [] })).toThrow(
+      "nothing to mix",
+    );
+  });
 });

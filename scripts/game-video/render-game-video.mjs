@@ -93,7 +93,12 @@ import {
 import { replayDistances } from "./race-replay.ts";
 import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
-import { MUSIC_TRACKS, creditLine, mayPlay } from "./music-tracks.mjs";
+import {
+  MUSIC_TRACKS,
+  creditLine,
+  creditLines,
+  mayPlay,
+} from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import { memeLoudness, mixGraph } from "./mix-loudness.mjs";
@@ -157,7 +162,6 @@ const EDL_SHA256 = EDL_BYTES
 const fromEdl = {
   game: EDL?.gameId,
   style: EDL ? "daily" : undefined,
-  music: EDL?.music,
 };
 const arg = (name, fallback) => cliArg(name) ?? fromEdl[name] ?? fallback;
 const flag = (name) => argv.includes(`--${name}`);
@@ -429,7 +433,9 @@ const CAPTURE_DPR = 3;
  * ON by default, with a RANDOM track, because that is what the product does:
  * frontend/src/lib/music.ts starts its playlist at a random index every game.
  * `--music <name>` pins one - which is what made the four-way comparison
- * possible - and `--no-music` turns it off.
+ * possible - and `--no-music` turns it off. An EDL names its music as cues
+ * (edl.mjs `music`): the track it opens with, and up to two changes at later
+ * plies, with at most two different tracks. `--music` gives one cue, and wins over the EDL's.
  *
  * RIGHTS: music inside our own web app and music inside a video posted to
  * someone else's platform are different uses. A video plays only a track
@@ -440,19 +446,14 @@ const CAPTURE_DPR = 3;
  */
 const SONG_DIR = join(REPO, "frontend/public/audio/songs");
 
-const pickTrack = () => {
-  if (flag("no-music")) return null;
-  const asked = arg("music");
-  if (!asked) {
-    const playable = MUSIC_TRACKS.filter(mayPlay);
-    return playable[Math.floor(Math.random() * playable.length)];
-  }
+/** A track by file, slug or path; `where` names who asked, for the error. */
+const trackFor = (asked, where) => {
   const hit = MUSIC_TRACKS.find(
     (t) => t.file === asked || t.file === `${asked}.mp3` || t.slug === asked,
   );
   if (hit && !mayPlay(hit)) {
     console.error(
-      `--music ${asked} may not play in a video (license ${hit.license}; see scripts/game-video/MUSIC-LICENSES.md)`,
+      `${where} ${asked} may not play in a video (license ${hit.license}; see scripts/game-video/MUSIC-LICENSES.md)`,
     );
     process.exit(2);
   }
@@ -466,24 +467,57 @@ const pickTrack = () => {
     };
   }
   console.error(
-    `--music ${asked} not found. Known: ${MUSIC_TRACKS.map((t) => `${t.file} (${t.slug})`).join(", ")}`,
+    `${where} ${asked} not found. Known: ${MUSIC_TRACKS.map((t) => `${t.file} (${t.slug})`).join(", ")}`,
   );
   process.exit(2);
 };
-const TRACK = pickTrack();
+
 /**
- * The daily look's credit line (music-tracks.mjs creditLine): the played
- * track and the game sounds, on the video over its ending (stage.html
- * #credit) and in RESULT, so the post can carry the same words.
+ * The music cues, in ply order: [{ fromPly, track, file }], or null with
+ * --no-music. The first cue's fromPly is the video's startPly.
  */
-const CREDIT = EDL ? creditLine(TRACK) : null;
-/** How long the credit takes to fade in over the race counter. */
-const CREDIT_FADE_SECONDS = 0.3;
-const MUSIC = TRACK
-  ? existsSync(TRACK.file)
-    ? TRACK.file
-    : join(SONG_DIR, TRACK.file)
-  : null;
+const MUSIC_CUES = (() => {
+  if (flag("no-music")) return null;
+  const opening = EDL?.startPly ?? 0;
+  const asked = cliArg("music");
+  const cues = asked
+    ? [{ fromPly: opening, track: trackFor(asked, "--music") }]
+    : EDL?.music
+      ? EDL.music.map((c) => ({
+          fromPly: c.fromPly,
+          track: trackFor(c.track, "the EDL's music track"),
+        }))
+      : (() => {
+          const playable = MUSIC_TRACKS.filter(mayPlay);
+          return [
+            {
+              fromPly: opening,
+              track: playable[Math.floor(Math.random() * playable.length)],
+            },
+          ];
+        })();
+  return cues.map((c) => ({
+    ...c,
+    file: existsSync(c.track.file)
+      ? c.track.file
+      : join(SONG_DIR, c.track.file),
+  }));
+})();
+/**
+ * The cues this render plays: a --plies preview opens on the cue in force at
+ * its first ply and drops the cues it never reaches. Set once the game's
+ * length is known (playedCues, below).
+ */
+const playedCues = (startPly, lastPlyIndex) => {
+  if (!MUSIC_CUES) return [];
+  const opening = MUSIC_CUES.findLast((c) => c.fromPly <= startPly);
+  return [
+    { ...opening, fromPly: startPly },
+    ...MUSIC_CUES.filter(
+      (c) => c.fromPly > startPly && c.fromPly <= lastPlyIndex,
+    ),
+  ];
+};
 
 /* ------------------------------------------------------------- the mix -- */
 
@@ -573,6 +607,13 @@ const FAST_FORWARD_CLICK_STEP = 10 ** (-6 / 20);
 /** Seconds the music takes to arrive, and to leave before the end card. */
 const MUSIC_FADE_IN = 1.6;
 const MUSIC_FADE_OUT = 2.0;
+/**
+ * A music cue's change of track: the old one leaves over CUE_FADE_OUT from
+ * the cue's ply beat, and the new one arrives over CUE_FADE_IN, short, so the
+ * change lands on its moment.
+ */
+const CUE_FADE_OUT = 1.0;
+const CUE_FADE_IN = 0.25;
 
 if (
   PACE_OVERRIDE !== undefined &&
@@ -762,8 +803,8 @@ const log = (...m) => console.log("[video]", ...m);
 log(`game ${GAME_ID} from ${ORIGIN}`);
 log(`board theme: ${BOARD_THEME}`);
 log(
-  TRACK
-    ? `music: ${TRACK.title}${arg("music") ? "" : " (picked at random)"}`
+  MUSIC_CUES
+    ? `music: ${MUSIC_CUES.map((c) => `${c.track.title} from ply ${c.fromPly}`).join(", then ")}${cliArg("music") || EDL?.music ? "" : " (picked at random)"}`
     : "music: off",
 );
 /* ------------------------------------------------------- capture, part 1 -- */
@@ -1962,14 +2003,47 @@ const stingManifest = existsSync(join(STING_DIR, "stings.json"))
   : { vsHitSeconds: 0 };
 
 /**
- * Mix the cues the composer recorded, and the music under them.
+ * The music as mix parts (mix-loudness.mjs Music), one per played cue
+ * (CUES). The first starts at `musicStart`; a later one at the beat start of
+ * its ply (`beatStartAt`), where the part before it fades out. The last part
+ * fades to `bed` at `musicEndAt`, as the one track did before there were
+ * cues, so a one-cue video mixes exactly as before.
+ * @param {{ beatStartAt: Map<number, number>, musicStart: number,
+ *           musicEndAt: number, bed: number }} at
+ */
+const musicParts = ({ beatStartAt, musicStart, musicEndAt, bed }) => {
+  const startOf = (k) => {
+    if (k === 0) return musicStart;
+    const t = beatStartAt.get(CUES[k].fromPly);
+    if (t === undefined) {
+      throw new Error(`music cue ${k} at ply ${CUES[k].fromPly} never played`);
+    }
+    return t;
+  };
+  return CUES.map((c, k) => {
+    const last = k === CUES.length - 1;
+    return {
+      file: c.file,
+      start: startOf(k),
+      endAt: last ? musicEndAt : startOf(k + 1) + CUE_FADE_OUT,
+      bed: last ? bed : 0,
+      volume: MUSIC_VOLUME,
+      fadeIn: k === 0 ? MUSIC_FADE_IN : CUE_FADE_IN,
+      fadeOut: last ? MUSIC_FADE_OUT : CUE_FADE_OUT,
+    };
+  });
+};
+
+/**
+ * Mix the cues the composer recorded, and the music parts (musicParts) under
+ * them.
  *
  * Every cue carries the second its frame went into the timeline, so a sound
  * cannot drift off its picture when a beat is retimed or a swing move holds
  * longer than a routine one.
  *
- * The music starts at `musicStart` and its fade COMPLETES at `musicEndAt`, the
- * moment the last sting arrives. Measured 2026-08-19: with the fade spread
+ * The music starts at `musicStart` and its last fade COMPLETES at
+ * `musicEndAt`, the moment the last sting arrives. Measured 2026-08-19: with the fade spread
  * over the end card, the last second of it carried music at -17.5 dB peak
  * where a no-music build is digital silence - and the bed is three times
  * louder than when Nil first called the win screen too loud. The riser owns
@@ -1989,31 +2063,13 @@ const stingManifest = existsSync(join(STING_DIR, "stings.json"))
  * mix (mix-loudness.mjs) for the RESULT line; both null when no sound
  * exists.
  */
-const buildAudio = ({
-  cues,
-  totalSeconds,
-  musicStart,
-  musicEndAt,
-  bed,
-  work,
-}) => {
+const buildAudio = ({ cues, totalSeconds, music, work }) => {
   const present = cues.filter((e) => existsSync(e.file));
   for (const missing of cues.filter((e) => !existsSync(e.file))) {
     log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
   }
   if (present.length === 0)
     return { audioPath: null, loudness: null, mixed: [] };
-  const music = MUSIC
-    ? {
-        file: MUSIC,
-        start: musicStart,
-        endAt: musicEndAt,
-        bed,
-        volume: MUSIC_VOLUME,
-        fadeIn: MUSIC_FADE_IN,
-        fadeOut: MUSIC_FADE_OUT,
-      }
-    : null;
   const { inputs, chains } = mixGraph({ cues: present, totalSeconds, music });
   chains.push(
     `[mix]alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
@@ -2025,13 +2081,7 @@ const buildAudio = ({
     JSON.stringify(
       {
         totalSeconds,
-        musicStart,
-        musicEndAt,
-        bed,
-        music: MUSIC,
-        musicVolume: MUSIC_VOLUME,
-        musicFadeIn: MUSIC_FADE_IN,
-        musicFadeOut: MUSIC_FADE_OUT,
+        music,
         cues: present,
       },
       null,
@@ -2332,6 +2382,23 @@ if (EDL) {
   }
 }
 
+/** The music cues this render plays (playedCues): none with --no-music. */
+const CUES = playedCues(START_PLY, LAST_BOARD - 1);
+/**
+ * The daily look's credit (music-tracks.mjs): each track that played and the
+ * game sounds, on the video over its ending as one line per track (stage.html
+ * #credit), and as one line of text in RESULT, so the post can carry the same
+ * words.
+ */
+/** Each different track that played, once, in the order it first played. */
+const PLAYED_TRACKS = [
+  ...new Map(CUES.map((c) => [c.track.file, c.track])).values(),
+];
+const CREDIT_LINES = EDL ? creditLines(PLAYED_TRACKS) : null;
+const CREDIT = CREDIT_LINES ? creditLine(PLAYED_TRACKS) : null;
+/** How long the credit takes to fade in over the race counter. */
+const CREDIT_FADE_SECONDS = 0.3;
+
 /**
  * Each player's steps to their target at every position, from the game
  * record through shared/domain (race-replay.ts), the same numbers the
@@ -2539,7 +2606,7 @@ const renderStyle = async (styleName) => {
           captions: CAPTIONS,
           hud: Boolean(RACE_DISTANCES || GOAL_LINE),
           goal: GOAL_LINE,
-          credit: CREDIT,
+          credit: CREDIT_LINES,
         })
       : null;
     return { page, board };
@@ -2975,14 +3042,22 @@ const renderStyle = async (styleName) => {
     : null;
 
   /**
-   * The credit line as the stage fitted it (stage.html __creditText): it
-   * must stay on one line, or the render stops here, before any frame.
+   * The credit as the stage fitted it (stage.html __creditText): one line
+   * per track and no more, inside its row, or the render stops here, before
+   * any frame.
    */
   const creditText =
-    wallz && CREDIT ? await stage.evaluate(() => window.__creditText()) : null;
-  if (creditText && creditText.lines !== 1) {
+    wallz && CREDIT_LINES
+      ? await stage.evaluate(() => window.__creditText())
+      : null;
+  if (creditText && creditText.lines !== CREDIT_LINES.length) {
     throw new Error(
-      `the credit line takes ${creditText.lines} lines at its smallest size: ${CREDIT}`,
+      `the credit takes ${creditText.lines} lines at its smallest size, not ${CREDIT_LINES.length}: ${CREDIT}`,
+    );
+  }
+  if (creditText && !creditText.fits) {
+    throw new Error(
+      `the credit does not fit its row at its smallest size: ${CREDIT}`,
     );
   }
   /** The credit over the ending, `t` seconds after the ending began. */
@@ -3312,10 +3387,13 @@ const renderStyle = async (styleName) => {
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;
+  /** The second each ply's beat starts: a freeze or a lead zoom included. */
+  const beatStartAt = new Map();
 
   for (let ply = START_PLY + 1; ply <= LAST_BOARD; ply += 1) {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
+    beatStartAt.set(plyIndex, elapsed);
     if (wallz) await playFreeze(ply, plyIndex);
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
     if (lead) await playLeadZoom(ply, plyIndex, lead);
@@ -3629,6 +3707,12 @@ const renderStyle = async (styleName) => {
     ),
   );
 
+  const music = musicParts({
+    beatStartAt,
+    musicStart,
+    musicEndAt: musicEndAt ?? totalSeconds,
+    bed: wallz ? MUSIC_BED : 0,
+  });
   let audioPath = null;
   /** Each meme sound against the bed; null when the video has no soundtrack. */
   let loudness = null;
@@ -3639,9 +3723,7 @@ const renderStyle = async (styleName) => {
       ({ audioPath, loudness, mixed } = buildAudio({
         cues,
         totalSeconds,
-        musicStart,
-        musicEndAt: musicEndAt ?? totalSeconds,
-        bed: wallz ? MUSIC_BED : 0,
+        music,
         work,
       }));
       for (const m of loudness?.memes ?? []) {
@@ -3651,8 +3733,8 @@ const renderStyle = async (styleName) => {
       }
       if (loudness?.error) log(`meme loudness not measured: ${loudness.error}`);
       log(
-        MUSIC
-          ? `soundtrack built, with music under the effects (${MUSIC})`
+        music.length > 0
+          ? `soundtrack built, with music under the effects (${music.map((m) => m.file).join(", then ")})`
           : "soundtrack built from the site's own effects",
       );
     } catch (err) {
@@ -3745,8 +3827,18 @@ const renderStyle = async (styleName) => {
     sha256: sha256Of(out),
     durationSeconds: Number((encodedFrame / FPS).toFixed(3)),
     effect: styleName,
-    /** The track that played, by slug; null with --no-music. */
-    music: TRACK?.slug ?? null,
+    /**
+     * The music cues that played: each track by slug, its first ply and the
+     * second it starts in the video; null with --no-music.
+     */
+    music:
+      CUES.length > 0
+        ? CUES.map((c, k) => ({
+            fromPly: c.fromPly,
+            track: c.track.slug,
+            at: Number(music[k].start.toFixed(2)),
+          }))
+        : null,
     /** True when the capture came from the cache: the render added no view. */
     fromCache: Boolean(cached),
     /** The plies a --plies preview played, or null for a full render. */
@@ -3757,15 +3849,13 @@ const renderStyle = async (styleName) => {
       events: eventSpans,
       sounds: [
         ...mixed.map((c) => ({ ...c, start: c.at })),
-        ...(audioPath && MUSIC
-          ? [
-              {
-                name: TRACK.slug,
-                role: "music",
-                start: musicStart,
-                event: null,
-              },
-            ]
+        ...(audioPath
+          ? CUES.map((c, k) => ({
+              name: c.track.slug,
+              role: "music",
+              start: music[k].start,
+              event: null,
+            }))
           : []),
       ],
     }),
@@ -3786,7 +3876,14 @@ const renderStyle = async (styleName) => {
         The credit line on the video's ending (the box is layout.boxes.credit):
         the words a COPY REQUEST names. Null in a render with no EDL.
       */
-      credit: creditText ? { text: CREDIT, ...creditText } : null,
+      credit: creditText
+        ? {
+            text: CREDIT,
+            lines: creditText.lines,
+            width: creditText.width,
+            size: creditText.size,
+          }
+        : null,
       loudness,
     }),
   };

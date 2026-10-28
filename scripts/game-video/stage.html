@@ -458,13 +458,13 @@
         text-align: center;
       }
       /*
-        The credit line (music-tracks.mjs creditLine): over the ending and
-        its hold, the head row is the credit's. One line, its size fitted
-        by __fitWallz (--credit-size).
+        The credit (music-tracks.mjs creditLines): over the ending and its
+        hold, the head row is the credit's. One line per track, broken only
+        where the lines end; its size fitted by __fitWallz (--credit-size).
       */
       #credit {
         max-width: 100%;
-        white-space: nowrap;
+        white-space: pre;
         font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
         font-weight: 700;
         font-size: var(--credit-size);
@@ -1424,11 +1424,25 @@
         $("caption").textContent = captions[0] ?? "";
         await document.fonts.ready;
         $("hud").classList.toggle("on", hud || !!credit);
+        // The race counter at its widest, for the head row's measure.
+        $("raceNa").textContent = "88";
+        $("raceNb").textContent = "88";
+        $("raceWa").textContent = "BLUE";
+        $("raceWb").textContent = "BLUE";
         /*
-          The credit on one line: it shrinks from half the caption size until
-          it fits the row, measured, not predicted from its length.
+          The credit, one line per entry of `credit`: it shrinks from half
+          the caption size until every line fits the row's width, measured,
+          not predicted from its length. One line may set the row's height,
+          as it always did; several lines must fit in the height the counter
+          gives the row, so the board does not get smaller for them. The
+          credit is hidden, not absent, on every other frame, so it would
+          grow the row there too, and the VS banners measure the row: the
+          heights are compared unrounded, as the layout has them.
         */
-        $("credit").textContent = credit ?? "";
+        const heightOf = (el) => el.getBoundingClientRect().height;
+        $("credit").textContent = "";
+        const rowH = heightOf($("hud"));
+        $("credit").textContent = credit?.join("\n") ?? "";
         const captionSize = parseFloat(
           getComputedStyle(document.documentElement).getPropertyValue(
             "--caption-size",
@@ -1437,18 +1451,15 @@
         let creditSize = captionSize * 0.5;
         const creditFloor = captionSize * 0.36;
         root.setProperty("--credit-size", creditSize + "px");
-        while (
-          credit &&
-          $("credit").scrollWidth > $("credit").clientWidth &&
-          creditSize > creditFloor
-        ) {
+        const creditMisfits = () =>
+          !!credit &&
+          ($("credit").scrollWidth > $("credit").clientWidth ||
+            (credit.length > 1 && heightOf($("credit")) > rowH));
+        while (creditMisfits() && creditSize > creditFloor) {
           creditSize = Math.max(creditFloor, creditSize - 1);
           root.setProperty("--credit-size", creditSize + "px");
         }
-        $("raceNa").textContent = "88";
-        $("raceNb").textContent = "88";
-        $("raceWa").textContent = "BLUE";
-        $("raceWb").textContent = "BLUE";
+        creditFits = !creditMisfits();
         const play = $("play");
         const cs = getComputedStyle(play);
         const width =
@@ -1551,10 +1562,16 @@
         el.textContent = captions[0] ?? "";
         return out;
       };
-      /** The credit line as the page lays it out: { lines, width, size }. */
+      /** Whether the credit fitted its row at __fitWallz's last call. */
+      let creditFits = true;
+      /**
+       * The credit as the page lays it out: { lines, width, size }, and
+       * `fits`, false when it fits its row at no size down to its floor.
+       */
       window.__creditText = () => ({
         ...textLines($("credit")),
         size: parseFloat(getComputedStyle($("credit")).fontSize),
+        fits: creditFits,
       });
 
       /**

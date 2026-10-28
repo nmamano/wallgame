@@ -14,7 +14,7 @@
  *     "gameId": "eeFSMEmL",
  *     "caption": "the bot was 97% winning 💀",
  *     "ending": "replay",
- *     "music": "deja-vus",
+ *     "music": [{ "fromPly": 0, "track": "deja-vus" }],
  *     "pace": [{ "fromPly": 13, "toPly": 17, "secondsPerMove": 1.1 }],
  *     "events": [
  *       { "ply": 14, "kind": "scared", "cell": "g4", "sound": "scared-2" },
@@ -40,11 +40,19 @@
  *            (null after validation): one caption for the whole video.
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
- *   music    optional: one of the site's tracks by slug (deja-vus,
- *            tea-for-two, a-legend, skippy). The renderer refuses one whose
- *            license does not let a video play it (music-tracks.mjs
- *            `license`, MUSIC-LICENSES.md). Absent (null after validation)
- *            means a random one of those that may play.
+ *   music    optional: 1 to 3 cues { fromPly, track }, where `track` is a
+ *            track's slug in music-tracks.mjs. The first cue's fromPly is
+ *            startPly: the track the video opens with (cold open and VS
+ *            included). Each later cue changes the track at the start of
+ *            its ply's beat (before a lead zoom or freeze): the old track
+ *            fades out and the new one starts from its beginning. fromPly
+ *            increases, and two cues in a row name different tracks; at
+ *            most 2 different tracks in all (one credit line each), so a
+ *            track may come back, from its beginning. The
+ *            renderer refuses a track whose license does not let a video
+ *            play it (music-tracks.mjs `license`, MUSIC-LICENSES.md), and a
+ *            cue past the last move. Absent (null after validation) means
+ *            one random track of those that may play.
  *   startPly optional: the first ply the video plays (default 0). It opens
  *            on the position before it, so a quiet opening is cut. Every
  *            event and pace range must be at startPly or later.
@@ -230,6 +238,9 @@ export const EDL_LIMITS = {
   frameTerms: 6,
   freezeHoldSeconds: [0.4, 2],
   events: 40,
+  musicCues: 3,
+  /** Each different track gets a credit line in the head row; two fit. */
+  musicTracks: 2,
 };
 
 const CELL = /^[a-z][1-9]\d?$/;
@@ -313,16 +324,63 @@ export const validateEdl = (raw) => {
     );
   }
 
-  const music = raw.music ?? null;
-  const slugs = MUSIC_TRACKS.map((t) => t.slug);
-  if (music !== null && !slugs.includes(music)) {
-    fail(
-      `music must be one of ${slugs.join(", ")}, or absent for a random track; got ${JSON.stringify(music)}`,
-    );
-  }
-
   const startPly = raw.startPly ?? 0;
   if (!isPly(startPly)) fail("startPly must be a 0-based ply");
+
+  const music = raw.music ?? null;
+  const slugs = MUSIC_TRACKS.map((t) => t.slug);
+  if (typeof music === "string") {
+    // The form before cues (2026-10-28); old EDL files still carry it.
+    fail(
+      `music is a cue list now: [{ "fromPly": ${startPly}, "track": ${JSON.stringify(music)} }]`,
+    );
+  } else if (music !== null) {
+    if (
+      !Array.isArray(music) ||
+      music.length < 1 ||
+      music.length > EDL_LIMITS.musicCues
+    ) {
+      fail(
+        `music must be a list of 1 to ${EDL_LIMITS.musicCues} cues { fromPly, track }, or absent for a random track`,
+      );
+    } else {
+      music.forEach((cue, i) => {
+        const where = `music[${i}]`;
+        if (!cue || typeof cue !== "object" || Array.isArray(cue)) {
+          return fail(`${where}: not an object`);
+        }
+        unknown(cue, ["fromPly", "track"], where);
+        if (!slugs.includes(cue.track)) {
+          fail(
+            `${where}: track must be one of ${slugs.join(", ")}; got ${JSON.stringify(cue.track)}`,
+          );
+        }
+        if (!isPly(cue.fromPly)) {
+          return fail(`${where}: fromPly must be a 0-based ply`);
+        }
+        if (i === 0 && isPly(startPly) && cue.fromPly !== startPly) {
+          fail(
+            `music[0].fromPly must be startPly (${startPly}): the first cue is the track the video opens with`,
+          );
+        }
+        const prev = music[i - 1];
+        if (i > 0 && isPly(prev?.fromPly) && cue.fromPly <= prev.fromPly) {
+          fail(`${where}: fromPly must be after music[${i - 1}].fromPly`);
+        }
+        if (i > 0 && cue.track === prev?.track) {
+          fail(
+            `${where}: the same track as music[${i - 1}]; a cue changes the track`,
+          );
+        }
+      });
+      const tracks = new Set(music.map((c) => c?.track));
+      if (tracks.size > EDL_LIMITS.musicTracks) {
+        fail(
+          `music plays ${tracks.size} different tracks; at most ${EDL_LIMITS.musicTracks} fit the credit`,
+        );
+      }
+    }
+  }
   const coldOpenPly = raw.coldOpenPly ?? null;
   if (coldOpenPly !== null && !isPly(coldOpenPly)) {
     fail("coldOpenPly must be a 0-based ply, or absent for no cold open");
@@ -615,7 +673,8 @@ const insideFrame = (cell, frame) => {
 };
 
 /**
- * Check a valid EDL against its game: every ply exists, every cell is on the
+ * Check a valid EDL against its game: every ply exists (music cues too),
+ * every cell is on the
  * board, every wall a zoom frames or a trap lights is on the board by that
  * ply, and a lead zoom's frame holds both cells of every pawn its move moves.
  *
@@ -641,6 +700,7 @@ export const checkEdlAgainstGame = (
     ...(edl.payoff === null ? [] : [edl.payoff.ply]),
     ...edl.pace.flatMap((s) => [s.fromPly, s.toPly]),
     ...edl.events.map((e) => e.ply),
+    ...(edl.music ?? []).map((c) => c.fromPly),
   ];
   // A video that starts at startPly never shows what comes before it.
   edl.pace.forEach((s, i) => {
