@@ -75,6 +75,7 @@ interface View {
     caption: string;
     approveProblem: string | null;
     claimRiskSounds: string[];
+    youtubeTitle: string | null;
   }[];
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
@@ -552,6 +553,7 @@ describe("the director's note", () => {
       "copySha256",
       "id",
       "videoSha256",
+      "youtubeTitle",
     ]);
   });
 });
@@ -566,6 +568,7 @@ describe("the review page's view", () => {
     const credited = {
       ...it.copy.block,
       x: "bro was free 😭💀 #wallgame · music: Deja Vus by YannZ (CC BY 4.0)",
+      youtubeTitle: "bro was free 😭💀 #wallgame",
     };
     writeFileSync(
       join(store.dirs.items, "v-2026-10-28-1.json"),
@@ -582,6 +585,13 @@ describe("the review page's view", () => {
       ["v-2026-10-28-2", "bro thought he could just walk home 😭🙏 #wallgame"],
     ]);
     expect(v.items[1].copySha256).toBe(copySha256(COPY));
+    // The YouTube title is its own text: the card shows it, unless it is
+    // the caption.
+    expect(v.items[0].youtubeTitle).toBeNull();
+    expect(v.items[1].youtubeTitle).toBe(
+      "bro thought he was safe... #wallgame #gaming #boardgames",
+    );
+    expect(REVIEW_PAGE).toContain('"YouTube: " + it.youtubeTitle');
     store.review("v-2026-10-28-2", {
       action: "approve",
       notes: "",

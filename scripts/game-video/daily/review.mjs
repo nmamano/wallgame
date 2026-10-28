@@ -4,7 +4,8 @@
  * only need to see the videos and captions. Everything else is context i
  * don't need." So it shows every item in review (store.mjs reviewState),
  * oldest first, each with ONLY its video, its caption (the post's text, one
- * line: postCaption), one red line for each sound with a high claim risk
+ * line: postCaption), the YouTube title when it differs (a small "YouTube:"
+ * line: it is its own text, and Approve binds it), one red line for each sound with a high claim risk
  * that the video plays (Wall Game Director, 2026-10-28: the director kept
  * it on purpose, so Nil sees the risk) and three actions:
  *
@@ -77,6 +78,13 @@ export const reviewView = (store) => ({
     // older definition would refuse every action on the item.
     copySha256: copySha256(it.copy.block),
     caption: postCaption(it.copy.block),
+    // The YouTube title is its own text, and Approve binds it too: the
+    // card shows it when it is not the caption (Wall Game Director,
+    // 2026-10-28; also while YouTube is a dry run).
+    youtubeTitle:
+      it.copy.block.youtubeTitle === postCaption(it.copy.block)
+        ? null
+        : it.copy.block.youtubeTitle,
     // Why Approve cannot work now, or null: the page disables it.
     approveProblem: store.approveProblem(it),
     // Each sound with a high claim risk that the video plays, once: the
@@ -197,6 +205,7 @@ export const REVIEW_PAGE = `<!doctype html>
   .discard { background: #475569; color: #fff; }
   .undo { flex: 0 0 auto; padding: 8px 14px; background: #334155; color: #fff; font-size: 14px; }
   .done { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 15px; }
+  .alt { color: #94a3b8; font-size: 14px; margin: -4px 2px 10px; overflow-wrap: anywhere; }
   .risk { color: #f87171; font-size: 15px; font-weight: 700; margin: 0 2px 10px; }
   .why { color: #fca5a5; font-size: 14px; margin-top: 6px; white-space: pre-wrap; }
   .quiet { color: #94a3b8; text-align: center; margin-top: 40px; }
@@ -246,6 +255,7 @@ export const REVIEW_PAGE = `<!doctype html>
     });
     if (it.approveProblem) { buttons[0].disabled = true; why.textContent = it.approveProblem; }
     box.append(video, el("div", "caption", it.caption));
+    if (it.youtubeTitle) box.append(el("div", "alt", "YouTube: " + it.youtubeTitle));
     for (const key of it.claimRiskSounds) box.append(el("div", "risk", "Uses " + key + ": a claim is possible."));
     box.append(notes, row, why);
     return box;
