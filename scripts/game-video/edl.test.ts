@@ -33,9 +33,23 @@ const base = {
 
 // edl.mjs is plain JS, so tsc widens `ok` to boolean and cannot narrow on
 // it. The test narrows on `edl` itself and fails with the validator's errors.
+/**
+ * The list validateEdl makes of `raw`, and a check that the list passes
+ * again unchanged: the app writes this normalized copy for the 4090, and
+ * the renderer validates it once more (2026-10-28: an overlay's
+ * "seconds": null was refused there, and the first render on the release
+ * failed).
+ */
 const accept = (raw: object) => {
   const r = validateEdl(raw);
   if (!r.edl) throw new Error((r.errors ?? []).join("; "));
+  const again = validateEdl(JSON.parse(JSON.stringify(r.edl)));
+  if (!again.edl) {
+    throw new Error(
+      `its own normalized copy is refused: ${(again.errors ?? []).join("; ")}`,
+    );
+  }
+  expect(again.edl).toEqual(r.edl);
   return r.edl;
 };
 

@@ -582,12 +582,16 @@ export const validateEdl = (raw) => {
         `${where}: ${ev.asset} shows a seat's portrait; seat must be "red" or "blue" (who reacts)`,
       );
     }
-    if (asset.seconds === null && ev.seconds !== undefined) {
+    // null is "not set": validateEdl writes it for an overlay that the
+    // asset or a fast-forward times, and the renderer validates that copy
+    // again (2026-10-28, the first render on the release).
+    const seconds = ev.seconds ?? undefined;
+    if (asset.seconds === null && seconds !== undefined) {
       fail(
         `${where}: ${ev.asset} lasts as long as its moment; it takes no seconds`,
       );
     }
-    out.seconds = ev.seconds ?? asset.seconds;
+    out.seconds = seconds ?? asset.seconds;
     if (
       out.seconds !== null &&
       !isNumberIn(out.seconds, EDL_LIMITS.overlaySeconds)
@@ -768,7 +772,7 @@ export const validateEdl = (raw) => {
       );
     }
     if (
-      events[i].seconds !== undefined ||
+      (events[i].seconds ?? undefined) !== undefined ||
       OVERLAYS[e.asset]?.seconds === null
     ) {
       fail(
