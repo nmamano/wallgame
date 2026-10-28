@@ -50,6 +50,7 @@
 import { copySha256 } from "./copy.mjs";
 import { StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
+import { quoteLines } from "./quote.mjs";
 import { claimRisk, soundUses } from "./sounds.mjs";
 
 /** The office member who reviews: Nil (his id in the office's users.json). */
@@ -103,14 +104,6 @@ export const reviewView = (store) => ({
     ],
   })),
 });
-
-/**
- * Text as quote lines, word for word: "> " before each of its lines (an
- * empty line is "> "), so a message shows Nil's paragraphs as he wrote
- * them (Nil, 2026-10-28: "I'm seeing a bunch of "\n" right now").
- */
-export const quoteLines = (text, indent = "") =>
-  text.split("\n").map((line) => `${indent}> ${line}`);
 
 /** The director's message about one review action: everything to act on. */
 export const directorText = (item, action, notes) =>

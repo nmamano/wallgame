@@ -155,7 +155,7 @@ import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { copyLines } from "./copy.mjs";
-import { quoteLines } from "./review.mjs";
+import { quoteLines } from "./quote.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(

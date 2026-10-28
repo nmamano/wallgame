@@ -15,12 +15,12 @@ import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { feedbackLines } from "./crew.mjs";
+import { quoteLines } from "./quote.mjs";
 import {
   REVIEW_PAGE,
   REVIEWER_MEMBER_ID,
   postCaption,
   directorText,
-  quoteLines,
   reviewView,
 } from "./review.mjs";
 
@@ -931,6 +931,8 @@ describe("the review routes", () => {
       ">   keep this indent ",
     ]);
     expect(quoteLines("a\n\nb", "  ")).toEqual(["  > a", "  > ", "  > b"]);
+    // Another client may send "\r\n": no "\r" stays at a line's end.
+    expect(quoteLines("a\r\nb")).toEqual(["> a", "> b"]);
   });
 });
 
