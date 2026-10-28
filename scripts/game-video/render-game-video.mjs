@@ -94,7 +94,10 @@ import {
   parsePlyWindow,
 } from "./edl.mjs";
 import { replayDistances } from "./race-replay.ts";
-import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
+import {
+  helpRulesFor,
+  helpVariantFor,
+} from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import {
   MUSIC_TRACKS,
@@ -2435,7 +2438,49 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  * (shared/domain/variant-rules.ts), for the daily VS card. Null when the
  * variant has no rules guide.
  */
-const GOAL_LINE = EDL ? goalSentenceFor(replay.state.config.variant) : null;
+/**
+ * The rules in one line, for a viewer who does not know the game (Nil and
+ * Wall Game Director, 2026-10-28): the head row shows it while the VS overlay
+ * is in, where the goal sentence (variant-rules.ts GOAL_SENTENCES) was, which
+ * it contains. Keyed by the variant's captureKind, as GOAL_SENTENCES is. Each
+ * side has a cat AND a mouse, so the line says which hunts which.
+ */
+const RULES_LINES = {
+  // A viewer plays neither side, so "your cat" would not say whose.
+  "cat-captures-mouse":
+    "each cat hunts the other mouse · walls block · first catch wins",
+  "reach-home": "each cat races home · walls block · first home wins",
+  "animal-cycle": "each animal hunts the next · walls block · first catch wins",
+};
+/**
+ * What the race counter counts, under its VS: cells to walk (the grid
+ * distance), not turns, since a turn can hold more than one action.
+ */
+const RACE_LABELS = {
+  "cat-captures-mouse": "STEPS TO CATCH",
+  "reach-home": "STEPS HOME",
+  "animal-cycle": "STEPS TO CATCH",
+};
+const RULES_VARIANT = helpVariantFor(replay.state.config.variant);
+/** The variant's captureKind; null for one with no rules guide (Survival). */
+const CAPTURE_KIND = RULES_VARIANT
+  ? helpRulesFor(RULES_VARIANT).captureKind
+  : null;
+/** The head row's line during the VS overlay (stage.html #goal). */
+const GOAL_LINE = EDL && CAPTURE_KIND ? RULES_LINES[CAPTURE_KIND] : null;
+if (
+  CAPTURE_KIND &&
+  (!Object.hasOwn(RULES_LINES, CAPTURE_KIND) ||
+    !Object.hasOwn(RACE_LABELS, CAPTURE_KIND))
+) {
+  // A new kind in variant-rules.ts needs its words here, not a blank.
+  console.error(
+    `captureKind ${CAPTURE_KIND} has no rules line or race label (RULES_LINES, RACE_LABELS)`,
+  );
+  await browser.close();
+  process.exit(2);
+}
+const RACE_LABEL = CAPTURE_KIND ? RACE_LABELS[CAPTURE_KIND] : "STEPS";
 
 /**
  * The 9:16 frame of the wallz look. The caption, the head row and the board
@@ -2627,6 +2672,7 @@ const renderStyle = async (styleName) => {
           captions: CAPTIONS,
           hud: Boolean(RACE_DISTANCES || GOAL_LINE),
           goal: GOAL_LINE,
+          raceLabel: RACE_LABEL,
           credit: CREDIT_LINES,
           strip,
         })
@@ -3046,6 +3092,15 @@ const renderStyle = async (styleName) => {
         `the ${name} box ${JSON.stringify(b)} is outside its area ${JSON.stringify(area)}`,
       );
     }
+  }
+  if (GOAL_LINE) {
+    const fit = await stage.evaluate(() => window.__goalFit());
+    if (!fit.fits) {
+      throw new Error(
+        `the goal line does not fit one line at its smallest size: ${GOAL_LINE}`,
+      );
+    }
+    log(`goal line: "${GOAL_LINE}", ${fit.size}px`);
   }
   if (strip) {
     const fit = await stage.evaluate(() => window.__stripFit());

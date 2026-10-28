@@ -454,8 +454,13 @@
         color: #f8fafc;
         font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
         font-weight: 800;
-        font-size: calc(var(--caption-size) * 0.62);
+        font-size: var(--goal-size, calc(var(--caption-size) * 0.62));
         text-align: center;
+        /* Its height at full size, so a smaller line keeps the head row's. */
+        min-height: var(--goal-h, 0px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       /*
         The credit (music-tracks.mjs creditLines): over the ending and its
@@ -1467,7 +1472,14 @@
        * long, so the board does not move when the beat changes. Returns the
        * board's side in px.
        */
-      window.__fitWallz = async ({ captions, hud, goal, credit, strip }) => {
+      window.__fitWallz = async ({
+        captions,
+        hud,
+        goal,
+        raceLabel,
+        credit,
+        strip,
+      }) => {
         $("root").classList.add("wallz");
         show($("play"), true);
         $("goal").textContent = goal ?? "";
@@ -1484,11 +1496,38 @@
         $("caption").textContent = captions[0] ?? "";
         await document.fonts.ready;
         $("hud").classList.toggle("on", hud || !!credit);
+        $("race").querySelector(".vs small").textContent = raceLabel ?? "STEPS";
         // The race counter at its widest, for the head row's measure.
         $("raceNa").textContent = "88";
         $("raceNb").textContent = "88";
         $("raceWa").textContent = "BLUE";
         $("raceWb").textContent = "BLUE";
+        const captionSize = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--caption-size",
+          ),
+        );
+        /*
+          The goal line (the rules, during the VS overlay) on one line: it
+          shrinks from its size until the page sets it on one line, measured
+          (textLines), inside the height it has at full size (--goal-h), so
+          the head row, and with it the board, keep their size.
+        */
+        let goalSize = captionSize * 0.62;
+        const goalFloor = captionSize * 0.36;
+        root.setProperty("--goal-size", goalSize + "px");
+        // Its one-line height at full size holds the row while it shrinks.
+        $("goal").textContent = "Ag";
+        root.setProperty(
+          "--goal-h",
+          $("goal").getBoundingClientRect().height + "px",
+        );
+        $("goal").textContent = goal ?? "";
+        while (goal && textLines($("goal")).lines > 1 && goalSize > goalFloor) {
+          goalSize = Math.max(goalFloor, goalSize - 1);
+          root.setProperty("--goal-size", goalSize + "px");
+        }
+        goalFits = !goal || textLines($("goal")).lines === 1;
         /*
           The credit, one line per entry of `credit`: it shrinks from half
           the caption size until every line fits the row's width, measured,
@@ -1503,11 +1542,6 @@
         $("credit").textContent = "";
         const rowH = heightOf($("hud"));
         $("credit").textContent = credit?.join("\n") ?? "";
-        const captionSize = parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--caption-size",
-          ),
-        );
         let creditSize = captionSize * 0.5;
         const creditFloor = captionSize * 0.36;
         root.setProperty("--credit-size", creditSize + "px");
@@ -1664,6 +1698,12 @@
       };
       /** Whether the credit fitted its row at __fitWallz's last call. */
       let creditFits = true;
+      /** Whether the goal line fitted on one line, and its size. */
+      let goalFits = true;
+      window.__goalFit = () => ({
+        fits: goalFits,
+        size: parseFloat(getComputedStyle($("goal")).fontSize),
+      });
       /** Whether the players strip fitted on one line, and its size. */
       let stripFits = true;
       window.__stripFit = () => ({
