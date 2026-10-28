@@ -113,6 +113,7 @@ import {
   creditLine,
   creditLines,
   mayPlay,
+  musicGain,
 } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
@@ -844,7 +845,7 @@ log(`game ${GAME_ID} from ${ORIGIN}`);
 log(`board theme: ${BOARD_THEME}`);
 log(
   MUSIC_CUES
-    ? `music: ${MUSIC_CUES.map((c) => `${c.track.title} from ply ${c.fromPly}`).join(", then ")}${cliArg("music") || EDL?.music ? "" : " (picked at random)"}`
+    ? `music: ${MUSIC_CUES.map((c) => `${c.track.title} from ply ${c.fromPly} (${(20 * Math.log10(musicGain(c.track))).toFixed(1)} dB to one level)`).join(", then ")}${cliArg("music") || EDL?.music ? "" : " (picked at random)"}`
     : "music: off",
 );
 /* ------------------------------------------------------- capture, part 1 -- */
@@ -2067,7 +2068,8 @@ const musicParts = ({ beatStartAt, musicStart, musicEndAt, bed }) => {
       start: startOf(k),
       endAt: last ? musicEndAt : startOf(k + 1) + CUE_FADE_OUT,
       bed: last ? bed : 0,
-      volume: MUSIC_VOLUME,
+      // Every track at one level (music-tracks.mjs musicGain).
+      volume: MUSIC_VOLUME * musicGain(c.track),
       fadeIn: k === 0 ? MUSIC_FADE_IN : CUE_FADE_IN,
       fadeOut: last ? MUSIC_FADE_OUT : CUE_FADE_OUT,
     };

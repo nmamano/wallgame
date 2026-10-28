@@ -20,12 +20,19 @@
  *
  * The renderer refuses a track that may not play, and so does the daily
  * app's direct (routes.mjs).
+ *
+ * `lufs` is how loud the track is: its integrated loudness (EBU R128) over
+ * its first MUSIC_MEASURE_SECONDS, the part a video plays, measured
+ * 2026-10-28 (music-tracks.test.ts measures it again). The renderer plays
+ * every track at one level with musicGain, so a quiet track is not lost
+ * under the clicks and a loud one does not bury them.
  */
 export const MUSIC_TRACKS = [
   {
     file: "song1.mp3",
     title: "Deja Vus (2nd loop) - YannZ",
     slug: "deja-vus",
+    lufs: -17.3,
     license: "ok-with-credit",
     credit: "Deja Vus by YannZ (CC BY 4.0)",
   },
@@ -33,6 +40,7 @@ export const MUSIC_TRACKS = [
     file: "song2.mp3",
     title: "Tea For Two - Aaron Paul Low",
     slug: "tea-for-two",
+    lufs: -22.2,
     license: "blocked-until-nil",
     credit: "Tea For Two by Aaron Paul Low (Uppbeat)",
   },
@@ -40,6 +48,7 @@ export const MUSIC_TRACKS = [
     file: "song3.mp3",
     title: "A Legend - Ian Aisling",
     slug: "a-legend",
+    lufs: -15.0,
     license: "blocked-until-nil",
     credit: "A Legend by Ian Aisling (Uppbeat)",
   },
@@ -47,10 +56,30 @@ export const MUSIC_TRACKS = [
     file: "song4.mp3",
     title: "Skippy Mr. Sunshine - Fernweh Goldfish",
     slug: "skippy",
+    lufs: -15.7,
     license: "blocked-until-nil",
     credit: "Skippy Mr. Sunshine by Fernweh Goldfish (Uppbeat)",
   },
 ];
+
+/** How much of each track `lufs` measures: a video plays its start. */
+export const MUSIC_MEASURE_SECONDS = 60;
+
+/**
+ * The level every track plays at: deja-vus's, the track of every video Nil
+ * has approved, so those videos sound the same as before.
+ */
+export const MUSIC_REFERENCE_LUFS = -17.3;
+
+/**
+ * The gain that brings a track to MUSIC_REFERENCE_LUFS: 1 for deja-vus,
+ * and 1 for a track given by path (hand renders), which has no `lufs`.
+ * @param {{ lufs?: number }} track
+ */
+export const musicGain = (track) =>
+  track.lufs === undefined
+    ? 1
+    : 10 ** ((MUSIC_REFERENCE_LUFS - track.lufs) / 20);
 
 /** Whether a video may play the track (its `license`, above). */
 export const mayPlay = (track) =>
