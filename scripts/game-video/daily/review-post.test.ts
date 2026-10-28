@@ -36,7 +36,7 @@ interface Post {
 interface Item {
   id: string;
   state: string;
-  render: { video: { path: string } };
+  render: { video: { path: string }; music?: { track: string }[] };
   copy: { block: typeof COPY; sha256: string };
   approval: {
     videoSha256: string;
@@ -232,6 +232,27 @@ describe("post(itemId)", () => {
       refused: [{ itemId: "v-2026-10-28-1" }],
     });
     expect(w.get().state).toBe("post-failed");
+  });
+
+  test("music whose license is blocked since approval: passed over like a changed video", async () => {
+    const w = world(["x"]);
+    w.add({ ...structuredClone(w.get()), id: "v-2026-10-28-2" });
+    // A slug that music-tracks.mjs does not clear (unknown = blocked).
+    w.get().render.music = [{ track: "no-such-track" }];
+    const r = await w.post(SLOT);
+    expect(r).toMatchObject({
+      kind: "posted",
+      itemId: "v-2026-10-28-2",
+      refused: [
+        {
+          itemId: "v-2026-10-28-1",
+          error:
+            "music license blocked since approval: no-such-track has the license unknown",
+        },
+      ],
+    });
+    expect(w.get().state).toBe("post-failed");
+    expect(w.confirmedSeen.map(([p]) => p)).toEqual(["x"]);
   });
 
   test("a platform that left live since the slot: no dry run counts as posted", async () => {

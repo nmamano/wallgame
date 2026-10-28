@@ -19,7 +19,7 @@
  * and returns the result ({ ok, mode, at, ... } or { ok: false, uncertain,
  * error }); it never throws for a platform's failure.
  */
-import { StepRefused } from "./store.mjs";
+import { StepRefused, blockedMusic } from "./store.mjs";
 import { copySha256 } from "./copy.mjs";
 import { sha256 } from "./transport.mjs";
 
@@ -62,6 +62,13 @@ export const createItemPoster = ({
     const copyNow = item.copy ? copySha256(item.copy.block) : null;
     if (copyNow !== a.copySha256) {
       return `content changed since approval: the copy block sha256 is ${short(copyNow)}, Nil approved ${short(a.copySha256)}`;
+    }
+    // The license gate of approve and postPlatform (store.mjs): a license
+    // that changed after the approval refuses every platform, so the slot
+    // passes the item over as it does a changed video.
+    const [bad] = blockedMusic(item);
+    if (bad) {
+      return `music license blocked since approval: ${bad.track} has the license ${bad.license}`;
     }
     return null;
   };
