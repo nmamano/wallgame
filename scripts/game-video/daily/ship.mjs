@@ -66,6 +66,7 @@ export const KIT_DATA = [
   "assets/audio/pixel_game_essentials",
   "assets/stings",
   "assets/meme-sounds",
+  "assets/overlays",
 ];
 
 const KIT_DIR = "nil/wallgame-video";

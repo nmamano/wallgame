@@ -17,6 +17,7 @@ import {
   areaOf,
   validateEdl,
 } from "./edl.mjs";
+import { OVERLAYS } from "./overlays.mjs";
 import { goalSentenceFor } from "../../shared/domain/variant-rules";
 import { pawnCell } from "../../shared/domain/pawns";
 import { cellToStandardNotation } from "../../shared/domain/standard-notation";
@@ -763,6 +764,34 @@ describe("the overlay event", () => {
     expect(errorsOf(two)).toEqual([
       "events[1]: the fastForward range 3-8 has a panel already; it shows one",
     ]);
+  });
+
+  test("cuts a clip shorter, never holds it longer", () => {
+    // A fixture asset: the registry has no clip yet (Nil rates them first).
+    OVERLAYS["test-clip"] = {
+      form: "clip",
+      draw: "sequence",
+      text: "none",
+      seconds: 1.5,
+      size: { w: 0.4, h: 0.4 },
+      sequence: { dir: "test-clip", fps: 30, frames: 45, sha256: "0" },
+      source: "test",
+      claim: "None",
+      likeness: "None",
+      rating: null,
+    };
+    try {
+      const clip = { form: "clip", asset: "test-clip" };
+      expect(accept(overlay(clip)).events[0]).toMatchObject({ seconds: 1.5 });
+      expect(
+        accept(overlay({ ...clip, seconds: 0.9 })).events[0],
+      ).toMatchObject({ seconds: 0.9 });
+      expect(errorsOf(overlay({ ...clip, seconds: 2 }))).toEqual([
+        "events[0]: test-clip is a 1.5 s clip; seconds may be at most that",
+      ]);
+    } finally {
+      delete OVERLAYS["test-clip"];
+    }
   });
 });
 

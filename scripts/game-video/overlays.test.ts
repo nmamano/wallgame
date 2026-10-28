@@ -22,6 +22,16 @@ describe("overlays", () => {
       expect([name, OVERLAY_FORMS.includes(a.form)]).toEqual([name, true]);
       expect([name, a.claim, a.likeness]).toEqual([name, "None", "None"]);
       if (a.form === "clip") expect(a.size).toBeDefined();
+      // A clip's frames: a corner clip, its length its frames' length.
+      if (a.draw === "sequence") {
+        expect([name, a.form]).toEqual([name, "clip"]);
+        expect([name, a.seconds]).toEqual([
+          name,
+          a.sequence!.frames / a.sequence!.fps,
+        ]);
+      } else {
+        expect([name, a.sequence]).toEqual([name, undefined]);
+      }
     }
   });
 

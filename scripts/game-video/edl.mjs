@@ -594,6 +594,13 @@ export const validateEdl = (raw) => {
     ) {
       fail(`${where}: seconds must be ${EDL_LIMITS.overlaySeconds.join("..")}`);
     }
+    // A clip's last frame held still reads as a frozen video: cut it
+    // shorter, never longer.
+    if (asset.draw === "sequence" && out.seconds > asset.seconds) {
+      fail(
+        `${where}: ${ev.asset} is a ${asset.seconds} s clip; seconds may be at most that`,
+      );
+    }
   };
   /**
    * An overlay's line: one line of at most `chars` characters, each seat

@@ -644,6 +644,15 @@
            and the fit would shrink the label to nothing (measured). */
         line-height: 1.25;
       }
+      /* A clip with alpha (a cut-out): the frame fills its box, kept whole,
+         and stands on the board's edge in its corner (paintOverlay sets
+         object-position from the place). */
+      #overlay.sequence img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        filter: drop-shadow(0 0.15em 0.4em rgba(0, 0, 0, 0.6));
+      }
       /* The ending's caption: black on a white bar, the model video's last
          beat. One line, fitted. */
       #overlay.whitebar {
@@ -1715,6 +1724,18 @@
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
         if (o.draw === "whitebar") {
           el.innerHTML = "<div>" + esc(o.text) + "</div>";
+        } else if (o.draw === "sequence") {
+          // Its corner's edges: "bottom-right" stands it on the bottom and
+          // pushes it right, toward the board's rim, not into the middle.
+          const [v, h] = p.where.split("-");
+          el.innerHTML =
+            '<img src="' +
+            esc(o.src) +
+            '" style="object-position:' +
+            h +
+            " " +
+            v +
+            '" />';
         } else if (o.draw === "toast") {
           el.innerHTML =
             '<div class="dot"></div><div>' + esc(o.text) + "</div>";

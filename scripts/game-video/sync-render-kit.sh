@@ -4,10 +4,9 @@
 # Nil, 2026-10-25: all video renders run on the 4090. The box keeps a small
 # render kit, not a checkout: the renderer and every module it imports
 # (render-kit.mjs lists them, shared/domain too), the stage, the sounds it
-# mixes, and playwright-core with its Chromium. The kit mirrors the repo's
-# paths, so the renderer finds its assets exactly as it does in a checkout.
-#
-#   scripts/game-video/sync-render-kit.sh <ssh target of the 4090's WSL>
+# mixes, the overlay clips it shows, and playwright-core with its Chromium.
+# The kit mirrors the repo's paths, so the renderer finds its assets exactly
+# as it does in a checkout.
 #
 # The target is an argument because this repository is public; it is in
 # ops-private/wallgamer-agent-notes.md.
@@ -31,6 +30,13 @@ test -d assets/meme-sounds || {
   exit 1
 }
 test -f assets/stings/vs-b-riser.wav || bun scripts/game-video/make-stings.mjs
+# The overlay clips (overlay-clips.mjs). Never made here: in a worktree or
+# the release checkout it must be the link to the main checkout's folder,
+# and an empty folder in its place would send no clips.
+test -d assets/overlays || {
+  echo "assets/overlays/ is missing here; see scripts/game-video/overlay-clips.mjs" >&2
+  exit 1
+}
 
 # The code files come from the renderer's imports (render-kit.mjs), so a new
 # module cannot be left out of the kit.
@@ -52,6 +58,7 @@ rsync -a -k --relative \
   assets/audio/pixel_game_essentials \
   assets/stings \
   assets/meme-sounds \
+  assets/overlays \
   "$host:$kit/"
 
 playwright="$(bun -e 'console.log(require("playwright-core/package.json").version)')"

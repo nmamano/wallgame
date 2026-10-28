@@ -44,6 +44,10 @@
  *                     it, if any ("the bot's last brain cell").
  *            whitebar black text on a white bar, the EDL's `text`. (Not
  *                     "caption": stage.html's #play .caption would win.)
+ *            sequence a clip with alpha (a reaction cut-out), one frame of
+ *                     its PNG sequence for each moment: frame floor(t *
+ *                     fps) of `sequence`, in its corner, standing on the
+ *                     board's edge there (overlay-clips.mjs).
  *            The seat of a portrait is the EDL's `seat` ("red" or
  *            "blue"), which it must give: who reacts is the story, and a
  *            default once made the stopped hunter laugh at the save
@@ -56,19 +60,32 @@
  *   seconds  how long it shows where the EDL sets none (null: the asset
  *            decides, as the loading bar does).
  *   size     a clip's box, as fractions of the board's width and height.
+ *   sequence a "sequence" draw's frames: their folder in assets/overlays,
+ *            fps, count, and the sha256 of the manifest that
+ *            prepare-overlay-clip.mjs printed (the render stops if the
+ *            frames on the box differ). `seconds` is the clip's length; an
+ *            EDL may cut it shorter, never hold it longer.
  */
 export const OVERLAY_FORMS = ["clip", "panel", "bar"];
 
 /**
  * @typedef {{
  *   form: "clip" | "panel" | "bar",
- *   draw: "toast" | "loading" | "compare" | "meme" | "reactor" | "whitebar",
+ *   draw:
+ *     | "toast"
+ *     | "loading"
+ *     | "compare"
+ *     | "meme"
+ *     | "reactor"
+ *     | "whitebar"
+ *     | "sequence",
  *   motion?: "shock" | "laugh" | "stare",
  *   chars?: number,
  *   text: "required" | "optional" | "none",
  *   line?: string,
  *   seconds: number | null,
  *   size?: { w: number, h: number },
+ *   sequence?: { dir: string, fps: number, frames: number, sha256: string },
  *   source: string,
  *   claim: string,
  *   likeness: string,

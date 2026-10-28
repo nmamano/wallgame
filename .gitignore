@@ -41,3 +41,6 @@ ops-private/
 # uploads from public meme sound sites: kept on the render boxes, never in
 # this public repository. Sources: scripts/game-video/meme-sounds.md.
 /assets/meme-sounds/
+# Overlay clips for the daily game videos (scripts/game-video/overlay-clips.mjs):
+# PNG sequences of reaction cut-outs, other people's clips like the sounds.
+/assets/overlays/

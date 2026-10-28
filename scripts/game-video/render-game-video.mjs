@@ -107,6 +107,7 @@ import {
   helpVariantFor,
 } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
+import { clipFrameIndex, loadClip } from "./overlay-clips.mjs";
 import {
   MUSIC_TRACKS,
   creditLine,
@@ -2508,10 +2509,22 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *   loading  the player whose hunter is closest after the move (the mover
  *            on a tie), and the board where its steps first rise (the save).
  *   compare  the player whose steps rose most with the move: before, after.
+ *   sequence the clip's frames as file URLs, checked against the hashes the
+ *            registry pins (overlay-clips.mjs loadClip), and its fps.
  */
 const OVERLAY_FACTS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
   const draw = OVERLAYS[ev.asset].draw;
+  if (draw === "sequence") {
+    try {
+      const clip = loadClip(ev.asset, OVERLAYS[ev.asset].sequence, REPO);
+      OVERLAY_FACTS.set(ev, { fps: clip.fps, frames: clip.files.map(fileUrl) });
+    } catch (err) {
+      console.error(`ply ${ev.ply}: ${err.message}`);
+      await browser.close();
+      process.exit(2);
+    }
+  }
   if ((draw === "loading" || draw === "compare") && !RACE_DISTANCES) {
     console.error(
       `the ${ev.asset} overlay on ply ${ev.ply} reads the race counter, and ${replay.state.config.variant} shows none`,
@@ -3124,6 +3137,13 @@ const renderStyle = async (styleName) => {
             error: b >= facts.rise ? { t: elapsed - w.errorAt } : null,
           }
         : {}),
+      ...(w.asset.draw === "sequence"
+        ? {
+            src: facts.frames[
+              clipFrameIndex(elapsed - w.start, facts.fps, facts.frames.length)
+            ],
+          }
+        : {}),
       ...(w.asset.draw === "compare"
         ? {
             hex: side(facts.player).hex,
@@ -3266,6 +3286,8 @@ const renderStyle = async (styleName) => {
           alpha: 0,
           place: 0,
           error: Boolean(f.o.error),
+          // A clip's frames hold no text: one is enough.
+          src: 0,
         });
         if (!shown.has(key)) shown.set(key, f);
       }
