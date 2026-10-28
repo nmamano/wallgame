@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { REPO, renderKitFiles } from "./render-kit.mjs";
 
 const RENDERER = join(import.meta.dir, "render-game-video.mjs");
 
@@ -66,5 +75,40 @@ describe("the renderer's flags", () => {
     expect([...read].filter((n) => !flags.has(n))).toEqual([]);
     // And no listed flag is dead.
     expect([...flags].filter((n) => !read.has(n))).toEqual([]);
+  });
+});
+
+describe("an EDL's meme sounds", () => {
+  test("a sound with no file here stops it before the capture, by name", () => {
+    // A kit with the renderer's code and no meme sound files: the state of
+    // the 4090 before the kit sync brings a new gitignored sound.
+    const kit = mkdtempSync(join(tmpdir(), "render-sounds-"));
+    for (const f of renderKitFiles()) {
+      mkdirSync(dirname(join(kit, f)), { recursive: true });
+      cpSync(join(REPO, f), join(kit, f));
+    }
+    symlinkSync(join(REPO, "node_modules"), join(kit, "node_modules"));
+    const edl = join(kit, "edl.json");
+    writeFileSync(
+      edl,
+      JSON.stringify({
+        version: 1,
+        gameId: "eeFSMEmL",
+        caption: "the bot was 97% winning",
+        ending: "replay",
+        events: [{ ply: 15, kind: "scared", cell: "e7", sound: "bell-2" }],
+      }),
+    );
+    const r = spawnSync(
+      "bun",
+      [join(kit, "scripts/game-video/render-game-video.mjs"), "--edl", edl],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("plays meme sounds whose files are not here");
+    expect(r.stderr).toContain(
+      `ply 15: ${join(kit, "assets/meme-sounds/bell-2.mp3")}`,
+    );
+    expect(r.stderr).toContain("vsSound: ");
   });
 });

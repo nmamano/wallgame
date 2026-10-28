@@ -243,6 +243,22 @@ export const DEFAULT_SLOT_SOUNDS = {
   vsSound: "shotgun-2",
   finishSound: "shotgun-2",
 };
+/**
+ * Every meme sound a valid list plays, as [where, key]: its two slots
+ * (DEFAULT_SLOT_SOUNDS fills them), then each event that names a sound.
+ * @param {{ events: { ply: number, sound?: string | null }[] } & Record<string, unknown>} edl
+ * @returns {[string, string][]}
+ */
+export const edlSoundUses = (edl) => [
+  ...Object.keys(DEFAULT_SLOT_SOUNDS).map(
+    (slot) => /** @type {[string, string]} */ ([slot, String(edl[slot])]),
+  ),
+  ...edl.events.flatMap((e) =>
+    e.sound
+      ? [/** @type {[string, string]} */ ([`ply ${e.ply}`, e.sound])]
+      : [],
+  ),
+];
 export const EVENT_KINDS = [
   "zoom",
   "scared",

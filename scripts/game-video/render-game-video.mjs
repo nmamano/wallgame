@@ -87,6 +87,7 @@ import {
   dailySeatColors,
   dailySeatName,
   DEFAULT_SLOT_SOUNDS,
+  edlSoundUses,
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
@@ -134,6 +135,8 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
+/** The meme sounds' files, by key (meme-sounds.mjs). */
+const MEME_DIR = join(REPO, "assets/meme-sounds");
 
 /* ------------------------------------------------------------------ args -- */
 
@@ -253,6 +256,24 @@ const EDL = (() => {
   }
   return checked.edl;
 })();
+/*
+  Every meme sound the list plays must have its file here, checked before a
+  live capture spends a view. The files are gitignored and reach the 4090
+  only with the kit sync, and the mix leaves a missing file out (Video
+  Reviewer 1, review 38; Wall Game Director, 2026-10-28: a sound missing
+  with no error could reach Nil unseen).
+*/
+if (EDL) {
+  const missing = edlSoundUses(EDL)
+    .map(([where, key]) => [where, join(MEME_DIR, `${key}.mp3`)])
+    .filter(([, file]) => !existsSync(file));
+  if (missing.length > 0) {
+    console.error(
+      `--edl ${EDL_PATH} plays meme sounds whose files are not here (sync the render kit):\n  ${missing.map(([where, file]) => `${where}: ${file}`).join("\n  ")}`,
+    );
+    process.exit(2);
+  }
+}
 const EDL_SHA256 = EDL_BYTES
   ? createHash("sha256").update(EDL_BYTES).digest("hex")
   : null;
@@ -1998,10 +2019,9 @@ const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
 
 /**
  * The meme sounds of the daily look: the files of the keys in
- * meme-sounds.mjs, which also says where they come from and why they are not
- * in the repository. The EDL names its sound cues by these keys.
+ * meme-sounds.mjs (MEME_DIR), which also says where they come from and why
+ * they are not in the repository. The EDL names its sound cues by these keys.
  */
-const MEME_DIR = join(REPO, "assets/meme-sounds");
 const meme = (name) => {
   if (!(name in MEME_SOUNDS)) {
     console.error(
@@ -2177,7 +2197,15 @@ const musicParts = ({ beatStartAt, musicStart, musicEndAt, bed }) => {
  */
 const buildAudio = ({ cues, totalSeconds, music, work }) => {
   const present = cues.filter((e) => existsSync(e.file));
-  for (const missing of cues.filter((e) => !existsSync(e.file))) {
+  const absent = cues.filter((e) => !existsSync(e.file));
+  // A daily video plays exactly its list: a sound left out is a wrong
+  // video, not a warning. A hand render still mixes what it has.
+  if (EDL && absent.length > 0) {
+    throw new Error(
+      `sounds missing, so the video would not play its list: ${[...new Set(absent.map((e) => e.file))].join(", ")}`,
+    );
+  }
+  for (const missing of absent) {
     log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
   }
   if (present.length === 0)
@@ -4472,6 +4500,11 @@ const renderStyle = async (styleName) => {
           : "soundtrack built from the site's own effects",
       );
     } catch (err) {
+      // A daily video plays exactly its list, so it never ships silent: any
+      // audio failure (a missing file, an ffmpeg error) fails the render
+      // with no MP4 (Video Reviewer 1, review 39). A hand render without an
+      // EDL still falls back to a silent video.
+      if (EDL) throw err;
       log(
         `soundtrack failed, writing a silent video instead: ${String(err.message ?? err).slice(0, 200)}`,
       );

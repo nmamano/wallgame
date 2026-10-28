@@ -6,6 +6,7 @@ import {
   DEFAULT_FREEZE_HOLD_SECONDS,
   DEFAULT_PATH_HOLD_SECONDS,
   DEFAULT_SLOT_SOUNDS,
+  edlSoundUses,
   DEFAULT_TRAP_TEXT,
   DEFAULT_ZOOM_SCALE,
   fastForwardTag,
@@ -312,6 +313,22 @@ describe("the VS and finish sounds", () => {
     ).toMatchObject({ vsSound: "shotgun-3", finishSound: "fuahhh-1" });
     expect(validateEdl({ ...base, finishSound: "airhorn-9" }).ok).toBe(false);
     expect(validateEdl({ ...base, vsSound: "toString" }).ok).toBe(false);
+  });
+
+  test("edlSoundUses names the slots, then each event with a sound", () => {
+    const edl = accept({
+      ...base,
+      finishSound: "bell-2",
+      events: [
+        { ply: 15, kind: "zoom", frame: ["^h4", "g4"] },
+        { ply: 16, kind: "scared", cell: "e7", sound: "pointing-2" },
+      ],
+    });
+    expect(edlSoundUses(edl)).toEqual([
+      ["vsSound", DEFAULT_SLOT_SOUNDS.vsSound],
+      ["finishSound", "bell-2"],
+      ["ply 16", "pointing-2"],
+    ]);
   });
 });
 
