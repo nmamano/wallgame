@@ -23,6 +23,11 @@
  * (store.mjs approveProblem). No counts, ids, slots or copy-block details:
  * the agents read those from crew.mjs and /api/review/status.
  *
+ * Two small buttons in the top corner, − and +, zoom the cards in steps of
+ * 25%, up to a video that fills the window (Nil, 2026-10-28: the office's
+ * app frame cannot go full screen); the browser keeps the level
+ * (localStorage).
+ *
  * POST /api/review/<id>/approve|discard|revise takes {notes, videoSha256,
  * copySha256}: the hashes of what the page showed, so Nil approves what he
  * saw, not a newer render. POST /api/review/<id>/withdraw takes {notes}.
@@ -191,10 +196,15 @@ export const REVIEW_PAGE = `<!doctype html>
 <title>Wall Game videos</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #0b0f1c; color: #e2e8f0;
-         margin: 0; padding: 16px 12px 40px; display: flex; justify-content: center; }
-  main { width: 100%; max-width: 520px; }
+         margin: 0; padding: var(--top) 12px 40px; display: flex; justify-content: center; }
+  /* --z: the zoom (Nil, 2026-10-28); 1 is the size a phone always had.
+     --top: the space above the first card, for the zoom buttons. */
+  :root { --top: 50px; }
+  main { width: 100%; max-width: calc(520px * var(--z, 1)); }
   .card { margin-bottom: 28px; }
-  video { display: block; width: 100%; max-height: 78vh; border-radius: 10px; background: #000; }
+  /* The box is the picture's own shape (9:16 until its size loads): no bars. */
+  video { display: block; width: auto; height: auto; max-width: 100%; max-height: min(calc(78vh * var(--z, 1)), calc(100vh - var(--top) - 8px));
+          aspect-ratio: auto 9 / 16; margin: 0 auto; border-radius: 10px; background: #000; }
   .caption { font-size: 17px; line-height: 1.4; margin: 10px 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
   textarea { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b1222; color: #e2e8f0;
              border: 1px solid #334155; border-radius: 8px; padding: 8px; font: inherit; font-size: 15px; }
@@ -208,9 +218,14 @@ export const REVIEW_PAGE = `<!doctype html>
   .alt { color: #94a3b8; font-size: 14px; margin: -4px 2px 10px; overflow-wrap: anywhere; }
   .risk { color: #f87171; font-size: 15px; font-weight: 700; margin: 0 2px 10px; }
   .why { color: #fca5a5; font-size: 14px; margin-top: 6px; white-space: pre-wrap; }
+  .zoom { position: fixed; top: 8px; right: 8px; z-index: 1; display: flex; gap: 6px; }
+  .zoom[hidden] { display: none; }
+  .zoom button { flex: none; width: 34px; height: 34px; padding: 0; font-size: 20px; line-height: 1;
+                 background: rgba(51, 65, 85, 0.85); color: #fff; }
   .quiet { color: #94a3b8; text-align: center; margin-top: 40px; }
 </style></head>
-<body><main id="list"></main>
+<body><div class="zoom" id="zoom" hidden><button id="zoom-out" aria-label="Smaller videos">−</button><button id="zoom-in" aria-label="Larger videos">+</button></div>
+<main id="list"></main>
 <script>
   // NOTHING HERE MAY USE innerHTML: captions and refusals are untrusted text.
   const el = (tag, cls, text) => { const n = document.createElement(tag);
@@ -286,8 +301,45 @@ export const REVIEW_PAGE = `<!doctype html>
     catch { list.replaceChildren(el("p", "quiet", LOST)); return; }
     list.replaceChildren();
     if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
+    document.getElementById("zoom").hidden = !v.items.length;
     if (!v.items.length) { list.append(el("p", "quiet", "Nothing to review.")); return; }
     for (const it of v.items) list.append(card(it, v.canReview));
+    list.querySelector("video").addEventListener("loadedmetadata", syncZoom);
+    syncZoom();
   };
+
+  // Zoom (Nil, 2026-10-28: "zoom in/out buttons"; the app frame cannot go
+  // full screen): steps of 25%, kept in localStorage. "+" stops when a step
+  // would not make the first video larger: it fills the window.
+  const ZOOM_KEY = "review-zoom", ZOOM_MIN = -3, ZOOM_MAX = 8;
+  const zoomIn = document.getElementById("zoom-in"), zoomOut = document.getElementById("zoom-out");
+  const stored = () => { try { return Number(localStorage.getItem(ZOOM_KEY)); } catch { return 0; } };
+  let zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(stored()) || 0));
+  const applyZoom = (k) => document.documentElement.style.setProperty("--z", String(1.25 ** k));
+  /** The area of the picture that the first video shows, in CSS pixels. */
+  const shown = () => {
+    const v = document.querySelector("video"); if (!v) return 0;
+    const r = v.getBoundingClientRect();
+    if (!v.videoWidth) return r.width * r.height;
+    const s = Math.min(r.width / v.videoWidth, r.height / v.videoHeight);
+    return v.videoWidth * v.videoHeight * s * s;
+  };
+  /** Measured: one step up makes the first video larger. */
+  const grows = () => { const now = shown(); applyZoom(zoom + 1); const next = shown(); applyZoom(zoom); return next > now + 1; };
+  function syncZoom() { zoomOut.disabled = zoom <= ZOOM_MIN; zoomIn.disabled = zoom >= ZOOM_MAX || !grows(); }
+  const setZoom = (k) => {
+    zoom = k; applyZoom(zoom); syncZoom();
+    try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch {}
+  };
+  zoomIn.onclick = () => setZoom(zoom + 1);
+  // A level kept from a larger window can be above the one that fills this
+  // window: step down until the video gets smaller, so no tap is lost.
+  zoomOut.onclick = () => {
+    const now = shown(); let k = zoom - 1; applyZoom(k);
+    while (k > ZOOM_MIN && shown() >= now - 1) applyZoom(--k);
+    setZoom(k);
+  };
+  addEventListener("resize", syncZoom);
+  applyZoom(zoom);
   load();
 </script></body></html>`;

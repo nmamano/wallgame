@@ -625,6 +625,18 @@ describe("the review page's view", () => {
     expect(byteRange("bytes=0-", 0)).toBe("unsatisfiable");
   });
 
+  test("zoom (Nil, 2026-10-28): − and +, steps of 25%, kept per browser; zoom 1 is the old size", () => {
+    expect(REVIEW_PAGE).toContain('id="zoom-out"');
+    expect(REVIEW_PAGE).toContain('id="zoom-in"');
+    expect(REVIEW_PAGE).toContain("max-width: calc(520px * var(--z, 1))");
+    expect(REVIEW_PAGE).toContain(
+      // The largest video fits under the top space: its controls show.
+      "max-height: min(calc(78vh * var(--z, 1)), calc(100vh - var(--top) - 8px))",
+    );
+    expect(REVIEW_PAGE).toContain("1.25 ** k");
+    expect(REVIEW_PAGE).toContain('"review-zoom"');
+  });
+
   test("the page puts no untrusted text in innerHTML", () => {
     // The page's own rule names innerHTML, so this looks for a write.
     expect(REVIEW_PAGE).not.toMatch(
