@@ -49,7 +49,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { copySha256 } from "./copy.mjs";
+import { COPY_LINES, copySha256 } from "./copy.mjs";
 
 /**
  * A day file's format. migrateV1 turns a version 1 file into version 2, and
@@ -96,6 +96,53 @@ export const reviewState = (item) => {
     !revise ||
     (item.render?.finishedAt > revise.at && item.copy?.storedAt > revise.at);
   return fresh && afterRevise ? "in-review" : "waiting-copy";
+};
+
+/** Item states that a post may come from: the poster's own steps. */
+const POSTABLE = ["approved", "posting"];
+
+/**
+ * Why `platform` may not post `item` now, or null: the last guard before a
+ * public post, which no caller can skip (Video Reviewer 2, 2026-10-28; it
+ * was the day store's checkPost). The item must be approved (or posting),
+ * the video's bytes and the block must be the ones Nil approved, the block
+ * must have every line, and the platform must not have the post already,
+ * nor maybe have it (pending: the app stopped during its final request;
+ * uncertain: no clear answer to it) unless a person checked the account
+ * and says it is not there (`confirmedNotPosted`).
+ * @param {any} item
+ * @param {string} platform
+ * @param {{ videoSha256: string, confirmedNotPosted: boolean }} given
+ */
+export const postProblem = (
+  item,
+  platform,
+  { videoSha256, confirmedNotPosted },
+) => {
+  if (!PLATFORMS.includes(platform)) return `${platform} is not a platform`;
+  if (!POSTABLE.includes(item.state)) {
+    return `${item.id} is ${item.state}; a post needs it ${POSTABLE.join(" or ")}`;
+  }
+  const a = item.approval;
+  if (!a) return `${item.id} has no approval`;
+  if (videoSha256 !== a.videoSha256) {
+    return `the video is not the one Nil approved for ${item.id}`;
+  }
+  if (!item.copy || copySha256(item.copy.block) !== a.copySha256) {
+    return `the copy block is not the one Nil approved for ${item.id}`;
+  }
+  const missing = COPY_LINES.filter(
+    ([, field]) => typeof item.copy.block[field] !== "string",
+  ).map(([label]) => label);
+  if (missing.length) {
+    return `the approved copy block of ${item.id} has no ${missing.join(", ")} line`;
+  }
+  const last = item.posts[platform];
+  if (last?.ok === true) return `${platform} already has ${item.id}`;
+  if ((last?.pending || last?.uncertain) && !confirmedNotPosted) {
+    return `${platform} may already have ${item.id} (${last.pending ? "the app stopped during" : "no clear answer to"} its final request at ${last.at}); check the account, then post again with the confirmation that it is not there`;
+  }
+  return null;
 };
 
 /** A day file's candidates, in label order. */

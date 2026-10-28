@@ -31,6 +31,7 @@ import {
   ITEM_ID,
   PLATFORMS,
   openStore,
+  postProblem,
   readPostLog,
   reviewState,
   stage,
@@ -879,6 +880,16 @@ describe("the app's measures of a render", () => {
   });
 });
 
+/** The message a promise is refused with, or null when it is not. */
+const refusal = async (p: Promise<unknown>): Promise<string | null> => {
+  try {
+    await p;
+    return null;
+  } catch (err) {
+    return (err as Error).message;
+  }
+};
+
 describe("postPlatform posts an approved item in the platform's mode", () => {
   /** An approved item whose video is a file; its store, id and bytes. */
   const approvedOnDisk = () => {
@@ -912,23 +923,94 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
         },
       },
     });
-    const post = async () =>
+    const post = async (confirmedNotPosted = false) =>
       (await daily.postPlatform("x", {
         item: itemOf(store, id),
         video,
         beforeCommit: () => undefined,
+        confirmedNotPosted,
       })) as PostResult;
-    // The poster must not post it again until a person checks X.
-    expect(await post()).toMatchObject({
+    const first = await post();
+    expect(first).toMatchObject({
       ok: false,
       uncertain: true,
       mode: "dry-run",
     });
+    // The poster records the result, as review-post.mjs does.
+    store.updateItem(
+      id,
+      ["approved"],
+      (it: { posts: Record<string, unknown> }) => {
+        it.posts = { ...it.posts, x: first };
+      },
+      "x: uncertain",
+    );
     lose = false;
-    expect(await post()).toMatchObject({
+    // No second post until a person checks X and says it is not there.
+    expect(await refusal(post())).toMatch(/x may already have v-/);
+    expect(await post(true)).toMatchObject({
       ok: true,
       postId: "DRY-RUN-POST-ID",
     });
+  });
+
+  test("the last guard before a public post: Nil's video and block, every line, no second post", async () => {
+    const { dir, store, id, video } = approvedOnDisk();
+    const daily = createDaily({ dataDir: dir, env: {} });
+    const post = (bytes: Buffer = video, platform = "bluesky") =>
+      daily.postPlatform(platform, {
+        item: itemOf(store, id),
+        video: bytes,
+        beforeCommit: () => undefined,
+      }) as Promise<PostResult>;
+    const change = (
+      mutate: (it: Item & { posts: Record<string, unknown> }) => void,
+    ): void => {
+      store.updateItem(id, ["approved"], mutate, "test change");
+    };
+    expect(await refusal(post(Buffer.from("other bytes")))).toMatch(
+      "the video is not the one Nil approved",
+    );
+    const block = itemOf(store, id).copy!.block;
+    change((it) => {
+      it.copy!.block = { ...block, bluesky: "another text #wallgame" };
+    });
+    expect(await refusal(post())).toMatch(
+      "the copy block is not the one Nil approved",
+    );
+    change((it) => {
+      it.copy!.block = block;
+      it.posts = { bluesky: { ok: true, mode: "dry-run" } };
+    });
+    expect(await refusal(post())).toMatch(/^bluesky already has v-/);
+    expect(await refusal(post(video, "myspace"))).toMatch(
+      "myspace is not a platform",
+    );
+    // A refusal sends nothing: no requests file.
+    expect(readdirSync(store.dirs.requests)).toEqual([]);
+    // Another platform of the same item still posts.
+    expect(await post(video, "threads")).toMatchObject({ ok: true });
+    // Only an approved (or posting) item.
+    change((it) => {
+      it.state = "discarded";
+    });
+    expect(await refusal(post(video, "x"))).toMatch(
+      "is discarded; a post needs it approved or posting",
+    );
+  });
+
+  test("an approval from before a platform had its line posts nothing there", () => {
+    const item = {
+      id: "v-2026-10-20-A",
+      state: "approved",
+      approval: { videoSha256: "v", copySha256: "", by: "Nil", at: "t" },
+      copy: { block: { ...COPY, threads: undefined } },
+      posts: {},
+    };
+    item.approval.copySha256 = copySha256(item.copy.block as never);
+    expect(
+      postProblem(item, "x", { videoSha256: "v", confirmedNotPosted: false }),
+    ).toBe("the approved copy block of v-2026-10-20-A has no Threads line");
   });
 
   describe("the TikTok refresh after a connect", () => {

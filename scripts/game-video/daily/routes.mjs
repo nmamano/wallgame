@@ -54,6 +54,7 @@ import {
   readPostLog,
   StepRefused,
   PLATFORMS,
+  postProblem,
   stage,
   reviewState,
 } from "./store.mjs";
@@ -863,10 +864,26 @@ export const createDaily = ({
    * failure after it may still have made the post. Never throws for the
    * platform's failure: the result is {ok: true, mode, at, ...the
    * platform's reply} or {ok: false, uncertain, mode, at, error}, with the
-   * requests file of this attempt. Wall Game Worker 1's poster
-   * (review-post.mjs) checks the approval first and records the result.
+   * requests file of this attempt. It REFUSES (throws StepRefused, before
+   * any request) what store.mjs postProblem names: not approved, other
+   * bytes or another block than Nil approved, a missing line, a platform
+   * that has the post or may have it. `confirmedNotPosted` (this platform)
+   * is a person's word that an uncertain post is not on the account. Wall
+   * Game Worker 1's poster (review-post.mjs) records the result.
    */
-  const postPlatform = async (platform, { item, video, beforeCommit }) => {
+  const postPlatform = async (
+    platform,
+    { item: given, video, beforeCommit, confirmedNotPosted = false },
+  ) => {
+    // The item as stored now (the caller's pending marks and earlier
+    // results count), checked before any request: a refusal throws, as it
+    // is not a platform's failure (nothing was sent).
+    const item = store.item(given.id) ?? fail(`there is no item ${given.id}`);
+    const problem = postProblem(item, platform, {
+      videoSha256: sha256(video),
+      confirmedNotPosted: confirmedNotPosted === true,
+    });
+    if (problem) throw new StepRefused(problem);
     const modes = modesNow();
     const live = modes[platform] === "live";
     const transport = live
