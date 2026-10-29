@@ -20,7 +20,6 @@ import {
   scan,
   scanPlan,
   shortTermPerSecond,
-  silences,
   strip,
   stripTimes,
 } from "./tools.mjs";
@@ -85,18 +84,6 @@ describe("the parsers of ffmpeg's output", () => {
     expect(metadataSeries(stderr, "lavfi.astats.Overall.Peak_level")).toEqual([
       [0, -10.233898],
       [0.1, -Infinity],
-    ]);
-  });
-
-  test("silences, and one still open at the end", () => {
-    const stderr = [
-      "[silencedetect @ 0x1] silence_start: 0",
-      "[silencedetect @ 0x1] silence_end: 0.897256 | silence_duration: 0.897256",
-      "[silencedetect @ 0x1] silence_start: 46.35",
-    ].join("\n");
-    expect(silences(stderr, 47.2)).toEqual([
-      { start: 0, end: 0.9, seconds: 0.9 },
-      { start: 46.35, end: 47.2, seconds: 0.85 },
     ]);
   });
 

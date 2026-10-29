@@ -18,6 +18,10 @@
  *              the page wraps it (stage.html __captionText): a two-line beat
  *              makes the board smaller for the whole video (DIRECTOR.md,
  *              measured 2026-10-26: 720 px against 785 px).
+ *   silence    the gaps over the silence rules in the final track, as the
+ *              render measured it (mix-loudness.mjs). A report for the
+ *              director and the vet, never a failed check (Wall Game PM,
+ *              2026-10-29): a gap can be the script's beat.
  */
 import { SAFE_AREA, STRIP_AREA, areaOf } from "../edl.mjs";
 
@@ -175,4 +179,35 @@ export const captionLinesVerdict = (layout) => {
         ok: false,
         note: `${bad.map(said).join("; ")}: each beat must be one line inside its box; shorten it, direct again and render`,
       };
+};
+
+/**
+ * The silence report (RESULT `silence`): `{floorDbfs, gaps, over}`, or
+ * `{error}`. Always ok when measured; `warn` when a gap breaks a rule. A
+ * render that did not measure fails, as the other measures do (a render
+ * kit older than the measure).
+ * @param {{ floorDbfs?: number, gaps?: { start: number, end: number,
+ *   seconds: number }[], over?: { start: number, end: number,
+ *   seconds: number, rule: number }[], error?: string } | null | undefined} report
+ */
+export const silenceVerdict = (report) => {
+  if (!report?.over) {
+    return {
+      ok: false,
+      note: report?.error
+        ? `the renderer could not measure the silences: ${report.error}`
+        : "the render reported no silence measure (a silent video, or a render kit older than the measure: sync it)",
+    };
+  }
+  if (report.over.length === 0) {
+    return {
+      ok: true,
+      note: `no gap over the rules (under ${report.floorDbfs} dBFS)`,
+    };
+  }
+  return {
+    ok: true,
+    warn: true,
+    note: `${report.over.map((g) => `${g.start}-${g.end} s: ${g.seconds} s, over ${g.rule} s`).join("; ")} (under ${report.floorDbfs} dBFS); the vet judges each`,
+  };
 };

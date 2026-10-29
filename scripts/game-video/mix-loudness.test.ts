@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   MASTER_LUFS,
+  OPENING_SILENCE_SECONDS,
+  SILENCE_FILTER,
+  SILENCE_SECONDS,
+  parseSilences,
+  silencesOverRules,
   masterFault,
   masterFilters,
   masterRetry,
@@ -223,6 +228,39 @@ describe("mixGraph", () => {
     expect(() => mixGraph({ cues: [], totalSeconds: 33, music: [] })).toThrow(
       "nothing to mix",
     );
+  });
+});
+
+describe("silence", () => {
+  test("silences, and one still open at the end", () => {
+    const stderr = [
+      "[silencedetect @ 0x1] silence_start: 0",
+      "[silencedetect @ 0x1] silence_end: 0.897256 | silence_duration: 0.897256",
+      "[silencedetect @ 0x1] silence_start: 46.35",
+    ].join("\n");
+    expect(parseSilences(stderr, 47.2)).toEqual([
+      { start: 0, end: 0.9, seconds: 0.9 },
+      { start: 46.35, end: 47.2, seconds: 0.85 },
+    ]);
+  });
+
+  test("the silences over the rules: 1.5 s anywhere, 0.6 s inside the opening", () => {
+    const gaps = [
+      { start: 1.77, end: 2.43, seconds: 0.66 },
+      { start: 10.2, end: 11.0, seconds: 0.8 },
+      { start: 15.99, end: 17.6, seconds: 1.61 },
+    ];
+    expect(silencesOverRules(gaps, [0.9, 5.5])).toEqual([
+      { start: 1.77, end: 2.43, seconds: 0.66, rule: OPENING_SILENCE_SECONDS },
+      { start: 15.99, end: 17.6, seconds: 1.61, rule: SILENCE_SECONDS },
+    ]);
+    // With no VS overlay, only the 1.5 s rule.
+    expect(silencesOverRules(gaps, null).map((g) => g.start)).toEqual([15.99]);
+    // Only the part inside the opening counts there.
+    expect(
+      silencesOverRules([{ start: 5.0, end: 6.0, seconds: 1.0 }], [0.9, 5.5]),
+    ).toEqual([]);
+    expect(SILENCE_FILTER).toBe("silencedetect=noise=-45dB:d=0.6");
   });
 });
 

@@ -370,6 +370,99 @@ export const runMaster = (encode, log) => {
   return master;
 };
 
+/*
+  Silence, as a viewer hears it: the final track under SILENCE_FLOOR_DBFS
+  for SILENCE_DETECT_SECONDS or more (ffmpeg silencedetect). From the VS
+  hit to the first move a gap may last OPENING_SILENCE_SECONDS, after that
+  SILENCE_SECONDS (Wall Game Director, 2026-10-29). One floor for the
+  render's measure, `crew.mjs audio` and the render vet (Wall Game PM,
+  2026-10-29: the lint and the vet measured on two floors and disagreed
+  near the limit).
+*/
+export const SILENCE_FLOOR_DBFS = -45;
+export const SILENCE_DETECT_SECONDS = 0.6;
+export const SILENCE_SECONDS = 1.5;
+export const OPENING_SILENCE_SECONDS = 0.6;
+export const SILENCE_FILTER = `silencedetect=noise=${SILENCE_FLOOR_DBFS}dB:d=${SILENCE_DETECT_SECONDS}`;
+
+const hundredth = (x) => Math.round(x * 100) / 100;
+
+/**
+ * silencedetect's lines as [{start, end, seconds}]; an open one ends at
+ * `end`.
+ * @param {string} stderr
+ * @param {number} end
+ */
+export const parseSilences = (stderr, end) => {
+  /** @type {{ start: number, end: number }[]} */
+  const out = [];
+  /** @type {number | null} */
+  let start = null;
+  for (const line of stderr.split("\n")) {
+    const s = /silence_start: ([-\d.]+)/.exec(line);
+    if (s) start = Number(s[1]);
+    const e = /silence_end: ([-\d.]+)/.exec(line);
+    if (e && start !== null) {
+      out.push({ start, end: Number(e[1]) });
+      start = null;
+    }
+  }
+  if (start !== null) out.push({ start, end });
+  return out.map((g) => ({
+    start: hundredth(g.start),
+    end: hundredth(g.end),
+    seconds: hundredth(g.end - g.start),
+  }));
+};
+
+/**
+ * The silences of an encoded track that lasts `seconds`.
+ * @param {string} ffmpeg
+ * @param {string} file
+ * @param {number} seconds
+ */
+export const measureSilences = (ffmpeg, file, seconds) => {
+  const run = spawnSync(
+    ffmpeg,
+    [
+      "-hide_banner",
+      "-nostats",
+      "-i",
+      file,
+      "-af",
+      SILENCE_FILTER,
+      "-f",
+      "null",
+      "-",
+    ],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (run.status !== 0) {
+    throw new Error(
+      `ffmpeg could not find the silences: ${String(run.stderr).trim().split("\n").at(-1)}`,
+    );
+  }
+  return parseSilences(run.stderr, seconds);
+};
+
+/**
+ * The silences over the rules, each with the rule it breaks: over
+ * SILENCE_SECONDS anywhere, or over OPENING_SILENCE_SECONDS inside the
+ * opening [VS hit, first move] (null: a video with no VS overlay).
+ * @param {{ start: number, end: number, seconds: number }[]} gaps
+ * @param {[number, number] | null} opening
+ */
+export const silencesOverRules = (gaps, opening) =>
+  gaps.flatMap((g) => {
+    if (g.seconds > SILENCE_SECONDS) return [{ ...g, rule: SILENCE_SECONDS }];
+    const inOpening = opening
+      ? Math.min(g.end, opening[1]) - Math.max(g.start, opening[0])
+      : 0;
+    return inOpening > OPENING_SILENCE_SECONDS
+      ? [{ ...g, seconds: hundredth(inOpening), rule: OPENING_SILENCE_SECONDS }]
+      : [];
+  });
+
 /**
  * Why a master fails the gate, or null when it passes.
  * @param {{ lufs: number, truePeakDbtp: number }} master

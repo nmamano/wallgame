@@ -91,6 +91,7 @@ import {
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
+  silenceVerdict,
   MAX_MEME_LUFS,
 } from "./quality.mjs";
 import { FRAME, STRIP_AREA, validateEdl } from "../edl.mjs";
@@ -638,6 +639,37 @@ describe("the director checks the contact sheet before the review", () => {
     store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
     expect(itemOf(store, id).state).toBe("finished");
     expect(reviewState(itemOf(store, id))).toBe("in-review");
+  });
+
+  test("a silence WARN is a report: the check still finishes the item", () => {
+    const { store, id } = rendered({
+      ...MEASURED,
+      silence: silenceVerdict({
+        floorDbfs: -45,
+        gaps: [{ start: 15.99, end: 17.6, seconds: 1.61 }],
+        over: [{ start: 15.99, end: 17.6, seconds: 1.61, rule: 1.5 }],
+      }),
+    });
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(itemOf(store, id).state).toBe("finished");
+    expect(
+      silenceVerdict({
+        floorDbfs: -45,
+        gaps: [],
+        over: [{ start: 15.99, end: 17.6, seconds: 1.61, rule: 1.5 }],
+      }),
+    ).toEqual({
+      ok: true,
+      warn: true,
+      note: "15.99-17.6 s: 1.61 s, over 1.5 s (under -45 dBFS); the vet judges each",
+    });
+    // A render that did not measure fails, as the other measures do.
+    expect(silenceVerdict(undefined).ok).toBe(false);
+    expect(silenceVerdict({ error: "ffmpeg" }).note).toContain("ffmpeg");
+    expect(silenceVerdict({ floorDbfs: -45, gaps: [], over: [] })).toEqual({
+      ok: true,
+      note: "no gap over the rules (under -45 dBFS)",
+    });
   });
 
   test("a failed measure fails the check, even when every still is ok", () => {
@@ -2222,6 +2254,7 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
       cols: 8, rows: 8, extra: "dropped" } },
   loudness: { memes: [{ key: "shotgun-2", at: 0.9, loudestAt: 0.9,
     memeLufs: -24, bedLufs: -33.7, overLU: 9.7, truePeakDbtp: -14.3 }] },
+  silence: { floorDbfs: -45, gaps: [], over: [] },
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills },
   timeline: {
     moves: edl.events.map((e) => ({ ply: e.ply, at: 10 })),

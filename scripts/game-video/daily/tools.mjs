@@ -21,6 +21,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { boardGrid } from "../board-grid.mjs";
 import { FRAME } from "../edl.mjs";
+import {
+  SILENCE_DETECT_SECONDS,
+  SILENCE_FILTER,
+  SILENCE_FLOOR_DBFS,
+  parseSilences,
+} from "../mix-loudness.mjs";
 
 /** Where every tool writes. Never the app's folders. */
 export const TOOLS_DIR = join(tmpdir(), "daily-tools");
@@ -29,9 +35,6 @@ export const TOOLS_DIR = join(tmpdir(), "daily-tools");
 const SCAN_COLUMNS = 7;
 /** The most frames a strip takes: 24 of 200 px is a wide PNG already. */
 export const STRIP_MOST = 24;
-/** Silence: quieter than this for longer than SILENCE_MIN_SECONDS. */
-const SILENCE_NOISE = "-45dB";
-const SILENCE_MIN_SECONDS = 0.6;
 /** The feed's loudness (the platforms normalize to about -14 LUFS). */
 export const FEED_LUFS = -14;
 
@@ -271,27 +274,6 @@ export const metadataSeries = (stderr, key) => {
   return out;
 };
 
-/** silencedetect's lines as [{start, end, seconds}]; an open one ends at `end`. */
-export const silences = (stderr, end) => {
-  const out = [];
-  let start = null;
-  for (const line of stderr.split("\n")) {
-    const s = /silence_start: ([-\d.]+)/.exec(line);
-    if (s) start = Number(s[1]);
-    const e = /silence_end: ([-\d.]+)/.exec(line);
-    if (e && start !== null) {
-      out.push({ start, end: Number(e[1]) });
-      start = null;
-    }
-  }
-  if (start !== null) out.push({ start, end });
-  return out.map((g) => ({
-    start: round(g.start),
-    end: round(g.end),
-    seconds: round(g.end - g.start),
-  }));
-};
-
 /**
  * The short-term loudness at each whole second, from [time, LUFS] pairs.
  * Short-term covers the 3 s before its time, and ebur128 gives a floor
@@ -462,7 +444,7 @@ export const audio = ({ video, from, seconds }) => {
   // One 0.1 s window is a tenth of the sample rate (4410 at 44.1 kHz).
   const tenth = Math.round(info.sampleRate / 10);
   const filters = [
-    `silencedetect=noise=${SILENCE_NOISE}:d=${SILENCE_MIN_SECONDS}`,
+    SILENCE_FILTER,
     "ebur128=peak=true",
     ...(ranged
       ? [
@@ -490,15 +472,15 @@ export const audio = ({ video, from, seconds }) => {
   lines.push(
     `  loudness ${lufs.toFixed(1)} LUFS, true peak ${truePeak === null ? "?" : db(truePeak)} dBFS`,
   );
-  const gaps = silences(stderr, end - start).map((g) => ({
+  const gaps = parseSilences(stderr, end - start).map((g) => ({
     ...g,
     start: round(g.start + start),
     end: round(g.end + start),
   }));
   lines.push(
     gaps.length
-      ? `  silence (under ${SILENCE_NOISE} for ${SILENCE_MIN_SECONDS} s or more): ${gaps.map((g) => `${g.start}-${g.end} (${g.seconds} s)`).join(", ")}`
-      : `  no silence of ${SILENCE_MIN_SECONDS} s or more`,
+      ? `  silence (under ${SILENCE_FLOOR_DBFS} dBFS for ${SILENCE_DETECT_SECONDS} s or more): ${gaps.map((g) => `${g.start}-${g.end} (${g.seconds} s)`).join(", ")}`
+      : `  no silence of ${SILENCE_DETECT_SECONDS} s or more`,
   );
   if (ranged) {
     const peaks = metadataSeries(stderr, "lavfi.astats.Overall.Peak_level");

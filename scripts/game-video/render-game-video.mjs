@@ -143,11 +143,16 @@ import { stampSpot } from "./stamp-spot.mjs";
 import {
   masterFault,
   masterFilters,
+  OPENING_SILENCE_SECONDS,
+  SILENCE_FLOOR_DBFS,
+  SILENCE_SECONDS,
   measureMaster,
+  measureSilences,
   memeLoudness,
   mixGraph,
   mixIntegrated,
   runMaster,
+  silencesOverRules,
 } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import {
@@ -996,17 +1001,15 @@ const MUSIC_BED = 0.35;
  * and a still board held STILL_BEFORE_ENDING_SECONDS or more right before
  * the ending (a still, silent board after the climax, 2026-10-29). A sound
  * is heard from its first to its last sample above SOUND_FLOOR_DB, at its
- * gain. Both only warn (edl.mjs LINT_KINDS).
- */
-const SILENCE_SECONDS = 1.5;
-/**
- * From the VS hit to the first move the limit is OPENING_SILENCE_SECONDS
- * (Wall Game Director, 2026-10-29, the T5b rule). It applies only when the
- * VS overlay plays: a video without it (no VS in the style, or a --plies
+ * gain. Both only warn (edl.mjs LINT_KINDS). The silence rules
+ * (SILENCE_SECONDS, OPENING_SILENCE_SECONDS) are mix-loudness.mjs's: this
+ * check is a forecast before the mix, and the render's `silence` measure
+ * of its final track is the one the vet judges. From the VS hit to the
+ * first move the limit is OPENING_SILENCE_SECONDS (the T5b rule), only when
+ * the VS overlay plays: a video without it (no VS in the style, or a --plies
  * window without the opening) has only the SILENCE_SECONDS rule, so a
  * silent cold open alone does not trip it (Video Reviewer 1, review 64).
  */
-const OPENING_SILENCE_SECONDS = 0.6;
 const STILL_BEFORE_ENDING_SECONDS = 0.5;
 const SOUND_FLOOR_DB = -50;
 /**
@@ -6100,14 +6103,14 @@ const renderStyle = async (styleName) => {
       fault(
         "silence",
         plyAt(reach),
-        `no sound for ${(a - reach).toFixed(1)} s, from ${reach.toFixed(1)} s to ${a.toFixed(1)} s`,
+        `no sound for about ${(a - reach).toFixed(1)} s, from ${reach.toFixed(1)} s to ${a.toFixed(1)} s`,
         reach,
       );
     } else if (inOpening > OPENING_SILENCE_SECONDS) {
       fault(
         "silence",
         plyAt(reach),
-        `no sound for ${inOpening.toFixed(1)} s between the VS hit and the first move (${OPENING_SILENCE_SECONDS} s at most), from ${Math.max(reach, opening[0]).toFixed(1)} s`,
+        `no sound for about ${inOpening.toFixed(1)} s between the VS hit and the first move (${OPENING_SILENCE_SECONDS} s at most), from ${Math.max(reach, opening[0]).toFixed(1)} s`,
         Math.max(reach, opening[0]),
       );
     }
@@ -6365,6 +6368,8 @@ const renderStyle = async (styleName) => {
   let loudness = null;
   /** The cues the soundtrack holds; none in a silent video. */
   let mixed = [];
+  /** RESULT.silence: the final track's silences (mix-loudness.mjs). */
+  let silence = null;
   const audioStarted = Date.now();
   if (AUDIO) {
     try {
@@ -6385,6 +6390,25 @@ const renderStyle = async (styleName) => {
         log(
           `master: ${lufs} LUFS, true peak ${truePeakDbtp} dBTP (gain ${gainDb} dB)`,
         );
+      }
+      // The silences a viewer hears, on the final track: reported for the
+      // check and the vet, never a render failure (Wall Game PM, 2026-10-29).
+      if (audioPath) {
+        try {
+          const gaps = measureSilences(FFMPEG, audioPath, totalSeconds);
+          silence = {
+            floorDbfs: SILENCE_FLOOR_DBFS,
+            gaps,
+            over: silencesOverRules(gaps, opening),
+          };
+          for (const g of silence.over) {
+            log(
+              `silence ${g.start}-${g.end} s: ${g.seconds} s, over ${g.rule} s`,
+            );
+          }
+        } catch (err) {
+          silence = { error: String(err.message ?? err).slice(0, 300) };
+        }
       }
       log(
         music.length > 0
@@ -6558,6 +6582,7 @@ const renderStyle = async (styleName) => {
           }
         : null,
       loudness,
+      silence,
     }),
   };
 };

@@ -109,6 +109,7 @@ import {
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
+  silenceVerdict,
 } from "./quality.mjs";
 import { COPY_VERSION, copyProblems, parseCopy, postTexts } from "./copy.mjs";
 import {
@@ -711,6 +712,7 @@ export const createDaily = ({
         loudness: loudnessVerdict(result.loudness),
         safeArea: safeAreaVerdict(result.layout, FRAME),
         captionLines: captionLinesVerdict(result.layout),
+        silence: silenceVerdict(result.silence),
       },
     });
   };

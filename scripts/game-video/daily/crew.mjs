@@ -423,7 +423,8 @@ const readReport = (path) => {
 /** The app's measures of a render (quality.mjs), one line each. */
 const measureLines = (quality) =>
   Object.entries(quality ?? {}).map(
-    ([name, m]) => `  measure ${name}: ${m.ok ? "ok" : "FAILED"} - ${m.note}`,
+    ([name, m]) =>
+      `  measure ${name}: ${m.ok ? (m.warn ? "WARN" : "ok") : "FAILED"} - ${m.note}`,
   );
 
 /**
@@ -1381,6 +1382,7 @@ const commands = {
           ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}; its review notes: ${scriptNotes})`
           : "- SCRIPT: none recorded (this item rendered before phase 1)",
         `- RULES: ${join(docsDir(), "DIRECTOR.md")}`,
+        `- SILENCE (the render's measure of the final track): ${c.render.quality?.silence?.note ?? "not measured (a render before the measure)"}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- THE GAME (the winner and how):",
         ...c.candidate.facts.map((f) => `  - ${f}`),
