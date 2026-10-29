@@ -200,7 +200,7 @@ describe("trap words", () => {
     const seats = ["Guest Ferret", "Normal Bot"];
     expect(
       checkSentence(
-        "Guest Ferret traps the own cat with ^a1.",
+        "Guest Ferret traps its own cat with ^a1.",
         cite,
         facts,
         seats,
@@ -214,6 +214,36 @@ describe("trap words", () => {
         seats,
       ),
     ).toEqual(['"traps" needs a cited fact that says trap-closes or seal']);
+    // "own" elsewhere in the sentence does not make the trap the mover's.
+    expect(
+      checkSentence(
+        "Guest Ferret traps Normal Bot's mouse in its own corner with ^a1.",
+        cite,
+        facts,
+        seats,
+      ),
+    ).toEqual(['"traps" needs a cited fact that says trap-closes or seal']);
+  });
+});
+
+describe("label words", () => {
+  test('the tag "missed-punish" does not let a sentence say "punishes"', () => {
+    const game = gameOf([
+      { w1: [6, 6], w2: [6, 6], wc: [0.9, 0.1] },
+      { w1: [6, 6], w2: [6, 4], wc: [0.9, 0.1] },
+      { w1: [6, 6], w2: [4, 12], wc: [0.9, 0.92], walls: [">b3"] },
+    ]);
+    const l = labelGame(game);
+    expect(l.plies[1].tags).toContain("missed-punish");
+    const facts = factsOf(game, l, 1);
+    expect(
+      checkSentence(
+        "Normal Bot punishes the blunder.",
+        ["1.play", "1.label"],
+        facts,
+        ["Guest Ferret", "Normal Bot"],
+      ),
+    ).toEqual(['"punishes" needs a cited fact that says punish']);
   });
 });
 
@@ -338,6 +368,15 @@ describe("checkSentence", () => {
       '"from 4 to 6" is not a before/after pair of the cited facts',
     ]);
     expect(check("Guest Ferret's chance falls from 70% to 20%.")).toEqual([]);
+    // Normal Bot's numbers under Guest Ferret's name (VR1: owner swaps).
+    expect(
+      checkSentence(
+        "Guest Ferret's walk falls from 6 to 4.",
+        ids("walk1", "walk2"),
+        facts,
+        seats,
+      ),
+    ).toEqual([`"from 6 to 4" is not Guest Ferret's walk in the cited facts`]);
   });
 
   test("colour words and uppercase cells are checked", () => {

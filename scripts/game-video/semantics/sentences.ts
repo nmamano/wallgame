@@ -19,12 +19,15 @@
  * its own move and of linked moves; it says nothing about intent ("tries",
  * "panics"). A sentence that fails gets one retry with the reasons; if it
  * fails again, the move's own play fact stands in and is marked `fallback`.
- * A "from N to M" must be a before/after pair of a cited fact, in order.
+ * A "from N to M" must be a before/after pair of a cited fact, in order,
+ * and of the walk's owner when the clause names one ("Normal Bot's walk").
+ * Label and tag words count only as whole words ("missed-punish" does not
+ * say "punish").
  *
  * KNOWN GAPS of a word check (VR1, 2026-10-29). Apart from "from N to M",
  * numbers, cells and names are checked as a bag over the cited facts, not
- * bound to each other: "Guest X's walk" with the other side's numbers, or
- * a cell given to the wrong pawn, can pass. The word lists (intent, colour,
+ * bound to each other: a lone number under the wrong owner ("Guest X's
+ * walk is 4"), or a cell given to the wrong pawn, can pass. The word lists (intent, colour,
  * judgment) are open: a new word for intent passes until it is listed. A
  * seat name other than the game's is caught only in the "Guest X" and
  * "X Bot" forms. "walk" as a verb also needs its owner ("Guest X's cat
@@ -259,22 +262,46 @@ const COLOURS =
  * after, a win chance's before and after, and a best move's "would need X,
  * not Y" (from Y to X).
  */
-const citedPairs = (cited: string): Set<string> => {
-  const pairs = new Set<string>();
-  const add = (re: RegExp, from: number, to: number) => {
-    for (const m of cited.matchAll(re)) pairs.add(`${m[from]}>${m[to]}`);
-  };
-  add(
-    /needs (\d+) steps? to reach [^;.]*; before the move it needed (\d+)/g,
-    2,
-    1,
-  );
-  add(/(\d+)% win chance before this move and (\d+)% after/g, 1, 2);
-  add(/from (\d+)% to (\d+)%/g, 1, 2);
-  add(/would need (\d+) steps? to reach [^,.]*, not (\d+)/g, 2, 1);
+const citedPairs = (texts: string[]): Map<string, Set<string>> => {
+  const pairs = new Map<string, Set<string>>();
+  for (const text of texts) {
+    // A walk fact starts with its hunter's owner; a best-move fact names
+    // the owner after "With it, ". A win-chance pair has no walk owner ("").
+    const owner =
+      /^(.+?)'s \w+ \(on /.exec(text)?.[1] ??
+      /With it, (.+?)'s \w+ would need/.exec(text)?.[1] ??
+      "";
+    const add = (re: RegExp, from: number, to: number) => {
+      for (const m of text.matchAll(re)) {
+        const key = `${m[from]}>${m[to]}`;
+        const owners = pairs.get(key) ?? new Set<string>();
+        owners.add(owner);
+        pairs.set(key, owners);
+      }
+    };
+    add(
+      /needs (\d+) steps? to reach [^;.]*; before the move it needed (\d+)/g,
+      2,
+      1,
+    );
+    add(/(\d+)% win chance before this move and (\d+)% after/g, 1, 2);
+    add(/from (\d+)% to (\d+)%/g, 1, 2);
+    add(/would need (\d+) steps? to reach [^,.]*, not (\d+)/g, 2, 1);
+  }
   return pairs;
 };
+
 const PAWN = /\b(cat|cats|mouse|mice|home|dog|elephant)\b/gi;
+
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A cited fact holds `stem` as a word of its own: "punish" in "punishes the
+ * blunder", not in the tag "missed-punish" (VR1, 2026-10-29).
+ */
+const saysWord = (citedLower: string, stem: string) =>
+  new RegExp(`(?<![a-z-])${escapeRegExp(stem)}`).test(citedLower);
 
 /** Reasons the sentence breaks the rules; [] when it passes. */
 export const checkSentence = (
@@ -321,10 +348,23 @@ export const checkSentence = (
   // A "from N to M" must be one of the cited before/after pairs, in that
   // direction (VR1, 2026-10-29: a bag of numbers lets "3 to 8" pass for 8
   // to 3).
-  const pairs = citedPairs(cited);
+  // And the pair is that walk's: "Normal Bot's walk from 6 to 4" needs a
+  // 6 -> 4 of Normal Bot's own walk fact (VR1, 2026-10-29: owner swaps).
+  const pairs = citedPairs(factIds.flatMap((id) => byId.get(id) ?? []));
+  const walkOwner = new RegExp(
+    `(${seatNames.map(escapeRegExp).join("|")})'s (?:(?:cat|mouse|dog|elephant) )?walk`,
+    "g",
+  );
   for (const m of sentence.matchAll(/\bfrom (\d+)%?(?: steps?)? to (\d+)/gi)) {
-    if (!pairs.has(`${m[1]}>${m[2]}`))
+    const owners = pairs.get(`${m[1]}>${m[2]}`);
+    if (!owners) {
       reasons.push(`"${m[0]}" is not a before/after pair of the cited facts`);
+      continue;
+    }
+    const clause = sentence.slice(0, m.index).split(/[,;:]/).at(-1) ?? "";
+    const named = [...clause.matchAll(walkOwner)].at(-1)?.[1];
+    if (named !== undefined && !owners.has(named))
+      reasons.push(`"${m[0]}" is not ${named}'s walk in the cited facts`);
   }
   // Cells and walls.
   const citedCells = new Set(
@@ -363,7 +403,7 @@ export const checkSentence = (
   // steps" left the reader to guess whose): "Normal Bot's walk" or
   // "Normal Bot's cat walk", never "the walk" or "its walk".
   const owner = new RegExp(
-    `(?:${seatNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})'s (?:(?:cat|mouse|dog|elephant)(?:'s)? )?$`,
+    `(?:${seatNames.map(escapeRegExp).join("|")})'s (?:(?:cat|mouse|dog|elephant)(?:'s)? )?$`,
   );
   for (const walk of sentence.matchAll(/\bwalks?\b/gi)) {
     if (!owner.test(sentence.slice(0, walk.index))) {
@@ -379,13 +419,16 @@ export const checkSentence = (
     if (!hit) continue;
     // A self-trap lets the sentence say the mover trapped its own cat, not
     // that it trapped the other side (VR1, 2026-10-29).
+    // The own cat must be the trap's object, right after the verb.
     if (
       stems.startsWith("trap") &&
-      citedLower.includes("self-trap") &&
-      /\b(own|itself|themselves)\b/i.test(sentence)
+      saysWord(citedLower, "self-trap") &&
+      /\b(?:trap\w*|cage\w*|box(?:es|ed)? in|lock\w*)\s+(?:(?:its|their) own\b|itself\b|themselves\b)/i.test(
+        sentence,
+      )
     )
       continue;
-    if (!stems.split("|").some((s) => citedLower.includes(s))) {
+    if (!stems.split("|").some((s) => saysWord(citedLower, s))) {
       reasons.push(
         `"${hit[0]}" needs a cited fact that says ${stems.replace("|", " or ")}`,
       );
