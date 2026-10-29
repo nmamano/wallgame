@@ -25,7 +25,7 @@ import type { GameFacts, HuntChange, PlyFacts } from "./facts";
 import type { GameLabels, Link } from "./labels";
 
 export const MODEL = "claude-sonnet-5-5";
-export const MAX_WORDS = 30;
+export const MAX_WORDS = 35;
 
 export interface Fact {
   id: string;
@@ -301,6 +301,19 @@ export const checkSentence = (
     else if (!cited.includes(name))
       reasons.push(`"${name}" is not in the cited facts`);
   }
+  // A walk names its owner (Wall Game PM, 2026-10-29: "the walk at 4
+  // steps" left the reader to guess whose): "Normal Bot's walk" or
+  // "Normal Bot's cat walk", never "the walk" or "its walk".
+  const owner = new RegExp(
+    `(?:${seatNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})'s (?:(?:cat|mouse|dog|elephant)(?:'s)? )?$`,
+  );
+  for (const walk of sentence.matchAll(/\bwalks?\b/gi)) {
+    if (!owner.test(sentence.slice(0, walk.index))) {
+      reasons.push(
+        `"${walk[0]}" must follow its owner's name ("<player>'s walk")`,
+      );
+    }
+  }
   // Judgment words.
   const plain = sentence.replace(/\bwin chance\b/gi, "chance");
   for (const [word, stems] of JUDGMENTS) {
@@ -331,8 +344,9 @@ Rules:
   - blunder/turn: say what went wrong, from the engine's best move (e.g. the wall it skipped) or from the linked move that punishes it (what that move then did).
   - punish/save/escape/threat/detour: say what the move does to the walk (from N to M steps), and to whom.
   - quiet: plain and short.
-- Simple English, present tense, at most 25 words, one sentence. Name who acts. Use digits for numbers.
+- Simple English, present tense, at most 30 words, one sentence. Name who acts. Use digits for numbers.
 - Write cells and walls exactly as in the facts (c5, ^a1, >e4). Use player names exactly as in the facts.
+- Name the owner of every walk: "Normal Bot's walk" or "Normal Bot's cat walk", never "the walk" or "its walk".
 - Words like blunder, punish, save, escape, threat, trap, wins, capture, best, missed: use them only when a fact you cite says so.
 - factIds: the ids of every fact your sentence uses (numbers, cells, names, words). Cite enough.
 

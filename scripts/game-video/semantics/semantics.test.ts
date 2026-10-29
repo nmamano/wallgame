@@ -251,6 +251,17 @@ describe("checkSentence", () => {
     ).toEqual([]);
   });
 
+  test("a walk names its owner", () => {
+    const check = (sentence: string) =>
+      checkSentence(sentence, ids("walk2", "play"), facts, seats);
+    expect(check("Normal Bot's walk falls from 6 to 4.")).toEqual([]);
+    expect(check("Normal Bot's cat walk falls from 6 to 4.")).toEqual([]);
+    expect(check("Guest Ferret leaves the walk at 4 steps.")).toEqual([
+      '"walk" must follow its owner\'s name ("<player>\'s walk")',
+    ]);
+    expect(check("Normal Bot cuts its walk to 4.")).toHaveLength(1);
+  });
+
   test("intent and feeling fail, and so does a fact of another move", () => {
     const reasons = checkSentence(
       "Guest Ferret panics.",
