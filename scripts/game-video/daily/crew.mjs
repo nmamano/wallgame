@@ -118,12 +118,30 @@
  *                                  video passes. Prints the record with the
  *                                  video's length and its effect and
  *                                  overlay counts. Sends no message
+ *   script --item ID [--edl F] [--out F]
+ *                                  phase 1 (SCRIPT.md): the draft of the
+ *                                  item's script, from the list (F or the
+ *                                  stored one), its lint (each ply's
+ *                                  second) and the game's facts, in a new
+ *                                  file (default /tmp/daily-scripts)
+ *   script-review-prompt --item ID --script F [--edl F]
+ *                                  SCRIPT-REVIEW.md and its inputs (the
+ *                                  script, a storyboard, the facts, the
+ *                                  list, the other videos of the batch, a
+ *                                  NOTES file), ready to paste into a fresh
+ *                                  reviewer
+ *   script-review --item ID --script F --reviewer "<who>" --verdict pass|fail
+ *       --notes-file F             record the script review. `render`
+ *                                  refuses the item until the latest one
+ *                                  since its pick or Nil's last revise
+ *                                  passes
  *   vet-prompt --item ID           VET-BRIEF.md and the item's inputs (video
  *                                  and sha256, sheet, strips, the stored
  *                                  list in a file, a storyboard, the
  *                                  players and colours, the game's facts,
- *                                  Nil's revise notes, a NOTES file and a
- *                                  scratch folder), ready to paste into a
+ *                                  Nil's revise notes, the approved script
+ *                                  and its review notes, a NOTES file and
+ *                                  a scratch folder), ready to paste into a
  *                                  fresh reviewer
  *
  * THE DIRECTOR'S TOOLS read one video, V = --item ID (the item's current
@@ -201,7 +219,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { candidateFromReport } from "./candidate.mjs";
-import { dailySeatColors } from "../edl.mjs";
+import { validateEdl } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { copyLines } from "./copy.mjs";
@@ -209,6 +227,14 @@ import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
 import { lintReport, lintStops } from "./lint.mjs";
 import * as tools from "./tools.mjs";
+import { currentScriptReview } from "./store.mjs";
+import {
+  batchLines,
+  directorLines,
+  scriptDraft,
+  seatColors,
+} from "./script.mjs";
+import { timelineOf } from "./strips.mjs";
 
 const OFFICE = "http://localhost:4000";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -278,6 +304,24 @@ const app = async (method, path, body) => {
  * refuses outright (not a list, another game) dies with why.
  */
 const lintOf = async (item, edl, claimRiskOk) => {
+  const rec = await lintRecord(item, edl, claimRiskOk, (line) =>
+    console.log(line),
+  );
+  if (rec.state === "failed") {
+    die(
+      `lint ${rec.lintId} failed: ${rec.error}; with the 4090 down, direct --no-lint stores without it`,
+    );
+  }
+  console.log([...lintReport(rec), ...timingLines(rec.timings)].join("\n"));
+  return rec;
+};
+
+/**
+ * Queue a lint of `edl` (or the item's stored list) and wait for its end:
+ * the record, done or failed. `say` gets each wait reason once. A list the
+ * app refuses outright dies with why.
+ */
+const lintRecord = async (item, edl, claimRiskOk, say) => {
   const posted = await appTry("POST", "/api/daily/lint", {
     item,
     ...(edl !== undefined && { edl }),
@@ -295,17 +339,9 @@ const lintOf = async (item, edl, claimRiskOk) => {
       "GET",
       `/api/daily/lint?id=${encodeURIComponent(lintId)}`,
     );
-    if (rec.state === "failed") {
-      die(
-        `lint ${lintId} failed: ${rec.error}; with the 4090 down, direct --no-lint stores without it`,
-      );
-    }
-    if (rec.state === "done") {
-      console.log([...lintReport(rec), ...timingLines(rec.timings)].join("\n"));
-      return rec;
-    }
+    if (rec.state === "failed" || rec.state === "done") return rec;
     if (rec.state === "queued" && rec.progress && rec.progress !== said) {
-      console.log(`lint ${lintId}: ${rec.progress}`);
+      say(`lint ${lintId}: ${rec.progress}`);
       said = rec.progress;
     }
     await new Promise((r) => setTimeout(r, 500));
@@ -512,11 +548,7 @@ export const feedbackLines = (r) =>
  * seat 1 and blue for seat 2. Two bots are never a candidate.
  */
 const seatsLine = (c) => {
-  const colors = dailySeatColors(
-    Object.fromEntries(
-      c.seats.map((s) => [s.playerOrder, s.kind === "official bot"]),
-    ),
-  );
+  const colors = seatColors(c);
   return c.seats
     .map(
       (s) =>
@@ -684,24 +716,7 @@ const commands = {
       for (const f of c.facts) console.log(`  ${f}`);
       // For the edit list: 0-based plies, cells after the ply, and the walls
       // that caused the jump (marked *) in the notation a zoom frame takes.
-      const walls = (ws) =>
-        (ws ?? []).map((w) => `${w.notation}${w.cause ? "*" : ""}`).join(" ");
-      for (const b of c.beats) {
-        console.log(
-          `  director, close call: danger ply ${b.danger.ply} (${b.hunter.type} ${b.danger.hunterCell}, ${b.prey.type} ${b.danger.preyCell}); ` +
-            `save ply ${b.save.ply} walls ${walls(b.save.walls)} (walk ${b.save.walkBefore} to ${b.save.walk}; ${b.prey.type} ${b.save.preyCell} safe from this ply)`,
-        );
-      }
-      for (const e of c.escapes) {
-        console.log(
-          `  director, escape ply ${e.ply} (${e.prey.type} ${e.preyFrom} -> ${e.preyCell}, walk ${e.walkBefore} to ${e.walk}; ${e.hunter.type} at ${e.hunterCell})`,
-        );
-      }
-      for (const p of c.picks) {
-        console.log(
-          `  director, wall jump: ply ${p.ply} ${p.notation}, walls ${walls(p.walls)}`,
-        );
-      }
+      for (const l of directorLines(c)) console.log(`  ${l}`);
       console.log("");
     }
   },
@@ -1103,6 +1118,132 @@ const commands = {
   },
 
   /**
+   * Phase 1 (SCRIPT.md): the draft of the item's script, for the director
+   * to complete. From the list (--edl F, or the stored one) and its lint,
+   * which gives each ply's second when the renderer reports its timeline.
+   * Writes a new file; never one that exists.
+   */
+  async script() {
+    const c = await itemNamed(itemFlag());
+    const out = resolve(
+      flag("out") ?? join(tmpdir(), "daily-scripts", `${c.id}.script.txt`),
+    );
+    if (existsSync(out)) {
+      die(`${out} exists: complete it, or give --out for a new file`);
+    }
+    let edl = c.edl?.doc ?? null;
+    if (flag("edl")) {
+      const checked = validateEdl(
+        JSON.parse(readFileSync(flag("edl"), "utf8")),
+      );
+      if (!checked.ok) die(`--edl: ${checked.errors.join("; ")}`);
+      edl = checked.edl;
+    }
+    let timeline = null;
+    let timesNote = "no list yet: give --edl to get each ply's second";
+    if (edl) {
+      const rec = await lintRecord(
+        c.id,
+        flag("edl") ? edl : undefined,
+        [],
+        (line) => console.log(line),
+      );
+      timeline = rec.state === "done" ? timelineOf(rec.lint?.timeline) : null;
+      timesNote = timeline
+        ? "from the lint of this list"
+        : rec.state !== "done"
+          ? `the lint failed (${rec.error}), so no times`
+          : rec.skipped
+            ? `no times: ${rec.skipped}`
+            : "no times: the render kit's lint gives no timeline yet";
+    }
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(
+      out,
+      scriptDraft({ item: c, edl, timeline, timesNote }) + "\n",
+    );
+    console.log(
+      `script draft: ${out}\n  complete every <...> and ? and tick the checklist, then: script-review-prompt --item ${c.id} --script ${out}`,
+    );
+  },
+
+  /**
+   * The script review brief (SCRIPT-REVIEW.md) and its inputs, ready to
+   * paste into a fresh reviewer: the script, a storyboard, the facts, the
+   * list, the other videos of the batch and a NOTES file.
+   */
+  async "script-review-prompt"() {
+    const c = await itemNamed(itemFlag());
+    const script = resolve(
+      flag("script") ?? die("script-review-prompt needs --script <file>"),
+    );
+    if (!existsSync(script)) die(`no file ${script}`);
+    const scratch = mkdtempSync(join(tmpdir(), `daily-script-review-${c.id}-`));
+    let edl = null;
+    if (flag("edl")) edl = resolve(flag("edl"));
+    else if (c.edl) {
+      edl = join(scratch, "edl.json");
+      writeFileSync(edl, c.edl.text);
+    }
+    const board = storyboardOf(c, edl ?? undefined);
+    const { items } = await app("GET", "/api/daily/state");
+    console.log(
+      [
+        readFileSync(join(HERE, "SCRIPT-REVIEW.md"), "utf8")
+          .replace(/^<!--[\s\S]*?-->\n+/, "")
+          .trimEnd(),
+        "",
+        `## Your task: item ${c.id}, game ${c.gameId}`,
+        `- SCRIPT: ${script}`,
+        `- STORYBOARD: ${board.png} (${board.plies} plies)`,
+        `- LIST: ${edl ?? "none yet (the script comes first)"}`,
+        `- RULES: ${join(HERE, "DIRECTOR.md")}`,
+        `- PLAYERS: ${seatsLine(c.candidate)}`,
+        "- FACTS (plies 0-based in the director lines):",
+        ...c.candidate.facts.map((f) => `  - ${f}`),
+        ...directorLines(c.candidate).map((l) => `  - ${l}`),
+        "- BATCH (the other videos in draft or review):",
+        ...batchLines(items, c.id).map((l) => `  ${l}`),
+        `- NOTES: ${join(scratch, "notes.txt")} (write your findings here)`,
+      ].join("\n"),
+    );
+  },
+
+  /**
+   * Record the script review: the script file, the verdict and the notes.
+   * `render` needs the latest one since the pick or the last revise to
+   * pass.
+   */
+  async "script-review"() {
+    const id = itemFlag();
+    const read = (name) => {
+      const path = resolve(
+        flag(name) ?? die(`script-review needs --${name} <file>`),
+      );
+      if (!existsSync(path)) die(`script-review: no file ${path}`);
+      return readFileSync(path, "utf8");
+    };
+    const script = read("script");
+    const notes = read("notes-file");
+    const reviewer =
+      flag("reviewer") ??
+      die('script-review needs --reviewer "<who reviewed it>"');
+    const verdict =
+      flag("verdict") ?? die("script-review needs --verdict pass|fail");
+    const item = await app("POST", "/api/daily/script-review", {
+      item: id,
+      script,
+      reviewer,
+      verdict,
+      notes,
+    });
+    const r = item.scriptReviews.at(-1);
+    console.log(
+      `${id}: script review ${r.verdict} by ${r.reviewer}, script ${r.scriptSha256.slice(0, 12)}. ${r.verdict === "pass" ? "The item may render." : "No render until a review of a fixed script passes."}`,
+    );
+  },
+
+  /**
    * The vet brief (VET-BRIEF.md) and the item's inputs, ready to paste
    * into a fresh reviewer: it reads the final video, so the item needs one.
    */
@@ -1116,6 +1257,15 @@ const commands = {
     const strips = await stripsOf(c);
     const board = storyboardOf(c, edl);
     const revises = c.reviews.filter((r) => r.action === "revise");
+    // The approved story (phase 1): the render vet checks the video
+    // against it, not the story itself.
+    const script = currentScriptReview(c);
+    const scriptFile = join(scratch, "script.txt");
+    const scriptNotes = join(scratch, "script-review.txt");
+    if (script) {
+      writeFileSync(scriptFile, script.script);
+      writeFileSync(scriptNotes, script.notes);
+    }
     console.log(
       [
         readFileSync(join(HERE, "VET-BRIEF.md"), "utf8")
@@ -1128,6 +1278,9 @@ const commands = {
         `- STRIPS: ${strips ? strips.path : "none (this render has no timeline)"}`,
         `- EDL: ${edl} (the stored list, sha256 ${c.edl.sha256})`,
         `- STORYBOARD: ${board.png} (${board.plies} plies)`,
+        script
+          ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}; its review notes: ${scriptNotes})`
+          : "- SCRIPT: none recorded (this item rendered before phase 1)",
         `- RULES: ${join(HERE, "DIRECTOR.md")}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- THE GAME (the winner and how):",

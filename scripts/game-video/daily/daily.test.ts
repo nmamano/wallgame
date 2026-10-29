@@ -32,6 +32,7 @@ import {
   ITEM_ID,
   PLATFORMS,
   blockedMusic,
+  currentScriptReview,
   currentVet,
   openStore,
   postProblem,
@@ -91,6 +92,7 @@ import {
   MAX_MEME_LUFS,
 } from "./quality.mjs";
 import { FRAME, STRIP_AREA, validateEdl } from "../edl.mjs";
+import { batchLines, scriptDraft } from "./script.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -259,6 +261,16 @@ interface Item {
   check: { ok: boolean } | null;
   // Absent on an item from before vets.
   vets?: Vet[];
+  // Absent on an item from before script reviews (2026-10-29).
+  scriptReviews?: {
+    at: string;
+    reviewer: string;
+    verdict: string;
+    notes: string;
+    script: string;
+    scriptSha256: string;
+  }[];
+  reviews?: { action: string; at: string }[];
   approval: {
     videoSha256: string;
     copySha256: string;
@@ -357,8 +369,16 @@ const MEASURED = {
 
 const VIDEO: Video = { path: "/nowhere.mp4", bytes: 1, sha256: "aa" };
 
-/** A new item of TESTGAME1, as pick makes it from the report; its id. */
-const pickItem = (store: Store): string =>
+/** A script review that passed (SCRIPT.md), as crew script-review sends it. */
+const SCRIPT_PASS = {
+  script: "SCRIPT test | game TESTGAME1\nBEATS\n9 | ~10 | the save | zoom",
+  reviewer: "a fresh subagent",
+  verdict: "pass",
+  notes: "checked every beat against the storyboard\nVERDICT: pass",
+};
+
+/** A new item of TESTGAME1 (no script review); its id. */
+const pickUnscripted = (store: Store): string =>
   store.pick({
     candidate: candidateFromReport(REPORT, 1),
     style: "daily",
@@ -369,6 +389,16 @@ const pickItem = (store: Store): string =>
       gameId: "TESTGAME1",
     },
   }).id;
+
+/**
+ * A new item of TESTGAME1, as pick makes it from the report, with its
+ * script passed (phase 1), so that it may render; its id.
+ */
+const pickItem = (store: Store): string => {
+  const id = pickUnscripted(store);
+  store.recordScriptReview(id, SCRIPT_PASS);
+  return id;
+};
 
 /** A new item with EDL as its list (`text`: the list's bytes). */
 const directItem = (store: Store, text = JSON.stringify(EDL)): string => {
@@ -474,6 +504,46 @@ describe("the director checks the contact sheet before the review", () => {
     store.recordCopy(id, COPY);
     return { store, id };
   };
+
+  test("no render before a script review passes, since the pick or Nil's last revise", () => {
+    const store = openStore(tempDir());
+    const id = pickUnscripted(store);
+    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    expect(() => {
+      store.startRender(id, "job-00000001");
+    }).toThrow(
+      `${id} has no script review: write the script (crew.mjs script)`,
+    );
+    store.recordScriptReview(id, { ...SCRIPT_PASS, verdict: "fail" });
+    expect(() => {
+      store.startRender(id, "job-00000001");
+    }).toThrow(`${id}'s latest script review failed`);
+    // The record keeps the script, its hash and the notes word for word.
+    store.recordScriptReview(id, SCRIPT_PASS);
+    const reviews = itemOf(store, id).scriptReviews!;
+    expect(reviews.map((r) => r.verdict)).toEqual(["fail", "pass"]);
+    expect(reviews[1]).toMatchObject({
+      script: SCRIPT_PASS.script,
+      notes: SCRIPT_PASS.notes,
+      reviewer: "a fresh subagent",
+    });
+    expect(reviews[1].scriptSha256).toMatch(/^[0-9a-f]{64}$/);
+    store.startRender(id, "job-00000001");
+    expect(stage(itemOf(store, id))).toBe("rendering");
+    // A revise asks for a new story: the reviews before it do not count.
+    const revised = itemOf(store, id);
+    revised.reviews = [
+      { action: "revise", at: new Date(Date.now() + 1000).toISOString() },
+    ];
+    expect(currentScriptReview(revised)).toBeNull();
+    // Only a draft, and a whole record.
+    expect(() => {
+      store.recordScriptReview(id, { ...SCRIPT_PASS, notes: " " });
+    }).toThrow("script-review needs notes");
+    expect(() => {
+      store.recordScriptReview(id, { ...SCRIPT_PASS, reviewer: "" });
+    }).toThrow("script-review needs the reviewer");
+  });
 
   test("no render without an edit list", () => {
     const store = openStore(tempDir());
@@ -2246,12 +2316,15 @@ const renderAndWait = async (base: string, id: string, body: object = {}) => {
  * Direct EDL, changed by `edl`, with the app's default ending. No lint:
  * the lint's own test ("a list that cannot render is never stored") runs it.
  */
-const directOver = async (base: string, id: string, edl: object = {}) =>
-  call(base, "/api/daily/direct", {
+const directOver = async (base: string, id: string, edl: object = {}) => {
+  // Phase 1 passed, so that the item may render (SCRIPT.md).
+  await call(base, "/api/daily/script-review", { item: id, ...SCRIPT_PASS });
+  return call(base, "/api/daily/direct", {
     item: id,
     edl: { ...EDL, ending: (await dailyState(base)).suggestedEnding, ...edl },
     noLint: true,
   });
+};
 
 /** The live captures of each game today (UTC), over every item. */
 const viewsToday = (dir: string) =>
@@ -2942,6 +3015,7 @@ test("two music cues: direct takes them, and the render must play both from thei
     const picked = await call(base, "/api/daily/pick", { report: REPORT });
     expect(picked.status).toBe(200);
     const id = picked.body.id;
+    await call(base, "/api/daily/script-review", { item: id, ...SCRIPT_PASS });
     const render = async (played?: object[]) => {
       const override = join(dir, "music-override");
       if (played) writeFileSync(override, JSON.stringify(played));
@@ -3099,6 +3173,7 @@ test("a carry-over: a new item with the game of one that was dropped", async () 
   expect(carry(first).err).toContain(
     `${first} is draft: carry over only an item that is discarded;`,
   );
+  await ok("/api/daily/script-review", { item: first, ...SCRIPT_PASS });
   await ok("/api/daily/direct", {
     noLint: true,
     item: first,
@@ -3723,6 +3798,187 @@ test("a quick look: the whole list or a few plies at 15 fps, never the item's vi
   expect(out.out).toContain("A clean quick look is not a clean render.");
   expect((await fetchItem(base, id)).render).toBeNull();
 }, 30_000);
+
+describe("phase 1, the script (SCRIPT.md)", () => {
+  const item = {
+    id: "v-2026-10-26-1",
+    candidate: candidateFromReport(REPORT, 1),
+  };
+  const edl = {
+    ...EDL,
+    caption: "bro thought he was safe",
+    payoff: { ply: 22, text: "he was not" },
+    pace: [{ fromPly: 0, toPly: 20, secondsPerMove: 0.3, fastForward: true }],
+    events: [
+      ...EDL.events,
+      {
+        ply: 30,
+        kind: "trap",
+        walls: [">e4"],
+        text: "NO EXIT",
+        sound: "sting-1",
+      },
+      {
+        ply: 40,
+        kind: "overlay",
+        form: "bar",
+        asset: "ending-caption",
+        text: "bro got caught",
+      },
+    ],
+  };
+
+  test("the draft: header, texts, facts, a row per beat with its second, the checklist", () => {
+    const text = scriptDraft({
+      item,
+      edl,
+      timeline: { moves: [{ ply: 22, at: 10.04 }], events: [], sounds: [] },
+      timesNote: "from the lint of this list",
+    });
+    const lines = text.split("\n");
+    expect(lines[0]).toBe(
+      "SCRIPT v-2026-10-26-1 | game TESTGAME1 | 41 plies (0-40)",
+    );
+    // A bot is red; the guest's walk ends at 0, so the guest catches.
+    expect(lines[1]).toBe(
+      "Players: Guest Tuatara (guest) BLUE, Ruby (official bot) RED.",
+    );
+    expect(lines[2]).toBe(
+      "Winner: Guest Tuatara (blue), by capture at ply 40.",
+    );
+    expect(lines[3]).toBe(
+      "Start: steps to catch red 12, blue 7. End: red 12, blue 0.",
+    );
+    expect(text).toContain(
+      '- caption (0 s): "bro thought he was safe" (5 words). True: <the fact it rests on>',
+    );
+    expect(text).toContain('- payoff (from ply 22): "he was not" (3 words).');
+    expect(text).toContain(
+      '- ending bar (ply 40): "bro got caught" (3 words).',
+    );
+    expect(text).toContain("- director, wall jump: ply 22 ");
+    expect(text).toContain(
+      '22 | ~10.0 | <sees> | zoom + fuahhh-1 | payoff "he was not" | <speaker> | steps red 12, blue 7; wall jump ',
+    );
+    expect(text).toContain(
+      '30 | ~? | <sees> | trap + sting-1 | "NO EXIT" | <speaker> | steps red 12, blue 7',
+    );
+    expect(text).toContain("- plies 0-20: 0.3 s a move, fast-forward");
+    expect(text).toContain("[ ] a forced capture is explained");
+  });
+
+  test("the batch: the other videos' texts and sounds, not this one's", () => {
+    const other = {
+      id: "v-2026-10-26-2",
+      gameId: "OTHER",
+      state: "finished",
+      edl: { doc: validateEdl({ ...edl, gameId: "OTHER" }).edl },
+    };
+    const lines = batchLines(
+      [
+        other,
+        { ...other, id: "v-2026-10-26-1" },
+        { ...other, id: "v-2026-10-25-9", state: "posted" },
+      ],
+      "v-2026-10-26-1",
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toStartWith(
+      '- v-2026-10-26-2 (game OTHER, finished); caption "bro thought he was safe"; payoff "he was not"; trap words: "NO EXIT"; ending "bro got caught"; sounds: ',
+    );
+    expect(lines[0]).toContain("fuahhh-1, sting-1");
+    expect(batchLines([], "x")).toEqual([
+      "- (no other video in draft or review)",
+    ]);
+  });
+
+  test("crew: script drafts the file with the lint's times; script-review records; render waits for a pass", async () => {
+    const dir = tempDir();
+    const stub = join(dir, "stub-preview.cjs");
+    writeFileSync(stub, STUB_PREVIEW);
+    // crew blocks this process while it runs: the app runs in its own.
+    const base = await serve(dir, stub);
+    const id = (await call(base, "/api/daily/pick", { report: REPORT })).body
+      .id;
+    const ending = (await dailyState(base)).suggestedEnding;
+    const list = join(dir, "list.json");
+    writeFileSync(list, JSON.stringify({ ...edl, ending }));
+    writeFileSync(
+      join(dir, "lint.json"),
+      JSON.stringify({
+        faults: [],
+        notes: [],
+        counts: { seconds: 30, events: {}, overlays: {}, sounds: {} },
+        timeline: {
+          moves: [
+            { ply: 22, at: 12.5 },
+            { ply: 30, at: 18 },
+          ],
+          events: [],
+          sounds: [],
+        },
+      }),
+    );
+    const out = join(dir, "s.txt");
+    const drafted = crew(
+      base,
+      "script",
+      "--item",
+      id,
+      "--edl",
+      list,
+      "--out",
+      out,
+    );
+    expect(drafted.err).toBe("");
+    expect(drafted.out).toContain(`script draft: ${out}`);
+    const draft = readFileSync(out, "utf8");
+    expect(draft).toContain("Times: from the lint of this list");
+    expect(draft).toContain("22 | ~12.5 | <sees> | zoom + fuahhh-1");
+    expect(draft).toContain('30 | ~18.0 | <sees> | trap + sting-1 | "NO EXIT"');
+    // Never over a file that exists.
+    expect(crew(base, "script", "--item", id, "--out", out).err).toContain(
+      `${out} exists`,
+    );
+
+    const notes = join(dir, "notes.txt");
+    writeFileSync(notes, "ply 30: the trap is true\nVERDICT: fail");
+    const review = (verdict: string) =>
+      crew(
+        base,
+        "script-review",
+        "--item",
+        id,
+        "--script",
+        out,
+        "--notes-file",
+        notes,
+        "--reviewer",
+        "a fresh subagent",
+        "--verdict",
+        verdict,
+      );
+    expect(review("fail").out).toContain(
+      "script review fail by a fresh subagent",
+    );
+    expect(
+      (
+        await call(base, "/api/daily/direct", {
+          item: id,
+          edl: { ...EDL, ending },
+          noLint: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call(base, "/api/daily/render", { item: id })).body.error,
+    ).toContain(`${id}'s latest script review failed`);
+    expect(review("pass").out).toContain("The item may render.");
+    const it = await fetchItem(base, id);
+    expect(it.scriptReviews?.map((r) => r.verdict)).toEqual(["fail", "pass"]);
+    expect(it.scriptReviews?.[1].script).toBe(draft);
+  }, 30_000);
+});
 
 test("the app forgets only finished lints: a queued one keeps its record", async () => {
   const dir = tempDir();

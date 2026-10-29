@@ -1800,6 +1800,24 @@ export const createDaily = ({
       );
     },
 
+    /**
+     * {item, script, reviewer, verdict, notes}: the fresh review of the
+     * item's script (store.recordScriptReview). It sends no message.
+     */
+    "POST /api/daily/script-review": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.recordScriptReview(itemOf(body.item).id, {
+          script: body.script,
+          reviewer: body.reviewer,
+          verdict: body.verdict,
+          notes: body.notes,
+        }),
+      );
+    },
+
     /** {item, sheetSha256, stills: [{ply, kind, ok, note}]} */
     "POST /api/daily/check": async (req, res) => {
       const body = await readJson(req);

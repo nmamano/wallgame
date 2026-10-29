@@ -283,6 +283,22 @@ export const currentVet = (item) =>
     (v) => v.videoSha256 === item.render?.video?.sha256,
   ) ?? null;
 
+/** A script, at most (about 60 lines of text, with room to spare). */
+export const SCRIPT_MAX = 20_000;
+
+/**
+ * The script review that lets the item render (Nil, 2026-10-29: "first
+ * scripting the video ... make sure it's narratively sound first. then
+ * implement"; SCRIPT.md): the latest one recorded since the item's pick or
+ * its last revise, or null. A revise asks for a new story, so the reviews
+ * before it no longer count.
+ */
+export const currentScriptReview = (item) => {
+  const revisedAt =
+    item.reviews?.findLast((r) => r.action === "revise")?.at ?? "";
+  return (item.scriptReviews ?? []).findLast((r) => r.at > revisedAt) ?? null;
+};
+
 /**
  * The states of an item whose game another item may carry over: a posted
  * game is done (ONE_POST_STATES).
@@ -881,6 +897,17 @@ export const openStore = (dataDir) => {
         ["draft"],
         (item) => {
           expectStage(item, ["directed", "render-failed"], "render");
+          // Phase 1 before phase 2 (SCRIPT.md): no render of a story that
+          // no fresh reviewer passed. Previews, quick looks and lints may
+          // run before it.
+          const script = currentScriptReview(item);
+          if (script?.verdict !== "pass") {
+            refuse(
+              script
+                ? `${id}'s latest script review failed: fix the script, get a new review and record it (crew.mjs script-review) before you render`
+                : `${id} has no script review${item.reviews?.some((r) => r.action === "revise") ? " since Nil's revise" : ""}: write the script (crew.mjs script), get it reviewed (script-review-prompt) and record the verdict (script-review) before you render`,
+            );
+          }
           const before = viewsToday(item.gameId);
           if (!fromCache && before > 0 && !force) {
             refuse(
@@ -1103,6 +1130,58 @@ export const openStore = (dataDir) => {
           ];
         },
         `vet ${verdict} by ${who}`,
+      );
+    },
+
+    /**
+     * The fresh review of the item's script (phase 1, SCRIPT.md): the
+     * script's text, the verdict and the notes. A draft only: the story
+     * comes before the render. `render` needs the latest one since the
+     * pick or the last revise to pass (currentScriptReview).
+     */
+    recordScriptReview(id, { script, reviewer, verdict, notes }) {
+      const who = typeof reviewer === "string" ? reviewer.trim() : "";
+      if (!who || /[\r\n]/.test(who) || who.length > VET_REVIEWER_MAX) {
+        refuse(
+          `script-review needs the reviewer: one line of 1 to ${VET_REVIEWER_MAX} characters`,
+        );
+      }
+      if (verdict !== "pass" && verdict !== "fail") {
+        refuse("script-review needs the verdict: pass or fail");
+      }
+      if (
+        typeof script !== "string" ||
+        !script.trim() ||
+        script.length > SCRIPT_MAX
+      ) {
+        refuse(`script-review needs the script: 1 to ${SCRIPT_MAX} characters`);
+      }
+      if (
+        typeof notes !== "string" ||
+        !notes.trim() ||
+        notes.length > NOTES_MAX
+      ) {
+        refuse(
+          `script-review needs notes: what the reviewer checked and found, 1 to ${NOTES_MAX} characters`,
+        );
+      }
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          item.scriptReviews = [
+            ...(item.scriptReviews ?? []),
+            {
+              at: new Date().toISOString(),
+              reviewer: who,
+              verdict,
+              notes,
+              script,
+              scriptSha256: createHash("sha256").update(script).digest("hex"),
+            },
+          ];
+        },
+        `script review ${verdict} by ${who}`,
       );
     },
 
