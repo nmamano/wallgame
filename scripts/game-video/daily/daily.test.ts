@@ -1525,13 +1525,6 @@ describe("what a stranger reads matches what the video shows", () => {
     expect(
       storyProblems(list({ caption: "Red is 10 steps away" }), game),
     ).toEqual([]);
-    // A video that starts later is read later.
-    expect(
-      storyProblems(
-        list({ caption: "Red is 2 steps away", startPly: 2 }),
-        game,
-      ),
-    ).toEqual([]);
     expect(
       storyProblems(list({ caption: "Can Blue keep Red out?" }), game),
     ).toEqual([]);

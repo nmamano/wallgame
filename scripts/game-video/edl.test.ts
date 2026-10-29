@@ -272,21 +272,18 @@ describe("music", () => {
   });
 
   test("refuses the string form of before cues with the cue to write", () => {
-    expect(
-      validateEdl({ ...base, startPly: 2, music: "deja-vus" }).errors,
-    ).toEqual([
-      'music is a cue list now: [{ "fromPly": 2, "track": "deja-vus" }]',
+    expect(validateEdl({ ...base, music: "deja-vus" }).errors).toEqual([
+      'music is a cue list now: [{ "fromPly": 0, "track": "deja-vus" }]',
     ]);
   });
 
-  test("opens at startPly, then changes the track at later plies", () => {
-    expect(ok([cue(4, "deja-vus")], { startPly: 4 })).toBe(true);
-    expect(ok([cue(0, "deja-vus")], { startPly: 4 })).toBe(false);
+  test("opens at ply 0, then changes the track at later plies", () => {
+    expect(ok([cue(0, "deja-vus")])).toBe(true);
     expect(ok([cue(1, "deja-vus")])).toBe(false);
     expect(ok([cue(0, "deja-vus"), cue(0, "a-legend")])).toBe(false);
-    expect(ok([cue(4, "deja-vus"), cue(3, "a-legend")], { startPly: 4 })).toBe(
-      false,
-    );
+    expect(
+      ok([cue(0, "deja-vus"), cue(4, "a-legend"), cue(3, "deja-vus")]),
+    ).toBe(false);
     expect(ok([cue(0, "deja-vus"), cue(9, "deja-vus")])).toBe(false);
     expect(ok([cue(0, "deja-vus"), cue(1.5, "a-legend")])).toBe(false);
   });
@@ -334,36 +331,72 @@ describe("the VS and finish sounds", () => {
 });
 
 describe("startPly and coldOpenPly", () => {
-  test("default to 0 and none, and hold events and pace to the start", () => {
+  test("startPly is 0: a daily video shows the full story", () => {
     expect(accept(base)).toMatchObject({ startPly: 0, coldOpenPly: null });
+    expect(accept({ ...base, startPly: 0 })).toMatchObject({ startPly: 0 });
+    // Nil, 2026-10-28: "i noticed you start videos in the middle of a
+    // game. i would avoid this."
+    expect(validateEdl({ ...base, startPly: 6 }).errors).toEqual([
+      "startPly is 6; a daily video shows the full story of the game, so it starts at 0 (a quiet stretch can be a fastForward range)",
+    ]);
     expect(validateEdl({ ...base, startPly: -1 }).ok).toBe(false);
+  });
+
+  test("a cold open is a ply of the game", () => {
     expect(validateEdl({ ...base, coldOpenPly: 1.5 }).ok).toBe(false);
-    expect(validateEdl({ ...base, startPly: 2, coldOpenPly: 1 }).ok).toBe(
-      false,
-    );
     const game = {
       notations: ["Ce7", "Cf7", "^a4.^h4"],
       cols: 8,
       rows: 8,
       initialState: START_8,
     };
-    const late = accept({
-      ...base,
-      startPly: 1,
-      coldOpenPly: 2,
-      pace: [{ fromPly: 0, toPly: 2, secondsPerMove: 1 }],
-      events: [
-        { ply: 0, kind: "sound", sound: "shotgun-2" },
-        { ply: 2, kind: "zoom", frame: ["^h4"] },
-      ],
-    });
-    expect(checkEdlAgainstGame(late, game)).toEqual([
-      "pace[0] starts at ply 0, before startPly 1",
-      "events[0] is on ply 0, before startPly 1",
-    ]);
+    expect(
+      checkEdlAgainstGame(accept({ ...base, coldOpenPly: 2 }), game),
+    ).toEqual([]);
     expect(
       checkEdlAgainstGame(accept({ ...base, coldOpenPly: 3 }), game),
     ).toHaveLength(1);
+  });
+});
+
+describe("variety", () => {
+  // Nil, 2026-10-28: "the exclamation mark and sweat is overused. 3 times.
+  // add a rule that variety is important."
+  const scared = (ply: number) => ({ ply, kind: "scared", cell: "e7" });
+  test("a moment kind, or an overlay asset, at most twice", () => {
+    expect(validateEdl({ ...base, events: [scared(8), scared(11)] }).ok).toBe(
+      true,
+    );
+    expect(
+      validateEdl({ ...base, events: [scared(8), scared(11), scared(14)] })
+        .errors,
+    ).toEqual([
+      "scared is used 3 times (plies 8, 11, 14); at most 2 in a video: vary the moments",
+    ]);
+    const toast = (ply: number) => ({
+      ply,
+      kind: "overlay",
+      form: "clip",
+      asset: "chat-toast",
+      text: "gg",
+    });
+    expect(
+      validateEdl({ ...base, events: [toast(3), toast(9), toast(15)] }).errors,
+    ).toEqual([
+      "the overlay chat-toast is used 3 times (plies 3, 9, 15); at most 2 in a video: vary the moments",
+    ]);
+  });
+
+  test("zoom, path and sound are not counted", () => {
+    const zoom = (ply: number) => ({ ply, kind: "zoom", frame: ["e7"] });
+    const sound = (ply: number) => ({ ply, kind: "sound", sound: "boom-4" });
+    const path = (ply: number) => ({ ply, kind: "path", cell: "e7" });
+    expect(
+      validateEdl({
+        ...base,
+        events: [1, 5, 9].flatMap((p) => [zoom(p), path(p), sound(p)]),
+      }).ok,
+    ).toBe(true);
   });
 });
 
@@ -378,7 +411,6 @@ describe("the payoff caption beat", () => {
     expect(refused({ payoff: { ply: 4 } })).toBe(false);
     expect(refused({ payoff: { ply: 4, text: "ok", at: 1 } })).toBe(false);
     expect(refused({ caption: "", payoff })).toBe(false);
-    expect(refused({ startPly: 5, payoff })).toBe(false);
   });
 
   test("is on a ply the game has", () => {

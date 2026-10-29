@@ -36,7 +36,7 @@
  *   payoff   optional: { ply, text }, a second caption beat (audit item 9).
  *            From the move of `ply` on, `text` replaces the caption: a setup
  *            line, then its payoff. Same limits as the caption; it needs a
- *            caption to replace, and its ply is at startPly or later. Absent
+ *            caption to replace. Absent
  *            (null after validation): one caption for the whole video.
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
@@ -56,15 +56,15 @@
  *            at all (Nil, 2026-10-28: "maybe just try without?"): the
  *            meme and game sounds play as they do, and the credit names
  *            only the sounds.
- *   startPly optional: the first ply the video plays (default 0). It opens
- *            on the position before it, so a quiet opening is cut. Every
- *            event and pace range must be at startPly or later.
+ *   startPly optional, and 0: a daily video shows the full story of the
+ *            game (Nil, 2026-10-28), so any other value is refused; a
+ *            quiet stretch can be a fastForward range instead. The field
+ *            stays because the app and the renderer read it.
  *   coldOpenPly
  *            optional: the video first shows the position after this ply
  *            for about a second, caption up and that ply's walls glowing,
  *            and then cuts to the VS overlay and the game (audit item 2).
- *            It must be at startPly or later. Absent (null after
- *            validation): no cold open.
+ *            Absent (null after validation): no cold open.
  *   vsSound, finishSound
  *            optional: the meme sound on the VS overlay's punch and on the
  *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
@@ -76,7 +76,8 @@
  *            it, and it ends before the last move (the ending plays at
  *            normal speed).
  *   events   optional; the events of one ply play in list order, after the
- *            move lands. `sound` is optional on every kind but "sound" and
+ *            move lands. Variety: a moment kind (all but zoom, path and
+ *            sound) and an overlay asset may each be used at most twice. `sound` is optional on every kind but "sound" and
  *            lands as its event starts.
  *     zoom    the camera punches in to fit every cell and wall in `frame`
  *             (at most `scale`), holds for `holdSeconds`, and lets go.
@@ -356,7 +357,26 @@ export const EDL_LIMITS = {
   musicCues: 3,
   /** Each different track gets a credit line in the head row; two fit. */
   musicTracks: 2,
+  /** The most uses of one moment kind, or of one overlay asset (VARIED). */
+  sameMoment: 2,
 };
+
+/**
+ * The moment kinds a video may use at most EDL_LIMITS.sameMoment times
+ * (variety). Not zoom, path or sound: each can fit a save, an escape and
+ * the capture (Wall Game Director, 2026-10-29).
+ */
+const VARIED = [
+  "scared",
+  "laugh",
+  "blunder",
+  "brilliant",
+  "trap",
+  "race",
+  "react",
+  "freeze",
+  "stamp",
+];
 
 /** The reading rule in words, for the messages. */
 const READING = `${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word`;
@@ -449,7 +469,16 @@ export const validateEdl = (raw) => {
   }
 
   const startPly = raw.startPly ?? 0;
-  if (!isPly(startPly)) fail("startPly must be a 0-based ply");
+  if (!isPly(startPly)) {
+    fail("startPly must be a 0-based ply");
+  } else if (startPly !== 0) {
+    // Nil, 2026-10-28: "i noticed you start videos in the middle of a
+    // game. i would avoid this. show the full story of the game every
+    // time."
+    fail(
+      `startPly is ${startPly}; a daily video shows the full story of the game, so it starts at 0 (a quiet stretch can be a fastForward range)`,
+    );
+  }
 
   const music = raw.music ?? null;
   const slugs = MUSIC_TRACKS.map((t) => t.slug);
@@ -505,11 +534,6 @@ export const validateEdl = (raw) => {
   if (coldOpenPly !== null && !isPly(coldOpenPly)) {
     fail("coldOpenPly must be a 0-based ply, or absent for no cold open");
   }
-  // A cold open teases a moment the video then plays, so it is not before
-  // the cut.
-  if (coldOpenPly !== null && isPly(startPly) && coldOpenPly < startPly) {
-    fail(`coldOpenPly ${coldOpenPly} is before startPly ${startPly}`);
-  }
 
   const payoff = raw.payoff ?? null;
   if (payoff !== null) {
@@ -523,9 +547,6 @@ export const validateEdl = (raw) => {
         fail("payoff.text must not be empty");
       }
       if (caption === "") fail("payoff needs a caption to replace");
-      if (isPly(payoff.ply) && isPly(startPly) && payoff.ply < startPly) {
-        fail(`payoff.ply ${payoff.ply} is before startPly ${startPly}`);
-      }
     }
   }
 
@@ -858,6 +879,28 @@ export const validateEdl = (raw) => {
     }
   }
 
+  // Variety (Nil, 2026-10-28: "the exclamation mark and sweat is
+  // overused. 3 times. add a rule that variety is important"): a moment
+  // kind, and an overlay asset, at most EDL_LIMITS.sameMoment times. A
+  // zoom, a path and a sound can each be right for a save, an escape and
+  // the capture, so they are not counted.
+  const uses = new Map();
+  for (const e of filled) {
+    const what = VARIED.includes(e.kind)
+      ? e.kind
+      : e.kind === "overlay"
+        ? `the overlay ${e.asset}`
+        : null;
+    if (what) uses.set(what, [...(uses.get(what) ?? []), e.ply]);
+  }
+  for (const [what, plies] of uses) {
+    if (plies.length > EDL_LIMITS.sameMoment) {
+      fail(
+        `${what} is used ${plies.length} times (plies ${plies.join(", ")}); at most ${EDL_LIMITS.sameMoment} in a video: vary the moments`,
+      );
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors };
   return {
     ok: true,
@@ -964,21 +1007,6 @@ export const checkEdlAgainstGame = (
     ...edl.events.map((e) => e.ply),
     ...(edl.music ?? []).map((c) => c.fromPly),
   ];
-  // A video that starts at startPly never shows what comes before it.
-  edl.pace.forEach((s, i) => {
-    if (s.fromPly < edl.startPly) {
-      errors.push(
-        `pace[${i}] starts at ply ${s.fromPly}, before startPly ${edl.startPly}`,
-      );
-    }
-  });
-  edl.events.forEach((e, i) => {
-    if (e.ply < edl.startPly) {
-      errors.push(
-        `events[${i}] is on ply ${e.ply}, before startPly ${edl.startPly}`,
-      );
-    }
-  });
   // The ending plays at normal speed.
   edl.pace.forEach((s, i) => {
     if (s.fastForward && s.toPly >= notations.length - 1) {
