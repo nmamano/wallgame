@@ -96,9 +96,15 @@ import {
   STRIP_AREA,
   parsePlyWindow,
 } from "./edl.mjs";
-import { huntPath, huntsFor, replayDistances } from "./race-replay.ts";
+import {
+  huntPath,
+  huntsFor,
+  pawnCellsOn,
+  replayDistances,
+} from "./race-replay.ts";
 import {
   OVERLAYS,
+  PORTRAIT_DRAWS,
   boxOnScreen,
   coveredBy,
   loadingPercent,
@@ -112,12 +118,17 @@ import {
   overlayWords,
   readingSeconds,
 } from "./overlays.mjs";
-import { pawnCell } from "../../shared/domain/pawns.ts";
+import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
 import {
   helpRulesFor,
   helpVariantFor,
 } from "../../shared/domain/variant-rules.ts";
-import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
+import {
+  MEME_SOUNDS,
+  VOICE_FAMILIES,
+  memeFamily,
+  memeGain,
+} from "./meme-sounds.mjs";
 import { clipFrameIndex, loadClip } from "./overlay-clips.mjs";
 import {
   MUSIC_TRACKS,
@@ -979,6 +990,12 @@ const ENDING_TOUCH_CELLS = 0.1;
  * nothing.
  */
 const STAMP_FLAT_POP = 1.15;
+/**
+ * A race flash for a change under this many steps tells nothing new: the
+ * lint warns (race-small; Wall Game Director, 2026-10-29: the guide says
+ * to leave a change of 1 or 2 out, and a vet failed one).
+ */
+const RACE_MIN_CHANGE = 3;
 /**
  * A stamp with less room than this to slam shrinks, down to
  * STAMP_MIN_SHRINK of its size, until it has it (Wall Game Director,
@@ -2975,6 +2992,16 @@ const RACE_DISTANCES =
  * huntPath walks as grid.distance does, so the steps drawn are the counter's.
  */
 /**
+ * A walk (huntPath) as the page draws it: its cells' centres on the board
+ * image, and `holes`, the centres of the cells on it where another pawn
+ * stands: the walk draws no dot there (Wall Game Director, 2026-10-29: a
+ * walk that teaches "cat -> the other mouse" must not dot the other cat).
+ */
+const drawnWalk = (pawns, walk) => ({
+  points: walk.map(([r, c]) => cellAt([r, c])),
+  holes: pawnCellsOn(pawns, walk).map((i) => cellAt(walk[i])),
+});
+/**
  * The opening walks (edl.mjs introPaths), in the order they play: each
  * side's hunter to its target in the start position, the first mover's
  * first. Where a side hunts more than one pawn, its shortest walk: the
@@ -2993,7 +3020,7 @@ const INTRO_WALKS =
             .filter((h) => h.hunter.player === player)
             .map((h) => huntPath(start.grid, start.pawns, h));
           const walk = walks.reduce((a, b) => (b.length < a.length ? b : a));
-          return { player, points: walk.map(([r, c]) => cellAt([r, c])) };
+          return { player, ...drawnWalk(start.pawns, walk) };
         });
       })()
     : [];
@@ -3037,7 +3064,7 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
     process.exit(2);
   }
   const walk = (state) =>
-    huntPath(state.grid, state.pawns, hunt).map(([r, c]) => cellAt([r, c]));
+    drawnWalk(state.pawns, huntPath(state.grid, state.pawns, hunt));
   PATHS.set(ev, {
     player: hunt.hunter.player,
     walks: [
@@ -3048,10 +3075,12 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
 }
 /** When a path event's last walk starts to draw: after the compared one. */
 const lastWalkFrom = (ev) =>
-  ev.compare ? drawSeconds(PATHS.get(ev).walks[0]) + PATH_BEFORE_SECONDS : 0;
+  ev.compare
+    ? drawSeconds(PATHS.get(ev).walks[0].points) + PATH_BEFORE_SECONDS
+    : 0;
 const pathSeconds = (ev) =>
   lastWalkFrom(ev) +
-  drawSeconds(PATHS.get(ev).walks.at(-1)) +
+  drawSeconds(PATHS.get(ev).walks.at(-1).points) +
   ev.holdSeconds +
   PATH_FADE_SECONDS;
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
@@ -4855,6 +4884,28 @@ const renderStyle = async (styleName) => {
   }
 
   /**
+   * Whether a ply shows who speaks a voice sound (meme-sounds.mjs
+   * VOICE_FAMILIES): a zoom, a mark on a cell where a pawn stands after the
+   * move, or a cut-out (a reactor, a seat's portrait) on that ply (Nil,
+   * 2026-10-29: "zoom on the mouse so it's clear who is talking").
+   */
+  const speakerShown = (plyIndex) => {
+    const pawnsAfter = new Set(
+      boardPawns(REPLAYED.states[plyIndex + 1].pawns).map((p) =>
+        termOfCell(p.cell),
+      ),
+    );
+    return EVENTS.some(
+      (e) =>
+        e.ply === plyIndex &&
+        (e.kind === "zoom" ||
+          (e.kind in MARK_SECONDS && pawnsAfter.has(e.cell)) ||
+          (e.kind === "overlay" &&
+            PORTRAIT_DRAWS.includes(OVERLAYS[e.asset].draw))),
+    );
+  };
+
+  /**
    * One frame of an after-landing EDL effect, `t` seconds (frame `i`) into
    * its `seconds`, as the stage state it adds to the position.
    */
@@ -4879,13 +4930,14 @@ const renderStyle = async (styleName) => {
       return {
         path: {
           cell: GRID.pitchX,
-          lines: walks.map((points, k) => {
+          lines: walks.map(({ points, holes }, k) => {
             const last = k === walks.length - 1;
             const from = last ? lastFrom : 0;
             const fadeAt = last ? seconds - PATH_FADE_SECONDS : lastFrom;
             return {
               hex: side(player).hex,
               points,
+              holes,
               steps: points.length - 1,
               drawn: span01((t - from) / drawSeconds(points)),
               alpha: 1 - span01((t - fadeAt) / PATH_FADE_SECONDS),
@@ -5058,6 +5110,30 @@ const renderStyle = async (styleName) => {
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
+      if (ev.kind === "race" && RACE_DISTANCES) {
+        const before = RACE_DISTANCES[plyIndex];
+        const after = RACE_DISTANCES[plyIndex + 1];
+        const change = Math.max(
+          Math.abs(after[1] - before[1]),
+          Math.abs(after[2] - before[2]),
+        );
+        if (change < RACE_MIN_CHANGE) {
+          fault(
+            "race-small",
+            plyIndex,
+            `the race flash on ply ${plyIndex} shows a change of ${change} step${change === 1 ? "" : "s"} (${[1, 2].map((id) => `${seatColors[id]} ${before[id]} to ${after[id]}`).join(", ")}); flash it only for ${RACE_MIN_CHANGE} or more`,
+          );
+        }
+      }
+      if (ev.sound && VOICE_FAMILIES.includes(memeFamily(ev.sound))) {
+        if (!speakerShown(plyIndex)) {
+          fault(
+            "voice-no-speaker",
+            plyIndex,
+            `the voice ${ev.sound} on ply ${plyIndex} has no speaker on screen: add a zoom, a mark on the speaking pawn or a cut-out on this ply`,
+          );
+        }
+      }
       const said = stampLints.get(ev);
       if (said?.covers) fault("stamp-covers", plyIndex, said.covers);
       if (said?.flat) fault("stamp-flat", plyIndex, said.flat);
@@ -5115,7 +5191,7 @@ const renderStyle = async (styleName) => {
         const { walks } = PATHS.get(ev);
         walks.forEach((w, k) =>
           cueWalkTicks(
-            w,
+            w.points,
             start + (k === walks.length - 1 ? lastWalkFrom(ev) : 0),
           ),
         );
@@ -5262,6 +5338,7 @@ const renderStyle = async (styleName) => {
           lines: INTRO_PLAN.filter((w) => t >= w.start).map((w) => ({
             hex: side(w.player).hex,
             points: w.points,
+            holes: w.holes,
             steps: w.points.length - 1,
             drawn: span01((t - w.start) / w.draw),
             alpha: 1 - span01((t - w.fadeAt) / PATH_FADE_SECONDS),

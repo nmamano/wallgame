@@ -136,6 +136,23 @@ export const MEME_FAMILIES = {
 };
 
 /**
+ * The families that are a voice: someone on screen says it, so a viewer
+ * must see who (Nil, 2026-10-29: "zoom on the mouse so it's clear who is
+ * talking"). The renderer's lint warns of one with no speaker shown
+ * (voice-no-speaker).
+ */
+export const VOICE_FAMILIES = [
+  "seeya",
+  "laugh",
+  "bruh",
+  "getout",
+  "letsgo",
+  "oof",
+  "ooh",
+  "wow",
+];
+
+/**
  * What a listener should weigh besides the sound: the clips that
  * meme-sounds.md rates as a high claim risk, and the WEAKER rows, whose page
  * does not say how the sound was made. The listening page and `crew.mjs

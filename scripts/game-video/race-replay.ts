@@ -19,7 +19,11 @@ import type {
 } from "../../shared/domain/game-types";
 import type { Grid } from "../../shared/domain/grid";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
-import { pawnCell, requirePawnCell } from "../../shared/domain/pawns";
+import {
+  boardPawns,
+  pawnCell,
+  requirePawnCell,
+} from "../../shared/domain/pawns";
 import {
   cellToStandardNotation,
   moveFromStandardNotation,
@@ -63,15 +67,30 @@ export const walksOn = (
  * neighbours, same order), keeping each cell's parent. So its length less
  * one is the walk the race counter shows, and the same position always gives
  * the same path. A viewer sees it drawn (the EDL's "path" event).
+ *
+ * Of the shortest walks it takes one through the fewest cells of the other
+ * pawns the board draws (Wall Game Director, 2026-10-29: on VX the cat's
+ * opening walk ran straight through the other cat; a walk around it was as
+ * short). A cell's parent changes only for a walk through fewer of them,
+ * so a position with no pawn in the way keeps its old path.
  */
 export const huntPath = (grid: Grid, pawns: GamePawns, hunt: Hunt): Cell[] => {
   const start = pawnCell(pawns, hunt.hunter.player, hunt.hunter.type);
   const target = pawnCell(pawns, hunt.target.player, hunt.target.type);
   if (!start || !target) throw new Error("a hunt names a missing pawn");
   const key = (c: Cell) => `${c[0]},${c[1]}`;
+  const others = new Set(
+    boardPawns(pawns)
+      .map((p) => key(p.cell))
+      .filter((k) => k !== key(start) && k !== key(target)),
+  );
   const parent = new Map<string, Cell | null>([[key(start), null]]);
+  const steps = new Map<string, number>([[key(start), 0]]);
+  // How many other pawns' cells the walk to a cell passes through.
+  const through = new Map<string, number>([[key(start), 0]]);
   const queue: Cell[] = [start];
-  // for-of also visits the cells pushed while it runs: a queue.
+  // for-of also visits the cells pushed while it runs: a queue. A cell is
+  // visited after every cell one step nearer, so its count is final then.
   for (const at of queue) {
     if (at[0] === target[0] && at[1] === target[1]) {
       const path: Cell[] = [];
@@ -80,14 +99,35 @@ export const huntPath = (grid: Grid, pawns: GamePawns, hunt: Hunt): Cell[] => {
       }
       return path;
     }
+    const step = steps.get(key(at))! + 1;
     for (const next of grid.accessibleNeighbors(at)) {
-      if (!parent.has(key(next))) {
-        parent.set(key(next), at);
+      const k = key(next);
+      const count = through.get(key(at))! + (others.has(k) ? 1 : 0);
+      if (!parent.has(k)) {
+        parent.set(k, at);
+        steps.set(k, step);
+        through.set(k, count);
         queue.push(next);
+      } else if (steps.get(k) === step && count < through.get(k)!) {
+        parent.set(k, at);
+        through.set(k, count);
       }
     }
   }
   throw new Error("a hunter cannot reach its target");
+};
+
+/**
+ * The cells of a walk (huntPath) that another pawn stands on: the walk
+ * draws no dot there.
+ */
+export const pawnCellsOn = (pawns: GamePawns, path: Cell[]): number[] => {
+  const cells = new Set(
+    boardPawns(pawns).map((p) => `${p.cell[0]},${p.cell[1]}`),
+  );
+  return path.flatMap((c, i) =>
+    i > 0 && i < path.length - 1 && cells.has(`${c[0]},${c[1]}`) ? [i] : [],
+  );
 };
 
 /** Each player's shortest walk over their own hunts. */

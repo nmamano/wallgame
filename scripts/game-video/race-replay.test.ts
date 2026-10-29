@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
-import { huntPath, huntWalks, huntsFor, replayDistances } from "./race-replay";
+import {
+  huntPath,
+  huntWalks,
+  huntsFor,
+  pawnCellsOn,
+  replayDistances,
+} from "./race-replay";
 
 // 4x4, player 2 to move. P1's cat [0,0] is 3 steps from P2's mouse [0,3]
 // along the top row; P2's cat [3,0] is 3 from P1's mouse [3,3].
@@ -42,6 +48,64 @@ describe("huntPath", () => {
     ]);
     // Before the walls it is the top row, 3 steps.
     expect(huntPath(states[0].grid, states[0].pawns, p1Cat)).toHaveLength(4);
+  });
+
+  test("of the shortest walks, takes one around the other pawns", () => {
+    // P1's cat [0,0] to P2's mouse [1,2]: 3 steps, by three walks. P2's
+    // cat stands on [0,1], where the search's first walk went before
+    // (right, right, down; checked against main e75f5a08, 2026-10-29).
+    const setup: CustomSetupStandardInitialState = {
+      pawns: {
+        p1: { cat: [0, 0], mouse: [3, 3] },
+        p2: { cat: [0, 1], mouse: [1, 2] },
+      },
+      walls: [],
+      turn: { playerId: 2, actionsTaken: [] },
+    };
+    const { states } = replayDistances({
+      variant: "standard",
+      boardWidth: 4,
+      boardHeight: 4,
+      initialState: setup,
+      moves: [],
+    });
+    const p1Cat = huntsFor("standard").find(
+      (h) => h.hunter.player === 1 && h.hunter.type === "cat",
+    )!;
+    const path = huntPath(states[0].grid, states[0].pawns, p1Cat);
+    expect(path).toHaveLength(4);
+    // Not through P2's cat on [0,1]: down first.
+    expect(path[1]).toEqual([1, 0]);
+    expect(pawnCellsOn(states[0].pawns, path)).toEqual([]);
+  });
+
+  test("names the pawns a walk cannot avoid, the hunter and target left out", () => {
+    // The top row is the only 3-step walk, and P2's cat stands on [0,1].
+    const setup: CustomSetupStandardInitialState = {
+      ...corridor,
+      pawns: {
+        p1: { cat: [0, 0], mouse: [3, 3] },
+        p2: { cat: [0, 1], mouse: [0, 3] },
+      },
+    };
+    const { states } = replayDistances({
+      variant: "standard",
+      boardWidth: 4,
+      boardHeight: 4,
+      initialState: setup,
+      moves: [],
+    });
+    const p1Cat = huntsFor("standard").find(
+      (h) => h.hunter.player === 1 && h.hunter.type === "cat",
+    )!;
+    const path = huntPath(states[0].grid, states[0].pawns, p1Cat);
+    expect(path).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [0, 3],
+    ]);
+    expect(pawnCellsOn(states[0].pawns, path)).toEqual([1]);
   });
 
   test("has the length of the engine's walk in every position of a game", () => {

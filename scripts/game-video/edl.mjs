@@ -307,6 +307,8 @@ export const LINT_KINDS = {
   "stamp-covers": "warns",
   "mark-covers-wall": "warns",
   "finish-cut": "warns",
+  "race-small": "warns",
+  "voice-no-speaker": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
 };

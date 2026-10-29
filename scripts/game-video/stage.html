@@ -1806,7 +1806,8 @@
        */
       /**
        * A hunter's walk (edl.mjs "path"): p = { cell, lines: [{ hex,
-       * points, steps, drawn, alpha }] }, points and the cell's size as
+       * points, holes, steps, drawn, alpha }] }, points, holes (the cells
+       * on the walk where another pawn stands) and the cell's size as
        * fractions of the board, from the hunter to its target. Each line is
        * a dotted trail in its hunter's colour (hex), drawn from the hunter up to
        * `drawn` of its length; once whole it shows its steps in a disc half
@@ -1815,6 +1816,7 @@
        * is on the board and off the walk, so the disc covers neither the
        * target nor the walk.
        */
+      const DOT_GAP = 52;
       const paintPath = (p) => {
         const svg = $("pathSvg");
         show(svg, !!p);
@@ -1836,7 +1838,47 @@
               pts.push({ x: a.x + (q.x - a.x) * f, y: a.y + (q.y - a.y) * f });
               left -= seg[i];
             }
-            const d = pts.map((q) => k(q.x) + "," + k(q.y)).join(" ");
+            // A dot every DOT_GAP along the drawn part, from the hunter, as
+            // a dash of 0 with round caps drew them; none on a cell where
+            // another pawn stands (l.holes, the cells' centres).
+            const holes = l.holes ?? [];
+            const dots = [];
+            let next = 0;
+            let run = 0;
+            for (let i = 1; i < pts.length; i++) {
+              const a = pts[i - 1];
+              const q = pts[i];
+              const len = Math.hypot((q.x - a.x) * 1000, (q.y - a.y) * 1000);
+              for (; next <= run + len + 1e-6; next += DOT_GAP) {
+                const f = len > 0 ? (next - run) / len : 0;
+                const dot = {
+                  x: a.x + (q.x - a.x) * f,
+                  y: a.y + (q.y - a.y) * f,
+                };
+                const onPawn = holes.some(
+                  (h) =>
+                    Math.abs(dot.x - h.x) < p.cell / 2 &&
+                    Math.abs(dot.y - h.y) < p.cell / 2,
+                );
+                if (!onPawn) dots.push(dot);
+              }
+              run += len;
+            }
+            const circles = (r, fill) =>
+              dots
+                .map(
+                  (q) =>
+                    '<circle cx="' +
+                    k(q.x) +
+                    '" cy="' +
+                    k(q.y) +
+                    '" r="' +
+                    r +
+                    '" fill="' +
+                    fill +
+                    '"/>',
+                )
+                .join("");
             const tip = l.points[l.points.length - 1];
             const prev = l.points[l.points.length - 2] ?? tip;
             const vertical =
@@ -1901,14 +1943,8 @@
               '<g opacity="' +
               l.alpha +
               '">' +
-              '<polyline points="' +
-              d +
-              '" fill="none" stroke="#0b0f1c" stroke-width="40" stroke-linecap="round" stroke-dasharray="0 52"/>' +
-              '<polyline points="' +
-              d +
-              '" fill="none" stroke="' +
-              l.hex +
-              '" stroke-width="27" stroke-linecap="round" stroke-dasharray="0 52"/>' +
+              circles(20, "#0b0f1c") +
+              circles(13.5, l.hex) +
               disc +
               "</g>"
             );
