@@ -805,6 +805,13 @@ const TRAP_SECONDS = 1.6;
 const PATH_DRAW_SECONDS = 0.45;
 const PATH_BEFORE_SECONDS = 0.45;
 const PATH_FADE_SECONDS = 0.3;
+/**
+ * The opening walks (edl.mjs introPaths): each draws as a path event's
+ * walk does, holds INTRO_PATH_HOLD_SECONDS with its steps, and fades.
+ */
+const INTRO_PATH_HOLD_SECONDS = 0.6;
+const INTRO_PATH_SECONDS =
+  PATH_DRAW_SECONDS + INTRO_PATH_HOLD_SECONDS + PATH_FADE_SECONDS;
 const pathSeconds = (ev) =>
   (ev.compare ? PATH_DRAW_SECONDS + PATH_BEFORE_SECONDS : 0) +
   PATH_DRAW_SECONDS +
@@ -2573,6 +2580,29 @@ const RACE_DISTANCES =
  * after the move, and with `compare` its walk in the position before it.
  * huntPath walks as grid.distance does, so the steps drawn are the counter's.
  */
+/**
+ * The opening walks (edl.mjs introPaths), in the order they play: each
+ * side's hunter to its target in the start position, the first mover's
+ * first. Where a side hunts more than one pawn, its shortest walk: the
+ * number the race counter shows for it. None without a counter (a variant
+ * where no side hunts) or when the EDL turns them off.
+ */
+const INTRO_WALKS =
+  EDL?.introPaths &&
+  PLAYS_OPENING &&
+  REPLAYED?.distances.every((d) => d[1] !== null && d[2] !== null)
+    ? (() => {
+        const start = REPLAYED.states[START_PLY];
+        const first = REPLAYED.movers[START_PLY];
+        return [first, first === 1 ? 2 : 1].map((player) => {
+          const walks = huntsFor(start.config.variant)
+            .filter((h) => h.hunter.player === player)
+            .map((h) => huntPath(start.grid, start.pawns, h));
+          const walk = walks.reduce((a, b) => (b.length < a.length ? b : a));
+          return { player, points: walk.map(([r, c]) => cellAt([r, c])) };
+        });
+      })()
+    : [];
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
   const [row, col] = [
@@ -4108,6 +4138,48 @@ const renderStyle = async (styleName) => {
     ),
     { kind: "initial", ply: START_PLY - 1 },
   );
+
+  /*
+    The opening walks (edl.mjs introPaths): before the first move, each
+    side's hunter draws its shortest walk to its target with its steps, one
+    after the other, on the start position. A contact-sheet still of each
+    once it is drawn.
+  */
+  for (const { player, points } of INTRO_WALKS) {
+    const frames = Math.round(INTRO_PATH_SECONDS * FPS);
+    const stillAt = Math.round((PATH_DRAW_SECONDS + 0.2) * FPS);
+    for (let i = 0; i < frames; i += 1) {
+      const t = i / FPS;
+      const span01 = (x) => Math.max(0, Math.min(1, x));
+      if (i === stillAt) {
+        stillNext = { ply: START_PLY, kind: "intro-path", sound: null };
+      }
+      await emit(
+        playState(START_PLY, {
+          path: {
+            hex: side(player).hex,
+            cell: GRID.pitchX,
+            lines: [
+              {
+                points,
+                steps: points.length - 1,
+                drawn: span01(t / PATH_DRAW_SECONDS),
+                alpha:
+                  1 -
+                  span01(
+                    (t - (INTRO_PATH_SECONDS - PATH_FADE_SECONDS)) /
+                      PATH_FADE_SECONDS,
+                  ),
+              },
+            ],
+          },
+        }),
+        1 / FPS,
+        { kind: "intro-path", ply: START_PLY - 1 },
+      );
+    }
+    log(`intro path: ${side(player).name}, ${points.length - 1} steps`);
+  }
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;

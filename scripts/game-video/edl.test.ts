@@ -359,6 +359,19 @@ describe("startPly and coldOpenPly", () => {
   });
 });
 
+describe("introPaths", () => {
+  test("is on by default, may be turned off, and is a boolean", () => {
+    // Nil, 2026-10-28: the intro must explain the gist of the game.
+    expect(accept(base)).toMatchObject({ introPaths: true });
+    expect(accept({ ...base, introPaths: false })).toMatchObject({
+      introPaths: false,
+    });
+    expect(validateEdl({ ...base, introPaths: "yes" }).errors).toEqual([
+      "introPaths must be true or false",
+    ]);
+  });
+});
+
 describe("variety", () => {
   // Nil, 2026-10-28: "the exclamation mark and sweat is overused. 3 times.
   // add a rule that variety is important."

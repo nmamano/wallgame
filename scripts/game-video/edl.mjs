@@ -65,6 +65,14 @@
  *            for about a second, caption up and that ply's walls glowing,
  *            and then cuts to the VS overlay and the game (audit item 2).
  *            Absent (null after validation): no cold open.
+ *   introPaths
+ *            optional, default true: before the first move, after the VS
+ *            overlay, each side's hunter draws its shortest walk to its
+ *            target with the dots of a `path` event and its step count,
+ *            the first mover's first (Nil, 2026-10-28: the intro must
+ *            explain "the gist of the game before the action starts ...
+ *            the path from each cat to each mouse"). false: none. A
+ *            variant where no side hunts shows none.
  *   vsSound, finishSound
  *            optional: the meme sound on the VS overlay's punch and on the
  *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
@@ -428,6 +436,7 @@ export const validateEdl = (raw) => {
       "music",
       "startPly",
       "coldOpenPly",
+      "introPaths",
       "vsSound",
       "finishSound",
       "pace",
@@ -529,6 +538,10 @@ export const validateEdl = (raw) => {
         );
       }
     }
+  }
+  const introPaths = raw.introPaths ?? true;
+  if (typeof introPaths !== "boolean") {
+    fail("introPaths must be true or false");
   }
   const coldOpenPly = raw.coldOpenPly ?? null;
   if (coldOpenPly !== null && !isPly(coldOpenPly)) {
@@ -913,6 +926,7 @@ export const validateEdl = (raw) => {
       music,
       startPly,
       coldOpenPly,
+      introPaths,
       ...slots,
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
