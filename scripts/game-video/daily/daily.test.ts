@@ -16,6 +16,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -4035,6 +4036,52 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(draft).toContain(
       '30 | <label> | ~18.0 | <sees> | trap + sting-1 | "NO EXIT"',
     );
+    // With no --docs, SCRIPT.md is main's committed text in ~/nil/wallgame,
+    // never its working tree; with no such checkout, a clear error.
+    const home = join(dir, "home");
+    const repo = join(home, "nil/wallgame");
+    const docs = join(repo, "scripts/game-video/daily");
+    const noDocs = (file: string) =>
+      Bun.spawnSync(
+        [
+          "node",
+          resolve(import.meta.dir, "crew.mjs"),
+          "script",
+          "--item",
+          id,
+          "--edl",
+          list,
+          "--out",
+          file,
+          "--app",
+          base,
+        ],
+        { env: { PATH: process.env.PATH!, HOME: home } },
+      );
+    expect(noDocs(join(dir, "s0.txt")).stderr.toString()).toContain(
+      `briefs not found at ${repo} (main:scripts/game-video/daily/SCRIPT.md): give --docs DIR`,
+    );
+    mkdirSync(docs, { recursive: true });
+    const git = (...args: string[]) =>
+      Bun.spawnSync([
+        "git",
+        "-C",
+        repo,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        ...args,
+      ]);
+    git("init", "-q", "-b", "main");
+    writeFileSync(join(docs, "SCRIPT.md"), "## Checklist\n\n- [ ] committed\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "docs");
+    writeFileSync(join(docs, "SCRIPT.md"), "## Checklist\n\n- [ ] half done\n");
+    const fromMain = join(dir, "s-main.txt");
+    expect(noDocs(fromMain).exitCode).toBe(0);
+    expect(readFileSync(fromMain, "utf8")).toContain("\n[ ] committed\n");
+    expect(readFileSync(fromMain, "utf8")).not.toContain("half done");
     // Never over a file that exists.
     expect(crew(base, "script", "--item", id, "--out", out).err).toContain(
       `${out} exists`,

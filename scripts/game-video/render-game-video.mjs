@@ -430,6 +430,15 @@ for (const name of STYLE_NAMES) {
     process.exit(2);
   }
 }
+// An explain plays only in the daily look; the current look would drop it
+// with no word (Video Reviewer 1, review 75).
+const notDaily = STYLE_NAMES.filter((n) => STYLES[n].look !== "wallz");
+if (EDL?.events.some((e) => e.kind === "explain") && notDaily.length > 0) {
+  console.error(
+    `the EDL has an explain, which only the daily look plays; --style ${notDaily.join(",")} would drop it`,
+  );
+  process.exit(2);
+}
 if (STYLE_NAMES.includes("daily") && !EDL) {
   console.error("the daily look plays an EDL: give --edl FILE (see edl.mjs)");
   process.exit(2);
@@ -3152,21 +3161,38 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
   const [k0, k1] = [ev.ply, ev.ply + 1];
   const change = (id) =>
     Math.abs(RACE_DISTANCES[k1][id] - RACE_DISTANCES[k0][id]);
+  const colours = SEAT_COLORS(replay);
+  const red = colours[1] === "red" ? 1 : 2;
+  const blue = red === 1 ? 2 : 1;
+  // With no hunter named, the side whose steps change most; on a tie, red.
   const player = ev.hunter
-    ? SEAT_COLORS(replay)[1] === ev.hunter
-      ? 1
-      : 2
-    : change(2) > change(1)
-      ? 2
-      : 1;
-  const walkIn = (state) => {
+    ? ev.hunter === "red"
+      ? red
+      : blue
+    : change(blue) > change(red)
+      ? blue
+      : red;
+  /*
+    The walk drawn comes from huntPath and the steps shown from the race
+    counter (RACE_DISTANCES): the same BFS today, and a walk that does not
+    match its number stops the render (Video Reviewer 1, review 75).
+  */
+  const walkIn = (state, k) => {
     const walks = huntsFor(state.config.variant)
       .filter((h) => h.hunter.player === player)
       .map((h) => huntPath(state.grid, state.pawns, h));
-    return drawnWalk(
-      state.pawns,
-      walks.reduce((a, b) => (b.length < a.length ? b : a)),
-    );
+    if (walks.length === 0) {
+      throw new Error(
+        `the explain on ply ${ev.ply}: ${colours[player]} hunts nothing in ${state.config.variant}`,
+      );
+    }
+    const walk = walks.reduce((a, b) => (b.length < a.length ? b : a));
+    if (walk.length - 1 !== RACE_DISTANCES[k][player]) {
+      throw new Error(
+        `the explain on ply ${ev.ply}: ${colours[player]}'s walk after ${k} plies has ${walk.length - 1} steps, and the race counter says ${RACE_DISTANCES[k][player]}`,
+      );
+    }
+    return drawnWalk(state.pawns, walk);
   };
   const before = REPLAYED.states[k0];
   const after = REPLAYED.states[k1];
@@ -3174,8 +3200,8 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
   const was = new Map(boardPawns(before.pawns).map((p) => [key(p), p.cell]));
   EXPLAINS.set(ev, {
     player,
-    before: walkIn(before),
-    after: walkIn(after),
+    before: walkIn(before, k0),
+    after: walkIn(after, k1),
     steps: [RACE_DISTANCES[k0][player], RACE_DISTANCES[k1][player]],
     walls: String(history[ev.ply].notation ?? "")
       .split(".")
@@ -5255,7 +5281,10 @@ const renderStyle = async (styleName) => {
     for (let i = 0; i < landFrames; i += 1) {
       await emit(
         playState(ply, {
-          race: raceHud(ply, i / FPS),
+          // The counter keeps the old numbers until the new walk draws, so
+          // it never disagrees with the walk's own number (Wall Game PM,
+          // 2026-10-29).
+          race: raceHud(ply - 1),
           trap: glow(i / FPS),
           path: {
             cell: GRID.pitchX,
@@ -5281,7 +5310,9 @@ const renderStyle = async (styleName) => {
         span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
       await emit(
         playState(ply, {
-          race: raceHud(ply, elapsed - landed),
+          // The counter ticks as the new walk is drawn and shows its own
+          // number, so the two never disagree.
+          race: t < drawAfter ? raceHud(ply - 1) : raceHud(ply, t - drawAfter),
           trap: glow(elapsed - landed),
           path: {
             cell: GRID.pitchX,

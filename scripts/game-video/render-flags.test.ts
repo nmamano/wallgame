@@ -51,6 +51,26 @@ describe("the renderer's flags", () => {
     expect(r.stdout.split("\n")[0]).toStartWith("usage: render-game-video.mjs");
   });
 
+  test("an explain stops a run with a look that would drop it, before the browser", () => {
+    const dir = mkdtempSync(join(tmpdir(), "render-explain-"));
+    const edl = join(dir, "edl.json");
+    writeFileSync(
+      edl,
+      JSON.stringify({
+        version: 1,
+        gameId: "VX-IPenv",
+        caption: "x",
+        ending: "gg",
+        events: [{ ply: 12, kind: "explain" }],
+      }),
+    );
+    const r = run("--edl", edl, "--style", "current,daily", "--from-cache");
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain(
+      "the EDL has an explain, which only the daily look plays; --style current would drop it",
+    );
+  });
+
   test("a flag that takes a value needs one", () => {
     const r = run("--from-cache", "--plies");
     expect(r.status).toBe(2);

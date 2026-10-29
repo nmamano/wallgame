@@ -140,7 +140,7 @@
  *             then the old walk stays as a ghost and the new walk draws
  *             (2, then 16). The whole board stays in view. `hunter`
  *             ("red" or "blue") names the cat whose walk is the story;
- *             absent, the one whose steps change most. The renderer
+ *             absent, the one whose steps change most (on a tie, red). The renderer
  *             computes the walls and both walks from the game record, as
  *             the race counter does; `expect` (optional: { walls, before,
  *             after }, the steps of that hunter) is what the script says,

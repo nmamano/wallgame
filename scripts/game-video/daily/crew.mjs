@@ -212,7 +212,7 @@
  *
  * The app is found through the office's app registry (name game-video), or
  * given with --app http://127.0.0.1:<port>. The briefs are read from the
- * main checkout's daily folder (MAIN_DAILY), or from --docs DIR.
+ * main checkout's daily folder as main has them committed, or from --docs DIR.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -250,19 +250,44 @@ const STORYBOARD = resolve(HERE, "../storyboard.ts");
 /** By full path, as nightly-candidates.sh: a unit's PATH has no bun. */
 const BUN = join(homedir(), ".bun/bin/bun");
 /**
- * The daily folder of the main checkout. The briefs crew.mjs prints
+ * The main checkout, and its daily folder. The briefs crew.mjs prints
  * (SCRIPT.md's checklist, SCRIPT-REVIEW.md, VET-BRIEF.md) are docs: read
  * from main, a docs edit is live at once, where the release copy this runs
- * from lags main until a ship (Wall Game PM, 2026-10-29).
+ * from lags main until a ship (Wall Game PM, 2026-10-29). They are read as
+ * main has them committed (git show), never from its working tree, where
+ * another agent's edit may be half done (Video Reviewer 1, review 75).
  */
-const MAIN_DAILY = join(homedir(), "nil/wallgame/scripts/game-video/daily");
-/** Where the briefs are: MAIN_DAILY, or --docs DIR (the tests' own copy). */
-const docsDir = () => flag("docs") ?? MAIN_DAILY;
-/** A brief from docsDir(), its leading comment left out. */
-const brief = (name) =>
-  readFileSync(join(docsDir(), name), "utf8")
-    .replace(/^<!--[\s\S]*?-->\n+/, "")
-    .trimEnd();
+const MAIN = join(homedir(), "nil/wallgame");
+const DAILY_DIR = "scripts/game-video/daily";
+/** Where the briefs are for a reader: main's daily folder, or --docs DIR. */
+const docsDir = () => flag("docs") ?? join(MAIN, DAILY_DIR);
+/**
+ * A brief, its leading comment left out: from --docs DIR (the tests' own
+ * copy), else as main has it committed.
+ */
+const brief = (name) => {
+  const docs = flag("docs");
+  let text;
+  if (docs) {
+    if (!existsSync(join(docs, name))) {
+      die(`briefs not found at ${docs}: ${name} is missing; give --docs DIR`);
+    }
+    text = readFileSync(join(docs, name), "utf8");
+  } else {
+    const show = spawnSync(
+      "git",
+      ["-C", MAIN, "show", `main:${DAILY_DIR}/${name}`],
+      { encoding: "utf8" },
+    );
+    if (show.status !== 0) {
+      die(
+        `briefs not found at ${MAIN} (main:${DAILY_DIR}/${name}): give --docs DIR`,
+      );
+    }
+    text = show.stdout;
+  }
+  return text.replace(/^<!--[\s\S]*?-->\n+/, "").trimEnd();
+};
 /** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
 const STORYBOARD_TIMEOUT_MS = 120_000;
 const APP_NAME = "game-video";
