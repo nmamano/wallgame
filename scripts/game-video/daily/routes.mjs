@@ -1618,7 +1618,7 @@ export const createDaily = ({
     "GET /api/review/queue": (req, res) => {
       const member = memberOf(req);
       json(res, 200, {
-        ...reviewView(store),
+        ...reviewView(store, scheduler.status().nextSlot),
         canReview: member?.id === REVIEWER_MEMBER_ID,
       });
     },

@@ -24,6 +24,7 @@ import {
   directorText,
   reviewView,
   versionLine,
+  approvedLine,
 } from "./review.mjs";
 
 const BLOCK = [
@@ -81,10 +82,18 @@ interface View {
     noStory: string | null;
     version: string | null;
   }[];
-  approved: { id: string; caption: string }[];
+  approved: { id: string; caption: string; when: string }[];
 }
-const viewOf = (...a: Parameters<typeof reviewView>) =>
-  reviewView(...a) as unknown as View;
+/** A next slot that posts (scheduler.mjs status nextSlot). */
+const NEXT_SLOT = {
+  pacific: "Fri 2026-10-30 09:00 PT",
+  willPost: true,
+  why: null,
+};
+const viewOf = (
+  store: Parameters<typeof reviewView>[0],
+  nextSlot: Parameters<typeof reviewView>[1] = NEXT_SLOT,
+) => reviewView(store, nextSlot) as unknown as View;
 
 /** Nil's feedback rows. */
 const feedbackOf = (store: ReturnType<typeof openStore>) =>
@@ -945,7 +954,11 @@ describe("the review routes", () => {
     // Approved and no slot took it: the page lists it, with its caption,
     // for "Undo approval" (Nil, 2026-10-29).
     expect(view.approved).toEqual([
-      { id: "v-2026-10-28-1", caption: postCaption(parseCopy(BLOCK).copy!) },
+      {
+        id: "v-2026-10-28-1",
+        caption: postCaption(parseCopy(BLOCK).copy!),
+        when: expect.stringMatching(/^Approved: /) as unknown as string,
+      },
     ]);
     const path = "/api/review/v-2026-10-28-1/withdraw";
     const other = await call(path, {
@@ -999,6 +1012,21 @@ describe("the review routes", () => {
       );
       expect(viewOf(store).approved).toEqual([]);
     }
+    // When each approved item posts: the head of the post queue at the
+    // next slot, the others after it; a slot that will not post says why.
+    expect(approvedLine(0, NEXT_SLOT)).toBe(
+      "Approved: posts at Fri 2026-10-30 09:00 PT.",
+    );
+    expect(approvedLine(1, NEXT_SLOT)).toBe(
+      "Approved: posts after the video above.",
+    );
+    expect(
+      approvedLine(0, {
+        ...NEXT_SLOT,
+        willPost: false,
+        why: "no platform is live",
+      }),
+    ).toBe("Approved: no slot posts it yet (no platform is live).");
     // The page: the list under the queue, one button, Nil only.
     expect(REVIEW_PAGE).toContain('"Approved, waiting for a slot"');
     expect(REVIEW_PAGE).toContain('el("button", "undo", "Undo approval")');

@@ -98,7 +98,26 @@ export const versionLine = (item, others) => {
   return `one of ${others.length + 1} videos of game ${item.gameId}; the other${others.length > 1 ? "s are" : " is"} ${list}`;
 };
 
-export const reviewView = (store) => ({
+/**
+ * The line on an approved card: when it posts. The post queue is
+ * store.approvedQueue (oldest approval first), and the next slot takes its
+ * head (scheduler.mjs status nextSlot); the others wait their turn (Wall
+ * Game PM, 2026-10-30: Nil must see why the card is there).
+ * @param {number} index the item's place in the post queue
+ * @param {{ pacific: string, willPost: boolean, why: string | null }} nextSlot
+ */
+export const approvedLine = (index, nextSlot) =>
+  index > 0
+    ? "Approved: posts after the video above."
+    : nextSlot.willPost
+      ? `Approved: posts at ${nextSlot.pacific}.`
+      : `Approved: no slot posts it yet (${nextSlot.why ?? "no slot"}).`;
+
+/**
+ * @param {ReturnType<import("./store.mjs").openStore>} store
+ * @param {{ pacific: string, willPost: boolean, why: string | null }} nextSlot
+ */
+export const reviewView = (store, nextSlot) => ({
   items: store.inReview().map((it) => ({
     // For the action's address and the video's; the page does not show it.
     id: it.id,
@@ -128,11 +147,14 @@ export const reviewView = (store) => ({
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
   })),
-  // Approved and no slot took it yet (a slot makes it posting): Nil may
-  // still take the approval back (withdraw).
-  approved: store.items({ states: ["approved"] }).map((it) => ({
+  // Approved and no slot took it yet (a slot makes it posting), in post
+  // order: Nil may still take the approval back (withdraw).
+  approved: store.approvedQueue().map((it, i) => ({
     id: it.id,
-    caption: postCaption(it.copy.block),
+    // Approve requires a block today; a guard keeps the page usable if an
+    // approved item ever has none (VR1, review 80).
+    caption: it.copy ? postCaption(it.copy.block) : "(no post text)",
+    when: approvedLine(i, nextSlot),
   })),
 });
 
@@ -353,7 +375,7 @@ export const REVIEW_PAGE = `<!doctype html>
       load();
     };
     const line = el("div", "done"); line.append(undo);
-    box.append(video, el("div", "caption", it.caption), line, why);
+    box.append(el("div", "version", it.when), video, el("div", "caption", it.caption), line, why);
     return box;
   };
 
