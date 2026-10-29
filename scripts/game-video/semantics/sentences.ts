@@ -27,7 +27,11 @@
  * KNOWN GAPS of a word check (VR1, 2026-10-29). Apart from "from N to M",
  * numbers, cells and names are checked as a bag over the cited facts, not
  * bound to each other: a lone number under the wrong owner ("Guest X's
- * walk is 4"), or a cell given to the wrong pawn, can pass. The word lists (intent, colour,
+ * walk is 4"), or a cell given to the wrong pawn, can pass. A "from N to
+ * M" is bound to an owner only when "<player>'s walk" comes before it in
+ * the same clause (cut at , ; :), so an owner named after the numbers, or
+ * two owners joined by "and", leaves it unbound: there the other player's
+ * pair can pass. The word lists (intent, colour,
  * judgment) are open: a new word for intent passes until it is listed. A
  * seat name other than the game's is caught only in the "Guest X" and
  * "X Bot" forms. "walk" as a verb also needs its owner ("Guest X's cat
@@ -189,9 +193,9 @@ export const factsOf = (
     }
   }
   if (l.tags.includes("box-in")) {
-    const room = [...f.rooms].sort(
-      (a, b) => a.after / a.before - b.after / b.before,
-    )[0];
+    const room = f.rooms
+      .filter((r) => r.before > 0)
+      .sort((a, b) => a.after / a.before - b.after / b.before)[0];
     const cats = room.hunters
       .map((h) => `${names[h.player]}'s ${h.type}`)
       .join(" or ");
@@ -475,6 +479,7 @@ Rules:
 - Name the owner of every walk: "Normal Bot's walk" or "Normal Bot's cat walk", never "the walk" or "its walk".
 - Words like blunder, punish, save, escape, threat, trap, wins, capture: use them only when a fact you cite says so. Say "best" only when a cited fact says "top choice"; say "skips" or "misses" only when a cited fact says the engine "preferred" another move.
 - "from N to M" must be a before/after pair of a cited fact, in that order.
+- If the move has a "box" fact (its label or tags say box-in), the sentence names the box: the walls and whose mouse they box in.
 - factIds: the ids of every fact your sentence uses (numbers, cells, names, words). Cite enough.
 
 Return JSON: {"sentences": [{"ply": <ply>, "sentence": "...", "factIds": ["..."]}]}, one entry per move given.`;
@@ -588,6 +593,11 @@ export const writeSentences = (
             seatNames,
           )
         : ["no sentence returned"];
+      // A box-in must be told (Nil, 2026-10-29: the boxed mouse drew no
+      // attention): the sentence cites the move's box fact.
+      const box = `${ply}.box`;
+      if (a && all[ply].some((f) => f.id === box) && !a.factIds.includes(box))
+        reasons.push(`does not tell the box-in (cite ${box})`);
       if (a && reasons.length === 0) {
         result.set(ply, {
           ply,
@@ -659,7 +669,7 @@ export const renderTable = (s: GameSemantics): string => {
   if (s.labels.links.length) {
     lines.push(
       "",
-      `Links: ${s.labels.links.map((k) => `${k.kind} ${k.from + 1} -> ${k.to + 1}${k.costShown === undefined ? "" : k.costShown ? " (cost shown)" : " (cost NOT shown)"}`).join("; ")}.`,
+      `Links: ${s.labels.links.map((k) => `${k.kind} ${k.from + 1} -> ${k.to + 1}${k.kind !== "blunder-punish" ? "" : k.costShown ? " (cost shown)" : " (cost NOT shown)"}`).join("; ")}.`,
     );
   }
   return lines.join("\n") + "\n";

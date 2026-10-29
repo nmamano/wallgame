@@ -377,6 +377,46 @@ describe("box-in", () => {
   });
 });
 
+describe("writeSentences and box-in", () => {
+  test("a sentence on a box-in move that does not cite the box is retried", () => {
+    const game = gameOf([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.77, 0.36],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+    ]);
+    const l = labelGame(game);
+    const asked: string[] = [];
+    const out = writeSentences(game, l, (input) => {
+      asked.push(input);
+      return asked.length === 1
+        ? [
+            {
+              ply: 0,
+              sentence: "Guest Ferret places >f4 and ^g3.",
+              factIds: ["0.play"],
+            },
+          ]
+        : [
+            {
+              ply: 0,
+              sentence:
+                "Guest Ferret's walls >f4 and ^g3 box in Normal Bot's mouse.",
+              factIds: ["0.box", "0.play"],
+            },
+          ];
+    });
+    expect(asked[1]).toContain("does not tell the box-in (cite 0.box)");
+    expect(out.sentences![0]).toMatchObject({
+      fallback: false,
+      factIds: ["0.box", "0.play"],
+    });
+  });
+});
+
 describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
   test("a punish that a wall undoes next move shows no cost; 2 -> 16 does", () => {
     const fixture = JSON.parse(

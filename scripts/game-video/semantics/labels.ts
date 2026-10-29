@@ -71,19 +71,26 @@ export const BOX_CUT = 0.4;
 /** ...and to this many cells or fewer (8x8 has 64). */
 export const BOX_ROOM = 25;
 
-export interface Link {
-  kind: "blunder-punish" | "threat-save" | "threat-escape" | "sealed-capture";
-  /** Plies, 0-based. */
+/** Plies, 0-based. */
+interface LinkEnds {
   from: number;
   to: number;
-  /**
-   * Set on blunder-punish only (Nil, 2026-10-29, on VX-IPenv: "it doesn't
-   * get punished"): the punish changes a walk by COST_WALK or more, and the
-   * next move does not bring that walk back within UNDO_WALK of its old
-   * value. False means the board does not show the blunder's cost.
-   */
-  costShown?: boolean;
 }
+
+export type Link =
+  | (LinkEnds & {
+      kind: "blunder-punish";
+      /**
+       * Nil, 2026-10-29, on VX-IPenv: "it doesn't get punished". The punish
+       * changes a walk by COST_WALK or more, and the next move does not
+       * bring that walk back within UNDO_WALK of its old value. False means
+       * the board does not show the blunder's cost.
+       */
+      costShown: boolean;
+    })
+  | (LinkEnds & {
+      kind: "threat-save" | "threat-escape" | "sealed-capture";
+    });
 
 /** A punish shows its cost when it changes a walk by this much... */
 export const COST_WALK = 5;
@@ -92,6 +99,8 @@ export const UNDO_WALK = 2;
 
 /** costShown of the punish at `ply` (see Link). */
 const costShownAt = (plies: PlyFacts[], ply: number): boolean =>
+  // hunts[i] is the same hunt on every ply: facts.ts lists them in
+  // huntsFor order, which is fixed per variant.
   plies[ply].hunts.some((h, i) => {
     if (Math.abs(h.after - h.before) < COST_WALK) return false;
     const next = plies[ply + 1];
