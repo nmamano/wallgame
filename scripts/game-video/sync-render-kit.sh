@@ -29,7 +29,11 @@ test -d assets/meme-sounds || {
   echo "assets/meme-sounds/ is missing here; see scripts/game-video/meme-sounds.md" >&2
   exit 1
 }
-test -f assets/stings/vs-b-riser.wav || bun scripts/game-video/make-stings.mjs
+# Rebuilt when a sting or a time the renderer reads is missing: a stale
+# stings.json copied to the 4090 left the whoosh with no time (2026-10-29).
+{ test -f assets/stings/vs-b-riser.wav && test -f assets/stings/vs-whoosh.wav &&
+  grep -q whooshPeakSeconds assets/stings/stings.json; } ||
+  bun scripts/game-video/make-stings.mjs
 # The overlay clips (overlay-clips.mjs). Never made here: in a worktree or
 # the release checkout it must be the link to the main checkout's folder,
 # and an empty folder in its place would send no clips.

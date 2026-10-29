@@ -2215,23 +2215,47 @@ const soundsFor = (styleName) => {
 
 /*
   The riser is generated, not recorded, and it is deliberately NOT committed:
-  make-stings.mjs is deterministic, so the wav is rebuilt here when it is
-  missing. That keeps the repository free of generated audio without making a
-  fresh checkout render a silent VS screen.
+  make-stings.mjs is deterministic, so the stings are rebuilt here when a wav
+  is missing or stings.json is older than this renderer. That keeps the
+  repository free of generated audio without making a fresh checkout render
+  a silent VS screen.
 */
+const STING_MANIFEST = join(STING_DIR, "stings.json");
+/**
+ * stings.json, or null when it is missing or does not give every time the
+ * renderer reads as a number. A copy from before the whoosh has no
+ * whooshPeakSeconds, and with both wavs present it was never rebuilt: the
+ * whoosh's cue went to NaN and every render failed in the mix (Wall Game
+ * Director, 2026-10-29, main 10f2b1ca).
+ */
+const readStings = () => {
+  if (!existsSync(STING_MANIFEST)) return null;
+  const m = JSON.parse(readFileSync(STING_MANIFEST, "utf8"));
+  return [m.vsHitSeconds, m.whooshPeakSeconds].every(Number.isFinite)
+    ? m
+    : null;
+};
 if (
   AUDIO &&
-  (!existsSync(SOUNDS.vsStamp.file) || !existsSync(VS_WHOOSH.file))
+  (!existsSync(SOUNDS.vsStamp.file) ||
+    !existsSync(VS_WHOOSH.file) ||
+    !readStings())
 ) {
-  log("stings not built yet; running make-stings.mjs");
+  log("stings missing or out of date; running make-stings.mjs");
   execFileSync(process.execPath, [join(HERE, "make-stings.mjs")], {
     stdio: "inherit",
   });
+  if (!readStings()) {
+    throw new Error(
+      `make-stings.mjs ran, and ${STING_MANIFEST} still lacks vsHitSeconds or whooshPeakSeconds`,
+    );
+  }
 }
 
-const stingManifest = existsSync(join(STING_DIR, "stings.json"))
-  ? JSON.parse(readFileSync(join(STING_DIR, "stings.json"), "utf8"))
-  : { vsHitSeconds: 0 };
+const stingManifest = readStings() ?? {
+  vsHitSeconds: 0,
+  whooshPeakSeconds: 0,
+};
 
 /**
  * The music as mix parts (mix-loudness.mjs Music), one per played cue
@@ -3293,7 +3317,14 @@ const renderStyle = async (styleName) => {
   const timeline = [];
   const cues = [];
   let elapsed = 0;
-  const cue = (sound, role, { at = elapsed, event = null } = {}) =>
+  const cue = (sound, role, { at = elapsed, event = null } = {}) => {
+    // A time built from a missing value is NaN, and ffmpeg's mix refuses it
+    // with no word on which sound (2026-10-29): stop here and name it.
+    if (!Number.isFinite(at) || at < 0) {
+      throw new Error(
+        `the ${sound.name} sound (${role}) has no valid time: ${at} s. A value its time is built from is missing or wrong`,
+      );
+    }
     cues.push({
       file: sound.file,
       gain: sound.gain,
@@ -3306,6 +3337,7 @@ const renderStyle = async (styleName) => {
       role,
       event,
     });
+  };
   /** For RESULT.timeline: the second each move lands, and each event's span. */
   const moveTimes = [];
   const eventSpans = [];
