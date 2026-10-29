@@ -1586,28 +1586,59 @@
       };
 
       /**
-       * The box a react, blunder or brilliant mark (paintCellFx's `c`)
-       * covers, as {x, y, w, h} shares of the board, the camera's zoom left
-       * out, so the renderer can put it on a side where it covers no wall.
+       * The box an element covers over a whole motion, as {x, y, w, h}
+       * shares of the board, the camera's zoom left out: the union of its
+       * boxes when `paint` draws `c` at each time of `ts` (seconds, the
+       * frames it plays), where it shows. A pop grows past the rest size,
+       * so one time is not enough (Video Reviewer 1, review 64).
        */
-      window.__cellFxBox = (c) => {
+      const boxOver = (paint, el, c, ts) => {
         const cam = $("boardCam");
         const zoom = cam.style.transform;
         cam.style.transform = "none";
-        paintCellFx(c);
-        const r = $(
-          c.kind === "react" ? "cellEmoji" : "cellBadge",
-        ).getBoundingClientRect();
         const b = $("boardWrap").getBoundingClientRect();
-        paintCellFx(null);
+        let x0 = Infinity;
+        let y0 = Infinity;
+        let x1 = -Infinity;
+        let y1 = -Infinity;
+        for (const t of ts) {
+          paint({ ...c, t });
+          // A faded element covers nothing.
+          if (Number(getComputedStyle(el).opacity) < 0.05) continue;
+          const r = el.getBoundingClientRect();
+          x0 = Math.min(x0, r.left);
+          y0 = Math.min(y0, r.top);
+          x1 = Math.max(x1, r.right);
+          y1 = Math.max(y1, r.bottom);
+        }
+        paint(null);
         cam.style.transform = zoom;
         return {
-          x: (r.left - b.left) / b.width,
-          y: (r.top - b.top) / b.height,
-          w: r.width / b.width,
-          h: r.height / b.height,
+          x: (x0 - b.left) / b.width,
+          y: (y0 - b.top) / b.height,
+          w: (x1 - x0) / b.width,
+          h: (y1 - y0) / b.height,
         };
       };
+
+      /**
+       * The box a react, blunder or brilliant mark (paintCellFx's `c`)
+       * covers over the times `ts` (boxOver), so the renderer can put it on
+       * a side where it covers no wall.
+       */
+      window.__cellFxBox = (c, ts) =>
+        boxOver(
+          paintCellFx,
+          $(c.kind === "react" ? "cellEmoji" : "cellBadge"),
+          c,
+          ts,
+        );
+
+      /**
+       * The box a scared or laughing mouse's bubble (paintBeat's `b`) covers
+       * over the times `ts` (boxOver), for the same reason.
+       */
+      window.__beatBox = (b, ts) => boxOver(paintBeat, $("pawnBubble"), b, ts);
 
       /**
        * Place a bubble next to a cell-sized box, on the side the renderer

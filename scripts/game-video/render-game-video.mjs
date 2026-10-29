@@ -834,6 +834,12 @@ const BLUNDER_SHAKE_SECONDS = 0.5;
 const BLUNDER_FLASH_SECONDS = 0.3;
 const BRILLIANT_SECONDS = 1.3;
 const REACT_SECONDS = 1.2;
+/** How long each mark on a cell plays (paintCellFx), by its kind. */
+const FX_SECONDS = {
+  blunder: BLUNDER_SECONDS,
+  brilliant: BRILLIANT_SECONDS,
+  react: REACT_SECONDS,
+};
 const TRAP_SECONDS = 1.6;
 /**
  * A path event (edl.mjs "path"): each walk draws itself from the hunter in
@@ -4641,30 +4647,71 @@ const renderStyle = async (styleName) => {
     );
     log(`${ev.kind} on ${ev.cell}, ply ${ev.ply}: cell ${cellColours.get(ev)}`);
   }
+  /** The beats with a mark beside a cell's pawn, and how long each plays. */
+  const MARK_SECONDS = {
+    ...FX_SECONDS,
+    scared: SCARED_SECONDS,
+    laugh: LAUGH_SECONDS,
+  };
   /**
-   * The side of each react, blunder and brilliant mark: one where the mark,
-   * measured on the stage (__cellFxBox, at rest), covers no wall of its
-   * board, when there is one (Wall Game Director, 2026-10-29: the eyes on
-   * VX ply 8 covered half of a cage wall's end for 1.2 s); else
-   * bubbleSide's, and the lint warns (fxCovers, as the event plays).
+   * What the stage paints for a mark beside a cell's pawn on board `ply`,
+   * its time left out: a scared or laughing mouse's beat (paintBeat) or a
+   * react, blunder or brilliant mark (paintCellFx), on `side`. One builder
+   * for both the frames and the measure, so the measure is what plays.
+   */
+  const markState = (ev, ply, side) => {
+    const at = cellAtTerm(ev.cell);
+    const size = GRID.pitchX;
+    return ev.kind === "scared" || ev.kind === "laugh"
+      ? {
+          beat: {
+            kind: ev.kind,
+            board: fileUrl(boardFrames[ply]),
+            cell: at,
+            size,
+            cellSize: GRID.cellX,
+            under: cellColours.get(ev),
+            side,
+          },
+        }
+      : {
+          cellFx: {
+            kind: ev.kind,
+            cell: at,
+            size,
+            side,
+            emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
+          },
+        };
+  };
+  /**
+   * The side of each mark beside a cell's pawn (MARK_SECONDS): one where
+   * the mark, measured on the stage on every frame it plays (__beatBox,
+   * __cellFxBox), covers no wall of its board, when there is one (Wall
+   * Game Director, 2026-10-29: the eyes on VX ply 8 covered half of a cage
+   * wall's end for 1.2 s); else bubbleSide's, and the lint warns
+   * (fxCovers, as the event plays).
    */
   const fxSides = new Map();
   const fxCovers = new Map();
   for (const ev of EVENTS) {
-    if (!["react", "blunder", "brilliant"].includes(ev.kind)) continue;
+    if (!(ev.kind in MARK_SECONDS)) continue;
     const board = ev.ply + 1;
     const at = cellAtTerm(ev.cell);
     const walls = wallBoxes(board);
     const covers = new Map();
+    const ts = Array.from(
+      { length: Math.round(MARK_SECONDS[ev.kind] * FPS) },
+      (_, i) => i / FPS,
+    );
     for (const side of Object.keys(BUBBLE_SIDES)) {
-      const box = await stage.evaluate((c) => window.__cellFxBox(c), {
-        kind: ev.kind,
-        t: 0.5,
-        cell: at,
-        size: GRID.pitchX,
-        side,
-        emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
-      });
+      const box = await stage.evaluate(
+        ([m, t]) =>
+          m.beat
+            ? window.__beatBox(m.beat, t)
+            : window.__cellFxBox(m.cellFx, t),
+        [markState(ev, board, side), ts],
+      );
       const hit = walls.find((k) => depthInto(box, k) > TOUCH_CELLS);
       if (hit) covers.set(side, hit.what);
     }
@@ -4768,30 +4815,9 @@ const renderStyle = async (styleName) => {
             : undefined,
       };
     }
-    const at = cellAtTerm(ev.cell);
-    const size = GRID.pitchX;
-    if (ev.kind === "scared" || ev.kind === "laugh") {
-      return {
-        beat: {
-          kind: ev.kind,
-          t,
-          board: fileUrl(boardFrames[ply]),
-          cell: at,
-          size,
-          cellSize: GRID.cellX,
-          under: cellColours.get(ev),
-          side: bubbleSide(ply, at),
-        },
-      };
-    }
-    const cellFx = {
-      kind: ev.kind,
-      t,
-      cell: at,
-      size,
-      side: fxSides.get(ev) ?? bubbleSide(ply, at),
-      emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
-    };
+    const mark = markState(ev, ply, fxSides.get(ev));
+    if (mark.beat) return { beat: { ...mark.beat, t } };
+    const cellFx = { ...mark.cellFx, t };
     if (ev.kind !== "blunder") return { cellFx };
     const shake = Math.max(0, 1 - t / BLUNDER_SHAKE_SECONDS);
     return {
@@ -4985,12 +5011,8 @@ const renderStyle = async (styleName) => {
         continue;
       }
       const seconds = {
-        scared: SCARED_SECONDS,
-        laugh: LAUGH_SECONDS,
+        ...MARK_SECONDS,
         stamp: STAMP_LAND_AT + stampSeconds(ev.text),
-        blunder: BLUNDER_SECONDS,
-        brilliant: BRILLIANT_SECONDS,
-        react: REACT_SECONDS,
         trap: Math.max(TRAP_SECONDS, TRAP_STAMP_AT + stampSeconds(ev.text)),
         race: RACE_FLASH_SECONDS,
         path: ev.kind === "path" ? pathSeconds(ev) : 0,
