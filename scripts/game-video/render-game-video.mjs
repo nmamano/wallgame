@@ -101,12 +101,14 @@ import {
   huntPath,
   huntsFor,
   pawnCellsOn,
+  preyTypeOf,
   replayDistances,
 } from "./race-replay.ts";
 import {
   OVERLAYS,
   PORTRAIT_DRAWS,
   boxOnScreen,
+  reactorRole,
   coveredBy,
   loadingPercent,
   NO_REACH,
@@ -1624,33 +1626,42 @@ const inlineLayer = async (src) => {
   return `data:${type};base64,${body}`;
 };
 
-if (cached) {
-  Object.assign(portraits, cached.portraits);
-  Object.assign(accents, cached.accents);
-} else {
-  const portraitPage = await browser.newPage({
-    viewport: { width: PORTRAIT_PX, height: PORTRAIT_PX },
-    deviceScaleFactor: 2,
-  });
-  for (const playerId of [1, 2]) {
-    const card = cardFor(playerId);
-    const layers = await Promise.all(
-      card.layers.map(async (l) => ({ ...l, data: await inlineLayer(l.src) })),
-    );
-    await portraitPage.setContent(
-      `<html><body style="margin:0;width:${PORTRAIT_PX}px;height:${PORTRAIT_PX}px;background:transparent">
+/**
+ * Compose a pawn's layer stack ({src, filter}, as the page drew it) into a
+ * PORTRAIT_PX PNG at `file`, on `page` (PORTRAIT_PX square). The seat cards
+ * and a reactor's prey (REACTOR_ART) are composed the same way.
+ */
+const composeLayers = async (page, layers, file) => {
+  const inlined = await Promise.all(
+    layers.map(async (l) => ({ ...l, data: await inlineLayer(l.src) })),
+  );
+  await page.setContent(
+    `<html><body style="margin:0;width:${PORTRAIT_PX}px;height:${PORTRAIT_PX}px;background:transparent">
        <div style="position:relative;width:100%;height:100%">
-         ${layers
+         ${inlined
            .map(
              (l) =>
                `<img src="${l.data}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:${l.filter}">`,
            )
            .join("")}
        </div></body></html>`,
-      { waitUntil: "networkidle" },
-    );
+    { waitUntil: "networkidle" },
+  );
+  await page.screenshot({ path: file, omitBackground: true });
+};
+const portraitPageOptions = {
+  viewport: { width: PORTRAIT_PX, height: PORTRAIT_PX },
+  deviceScaleFactor: 2,
+};
+
+if (cached) {
+  Object.assign(portraits, cached.portraits);
+  Object.assign(accents, cached.accents);
+} else {
+  const portraitPage = await browser.newPage(portraitPageOptions);
+  for (const playerId of [1, 2]) {
     const file = join(WORK, `portrait-p${playerId}.png`);
-    await portraitPage.screenshot({ path: file, omitBackground: true });
+    await composeLayers(portraitPage, cardFor(playerId).layers, file);
     portraits[playerId] = file;
 
     /**
@@ -2048,6 +2059,15 @@ const pawnSpots = new Map(cached?.pawnSpots);
  * one of them (litWallLine).
  */
 const wallSpots = new Map(cached?.wallSpots);
+/**
+ * The art of each pawn the page drew in the start position, as its layer
+ * stack (the backing, the skin with its colour filter, a foreground fix):
+ * [{type, layers: [{src, filter}]}]. Read off the board, as the cards are,
+ * never rebuilt from the record's skins (pawn-style.ts lives in the app):
+ * a reactor that shows a seat's prey composes it from here (REACTOR_ART).
+ * Null for a cache made before 2026-10-29, which did not keep it.
+ */
+let pawnArt = cached ? (cached.pawnArt ?? null) : null;
 /** Up to here: the browser, the replay page and the game record. */
 const LOAD_SECONDS = secondsSince(RUN_STARTED);
 const captureStarted = Date.now();
@@ -2108,6 +2128,40 @@ const captureResult = cached
           `board-${String(expectedPly + 1).padStart(4, "0")}.png`,
         );
         await game.screenshot({ path: file, clip });
+        if (expectedPly === -1) {
+          pawnArt = await game.evaluate((c) => {
+            const art = [];
+            for (const img of document.querySelectorAll(
+              'img[src*="/pawns/"]',
+            )) {
+              const r = img.getBoundingClientRect();
+              const x = r.x + r.width / 2;
+              const y = r.y + r.height / 2;
+              const inside =
+                x > c.x && x < c.x + c.width && y > c.y && y < c.y + c.height;
+              if (!inside || r.width >= c.width / 4) continue;
+              const m = /\/pawns\/([a-z-]+)\/([^/?#]+)\.svg/i.exec(img.src);
+              if (!m) continue;
+              // Animal Cycle keeps its four pawns in one folder, by type.
+              const type = (
+                m[1] === "animal-cycle" ? m[2] : m[1]
+              ).toLowerCase();
+              // PawnImage stacks its layers in a span; a bare pawn is one img.
+              const stack =
+                img.parentElement?.tagName === "SPAN"
+                  ? [...img.parentElement.querySelectorAll("img")]
+                  : [img];
+              art.push({
+                type,
+                layers: stack.map((i) => ({
+                  src: i.src,
+                  filter: getComputedStyle(i).filter,
+                })),
+              });
+            }
+            return art;
+          }, clip);
+        }
         pawnSpots.set(
           expectedPly + 1,
           await game.evaluate((c) => {
@@ -2204,6 +2258,7 @@ if (cached) {
         capture: captureResult,
         pawnSpots,
         wallSpots,
+        pawnArt,
       });
       log(`capture saved to the cache: ${GAME_CACHE}`);
       const pruned = pruneCaptureCaches(CACHE_DIR, CACHE_KEEP);
@@ -2214,6 +2269,76 @@ if (cached) {
       );
     }
   }
+}
+
+const fileUrl = (p) => `file://${resolve(p)}`;
+
+/**
+ * The art of each reactor overlay of the EDL, by its role (overlays.mjs
+ * reactorRole): a "hunter" shows the seat's card (its cat); a "prey" shows
+ * the seat's one hunted pawn (race-replay.ts preyTypeOf), composed from the
+ * board's own art for it (pawnArt): the pawn of that type whose colour
+ * filter is the seat card's. {url}, or {stop}: why it cannot, which stops
+ * the lint and the render (reactor-pawn) so the director picks another beat
+ * (Wall Game PM, 2026-10-29: never a cat as the prey).
+ * @type {Map<object, { url: string } | { stop: string }>}
+ */
+const REACTOR_ART = new Map();
+if (EDL) {
+  const colourOf = SEAT_COLORS(replay);
+  const playerOf = (seat) => (colourOf[1] === seat ? 1 : 2);
+  const pawnFilter = (layers) =>
+    layers.find((l) => /\/pawns\//.test(l.src))?.filter ?? null;
+  /** @type {Map<string, { url: string } | { stop: string }>} */
+  const prey = new Map();
+  let page = null;
+  const preyArt = async (player, seat, type) => {
+    if (!pawnArt) {
+      return {
+        stop: `this game's capture was made before the board's pawn art was kept, so it has no ${type} to show: render it once live (one view of the game)`,
+      };
+    }
+    const filter = pawnFilter(cardFor(player).layers);
+    const hits = pawnArt.filter(
+      (a) => a.type === type && pawnFilter(a.layers) === filter,
+    );
+    if (hits.length !== 1) {
+      return {
+        stop: `the start position shows ${hits.length} ${type} pawns in ${seat}'s colour, not one`,
+      };
+    }
+    page ??= await browser.newPage(portraitPageOptions);
+    const file = join(WORK, `prey-p${player}-${type}.png`);
+    await composeLayers(page, hits[0].layers, file);
+    return { url: fileUrl(file) };
+  };
+  for (const ev of EDL.events) {
+    if (ev.kind !== "overlay" || OVERLAYS[ev.asset].draw !== "reactor")
+      continue;
+    const player = playerOf(ev.seat);
+    if (reactorRole(OVERLAYS[ev.asset]) === "hunter") {
+      REACTOR_ART.set(ev, { url: fileUrl(portraits[player]) });
+      continue;
+    }
+    const kind = preyTypeOf(replay.state.config.variant, player);
+    if ("reason" in kind) {
+      REACTOR_ART.set(ev, {
+        stop: `the ${ev.asset} on ply ${ev.ply} shows ${ev.seat}'s prey, and ${kind.reason}: pick another beat`,
+      });
+      continue;
+    }
+    const key = `${player}:${kind.type}`;
+    if (!prey.has(key))
+      prey.set(key, await preyArt(player, ev.seat, kind.type));
+    const art = prey.get(key);
+    REACTOR_ART.set(
+      ev,
+      "stop" in art
+        ? { stop: `the ${ev.asset} on ply ${ev.ply}: ${art.stop}` }
+        : art,
+    );
+  }
+  await page?.close();
 }
 
 /* ----------------------------------------------------------- the sounds -- */
@@ -2519,8 +2644,6 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
 };
 
 /* ----------------------------------------------------------- compose it -- */
-
-const fileUrl = (p) => `file://${resolve(p)}`;
 
 /**
  * A player's identity as the stage needs it.
@@ -3613,6 +3736,11 @@ const renderStyle = async (styleName) => {
     if (how === "note") notes.push(item);
     else faults.push({ ...item, stops: how === "stops" });
   };
+  // A reactor with no right pawn to show (REACTOR_ART) stops here, before
+  // any frame is composed.
+  for (const [ev, art] of REACTOR_ART) {
+    if ("stop" in art) fault("reactor-pawn", ev.ply, art.stop, 0);
+  }
   const cue = (sound, role, { at = elapsed, event = null } = {}) => {
     // A time built from a missing value is NaN, and ffmpeg's mix refuses it
     // with no word on which sound (2026-10-29): stop here and name it.
@@ -3887,8 +4015,6 @@ const renderStyle = async (styleName) => {
       w.end = elapsed + LOADING_ERROR_SECONDS;
       w.errorAt = elapsed;
     }
-    // edl.mjs requires `seat` on every asset that shows a portrait.
-    const seat = w.ev.seat === "red" ? redSeat : blueSeat;
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
@@ -3901,7 +4027,9 @@ const renderStyle = async (styleName) => {
       ...(w.asset.draw === "reactor"
         ? {
             text: overlayText(w.ev),
-            portrait: side(seat).portrait,
+            // REACTOR_ART has every reactor of the EDL; one with a stop
+            // never reaches the shoot (reactor-pawn).
+            portrait: REACTOR_ART.get(w.ev)?.url ?? null,
             motion: w.asset.motion ?? null,
           }
         : {}),

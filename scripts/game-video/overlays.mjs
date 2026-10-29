@@ -217,6 +217,32 @@ export const OVERLAYS = {
 /** The draws that show a seat's portrait, so an EDL may name the seat. */
 export const PORTRAIT_DRAWS = ["reactor"];
 
+/**
+ * Which of the seat's pawns a reactor shows, by its motion (Nil,
+ * 2026-10-29, on v-2026-10-28-3: "should show the mouse, not the cat.
+ * cat's are pursuers"; meme-list.md "Marks and cut-outs", CASES.md C11):
+ * a shock is the threatened side's prey (its mouse), a laugh the prey of
+ * the side that profits (the saved mouse, CASES.md C2), a stare the
+ * hunting seat's card (its cat). "prey" is the one pawn type of the seat
+ * that the other side hunts (race-replay.ts preyTypeOf).
+ */
+export const REACTOR_ROLES = { shock: "prey", laugh: "prey", stare: "hunter" };
+
+/**
+ * The role of a reactor asset: "prey" or "hunter".
+ * @param {{ draw: string, motion?: string }} asset
+ * @returns {"prey" | "hunter"}
+ */
+export const reactorRole = (asset) => {
+  const role = asset.draw === "reactor" ? REACTOR_ROLES[asset.motion] : null;
+  if (!role) {
+    throw new Error(
+      `a ${asset.draw} with motion ${asset.motion} has no reactor role`,
+    );
+  }
+  return role;
+};
+
 /** An overlay's text: at most this many characters, names put in. */
 export const OVERLAY_TEXT_CHARS = 40;
 /** The seat names a text may hold: {red} and {blue}, each at most once. */

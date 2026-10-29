@@ -10,6 +10,7 @@ import {
   placeName,
   placeOverlay,
   overlayWords,
+  reactorRole,
   readingSeconds,
 } from "./overlays.mjs";
 
@@ -201,5 +202,27 @@ describe("overlays", () => {
     expect([6, 4, 3, 2, 1, 0].map(loadingPercent)).toEqual([
       96, 96, 97, 98, 99, 99,
     ]);
+  });
+});
+
+describe("the pawn a reactor shows (Nil, 2026-10-29: cats are pursuers)", () => {
+  test("a shock is the threatened side's prey", () => {
+    expect(reactorRole(OVERLAYS["reactor-shock"])).toBe("prey");
+  });
+  test("a laugh is the prey of the side that profits", () => {
+    expect(reactorRole(OVERLAYS["reactor-laugh"])).toBe("prey");
+  });
+  test("a stare is the hunting seat's cat", () => {
+    expect(reactorRole(OVERLAYS["reactor-stare"])).toBe("hunter");
+    expect(reactorRole(OVERLAYS["do-something"])).toBe("hunter");
+  });
+  test("every reactor asset has a role, and nothing else has one", () => {
+    for (const asset of Object.values(OVERLAYS)) {
+      if (asset.draw === "reactor") {
+        expect(["prey", "hunter"]).toContain(reactorRole(asset));
+      } else {
+        expect(() => reactorRole(asset)).toThrow("no reactor role");
+      }
+    }
   });
 });

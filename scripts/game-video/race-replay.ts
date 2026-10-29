@@ -182,6 +182,32 @@ export const huntsFor = (variant: Variant): Hunt[] => {
 };
 
 /**
+ * The pawn type of `player` that the other side hunts, when there is
+ * exactly one: the mouse in Standard and Survival. Otherwise the reason:
+ * a reactor must not show a cat as the prey (Wall Game PM, 2026-10-29), so
+ * the caller stops and the director picks another beat.
+ */
+export const preyTypeOf = (
+  variant: Variant,
+  player: 1 | 2,
+): { type: string } | { reason: string } => {
+  const types = [
+    ...new Set(
+      huntsFor(variant)
+        .filter((h) => h.target.player === player && h.hunter.player !== player)
+        .map((h) => h.target.type),
+    ),
+  ];
+  if (types.length === 1) return { type: types[0] };
+  return {
+    reason:
+      types.length === 0
+        ? `in ${variant} the other side hunts none of player ${player}'s pawns`
+        : `in ${variant} the other side hunts ${types.length} of player ${player}'s pawn types (${types.join(", ")}), so no one pawn is the prey`,
+  };
+};
+
+/**
  * The smallest jump that is a pick: one more than any move without a wall can
  * make (see the header): the pawn named by the most hunts sets the bound.
  */

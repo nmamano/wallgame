@@ -67,6 +67,21 @@ const fixture = () => {
     },
     pawnSpots: new Map([[0, [{ x: 0.1, y: 0.2, w: 0.1, h: 0.1 }]]]),
     wallSpots: new Map([[1, [{ vertical: true, x: 0.5, y: 0.5 }]]]),
+    pawnArt: [
+      {
+        type: "mouse",
+        layers: [
+          {
+            src: "https://wallgame.io/pawn-backings/mouse/mouse84.png",
+            filter: "none",
+          },
+          {
+            src: "https://wallgame.io/pawns/mouse/mouse84.svg",
+            filter: "invert(0.27)",
+          },
+        ],
+      },
+    ],
   };
 };
 
@@ -83,6 +98,7 @@ describe("the capture cache", () => {
     expect(r.cellRects).toEqual(c.cellRects);
     expect(r.pawnSpots).toEqual(c.pawnSpots);
     expect(r.wallSpots).toEqual(c.wallSpots);
+    expect(r.pawnArt).toEqual(c.pawnArt);
     expect(r.capture.omissions).toEqual([]);
     expect(r.capture.records.map((x: { file: string }) => x.file)).toEqual([
       join(dir, "board-0000.png"),
@@ -90,6 +106,13 @@ describe("the capture cache", () => {
     ]);
     expect(readFileSync(r.portraits[2], "utf8")).toBe("p2");
     expect(readFileSync(r.capture.records[1].file, "utf8")).toBe("b1");
+  });
+
+  test("a cache from before the pawn art reads back with none, not refused", () => {
+    const old = { ...fixture(), pawnArt: undefined };
+    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "VoSWbMDd");
+    writeCaptureCache(dir, old);
+    expect(readCaptureCache(dir, INPUTS).pawnArt).toBeNull();
   });
 
   test("refuses a render whose inputs change the pixels", () => {

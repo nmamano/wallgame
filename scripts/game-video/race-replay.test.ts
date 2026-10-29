@@ -6,6 +6,7 @@ import {
   huntWalks,
   huntsFor,
   pawnCellsOn,
+  preyTypeOf,
   replayDistances,
 } from "./race-replay";
 
@@ -130,5 +131,24 @@ describe("huntPath", () => {
         }
       });
     }
+  });
+});
+
+describe("preyTypeOf: the one pawn of a seat that the other side hunts", () => {
+  test("standard and survival: the mouse", () => {
+    expect(preyTypeOf("standard", 1)).toEqual({ type: "mouse" });
+    expect(preyTypeOf("standard", 2)).toEqual({ type: "mouse" });
+    expect(preyTypeOf("survival", 2)).toEqual({ type: "mouse" });
+  });
+  test("no prey or two prey types: a reason, never a guess", () => {
+    // Classic: each cat runs to its own home; no seat's pawn is hunted.
+    expect(preyTypeOf("classic", 1)).toEqual({
+      reason: "in classic the other side hunts none of player 1's pawns",
+    });
+    // Survival: only player 1's cat hunts.
+    expect("reason" in preyTypeOf("survival", 1)).toBe(true);
+    // Animal Cycle: player 2's mouse and dog are both hunted.
+    const cycle = preyTypeOf("animal-cycle", 2);
+    expect("reason" in cycle && cycle.reason).toContain("2 of player 2's");
   });
 });

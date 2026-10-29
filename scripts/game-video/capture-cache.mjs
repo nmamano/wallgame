@@ -6,7 +6,8 @@
  * with --from-cache reads it back and never opens the page: the replay record
  * (as the server sent it, before the seat colours are forced), the board
  * screenshot of every position, the two portraits, and the measurements
- * (board box, cell rects, seat cards, accents, pawn and wall spots).
+ * (board box, cell rects, seat cards, accents, pawn and wall spots, the
+ * board pawns' art).
  *
  * One cache serves every daily list of a game: the start ply, pace, events
  * and aspect change only the composition. What changes the captured pixels
@@ -59,6 +60,7 @@ const sha256Of = (file) =>
  *   },
  *   pawnSpots: Map<number, unknown>,
  *   wallSpots: Map<number, unknown>,
+ *   pawnArt?: { type: string, layers: { src: string, filter: string }[] }[] | null,
  * }} Capture
  */
 
@@ -99,6 +101,10 @@ export function writeCaptureCache(dir, c) {
     },
     pawnSpots: [...c.pawnSpots],
     wallSpots: [...c.wallSpots],
+    // Data, not files: the layers' srcs are read again at render time.
+    // Optional: a cache from before 2026-10-29 has none (the renderer says
+    // so where a reactor needs it), so it stays version 2.
+    pawnArt: c.pawnArt ?? null,
     files,
   };
   writeFileSync(join(staging, "capture.json"), JSON.stringify(meta));
