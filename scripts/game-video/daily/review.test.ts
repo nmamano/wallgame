@@ -23,6 +23,7 @@ import {
   postCaption,
   directorText,
   reviewView,
+  versionLine,
 } from "./review.mjs";
 
 const BLOCK = [
@@ -78,6 +79,7 @@ interface View {
     claimRiskSounds: string[];
     youtubeTitle: string | null;
     noStory: string | null;
+    version: string | null;
   }[];
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
@@ -363,6 +365,43 @@ const approveAs = (
     memberId: REVIEWER_MEMBER_ID,
   }) as Item;
 
+describe("a card names the other videos of its game (Nil, 2026-10-29, C15)", () => {
+  test("one line, from the rule pick uses: the other item and its state as the page says it", () => {
+    for (const [state, shown] of [
+      ["draft", "draft"],
+      ["finished", "in review"],
+      ["approved", "approved"],
+      ["posted", "posted"],
+    ]) {
+      const { store } = withItemInReview();
+      const gameId = (store.item("v-2026-10-28-1") as Item).gameId;
+      sameGameItem(store, "v-2026-10-27-2", state);
+      const mine = viewOf(store).items.find((x) => x.id === "v-2026-10-28-1");
+      expect(mine?.version).toBe(
+        `2nd version of game ${gameId}; the other is v-2026-10-27-2 (${shown})`,
+      );
+    }
+  });
+
+  test("no line when the game has no other item, or only a discarded one", () => {
+    const { store } = withItemInReview();
+    expect(viewOf(store).items[0].version).toBeNull();
+    sameGameItem(store, "v-2026-10-27-2", "discarded");
+    expect(viewOf(store).items[0].version).toBeNull();
+  });
+
+  test("three videos of a game: 3rd version, the others named", () => {
+    expect(
+      versionLine({ gameId: "VX-IPenv" }, [
+        { id: "v-a", shown: "posted" },
+        { id: "v-b", shown: "draft" },
+      ]),
+    ).toBe(
+      "3rd version of game VX-IPenv; the others are v-a (posted), v-b (draft)",
+    );
+  });
+});
+
 describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () => {
   test("approve is refused while another item of the game is approved, posting, posted or post-failed; nothing is written", () => {
     for (const [state, why] of [
@@ -431,8 +470,8 @@ describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () =
     sameGameItem(store, "v-2026-10-27-2", "draft");
     const item = pick(store);
     expect(store.sameGame(item)).toEqual([
-      { id: "v-2026-10-27-2", state: "draft" },
-      { id: "v-2026-10-28-1", state: "finished" },
+      { id: "v-2026-10-27-2", state: "draft", shown: "draft" },
+      { id: "v-2026-10-28-1", state: "finished", shown: "in review" },
     ]);
     // A posted game is done: no carry-over from it.
     sameGameItem(store, "v-2026-10-27-3", "posted");
@@ -563,6 +602,7 @@ describe("the review page's view", () => {
       "copySha256",
       "id",
       "noStory",
+      "version",
       "videoSha256",
       "youtubeTitle",
     ]);

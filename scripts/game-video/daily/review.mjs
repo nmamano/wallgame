@@ -78,6 +78,22 @@ export const postCaption = (block) =>
  * Nil sees and what his actions send back.
  * @param {ReturnType<import("./store.mjs").openStore>} store
  */
+/**
+ * The line at the top of a card whose game has another video (Nil,
+ * 2026-10-29, CASES.md C15: "if you show me 2 versions of the same game,
+ * let me know"), from store.sameGame, the rule pick uses; null when the
+ * game has no other item.
+ * @param {{ gameId: string }} item
+ * @param {{ id: string, shown: string }[]} others
+ */
+export const versionLine = (item, others) => {
+  if (others.length === 0) return null;
+  const n = others.length + 1;
+  const nth = n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
+  const list = others.map((o) => `${o.id} (${o.shown})`).join(", ");
+  return `${nth} version of game ${item.gameId}; the other${others.length > 1 ? "s are" : " is"} ${list}`;
+};
+
 export const reviewView = (store) => ({
   items: store.inReview().map((it) => ({
     // For the action's address and the video's; the page does not show it.
@@ -106,6 +122,7 @@ export const reviewView = (store) => ({
       ),
     ],
     noStory: noStoryLine(it.render.video),
+    version: versionLine(it, store.sameGame(it)),
   })),
 });
 
@@ -222,6 +239,7 @@ export const REVIEW_PAGE = `<!doctype html>
   .done { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 15px; }
   .alt { color: #94a3b8; font-size: 14px; margin: -4px 2px 10px; overflow-wrap: anywhere; }
   .risk { color: #f87171; font-size: 15px; font-weight: 700; margin: 0 2px 10px; }
+  .version { color: #fbbf24; font-size: 15px; font-weight: 700; margin: 0 2px 10px; }
   .why { color: #fca5a5; font-size: 14px; margin-top: 6px; white-space: pre-wrap; }
   .zoom { position: fixed; top: 8px; right: 8px; z-index: 1; display: flex; gap: 6px; }
   .zoom[hidden] { display: none; }
@@ -274,6 +292,15 @@ export const REVIEW_PAGE = `<!doctype html>
       row.append(b); return b;
     });
     if (it.approveProblem) { buttons[0].disabled = true; why.textContent = it.approveProblem; }
+    if (it.version) {
+      // A new line after the game, so an item id never breaks at its "-".
+      const line = el("div", "version");
+      it.version.split("; ").forEach((part, i, all) => {
+        if (i) line.append(document.createElement("br"));
+        line.append(part + (i < all.length - 1 ? ";" : ""));
+      });
+      box.append(line);
+    }
     box.append(video, el("div", "caption", it.caption));
     if (it.youtubeTitle) box.append(el("div", "alt", "YouTube: " + it.youtubeTitle));
     for (const key of it.claimRiskSounds) box.append(el("div", "risk", "Uses " + key + ": a claim is possible."));

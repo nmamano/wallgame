@@ -563,7 +563,12 @@ export const openStore = (dataDir) => {
     return null;
   };
 
-  /** The other items of `item`'s game that are not discarded. */
+  /**
+   * The other items of `item`'s game that are not discarded: pick refuses
+   * a game by it (postOfGame), and the review page names them (review.mjs
+   * versionLine). `shown` is the state as the page says it (reviewState
+   * for a finished item).
+   */
   const sameGame = (item) =>
     items()
       .filter(
@@ -572,7 +577,11 @@ export const openStore = (dataDir) => {
           o.id !== item.id &&
           o.state !== "discarded",
       )
-      .map((o) => ({ id: o.id, state: o.state }));
+      .map((o) => ({
+        id: o.id,
+        state: o.state,
+        shown: (reviewState(o) ?? o.state).replace("-", " "),
+      }));
 
   /** The other item of the game that posts, may post or did post, or null. */
   const postOfGame = (item) =>
