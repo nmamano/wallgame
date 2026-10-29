@@ -969,6 +969,8 @@ const ENDING_TOUCH_CELLS = 0.1;
  * nothing.
  */
 const STAMP_FLAT_POP = 1.15;
+/** How many plies before and after a flat stamp the lint looks for a better one. */
+const STAMP_NEARBY_PLIES = 3;
 
 /* ------------------------------------------------------------- geometry -- */
 
@@ -4720,13 +4722,42 @@ const renderStyle = async (styleName) => {
         ev.text,
       );
       const fit = Math.min(1, STAMP_MAX_WIDTH / measured.w);
-      const spot = placeStamp(
-        ev.ply + 1,
-        ev.ply,
-        { w: measured.w * fit, h: measured.h * fit },
-        ev.kind === "trap" ? ev.walls : [],
-        punchFrom,
-      );
+      const spotOn = (ply) =>
+        placeStamp(
+          ply + 1,
+          ply,
+          { w: measured.w * fit, h: measured.h * fit },
+          ev.kind === "trap" ? ev.walls : [],
+          punchFrom,
+        );
+      const spot = spotOn(ev.ply);
+      /*
+        For a flat slam, the nearest ply within STAMP_NEARBY_PLIES where the
+        same word hides none of its move and slams in fully, so the beat can
+        move there without trial renders (Wall Game Director, 2026-10-29).
+        A trap only goes where its walls are already on the board (as
+        validateEdl requires), and only where the page drew the board.
+      */
+      const placed = (ply) =>
+        ev.kind !== "trap" ||
+        ev.walls.every((w) =>
+          history
+            .slice(0, ply + 1)
+            .some((h) => String(h.notation).split(".").includes(w)),
+        );
+      const nearby = () => {
+        for (let d = 1; d <= STAMP_NEARBY_PLIES; d += 1) {
+          for (const ply of [ev.ply - d, ev.ply + d]) {
+            if (ply < 0 || !pawnSpots.has(ply + 1) || !placed(ply)) continue;
+            const s = spotOn(ply);
+            if (s.covered <= 0.01 && s.pop >= STAMP_FLAT_POP) {
+              return { ply, ...s };
+            }
+          }
+        }
+        return null;
+      };
+      const better = spot.pop < STAMP_FLAT_POP ? nearby() : null;
       stampSpots.set(ev, { at: spot.at, fit, pop: spot.pop });
       stampLints.set(ev, {
         covers:
@@ -4737,7 +4768,7 @@ const renderStyle = async (styleName) => {
         // watching, and the beat can move to another ply.
         flat:
           spot.pop < STAMP_FLAT_POP
-            ? `the ${ev.kind} word "${ev.text}" slams in from only ${spot.pop.toFixed(2)}x, so it looks flat: a pawn or wall is at its edge`
+            ? `the ${ev.kind} word "${ev.text}" slams in from only ${spot.pop.toFixed(2)}x, so it looks flat: a pawn or wall is at its edge; ${better ? `on ply ${better.ply} it would slam in from ${better.pop.toFixed(2)}x (${better.band} of the board)` : `no ply within ${STAMP_NEARBY_PLIES} does better`}`
             : null,
       });
       log(
