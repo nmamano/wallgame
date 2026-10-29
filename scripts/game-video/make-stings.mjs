@@ -13,10 +13,12 @@
  *   node scripts/game-video/make-stings.mjs --check
  *
  * --check builds nothing: it exits 0 when every sting and every time in
- * stings.json that this script writes is there, else 1. The renderer and
- * sync-render-kit.sh ask it, so the list of what must be there is this
- * file's alone (Video Reviewer 1, review 59: a stale stings.json with no
- * whooshPeakSeconds failed every render, 2026-10-29).
+ * stings.json that this script writes is there, and stings.json was
+ * written by this script as it is now (its sha256, `script`), else 1. The
+ * renderer and sync-render-kit.sh ask it, so the list of what must be
+ * there is this file's alone (Video Reviewer 1, review 59: a stale
+ * stings.json with no whooshPeakSeconds failed every render, 2026-10-29;
+ * review 64: a changed time with an old stings.json passed).
  *
  * Writes assets/stings/vs-b-riser.wav and stings.json. The output is NOT
  * committed: this script is deterministic, so the renderer rebuilds the wav on
@@ -26,6 +28,7 @@
  * DOWNLOADED, so there is no licence attached to any of it.
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +40,10 @@ const OUT = join(REPO, "assets/stings");
 /** The stings this script builds, and the times stings.json gives. */
 const STINGS = ["vs-b-riser.wav", "vs-whoosh.wav"];
 const TIMES = ["vsHitSeconds", "whooshPeakSeconds"];
+/** This script as it is now: stings.json from another one is stale. */
+const SCRIPT = createHash("sha256")
+  .update(readFileSync(fileURLToPath(import.meta.url)))
+  .digest("hex");
 
 if (process.argv.includes("--check")) {
   const manifest = join(OUT, "stings.json");
@@ -48,6 +55,9 @@ if (process.argv.includes("--check")) {
     ...TIMES.filter((k) => !Number.isFinite(times[k])).map(
       (k) => `stings.json ${k}`,
     ),
+    ...(times.script === SCRIPT
+      ? []
+      : ["stings.json is from another make-stings.mjs"]),
   ];
   if (missing.length > 0)
     console.error(`stings out of date: ${missing.join(", ")}`);
@@ -212,6 +222,7 @@ writeFileSync(
   JSON.stringify(
     {
       ...times,
+      script: SCRIPT,
       builtFrom: "our own audio plus ffmpeg synthesis; nothing downloaded",
     },
     null,

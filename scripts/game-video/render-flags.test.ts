@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   mkdirSync,
@@ -140,11 +141,26 @@ describe("make-stings.mjs --check", () => {
     const stale = check();
     expect(stale.status).toBe(1);
     expect(stale.stderr).toContain("stings.json whooshPeakSeconds");
-    writeFileSync(
-      join(stings, "stings.json"),
-      '{"vsHitSeconds": 1.6, "whooshPeakSeconds": 1}',
-    );
+    const script = createHash("sha256")
+      .update(readFileSync(join(kit, "scripts/game-video/make-stings.mjs")))
+      .digest("hex");
+    const manifest = (from: string) =>
+      writeFileSync(
+        join(stings, "stings.json"),
+        JSON.stringify({
+          vsHitSeconds: 1.6,
+          whooshPeakSeconds: 1,
+          script: from,
+        }),
+      );
+    manifest(script);
     expect(check().status).toBe(0);
+    // Every time there, written by another script (a time changed in the
+    // script, the old stings.json kept; Video Reviewer 1, review 64).
+    manifest("0".repeat(64));
+    const old = check();
+    expect(old.status).toBe(1);
+    expect(old.stderr).toContain("from another make-stings.mjs");
   });
 });
 
