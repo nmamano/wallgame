@@ -118,6 +118,32 @@
  *                                  video passes. Prints the record with the
  *                                  video's length and its effect and
  *                                  overlay counts. Sends no message
+ *   vet-prompt --item ID           VET-BRIEF.md and the item's inputs (video
+ *                                  and sha256, sheet, strips, the stored
+ *                                  list in a file, a storyboard, the
+ *                                  players and colours, the game's facts,
+ *                                  Nil's revise notes, a NOTES file and a
+ *                                  scratch folder), ready to paste into a
+ *                                  fresh reviewer
+ *
+ * THE DIRECTOR'S TOOLS read one video, V = --item ID (the item's current
+ * video), --preview ID (a preview or quick look) or --video FILE, and write
+ * only in /tmp/daily-tools. They change no item.
+ *   scan V [--every S]             one PNG of a frame every S s (1.5) of the
+ *                                  whole video: the narrative timing
+ *   strip V --from T --seconds D [--fps F]
+ *                                  one PNG of the frames of T..T+D at F a
+ *                                  second (4): a beat, an overlay's life
+ *   crop V --at T --box X,Y,W,H    one full-size crop of the frame at T s:
+ *                                  does a mark touch a wall or a pawn?
+ *   audio V [--from T --seconds D] every silence, the loudness and true
+ *                                  peak; with a range, the peak of each
+ *                                  0.1 s too
+ *   fullcheck V                    codec, size, fps and length, the first
+ *                                  and last frames in one PNG, and the
+ *                                  short-term loudness of each second
+ *   loudness-ab V [--target L]     a copy at feed level (-14 LUFS) to
+ *                                  compare by ear: never an item's video
  *   copy --item ID --file F --copy-version V
  *                                  (Wall Game Growth) the copy block for the
  *                                  item's video: one line per platform, each
@@ -182,12 +208,11 @@ import { copyLines } from "./copy.mjs";
 import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
 import { lintReport, lintStops } from "./lint.mjs";
+import * as tools from "./tools.mjs";
 
 const OFFICE = "http://localhost:4000";
-const STORYBOARD = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../storyboard.ts",
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+const STORYBOARD = resolve(HERE, "../storyboard.ts");
 /** By full path, as nightly-candidates.sh: a unit's PATH has no bun. */
 const BUN = join(homedir(), ".bun/bin/bun");
 /** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
@@ -481,6 +506,126 @@ export const feedbackLines = (r) =>
           : ["  reply, verbatim:", ...quoteLines(r.reply, "  ")]),
       ];
 
+/**
+ * The seats as the video shows them, with each seat's colour. The
+ * renderer's rule (dailySeatColors): an AI is red; two humans are red for
+ * seat 1 and blue for seat 2. Two bots are never a candidate.
+ */
+const seatsLine = (c) => {
+  const colors = dailySeatColors(
+    Object.fromEntries(
+      c.seats.map((s) => [s.playerOrder, s.kind === "official bot"]),
+    ),
+  );
+  return c.seats
+    .map(
+      (s) =>
+        `${s.name} (${s.kind}, ${colors[s.playerOrder] === "red" ? "Red" : "Blue"})`,
+    )
+    .join(" vs ");
+};
+
+/** The storyboard PNG of item `c` (marked by the list at `edl`, if any). */
+const storyboardOf = (c, edl) => {
+  // A new folder per run: nothing that exists is written over.
+  const dir = mkdtempSync(join(tmpdir(), `wallgame-storyboard-${c.id}-`));
+  const candidate = join(dir, "candidate.json");
+  writeFileSync(candidate, JSON.stringify(c.candidate));
+  const run = spawnSync(
+    BUN,
+    [
+      STORYBOARD,
+      "--candidate",
+      candidate,
+      "--out",
+      join(dir, `${c.candidate.gameId}.png`),
+      ...(edl ? ["--edl", edl] : []),
+    ],
+    {
+      encoding: "utf8",
+      timeout: STORYBOARD_TIMEOUT_MS,
+      // SIGTERM: playwright then closes the Chrome it started.
+      killSignal: "SIGTERM",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  const line = run.stdout
+    ?.split("\n")
+    .reverse()
+    .find((l) => l.startsWith("RESULT "));
+  if (run.status !== 0 || !line) {
+    die(
+      `the storyboard failed (exit ${run.status}${run.signal ? `, ${run.signal}` : ""}): ${(run.error?.message ?? run.stderr ?? "").trim().split("\n").slice(-10).join("\n") || "no RESULT line"}`,
+    );
+  }
+  return JSON.parse(line.slice("RESULT ".length));
+};
+
+/**
+ * The event strips of item `c`'s render (strips.mjs): its lines, and the
+ * PNG, made once per render. null when the render has no timeline.
+ */
+const stripsOf = async (c) => {
+  const timeline = c.render.timeline;
+  if (!timeline) return null;
+  const plan = stripPlan(timeline, c.render.video.durationSeconds ?? 0);
+  const out = join(tmpdir(), "daily-strips", `${c.render.jobId}.png`);
+  if (!existsSync(out)) {
+    mkdirSync(dirname(out), { recursive: true });
+    await writeStrips({ mp4: c.render.video.path, plan, out });
+  }
+  return { lines: plan.flatMap((row) => row.lines), path: out };
+};
+
+/**
+ * The video a tool reads: the item's current video (--item), a preview or
+ * quick look (--preview), or a file (--video). Its path, and a name for
+ * the tool's folder.
+ */
+const toolVideo = async () => {
+  const given = ["item", "preview", "video"].filter((f) => flag(f));
+  if (given.length !== 1) {
+    die("name one video: --item ID, --preview ID or --video FILE");
+  }
+  if (flag("item")) {
+    const c = await itemNamed(flag("item"));
+    const path =
+      c.render?.video?.path ?? die(`${c.id} has no video yet: render it`);
+    if (!existsSync(path)) die(`${c.id}'s video ${path} is not there`);
+    return { video: path, name: c.id };
+  }
+  if (flag("preview")) {
+    const id = flag("preview");
+    const p = await app(
+      "GET",
+      `/api/daily/preview?id=${encodeURIComponent(id)}`,
+    );
+    if (p.state !== "done") die(`preview ${id} is ${p.state}, not done`);
+    return { video: p.video.path, name: id };
+  }
+  const path = resolve(flag("video"));
+  if (!existsSync(path)) die(`no file ${path}`);
+  return { video: path, name: basename(path).replace(/\.[^.]*$/, "") };
+};
+
+/** A number flag, or `fallback` when it is not given. */
+const numberFlag = (name, fallback) => {
+  const text = flag(name);
+  if (text === undefined) return fallback;
+  const n = Number(text);
+  if (!Number.isFinite(n)) die(`--${name} is a number, got ${text}`);
+  return n;
+};
+
+/** Run one tool; its lines, or its fault as one line and exit 1. */
+const runTool = async (fn, options) => {
+  try {
+    console.log(fn({ ...(await toolVideo()), ...options }).join("\n"));
+  } catch (err) {
+    die(`${command}: ${err.message}`);
+  }
+};
+
 const commands = {
   async status() {
     if (flag("item")) return console.log(await itemSummary(flag("item")));
@@ -533,17 +678,8 @@ const commands = {
         console.log(`rank ${rank}: not usable - ${err.message}\n`);
         continue;
       }
-      // The renderer's rule (dailySeatColors): an AI is red; two humans are
-      // red for seat 1 and blue for seat 2. Two bots are never a candidate.
-      const colors = dailySeatColors(
-        Object.fromEntries(
-          c.seats.map((s) => [s.playerOrder, s.kind === "official bot"]),
-        ),
-      );
-      const colorName = (s) =>
-        colors[s.playerOrder] === "red" ? "Red" : "Blue";
       console.log(
-        `rank ${rank}: ${c.seats.map((s) => `${s.name} (${s.kind}, ${colorName(s)})`).join(" vs ")}, ${c.variant}, ${c.movesCount} plies`,
+        `rank ${rank}: ${seatsLine(c)}, ${c.variant}, ${c.movesCount} plies`,
       );
       for (const f of c.facts) console.log(`  ${f}`);
       // For the edit list: 0-based plies, cells after the ply, and the walls
@@ -818,38 +954,7 @@ const commands = {
 
   async storyboard() {
     const c = await itemNamed(itemFlag());
-    // A new folder per run: nothing that exists is written over.
-    const dir = mkdtempSync(join(tmpdir(), `wallgame-storyboard-${c.id}-`));
-    const candidate = join(dir, "candidate.json");
-    writeFileSync(candidate, JSON.stringify(c.candidate));
-    const run = spawnSync(
-      BUN,
-      [
-        STORYBOARD,
-        "--candidate",
-        candidate,
-        "--out",
-        join(dir, `${c.candidate.gameId}.png`),
-        ...(flag("edl") ? ["--edl", resolve(flag("edl"))] : []),
-      ],
-      {
-        encoding: "utf8",
-        timeout: STORYBOARD_TIMEOUT_MS,
-        // SIGTERM: playwright then closes the Chrome it started.
-        killSignal: "SIGTERM",
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    );
-    const line = run.stdout
-      ?.split("\n")
-      .reverse()
-      .find((l) => l.startsWith("RESULT "));
-    if (run.status !== 0 || !line) {
-      die(
-        `the storyboard failed (exit ${run.status}${run.signal ? `, ${run.signal}` : ""}): ${(run.error?.message ?? run.stderr ?? "").trim().split("\n").slice(-10).join("\n") || "no RESULT line"}`,
-      );
-    }
-    const result = JSON.parse(line.slice("RESULT ".length));
+    const result = storyboardOf(c, flag("edl") && resolve(flag("edl")));
     console.log(
       `storyboard: ${result.png} (${result.plies} plies). Open it before you write the edit list.`,
     );
@@ -878,20 +983,12 @@ const commands = {
     );
     // The event strips: when each sound starts against its move's landing,
     // and four frames around each event (strips.mjs). Made once per render.
-    const timeline = c.render.timeline;
-    if (!timeline) {
+    const strips = await stripsOf(c);
+    if (!strips) {
       console.log("event strips: none (this render has no timeline)");
     } else {
-      const plan = stripPlan(timeline, c.render.video.durationSeconds ?? 0);
-      for (const row of plan) {
-        for (const line of row.lines) console.log(`  ${line}`);
-      }
-      const out = join(tmpdir(), "daily-strips", `${c.render.jobId}.png`);
-      if (!existsSync(out)) {
-        mkdirSync(dirname(out), { recursive: true });
-        await writeStrips({ mp4: c.render.video.path, plan, out });
-      }
-      console.log(`event strips: ${out} (open it with the sheet)`);
+      for (const line of strips.lines) console.log(`  ${line}`);
+      console.log(`event strips: ${strips.path} (open it with the sheet)`);
     }
     // A failed measure fails the check whatever the stills show, so the
     // director sees it before writing verdicts.
@@ -962,6 +1059,87 @@ const commands = {
       return;
     }
     console.log(`${platform}: ${JSON.stringify(r.result)}`);
+  },
+
+  /*
+    The director's tools (tools.mjs): each reads one video (--item ID, the
+    item's current video; --preview ID; or --video FILE) and writes only in
+    /tmp/daily-tools. None of them changes an item.
+  */
+  async scan() {
+    await runTool(tools.scan, { every: numberFlag("every", 1.5) });
+  },
+
+  async strip() {
+    await runTool(tools.strip, {
+      from: numberFlag("from") ?? die("strip needs --from T (s)"),
+      seconds: numberFlag("seconds") ?? die("strip needs --seconds D"),
+      fps: numberFlag("fps", 4),
+    });
+  },
+
+  async crop() {
+    await runTool(tools.crop, {
+      at: numberFlag("at") ?? die("crop needs --at T (s)"),
+      box: flag("box") ?? die("crop needs --box X,Y,W,H (video pixels)"),
+    });
+  },
+
+  async audio() {
+    await runTool(tools.audio, {
+      from: numberFlag("from"),
+      seconds: numberFlag("seconds"),
+    });
+  },
+
+  async fullcheck() {
+    await runTool(tools.fullcheck, {});
+  },
+
+  async "loudness-ab"() {
+    await runTool(tools.loudnessAb, {
+      target: numberFlag("target", tools.FEED_LUFS),
+    });
+  },
+
+  /**
+   * The vet brief (VET-BRIEF.md) and the item's inputs, ready to paste
+   * into a fresh reviewer: it reads the final video, so the item needs one.
+   */
+  async "vet-prompt"() {
+    const c = await itemNamed(itemFlag());
+    const video = c.render?.video ?? die(`${c.id} has no video yet: render it`);
+    const sheet = c.render.sheet ?? die(`${c.id} has no contact sheet yet`);
+    const scratch = mkdtempSync(join(tmpdir(), `daily-vet-${c.id}-`));
+    const edl = join(scratch, "edl.json");
+    writeFileSync(edl, c.edl.text);
+    const strips = await stripsOf(c);
+    const board = storyboardOf(c, edl);
+    const revises = c.reviews.filter((r) => r.action === "revise");
+    console.log(
+      [
+        readFileSync(join(HERE, "VET-BRIEF.md"), "utf8")
+          .replace(/^<!--[\s\S]*?-->\n+/, "")
+          .trimEnd(),
+        "",
+        `## Your task: item ${c.id}, game ${c.gameId}`,
+        `- VIDEO: ${video.path} (sha256 ${video.sha256}, ${video.durationSeconds ?? "?"} s)`,
+        `- SHEET: ${sheet.path}`,
+        `- STRIPS: ${strips ? strips.path : "none (this render has no timeline)"}`,
+        `- EDL: ${edl} (the stored list, sha256 ${c.edl.sha256})`,
+        `- STORYBOARD: ${board.png} (${board.plies} plies)`,
+        `- RULES: ${join(HERE, "DIRECTOR.md")}`,
+        `- PLAYERS: ${seatsLine(c.candidate)}`,
+        "- THE GAME (the winner and how):",
+        ...c.candidate.facts.map((f) => `  - ${f}`),
+        revises.length
+          ? "- NIL'S REVISE NOTES, word for word:"
+          : "- NIL'S REVISE NOTES: none",
+        ...revises.map((r) => `  - ${r.at}: ${JSON.stringify(r.notes ?? "")}`),
+        `- NOTES: ${join(scratch, "notes.txt")} (write your findings here)`,
+        `- SCRATCH: ${scratch} (your frames and files)`,
+      ].join("\n"),
+    );
   },
 };
 
