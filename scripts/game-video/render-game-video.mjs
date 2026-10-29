@@ -593,7 +593,8 @@ const trackFor = (asked, where) => {
  * --no-music. The first cue's fromPly is the video's startPly.
  */
 const MUSIC_CUES = (() => {
-  if (flag("no-music")) return null;
+  // An EDL's "music": [] is no music, as --no-music is (edl.mjs).
+  if (flag("no-music") || EDL?.music?.length === 0) return null;
   const opening = EDL?.startPly ?? 0;
   const asked = cliArg("music");
   const cues = asked

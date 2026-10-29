@@ -40,7 +40,7 @@
  *            (null after validation): one caption for the whole video.
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
- *   music    optional: 1 to 3 cues { fromPly, track }, where `track` is a
+ *   music    optional: 0 to 3 cues { fromPly, track }, where `track` is a
  *            track's slug in music-tracks.mjs. The first cue's fromPly is
  *            startPly: the track the video opens with (cold open and VS
  *            included). Each later cue changes the track at the start of
@@ -52,7 +52,10 @@
  *            renderer refuses a track whose license does not let a video
  *            play it (music-tracks.mjs `license`, MUSIC-LICENSES.md), and a
  *            cue past the last move. Absent (null after validation) means
- *            one random track of those that may play.
+ *            one random track of those that may play; [] means no music
+ *            at all (Nil, 2026-10-28: "maybe just try without?"): the
+ *            meme and game sounds play as they do, and the credit names
+ *            only the sounds.
  *   startPly optional: the first ply the video plays (default 0). It opens
  *            on the position before it, so a quiet opening is cut. Every
  *            event and pace range must be at startPly or later.
@@ -455,13 +458,9 @@ export const validateEdl = (raw) => {
       `music is a cue list now: [{ "fromPly": ${startPly}, "track": ${JSON.stringify(music)} }]`,
     );
   } else if (music !== null) {
-    if (
-      !Array.isArray(music) ||
-      music.length < 1 ||
-      music.length > EDL_LIMITS.musicCues
-    ) {
+    if (!Array.isArray(music) || music.length > EDL_LIMITS.musicCues) {
       fail(
-        `music must be a list of 1 to ${EDL_LIMITS.musicCues} cues { fromPly, track }, or absent for a random track`,
+        `music must be a list of 0 to ${EDL_LIMITS.musicCues} cues { fromPly, track } ([] for no music), or absent for a random track`,
       );
     } else {
       music.forEach((cue, i) => {

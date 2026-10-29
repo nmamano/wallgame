@@ -244,7 +244,7 @@ describe("music", () => {
   const ok = (music: unknown, more = {}) =>
     validateEdl({ ...base, ...more, music }).ok;
 
-  test("is optional, null when absent, and a list of cues of site tracks", () => {
+  test("is optional, null when absent, [] for none, and a list of cues of site tracks", () => {
     expect(accept(base).music).toBe(null);
     expect(accept({ ...base, music: [cue(0, "a-legend")] }).music).toEqual([
       cue(0, "a-legend"),
@@ -265,7 +265,8 @@ describe("music", () => {
         cue(25, "a-legend"),
       ]),
     ).toBe(false);
-    expect(ok([])).toBe(false);
+    // [] is no music at all (Nil, 2026-10-28: "maybe just try without?").
+    expect(accept({ ...base, music: [] }).music).toEqual([]);
     expect(ok([cue(0, "darude")])).toBe(false);
     expect(ok([{ ...cue(0, "a-legend"), volume: 1 }])).toBe(false);
   });
