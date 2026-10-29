@@ -81,6 +81,7 @@ interface View {
     noStory: string | null;
     version: string | null;
   }[];
+  approved: { id: string; caption: string }[];
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
   reviewView(...a) as unknown as View;
@@ -941,6 +942,11 @@ describe("the review routes", () => {
       (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
     ) as View;
     expect(view.items).toEqual([]);
+    // Approved and no slot took it: the page lists it, with its caption,
+    // for "Undo approval" (Nil, 2026-10-29).
+    expect(view.approved).toEqual([
+      { id: "v-2026-10-28-1", caption: postCaption(parseCopy(BLOCK).copy!) },
+    ]);
     const path = "/api/review/v-2026-10-28-1/withdraw";
     const other = await call(path, {
       method: "POST",
@@ -963,6 +969,12 @@ describe("the review routes", () => {
     expect(sent[0].text).toContain("WITHDRAW on v-2026-10-28-1");
     expect(sent[0].text).toContain("Notes, verbatim:\n> mis-tap\n");
     expect(sent[0].text).toContain("in review again");
+    // In review again, and no longer listed as approved.
+    const after = JSON.parse(
+      (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
+    ) as View;
+    expect(after.items.map((x) => x.id)).toEqual(["v-2026-10-28-1"]);
+    expect(after.approved).toEqual([]);
     // Twice: refused, nothing more is sent.
     const again = await call(path, {
       method: "POST",
@@ -971,6 +983,26 @@ describe("the review routes", () => {
     });
     expect(again.status).toBe(409);
     expect(sent).toHaveLength(1);
+  });
+
+  test("a slot took the item (posting, posted, post-failed): not listed, so no Undo approval", () => {
+    for (const state of ["posting", "posted", "post-failed"]) {
+      const { store, video, block } = withItemInReview();
+      approveAs(store, video, block);
+      store.updateItem(
+        "v-2026-10-28-1",
+        ["approved"],
+        (it: { state: string }) => {
+          it.state = state;
+        },
+        "a slot took it (test)",
+      );
+      expect(viewOf(store).approved).toEqual([]);
+    }
+    // The page: the list under the queue, one button, Nil only.
+    expect(REVIEW_PAGE).toContain('"Approved, waiting for a slot"');
+    expect(REVIEW_PAGE).toContain('el("button", "undo", "Undo approval")');
+    expect(REVIEW_PAGE).toContain("undo.disabled = !canReview;");
   });
 
   test("crew.mjs cannot reach the review actions: it never sends the member header", () => {

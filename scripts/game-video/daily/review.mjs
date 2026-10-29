@@ -19,7 +19,11 @@
  *   Discard  -> discarded, with Nil's notes (required)
  *
  * Right after an Approve, the card offers Undo (withdraw: in review again),
- * so a mis-tap on a phone is undone without a confirm dialog. A reason shows
+ * so a mis-tap on a phone is undone without a confirm dialog. Under the
+ * queue, each approved item that no slot took yet shows its video, its
+ * caption and one button, "Undo approval" (the same withdraw), so Nil can
+ * take back an approval later too (Nil, 2026-10-29: v-2026-10-28-3 was
+ * approved, and he wanted it revised before its slot). A reason shows
  * only when an action cannot work: a refusal, or Approve disabled while
  * another video of the game posts or the render's music may not play
  * (store.mjs approveProblem). No counts, ids, slots or copy-block details:
@@ -123,6 +127,12 @@ export const reviewView = (store) => ({
     ],
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
+  })),
+  // Approved and no slot took it yet (a slot makes it posting): Nil may
+  // still take the approval back (withdraw).
+  approved: store.items({ states: ["approved"] }).map((it) => ({
+    id: it.id,
+    caption: postCaption(it.copy.block),
   })),
 });
 
@@ -246,6 +256,7 @@ export const REVIEW_PAGE = `<!doctype html>
   .zoom button { flex: none; width: 34px; height: 34px; padding: 0; font-size: 20px; line-height: 1;
                  background: rgba(51, 65, 85, 0.85); color: #fff; }
   .quiet { color: #94a3b8; text-align: center; margin-top: 40px; }
+  h2 { font-size: 16px; color: #94a3b8; margin: 36px 2px 12px; }
 </style></head>
 <body><div class="zoom" id="zoom" hidden><button id="zoom-out" aria-label="Smaller videos">−</button><button id="zoom-in" aria-label="Larger videos">+</button></div>
 <main id="list"></main>
@@ -327,6 +338,25 @@ export const REVIEW_PAGE = `<!doctype html>
     box.replaceChildren(el("div", "caption", it.caption), line, why);
   };
 
+  /** An approved item that no slot took: its video, caption and Undo approval. */
+  const approvedCard = (it, canReview) => {
+    const box = el("section", "card");
+    const video = el("video"); video.controls = true; video.playsInline = true; video.preload = "metadata";
+    video.src = "/api/daily/video?item=" + encodeURIComponent(it.id) + "#t=0.5";
+    const why = el("div", "why");
+    const undo = el("button", "undo", "Undo approval");
+    undo.disabled = !canReview;
+    undo.onclick = async () => {
+      undo.disabled = true; why.textContent = "";
+      const failed = await post(it.id, "withdraw", { notes: "" });
+      if (failed) { why.textContent = failed.error; undo.disabled = !failed.retry; return; }
+      load();
+    };
+    const line = el("div", "done"); line.append(undo);
+    box.append(video, el("div", "caption", it.caption), line, why);
+    return box;
+  };
+
   const load = async () => {
     const list = document.getElementById("list");
     let v;
@@ -334,10 +364,15 @@ export const REVIEW_PAGE = `<!doctype html>
     catch { list.replaceChildren(el("p", "quiet", LOST)); return; }
     list.replaceChildren();
     if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
-    document.getElementById("zoom").hidden = !v.items.length;
-    if (!v.items.length) { list.append(el("p", "quiet", "Nothing to review.")); return; }
+    document.getElementById("zoom").hidden = !v.items.length && !v.approved.length;
+    if (!v.items.length) list.append(el("p", "quiet", "Nothing to review."));
     for (const it of v.items) list.append(card(it, v.canReview));
-    list.querySelector("video").addEventListener("loadedmetadata", syncZoom);
+    if (v.approved.length) {
+      list.append(el("h2", null, "Approved, waiting for a slot"));
+      for (const it of v.approved) list.append(approvedCard(it, v.canReview));
+    }
+    const first = list.querySelector("video");
+    if (first) first.addEventListener("loadedmetadata", syncZoom);
     syncZoom();
   };
 
