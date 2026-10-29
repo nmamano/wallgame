@@ -3174,6 +3174,12 @@ const renderStyle = async (styleName) => {
       : null;
   /** Where the overlay starts: after the cold open, if there is one. */
   let overlayStart = 0;
+  /**
+   * Whether the head row shows the rules line (GOAL_LINE) in place of the
+   * race counter: from the VS overlay's start to the first move, through
+   * the opening walks it explains (Wall Game Director, 2026-10-29).
+   */
+  let goalOn = false;
   const inOverlay = () =>
     elapsed >= overlayStart - 1e-6 &&
     elapsed < overlayStart + overlay.seconds - 1e-6;
@@ -3589,7 +3595,7 @@ const renderStyle = async (styleName) => {
     top: side(seats.top),
     bottom: side(seats.bottom),
     race: raceHud(boardIndex),
-    goal: wallz ? GOAL_LINE : null,
+    goal: wallz && goalOn ? GOAL_LINE : null,
     fastForward: fastForwardAt(boardIndex),
     ...extra,
   });
@@ -3658,6 +3664,7 @@ const renderStyle = async (styleName) => {
     log(`cold open: ply ${coldPly}, ${COLD_OPEN_SECONDS}s`);
   }
 
+  goalOn = Boolean(overlay);
   // The overlay's punch gets the VS sound, at the second the mark lands.
   if (overlay) {
     const vsSound = sounds[style.vsSound];
@@ -4171,8 +4178,18 @@ const renderStyle = async (styleName) => {
     exit, rounded up to a whole frame (Nil's rule; Wall Game PM, 2026-10-26:
     a move under the sliding banner was half hidden). movesUnderOverlay
     holds the timeline to it.
+
+    The rules line shows from the overlay's start to the first move, so it
+    is read: at least its reading time (overlays.mjs readingSeconds; it was
+    on screen 3.4 s for the 4.5 s its 11 words need, Wall Game Director,
+    2026-10-29). The opening walks count toward it; the hold covers the
+    rest.
   */
-  const firstMoveAt = overlay ? overlayStart + overlay.seconds : 0;
+  const goalRead = goalOn ? readingSeconds({}, GOAL_LINE) : 0;
+  const introSeconds = INTRO_WALKS.length * INTRO_PATH_SECONDS;
+  const firstMoveAt = overlay
+    ? overlayStart + Math.max(overlay.seconds, goalRead - introSeconds)
+    : 0;
   // With a startPly, the opening position is the one before that ply; it is
   // labelled as that earlier ply, which the video never plays on its own.
   await emit(
@@ -4225,6 +4242,7 @@ const renderStyle = async (styleName) => {
     }
     log(`intro path: ${side(player).name}, ${points.length - 1} steps`);
   }
+  goalOn = false;
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;

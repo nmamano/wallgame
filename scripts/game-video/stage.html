@@ -2431,11 +2431,8 @@
           the game has not started; from the first move on, the race counter
           has it.
         */
-        const ov = window.__VS_OVERLAY;
-        const goalNow =
-          s.vsOverlay && s.vsOverlay.t < ov.seconds - ov.exit
-            ? (s.goal ?? null)
-            : null;
+        // The renderer shows the rules line through the opening walks.
+        const goalNow = s.goal ?? null;
         $("root").classList.toggle("wallz", s.look === "wallz");
         $("vs").style.transform = "";
 
