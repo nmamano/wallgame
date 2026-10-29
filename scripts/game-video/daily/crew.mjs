@@ -227,7 +227,7 @@ import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
 import { lintReport, lintStops } from "./lint.mjs";
 import * as tools from "./tools.mjs";
-import { currentScriptReview } from "./store.mjs";
+import { renderScriptReview, scriptAfterRender } from "./store.mjs";
 import {
   batchLines,
   directorLines,
@@ -1257,9 +1257,15 @@ const commands = {
     const strips = await stripsOf(c);
     const board = storyboardOf(c, edl);
     const revises = c.reviews.filter((r) => r.action === "revise");
-    // The approved story (phase 1): the render vet checks the video
-    // against it, not the story itself.
-    const script = currentScriptReview(c);
+    // The approved story (phase 1) that the render passed under: the
+    // render vet checks the video against it, not the story itself.
+    if (scriptAfterRender(c)) {
+      const r = c.scriptReviews.at(-1);
+      die(
+        `${c.id}: a script review (${r.verdict} by ${r.reviewer}, ${r.at}) came after this render, so the video tells an older story: render again from the current script`,
+      );
+    }
+    const script = renderScriptReview(c);
     const scriptFile = join(scratch, "script.txt");
     const scriptNotes = join(scratch, "script-review.txt");
     if (script) {

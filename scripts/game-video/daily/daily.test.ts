@@ -34,6 +34,7 @@ import {
   blockedMusic,
   currentScriptReview,
   currentVet,
+  renderScriptReview,
   openStore,
   postProblem,
   readPostLog,
@@ -251,6 +252,8 @@ interface Item {
     fromCache: boolean;
     effect: string | null;
     ending: string;
+    requestedAt: string;
+    scriptReview?: { at: string; scriptSha256: string };
     sheet: { sha256: string; stills: unknown[] } | null;
     video: Video | null;
     quality: Record<string, { ok: boolean; note: string }> | null;
@@ -530,12 +533,29 @@ describe("the director checks the contact sheet before the review", () => {
     expect(reviews[1].scriptSha256).toMatch(/^[0-9a-f]{64}$/);
     store.startRender(id, "job-00000001");
     expect(stage(itemOf(store, id))).toBe("rendering");
-    // A revise asks for a new story: the reviews before it do not count.
+    // The render pins the review it passed under.
+    expect(itemOf(store, id).render!.scriptReview).toEqual({
+      at: reviews[1].at,
+      scriptSha256: reviews[1].scriptSha256,
+    });
+    expect(renderScriptReview(itemOf(store, id))).toEqual(reviews[1]);
+    // A fail of the same script in the same ms has the same at and hash:
+    // the pin still names the pass.
+    const sameMs = itemOf(store, id);
+    sameMs.scriptReviews = [reviews[1], { ...reviews[1], verdict: "fail" }];
+    expect(renderScriptReview(sameMs)).toEqual(reviews[1]);
+    // A revise asks for a new story: the reviews before it do not count,
+    // and a review after it does.
     const revised = itemOf(store, id);
-    revised.reviews = [
-      { action: "revise", at: new Date(Date.now() + 1000).toISOString() },
-    ];
+    const reviseAt = new Date(Date.now() + 1000);
+    revised.reviews = [{ action: "revise", at: reviseAt.toISOString() }];
     expect(currentScriptReview(revised)).toBeNull();
+    const after = {
+      ...reviews[1],
+      at: new Date(reviseAt.getTime() + 1).toISOString(),
+    };
+    revised.scriptReviews = [...reviews, after];
+    expect(currentScriptReview(revised)).toEqual(after);
     // Only a draft, and a whole record.
     expect(() => {
       store.recordScriptReview(id, { ...SCRIPT_PASS, notes: " " });
@@ -543,6 +563,22 @@ describe("the director checks the contact sheet before the review", () => {
     expect(() => {
       store.recordScriptReview(id, { ...SCRIPT_PASS, reviewer: "" });
     }).toThrow("script-review needs the reviewer");
+  });
+
+  test("a script review after the render keeps the video from Nil, and the vet sees the script the render passed under", async () => {
+    const store = openStore(tempDir());
+    const id = directItem(store);
+    renderItem(store, id);
+    const passed = itemOf(store, id).scriptReviews![0];
+    await Bun.sleep(2);
+    store.recordScriptReview(id, { ...SCRIPT_PASS, verdict: "fail" });
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    vetItem(store, id);
+    store.recordCopy(id, COPY);
+    const it = itemOf(store, id);
+    expect(reviewState(it)).toBe("waiting-copy");
+    expect(renderScriptReview(it)).toEqual(passed);
+    expect(currentScriptReview(it)).toMatchObject({ verdict: "fail" });
   });
 
   test("no render without an edit list", () => {

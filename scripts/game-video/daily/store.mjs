@@ -102,7 +102,9 @@ export const reviewState = (item) => {
   const afterRevise =
     !revise ||
     (item.render?.finishedAt > revise.at && item.copy?.storedAt > revise.at);
-  return vetted && fresh && afterRevise ? "in-review" : "waiting-copy";
+  return vetted && fresh && afterRevise && !scriptAfterRender(item)
+    ? "in-review"
+    : "waiting-copy";
 };
 
 /**
@@ -298,6 +300,35 @@ export const currentScriptReview = (item) => {
     item.reviews?.findLast((r) => r.action === "revise")?.at ?? "";
   return (item.scriptReviews ?? []).findLast((r) => r.at > revisedAt) ?? null;
 };
+
+/**
+ * The script review that the item's current render passed under (startRender
+ * pins it), or null for a render from before phase 1. The render vet checks
+ * the video against this script, not against a review recorded later
+ * (Video Reviewer 2, 2026-10-29).
+ */
+export const renderScriptReview = (item) => {
+  const pin = item.render?.scriptReview;
+  return (
+    (pin &&
+      // A fail of the same script in the same ms has the same at and
+      // hash; the render passed under a pass, the latest such one.
+      (item.scriptReviews ?? []).findLast(
+        (r) =>
+          r.verdict === "pass" &&
+          r.at === pin.at &&
+          r.scriptSha256 === pin.scriptSha256,
+      )) ??
+    null
+  );
+};
+
+/**
+ * A script review recorded after the render was asked: the video tells an
+ * older story, so it does not go to Nil until it is rendered again.
+ */
+export const scriptAfterRender = (item) =>
+  (item.scriptReviews ?? []).some((r) => r.at > item.render?.requestedAt);
 
 /**
  * The states of an item whose game another item may carry over: a posted
@@ -924,6 +955,8 @@ export const openStore = (dataDir) => {
             // The director's ending (edl.mjs requires one).
             ending: item.edl.doc.ending,
             edlSha256: item.edl.sha256,
+            // The story this render tells (renderScriptReview).
+            scriptReview: { at: script.at, scriptSha256: script.scriptSha256 },
             video: null,
             sheet: null,
             effect: null,
