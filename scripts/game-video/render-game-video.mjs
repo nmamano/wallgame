@@ -2426,6 +2426,14 @@ const VS_WHOOSH = {
   file: join(STING_DIR, "vs-whoosh.wav"),
   gain: 10 ** (-5 / 20),
 };
+/**
+ * How much sooner the exit whoosh starts, played slower so that its peak
+ * still meets the banners' exit. Its first 0.12 s are under the silence
+ * floor (-45 dBFS), and the gap from the VS hit's tail to it measured
+ * 0.63-0.66 s, over the 0.6 s rule (v-2026-10-29-1 and -2, 2026-10-29);
+ * 0.2 s sooner at rate 1/1.2 brings it to about 0.48 s.
+ */
+const VS_EXIT_WHOOSH_LEAD = 0.2;
 const SOUNDS = {
   vsStamp: {
     name: "vs-b-riser",
@@ -4012,6 +4020,17 @@ const renderStyle = async (styleName) => {
     });
     if (ev.sound) cueEvent(meme(ev.sound), ev);
   };
+  /** A ply's overlays that open as its move lands (the bar is the ending's). */
+  const plyOverlays = (plyIndex) =>
+    eventsAt(plyIndex).filter((e) => e.kind === "overlay" && e.form !== "bar");
+  /**
+   * A ply with a trap opens its overlays after the trap's word, not as the
+   * move lands, so the beat reads word, then face, and the word never
+   * stamps over a cut-out (Wall Game Director, 2026-10-29, v-2026-10-29-1
+   * ply 4: "BOXED IN" stamped over the mouse's cut-out for about 1 s).
+   */
+  const hasTrap = (plyIndex) =>
+    eventsAt(plyIndex).some((e) => e.kind === "trap");
   /** Close the live overlay now (the ending, or the end of a preview). */
   const closeOverlay = () => {
     const live = liveOverlay();
@@ -4792,13 +4811,23 @@ const renderStyle = async (styleName) => {
       "vs",
       { at: overlayStart },
     );
-    cue(VS_WHOOSH, "vs", {
-      at:
-        overlayStart +
-        overlay.seconds -
-        overlay.exit -
-        stingManifest.whooshPeakSeconds,
-    });
+    cue(
+      {
+        ...VS_WHOOSH,
+        rate:
+          stingManifest.whooshPeakSeconds /
+          (stingManifest.whooshPeakSeconds + VS_EXIT_WHOOSH_LEAD),
+      },
+      "vs",
+      {
+        at:
+          overlayStart +
+          overlay.seconds -
+          overlay.exit -
+          stingManifest.whooshPeakSeconds -
+          VS_EXIT_WHOOSH_LEAD,
+      },
+    );
   }
 
   // --- the VS screen, animated
@@ -5219,7 +5248,10 @@ const renderStyle = async (styleName) => {
   /**
    * A voice needs its speaker on screen (DIRECTOR.md): a zoom, a mark on a
    * pawn or a portrait cut-out on the ply. An explain's walk is not a
-   * speaker (Wall Game PM, 2026-10-29), so it does not count.
+   * speaker (Wall Game PM, 2026-10-29), so it does not count. Only events
+   * are linted: the two slot sounds (vsSound on the VS card, finishSound
+   * on the ending) have no ply and no speaker, so a voice there is the
+   * director's choice and is not checked (VR1's note).
    */
   const lintVoice = (ev, plyIndex) => {
     if (!ev.sound || !isVoice(ev.sound)) return;
@@ -5705,6 +5737,10 @@ const renderStyle = async (styleName) => {
         }
       }
       spanOf(ev, start);
+      // After the ply's last trap: its word has shown (hasTrap).
+      if (ev === landing.findLast((e) => e.kind === "trap")) {
+        plyOverlays(plyIndex).forEach(openOverlay);
+      }
     }
     if (!endsInZoom) {
       await emit(playState(ply), EFFECT_REST_SECONDS, {
@@ -5866,9 +5902,8 @@ const renderStyle = async (styleName) => {
       if (live && live.closesOnBoard !== null && ply >= live.closesOnBoard) {
         closeOverlay();
       }
-      eventsAt(plyIndex)
-        .filter((e) => e.kind === "overlay" && e.form !== "bar")
-        .forEach(openOverlay);
+      // On a trap's ply they open after its word (playEvents).
+      if (!hasTrap(plyIndex)) plyOverlays(plyIndex).forEach(openOverlay);
     }
     /*
       The tick takes its time from a plain move's hold, leaving that hold

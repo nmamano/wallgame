@@ -154,7 +154,8 @@
  *     overlay a meme over the board while the game goes on under it
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
- *             band across the board). It opens as the move lands and shows for
+ *             band across the board). It opens as the move lands (on a
+ *             ply with a trap: after the trap's word) and shows for
  *             `seconds` (default the asset's, or its words' reading time
  *             if longer; the capture loading bar lasts until the save and
  *             takes none). An overlay with words shows at least their
