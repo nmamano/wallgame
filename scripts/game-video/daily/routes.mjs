@@ -601,7 +601,8 @@ export const createDaily = ({
       });
     }
     // The tracks the video played, and from which plies, must be the
-    // list's cues (direct requires them).
+    // list's cues (direct requires them). A list with no music ("music":
+    // []) gets RESULT music null from the renderer (aa97b78f): no cues.
     const music = item.edl.doc.music;
     const played = Array.isArray(result.music) ? result.music : [];
     if (
@@ -665,7 +666,9 @@ export const createDaily = ({
       video,
       sheet,
       effect: result.effect ?? null,
-      music: result.music,
+      // Always a list, [] for no music: the post row and the checks read
+      // it as one.
+      music: played,
       sound: result.sound ?? null,
       timeline: timelineOf(result.timeline),
       quality: {

@@ -31,6 +31,7 @@ import { createHash } from "node:crypto";
 import {
   ITEM_ID,
   PLATFORMS,
+  blockedMusic,
   currentVet,
   openStore,
   postProblem,
@@ -2079,10 +2080,13 @@ const stills = edl.events.map((e) => ({ ply: e.ply, kind: e.kind, sound: e.sound
 console.log("[render] rendering on the 4090");
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
+  // As the renderer: no music ([]) is RESULT music null.
   music: existsSync(__dirname + "/music-override")
     ? JSON.parse(readFileSync(__dirname + "/music-override", "utf8"))
-    : (edl.music ?? [{ fromPly: 0, track: "deja-vus" }]).map((c, i) =>
-        ({ ...c, at: i === 0 ? 0 : 10 })),
+    : edl.music && edl.music.length === 0
+      ? null
+      : (edl.music ?? [{ fromPly: 0, track: "deja-vus" }]).map((c, i) =>
+          ({ ...c, at: i === 0 ? 0 : 10 })),
   ending: edl.ending, edlSha256: hash(raw),
   fromCache: existsSync(__dirname + "/lie-about-cache") ? !fromCache : fromCache,
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
@@ -2906,6 +2910,22 @@ test("two music cues: direct takes them, and the render must play both from thei
   } finally {
     cleared.forEach((t, i) => (t.license = licenses[i]));
   }
+});
+
+test('no music ("music": []): direct takes it, and the render stores no cues, not null', async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const { base } = await serveHere(dir, stub);
+  const picked = await call(base, "/api/daily/pick", { report: REPORT });
+  const id = picked.body.id;
+  expect((await directOver(base, id, { music: [] })).status).toBe(200);
+  // The renderer says null; the item says [], which the post row maps.
+  const { it } = await renderAndWait(base, id, { force: true });
+  expect(stage(it)).toBe("rendered");
+  expect(edlSummary({ ...EDL, music: [] })[0]).toContain("music none");
+  expect(it.render?.music).toEqual([]);
+  expect(blockedMusic(it)).toEqual([]);
 });
 
 test("two items in the render queue: each render finishes on its own item", async () => {

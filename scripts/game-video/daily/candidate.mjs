@@ -81,7 +81,7 @@ export const musicText = (cues) =>
  * director's status (never posted). Plies are 0-based, as in the list.
  */
 export const edlSummary = (edl) => [
-  `ending ${edl.ending}, music ${edl.music ? musicText(edl.music) : "random"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
+  `ending ${edl.ending}, music ${!edl.music ? "random" : edl.music.length ? musicText(edl.music) : "none"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
   `VS sound ${edl.vsSound}, finish sound ${edl.finishSound}`,
   ...(edl.startPly ? [`starts at ply ${edl.startPly}`] : []),
   ...(edl.coldOpenPly != null
