@@ -136,11 +136,20 @@ export const MEME_FAMILIES = {
 };
 
 /**
- * The families that are a voice: someone on screen says it, so a viewer
- * must see who (Nil, 2026-10-29: "zoom on the mouse so it's clear who is
- * talking"). The renderer's lint warns of one with no speaker shown
- * (voice-no-speaker). Not ooh: it is a crowd off screen, with no speaker
- * to show (Director, 2026-10-29).
+ * The sounds that are a voice: a sound with spoken words (Wall Game PM,
+ * 2026-10-29), so a viewer must see who says it (Nil, 2026-10-29: "zoom on
+ * the mouse so it's clear who is talking"). The renderer's lint warns of
+ * one with no speaker shown (voice-no-speaker). VOICE_FAMILIES are the
+ * families whose every clip is a voice (laugh stays one, with no word: a
+ * laugh has a speaker too); VOICE_KEYS are the single clips with words in
+ * a family whose other clips have none. Not a voice, from each clip's
+ * source line (meme-sounds.md): ooh (a crowd off screen, with no speaker
+ * to show: Director, 2026-10-29), win-2 (the GTA jingle), scared-2 (a
+ * scream, no word), shotgun-1..3, boom, scratch, airhorn, trombone, sting,
+ * ding (an instrument "correct"), alert, clang, bell, dundun, reveal (a
+ * "shhh", then a sting), fail, horn and violin. Not known (no source line
+ * says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
+ * (a part of a Spider-Man theme song).
  */
 export const VOICE_FAMILIES = [
   "seeya",
@@ -150,7 +159,14 @@ export const VOICE_FAMILIES = [
   "letsgo",
   "oof",
   "wow",
+  "fuahhh",
+  "ambulance",
 ];
+export const VOICE_KEYS = ["win-1", "scared-1", "shotgun-4"];
+
+/** Whether the sound `key` is a voice (VOICE_FAMILIES, VOICE_KEYS). */
+export const isVoice = (key) =>
+  VOICE_KEYS.includes(key) || VOICE_FAMILIES.includes(memeFamily(key));
 
 /**
  * What a listener should weigh besides the sound: the clips that

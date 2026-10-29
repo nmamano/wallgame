@@ -124,12 +124,7 @@ import {
   helpRulesFor,
   helpVariantFor,
 } from "../../shared/domain/variant-rules.ts";
-import {
-  MEME_SOUNDS,
-  VOICE_FAMILIES,
-  memeFamily,
-  memeGain,
-} from "./meme-sounds.mjs";
+import { MEME_SOUNDS, isVoice, memeGain } from "./meme-sounds.mjs";
 import { clipFrameIndex, loadClip } from "./overlay-clips.mjs";
 import {
   MUSIC_TRACKS,
@@ -5078,7 +5073,7 @@ const renderStyle = async (styleName) => {
    * speaker (Wall Game PM, 2026-10-29), so it does not count.
    */
   const lintVoice = (ev, plyIndex) => {
-    if (!ev.sound || !VOICE_FAMILIES.includes(memeFamily(ev.sound))) return;
+    if (!ev.sound || !isVoice(ev.sound)) return;
     if (speakerShown(plyIndex)) return;
     fault(
       "voice-no-speaker",
