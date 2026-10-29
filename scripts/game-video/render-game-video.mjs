@@ -2781,7 +2781,10 @@ const RACE_LABEL = CAPTURE_KIND ? RACE_LABELS[CAPTURE_KIND] : "STEPS";
  * The 9:16 frame of the wallz look. The caption, the head row and the board
  * stack inside SAFE_AREA (edl.mjs), SHAKE_ROOM in from its edges so the
  * shakes stay inside too; the stage then sizes the board to what is left
- * (window.__fitWallz), so --board here is only a first guess.
+ * (window.__fitWallz), so --board here is only a first guess. A --head-gap
+ * of 37 px gives 40 px between the drawn boxes (the boxes add 3 px of inner
+ * space) from the caption to the head row and from the head row to the
+ * board (Director, 2026-10-29): the board gives up the room.
  */
 const SHAKE_ROOM = 16;
 const WALLZ_LAYOUT = {
@@ -2791,7 +2794,7 @@ const WALLZ_LAYOUT = {
     ...frameVars(DAILY_FRAME.h, SAFE_AREA.w - 2 * SHAKE_ROOM, 0),
     "--caption-size": "56px",
     "--caption-gap": "36px",
-    "--head-gap": "14px",
+    "--head-gap": "37px",
     "--shake-room": `${SHAKE_ROOM}px`,
     "--safe-top": `${SAFE_AREA.y}px`,
     "--safe-left": `${SAFE_AREA.x}px`,
