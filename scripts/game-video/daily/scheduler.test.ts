@@ -65,7 +65,7 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
     slotAt: string;
     posts: object;
     platforms: string[];
-    notApplicable?: Record<string, string> | null;
+    notApplicable: Record<string, string> | null;
   }[] = [];
   const make = () =>
     createScheduler({
@@ -485,6 +485,7 @@ describe("scheduler", () => {
         id: "v-2026-10-28-1",
         slotAt: "2026-10-29T16:00:00.000Z",
         platforms: ["x"],
+        notApplicable: null,
         posts: { x: { ok: null, pending: true, at: "2026-10-29T16:00:05Z" } },
       },
     ]);

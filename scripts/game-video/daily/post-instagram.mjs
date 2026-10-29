@@ -152,6 +152,11 @@ export const instagramDryRunReply = (req) => {
  * remove once Instagram no longer needs the file. `creds` is {igUserId,
  * pageToken} from discoverMeta (in a dry run, from its canned replies).
  * `beforeCommit` runs just before media_publish. Returns {postId, url}.
+ *
+ * @param {{ video: Buffer, surface?: "reel" | "story", caption?: string,
+ *   durationSeconds?: number, publicUrl: any, transport: any,
+ *   creds: { igUserId: string, pageToken: string }, sleep: any,
+ *   beforeCommit: any }} o
  */
 export const postToInstagram = async ({
   video,

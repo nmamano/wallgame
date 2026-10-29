@@ -273,7 +273,8 @@ interface LogRow {
   gameId: string;
   videoSha256: string;
   platform: string;
-  caption: string;
+  // A Story has no caption.
+  caption: string | null;
   styleVersion: string | null;
   copyVersion: string;
 }
