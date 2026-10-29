@@ -2280,8 +2280,10 @@ const fileUrl = (p) => `file://${resolve(p)}`;
  * board's own art for it (pawnArt): the pawn of that type whose colour
  * filter is the seat card's. {url}, or {stop}: why it cannot, which stops
  * the lint and the render (reactor-pawn) so the director picks another beat
- * (Wall Game PM, 2026-10-29: never a cat as the prey).
- * @type {Map<object, { url: string } | { stop: string }>}
+ * (Wall Game PM, 2026-10-29: never a cat as the prey), or {recapture}: the
+ * capture is older than the pawn art, which a live capture mends
+ * (reactor-capture).
+ * @type {Map<object, { url: string } | { stop: string } | { recapture: string }>}
  */
 const REACTOR_ART = new Map();
 if (EDL) {
@@ -2289,13 +2291,13 @@ if (EDL) {
   const playerOf = (seat) => (colourOf[1] === seat ? 1 : 2);
   const pawnFilter = (layers) =>
     layers.find((l) => /\/pawns\//.test(l.src))?.filter ?? null;
-  /** @type {Map<string, { url: string } | { stop: string }>} */
+  /** @type {Map<string, { url: string } | { stop: string } | { recapture: string }>} */
   const prey = new Map();
   let page = null;
   const preyArt = async (player, seat, type) => {
     if (!pawnArt) {
       return {
-        stop: `this game's capture was made before the board's pawn art was kept, so it has no ${type} to show: render it once live (one view of the game)`,
+        recapture: `this game's capture was made before the board's pawn art was kept, so it has no ${type} to show: the render must capture the game live (one view; direct marks the list so)`,
       };
     }
     const filter = pawnFilter(cardFor(player).layers);
@@ -3756,6 +3758,8 @@ const renderStyle = async (styleName) => {
   // any frame is composed.
   for (const [ev, art] of REACTOR_ART) {
     if ("stop" in art) fault("reactor-pawn", ev.ply, art.stop, 0);
+    if ("recapture" in art)
+      fault("reactor-capture", ev.ply, `the ${ev.asset}: ${art.recapture}`, 0);
   }
   const cue = (sound, role, { at = elapsed, event = null } = {}) => {
     // A time built from a missing value is NaN, and ffmpeg's mix refuses it
@@ -4043,8 +4047,9 @@ const renderStyle = async (styleName) => {
       ...(w.asset.draw === "reactor"
         ? {
             text: overlayText(w.ev),
-            // REACTOR_ART has every reactor of the EDL; one with a stop
-            // never reaches the shoot (reactor-pawn).
+            // REACTOR_ART has every reactor of the EDL; one with a stop or
+            // a recapture never reaches the shoot (reactor-pawn,
+            // reactor-capture).
             portrait: REACTOR_ART.get(w.ev)?.url ?? null,
             motion: w.asset.motion ?? null,
           }

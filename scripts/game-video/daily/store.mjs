@@ -899,7 +899,13 @@ export const openStore = (dataDir) => {
      * replaces the render made from the old one, and a finished item goes
      * back to draft: its next render and check finish it again.
      */
-    direct(id, { edl, text, summary }) {
+    /**
+     * `liveCapture`: the list's lint found the game's capture too old for
+     * it (routes.mjs lintGate), so its render captures live.
+     * @param {string} id
+     * @param {{ edl: any, text: string, summary: unknown[], liveCapture: boolean }} list
+     */
+    direct(id, { edl, text, summary, liveCapture }) {
       const sha = createHash("sha256").update(text).digest("hex");
       return updateItem(
         id,
@@ -912,6 +918,7 @@ export const openStore = (dataDir) => {
             text,
             sha256: sha,
             summary,
+            liveCapture,
             directedAt: new Date().toISOString(),
           };
           item.render = null;

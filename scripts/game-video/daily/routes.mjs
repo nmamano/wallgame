@@ -87,7 +87,7 @@ import {
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
 import { gridOf } from "./tools.mjs";
-import { lintNotes, lintStops } from "./lint.mjs";
+import { lintNotes, lintRecapture, lintStops } from "./lint.mjs";
 import {
   BACKUP_WINDOW,
   createBudgetReader,
@@ -862,15 +862,21 @@ export const createDaily = ({
   };
 
   /**
-   * The summary lines of a list that direct may store, or a refusal: the
-   * list's lint (`lintId`) must be done, of this text, with nothing that
-   * stops it. `noLint` stores without one, for a 4090 that cannot lint.
+   * The summary lines of a list that direct may store, and whether its
+   * render must capture the game live, or a refusal: the list's lint
+   * (`lintId`) must be done, of this text, with nothing that stops it but
+   * a fault of the capture (lintRecapture), which a live render mends.
+   * `noLint` stores without one, for a 4090 that cannot lint.
+   * @returns {{ lines: string[], liveCapture: boolean }}
    */
   const lintGate = (item, text, { lint: lintId, noLint }) => {
     if (noLint === true) {
-      return [
-        "NOT LINTED (direct --no-lint): the render checks the list before its shoot pass",
-      ];
+      return {
+        lines: [
+          "NOT LINTED (direct --no-lint): the render checks the list before its shoot pass",
+        ],
+        liveCapture: false,
+      };
     }
     const rec = typeof lintId === "string" ? lints.get(lintId) : undefined;
     if (!rec) {
@@ -894,12 +900,23 @@ export const createDaily = ({
         `the lint found ${stops.length} fault(s) that stop the list: ${stops.join("; ")}`,
       );
     }
-    return rec.skipped
-      ? [`not linted by the renderer: ${rec.skipped}`]
-      : [
-          `lint: nothing stops the list (${rec.lint.counts?.seconds ?? "?"} s)`,
-          ...lintNotes(rec),
-        ];
+    if (rec.skipped) {
+      return {
+        lines: [`not linted by the renderer: ${rec.skipped}`],
+        liveCapture: false,
+      };
+    }
+    const recapture = lintRecapture(rec);
+    return {
+      lines: [
+        `lint: nothing stops the list (${rec.lint.counts?.seconds ?? "?"} s)`,
+        ...recapture.map(
+          (l) => `LIVE ${l}: the next render captures the game live`,
+        ),
+        ...lintNotes(rec),
+      ],
+      liveCapture: recapture.length > 0,
+    };
   };
 
   /**
@@ -1745,12 +1762,13 @@ export const createDaily = ({
         store.direct(item.id, {
           edl,
           text,
+          liveCapture: linted.liveCapture,
           summary: [
             ...edlSummary(edl),
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
             ...risk.notes,
             ...lastMoveSoundNotes(edl, item.candidate.movesCount),
-            ...linted,
+            ...linted.lines,
           ],
         }),
       );
@@ -1849,9 +1867,11 @@ export const createDaily = ({
       const jobId = `${item.id}-${item.gameId}-${Date.now().toString(36)}`;
       // With the game's capture on the 4090 the render reads it and adds no
       // view; `live` captures again on purpose (one view), for example when
-      // the renderer cannot use the cached capture.
+      // the renderer cannot use the cached capture. A list whose lint found
+      // the capture too old for it (edl.liveCapture, lintGate) captures live
+      // without being asked.
       let fromCache = false;
-      if (body.live !== true) {
+      if (body.live !== true && item.edl?.liveCapture !== true) {
         const capture = await captureOf(item.candidate.gameId);
         if (capture.error) {
           throw new StepRefused(

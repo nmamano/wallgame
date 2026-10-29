@@ -46,7 +46,10 @@
  *                                  item's game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending.
  *                                  It lints the list first and stores it
- *                                  only when nothing stops it (R1).
+ *                                  only when nothing stops it (R1). A
+ *                                  LIVE line (the capture is too old for
+ *                                  the list) does not stop it: the list's
+ *                                  render then captures the game live
  *                                  --claim-risk-ok accepts those sounds with
  *                                  a high claim risk on purpose (only when
  *                                  Nil asks for one). --no-lint stores

@@ -11,16 +11,32 @@
  * capture yet) | null, lint: {faults, notes, counts} | null, timings,
  * error}. These helpers are the one reading of it, for the app and crew.
  */
+import { RECAPTURE_KINDS } from "../edl.mjs";
 
 /** One renderer fault or note as one line. */
 export const lintLine = (f) =>
   `ply ${f.ply ?? "-"}, ${Number(f.at).toFixed(1)} s, ${f.kind}: ${f.message}`;
 
-/** What stops the list: the app's errors and the renderer's stopping faults. */
+/** A stopping fault of the game's capture, which a live render mends. */
+const recaptures = (f) => f.stops && RECAPTURE_KINDS.includes(f.kind);
+
+/**
+ * What stops the list: the app's errors and the renderer's stopping
+ * faults, except those a live capture mends (lintRecapture).
+ */
 export const lintStops = (rec) => [
   ...rec.errors,
-  ...(rec.lint?.faults ?? []).filter((f) => f.stops).map(lintLine),
+  ...(rec.lint?.faults ?? [])
+    .filter((f) => f.stops && !recaptures(f))
+    .map(lintLine),
 ];
+
+/**
+ * The faults of the game's capture (edl.mjs RECAPTURE_KINDS): direct still
+ * stores the list, and its render captures the game live (one view).
+ */
+export const lintRecapture = (rec) =>
+  (rec.lint?.faults ?? []).filter(recaptures).map(lintLine);
 
 /** What the director should read and may keep: warnings and notes. */
 export const lintNotes = (rec) => [
@@ -39,11 +55,12 @@ export const lintReport = (rec) => {
       .map(([k, n]) => `${k} ${n}`)
       .join(", ") || "none";
   return [
-    `lint: ${stops.length ? `${stops.length} fault(s) stop the list` : "nothing stops the list"}${rec.skipped ? ` (the renderer did not lint: ${rec.skipped})` : ""}`,
+    `lint: ${stops.length ? `${stops.length} fault(s) stop the list` : "nothing stops the list"}${!stops.length && lintRecapture(rec).length ? "; its render captures the game live (one view)" : ""}${rec.skipped ? ` (the renderer did not lint: ${rec.skipped})` : ""}`,
     ...rec.errors.map((e) => `  STOP ${e}`),
     ...(rec.lint?.faults ?? [])
-      .filter((f) => f.stops)
+      .filter((f) => f.stops && !recaptures(f))
       .map((f) => `  STOP ${lintLine(f)}`),
+    ...lintRecapture(rec).map((l) => `  LIVE ${l}`),
     ...lintNotes(rec).map((l) => `  ${l}`),
     ...(counts
       ? [

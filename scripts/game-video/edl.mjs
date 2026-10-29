@@ -335,12 +335,22 @@ export const LINT_KINDS = {
   "race-small": "warns",
   "explain-mismatch": "stops",
   "reactor-pawn": "stops",
+  "reactor-capture": "stops",
   "explain-flat": "warns",
   "video-long": "warns",
   "voice-no-speaker": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
 };
+/**
+ * The stopping kinds that are a fault of the game's capture, not of the
+ * list: a render from that capture stops, but a live capture mends it.
+ * direct stores such a list and marks it for a live render (routes.mjs
+ * lintGate), so the list never waits for a capture that only its own
+ * render can make (2026-10-29: v-lQeZ8T needed a list with no reactor,
+ * rendered live, before its real list could be directed).
+ */
+export const RECAPTURE_KINDS = ["reactor-capture"];
 export const EVENT_KINDS = [
   "zoom",
   "scared",

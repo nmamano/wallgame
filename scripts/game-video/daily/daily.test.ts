@@ -241,7 +241,7 @@ interface Item {
   // Only a carry-over has it.
   source: { carriedFrom?: string };
   candidate: { gameId: string };
-  edl: { sha256: string } | null;
+  edl: { sha256: string; liveCapture?: boolean; summary: string[] } | null;
   copy: {
     block: Record<string, string>;
     sha256: string;
@@ -409,7 +409,12 @@ const pickItem = (store: Store): string => {
 /** A new item with EDL as its list (`text`: the list's bytes). */
 const directItem = (store: Store, text = JSON.stringify(EDL)): string => {
   const id = pickItem(store);
-  store.direct(id, { edl: EDL, text, summary: edlSummary(EDL) });
+  store.direct(id, {
+    edl: EDL,
+    text,
+    summary: edlSummary(EDL),
+    liveCapture: false,
+  });
   return id;
 };
 
@@ -514,7 +519,12 @@ describe("the director checks the contact sheet before the review", () => {
   test("no render before a script review passes, since the pick or Nil's last revise", () => {
     const store = openStore(tempDir());
     const id = pickUnscripted(store);
-    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    store.direct(id, {
+      edl: EDL,
+      text: JSON.stringify(EDL),
+      summary: [],
+      liveCapture: false,
+    });
     expect(() => {
       store.startRender(id, "job-00000001");
     }).toThrow(
@@ -611,7 +621,12 @@ describe("the director checks the contact sheet before the review", () => {
     expect(() => {
       store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
     }).toThrow(/already failed its check/);
-    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    store.direct(id, {
+      edl: EDL,
+      text: JSON.stringify(EDL),
+      summary: [],
+      liveCapture: false,
+    });
     expect(stage(itemOf(store, id))).toBe("directed");
     expect(itemOf(store, id).render).toBeNull();
   });
@@ -797,7 +812,12 @@ describe("an item's production", () => {
     const id = pickItem(store);
     const now = () => stage(itemOf(store, id));
     expect(now()).toBe("picked");
-    store.direct(id, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    store.direct(id, {
+      edl: EDL,
+      text: JSON.stringify(EDL),
+      summary: [],
+      liveCapture: false,
+    });
     expect(now()).toBe("directed");
     store.startRender(id, "job-1");
     expect(now()).toBe("rendering");
@@ -822,7 +842,12 @@ describe("an item's production", () => {
     const store = openStore(tempDir());
     const id = finishItem(store);
     expect(reviewState(itemOf(store, id))).toBe("in-review");
-    store.direct(id, { edl: EDL, text: "a new list", summary: [] });
+    store.direct(id, {
+      edl: EDL,
+      text: "a new list",
+      summary: [],
+      liveCapture: false,
+    });
     const it = itemOf(store, id);
     expect([it.state, stage(it), reviewState(it)]).toEqual([
       "draft",
@@ -835,7 +860,12 @@ describe("an item's production", () => {
 
   test("items move on their own: one is directed again while the others stay finished", () => {
     const { store, a, b, c } = three();
-    store.direct(b, { edl: EDL, text: "new list", summary: [] });
+    store.direct(b, {
+      edl: EDL,
+      text: "new list",
+      summary: [],
+      liveCapture: false,
+    });
     expect(itemOf(store, a).state).toBe("finished");
     expect(stage(itemOf(store, b))).toBe("directed");
     expect(itemOf(store, c).state).toBe("finished");
@@ -843,7 +873,12 @@ describe("an item's production", () => {
 
   test("a render with other bytes makes only that item's block stale", () => {
     const { store, a, b, c } = three();
-    store.direct(b, { edl: EDL, text: "new list", summary: [] });
+    store.direct(b, {
+      edl: EDL,
+      text: "new list",
+      summary: [],
+      liveCapture: false,
+    });
     renderItem(store, b, { ...VIDEO, sha256: "dd" }, { force: true });
     store.recordCheck(b, { sheetSha256: "ss", stills: [ZOOM_OK] });
     // Finished, but its block is for the old video: not for Nil.
@@ -868,7 +903,12 @@ describe("an item's production", () => {
 
   test("a render of the same bytes keeps the block (a re-render from the cache)", () => {
     const { store, b } = three();
-    store.direct(b, { edl: EDL, text: "same list", summary: [] });
+    store.direct(b, {
+      edl: EDL,
+      text: "same list",
+      summary: [],
+      liveCapture: false,
+    });
     renderItem(store, b, { ...VIDEO, sha256: "bb" }, { force: true });
     expect(store.staleCopy(itemOf(store, b))).toBeNull();
     store.recordCheck(b, { sheetSha256: "ss", stills: [ZOOM_OK] });
@@ -892,7 +932,12 @@ describe("an item's production", () => {
     expect(itemOf(store, done).state).toBe("discarded");
     // A discarded item takes no more steps.
     expect(() => {
-      store.direct(done, { edl: EDL, text: "again", summary: [] });
+      store.direct(done, {
+        edl: EDL,
+        text: "again",
+        summary: [],
+        liveCapture: false,
+      });
     }).toThrow(`${done} is discarded`);
   });
 
@@ -2196,6 +2241,7 @@ afterEach(() => {
  * --has-capture reports and --from-cache needs; the file "probe-fails"
  * makes --has-capture fail as an unreachable 4090 would, and the file
  * "claim-draft" makes the render say it is a quick look (RESULT.draft).
+ * --lint gives lint.json when a test writes one.
  */
 const STUB_RENDER = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
@@ -2210,6 +2256,16 @@ if (process.argv.includes("--has-capture")) {
     process.exit(1);
   }
   console.log(existsSync(captured(at("has-capture"))) ? "cached" : "none");
+  process.exit(0);
+}
+if (process.argv.includes("--lint")) {
+  // The renderer's lint: lint.json next to the stub when a test writes one.
+  const file = __dirname + "/lint.json";
+  const lint = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {
+    faults: [], notes: [],
+    counts: { seconds: 30, events: {}, overlays: {}, sounds: {} } };
+  console.log("RESULT " + JSON.stringify({ lint, timings: { check: 0.3,
+    total: 2.1, workers: 1, renderer: { compose: 1.3, total: 1.6 } } }));
   process.exit(0);
 }
 const raw = readFileSync(at("edl"));
@@ -2546,6 +2602,77 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect(it.render?.error).toBe(
     "the render step gave a quick look (RESULT.draft), not the item's video",
   );
+}, 30_000);
+
+test("a list whose lint finds the capture too old is stored, and its render captures live", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const base = await serve(dir, stub);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  expect((await directOver(base, id)).status).toBe(200);
+  // The game's first render captures it: one view.
+  expect((await renderAndWait(base, id)).it.render?.fromCache).toBe(false);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 1 });
+
+  // The capture is older than the pawn art a reactor shows: the only
+  // stop is the capture's, so direct stores the list for a live render.
+  const recapture = {
+    kind: "reactor-capture",
+    ply: 4,
+    at: 0,
+    stops: true,
+    message:
+      "the reactor-shock: this game's capture was made before the board's pawn art was kept",
+  };
+  writeFileSync(
+    join(dir, "lint.json"),
+    JSON.stringify({
+      faults: [recapture],
+      notes: [],
+      counts: { seconds: 30, events: {}, overlays: {}, sounds: {} },
+    }),
+  );
+  const path = join(dir, "reactor.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      ...EDL,
+      ending: (await dailyState(base)).suggestedEnding,
+      caption: "a reactor list",
+    }),
+  );
+  const stored = crew(base, "direct", "--item", id, "--edl", path);
+  expect(stored.code).toBe(0);
+  expect(stored.out).toContain(
+    "lint: nothing stops the list; its render captures the game live (one view)",
+  );
+  expect(stored.out).toContain(
+    "LIVE ply 4, 0.0 s, reactor-capture: the reactor-shock:",
+  );
+  let it = await fetchItem(base, id);
+  expect(it.edl?.liveCapture).toBe(true);
+  expect(JSON.stringify(it.edl?.summary)).toContain(
+    "the next render captures the game live",
+  );
+  // The capture exists, but the render captures again: a second view,
+  // which needs force as every live render does.
+  const refused = await renderAndWait(base, id);
+  expect(refused.started.body.error).toContain(
+    "TESTGAME1 was already rendered 1 time(s) today",
+  );
+  ({ it } = await renderAndWait(base, id, { force: true }));
+  expect(stage(it)).toBe("rendered");
+  expect(it.render?.fromCache).toBe(false);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
+
+  // With the new capture the lint is clean: the next list reads it.
+  unlinkSync(join(dir, "lint.json"));
+  expect(crew(base, "direct", "--item", id, "--edl", path).code).toBe(0);
+  expect((await fetchItem(base, id)).edl?.liveCapture).toBe(false);
+  ({ it } = await renderAndWait(base, id));
+  expect(it.render?.fromCache).toBe(true);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
 }, 30_000);
 
 test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", async () => {
