@@ -604,6 +604,14 @@ export const createDaily = ({
       ...(fromCache ? ["--from-cache"] : []),
     ]);
     if (error) return finish({ error });
+    // A quick look (renderer --draft) is never an item's video: it is not
+    // checked frame by frame, and its 15 fps can miss what the render stops.
+    if (result.draft === true) {
+      return finish({
+        error:
+          "the render step gave a quick look (RESULT.draft), not the item's video",
+      });
+    }
     // The render must be what the app counted. A renderer older than
     // --from-cache ignores it and captures live, which is a view: it is
     // counted now. A counted render that read the capture is an overcount,
@@ -707,9 +715,11 @@ export const createDaily = ({
   /* ----------------------------------------------------------- preview -- */
 
   /**
-   * previewId -> {itemId, from, to, edlText, state, video, error}: queued,
-   * running, done or failed. A preview is a short look at a few plies (the
-   * director's check of a moment's picture). It lives only here and in
+   * previewId -> {itemId, from, to, draft, edlText, state, video, error}:
+   * queued, running, done or failed. A preview is a short look at a few
+   * plies (the director's check of a moment's picture); a quick look
+   * (draft, renderer R2) is one at 15 fps and 540x960, of a few plies or
+   * of the whole list (from and to null). It lives only here and in
    * previews/, and no step of an item reads either, so a preview can never
    * be checked, reviewed or posted. The app forgets it when it restarts.
    */
@@ -728,6 +738,7 @@ export const createDaily = ({
     const edlPath = join(work, "edl.json");
     const scratch = join(work, "out.mp4");
     writeFileSync(edlPath, p.edlText);
+    const whole = p.from === null;
     const { result, error } = await runAdapter(jobId, [
       "--edl",
       edlPath,
@@ -735,20 +746,31 @@ export const createDaily = ({
       jobId,
       "--out",
       scratch,
-      "--plies",
-      `${p.from}..${p.to}`,
+      ...(whole ? ["--from-cache"] : ["--plies", `${p.from}..${p.to}`]),
+      ...(p.draft ? ["--draft"] : []),
       "--workers",
       String(workers),
     ]);
     const failed = (why) => ({ state: "failed", error: why });
     if (error) return failed(error);
+    if ((result.draft === true) !== p.draft) {
+      return failed(
+        p.draft
+          ? "the render step gave a full render, not a quick look"
+          : "the render step gave a quick look, not a preview",
+      );
+    }
     if (
-      result.preview?.from !== p.from ||
-      result.preview?.to !== p.to ||
-      result.edlSha256 !== null
+      whole
+        ? result.preview != null ||
+          result.fromCache !== true ||
+          result.edlSha256 !== sha256(p.edlText)
+        : result.preview?.from !== p.from ||
+          result.preview?.to !== p.to ||
+          result.edlSha256 !== null
     ) {
       return failed(
-        `the render step did not return the preview of plies ${p.from}..${p.to}`,
+        `the render step did not return the ${p.draft ? "quick look" : "preview"} of ${whole ? "the whole list" : `plies ${p.from}..${p.to}`}`,
       );
     }
     if (!existsSync(scratch) || statSync(scratch).size === 0) {
@@ -1830,14 +1852,19 @@ export const createDaily = ({
     },
 
     /**
-     * {item, plies: "FROM..TO", edl?}: a preview of those plies of the
-     * item's list, or of `edl` (a list for the item's game that is not
-     * directed yet), from the game's capture on the 4090. It waits in the
-     * render queue and changes nothing in the item.
+     * {item, plies: "FROM..TO", edl?, draft?}: a preview of those plies of
+     * the item's list, or of `edl` (a list for the item's game that is not
+     * directed yet), from the game's capture on the 4090. draft: true makes
+     * it a quick look, and then plies may be left out for the whole list.
+     * It waits in the render queue and changes nothing in the item.
      */
     "POST /api/daily/preview": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
+      if (body.draft !== undefined && typeof body.draft !== "boolean") {
+        throw new StepRefused("draft is true or false");
+      }
+      const draft = body.draft === true;
       let edl;
       let edlText;
       if (body.edl === undefined) {
@@ -1869,10 +1896,13 @@ export const createDaily = ({
         if (errors.length) throw new StepRefused(errors.join("; "));
         edlText = JSON.stringify(edl, null, 2) + "\n";
       }
-      const span = parsePlyWindow(body.plies, edl.startPly ?? 0);
+      const whole = draft && body.plies === undefined;
+      const span = whole
+        ? { ok: true, from: null, to: null }
+        : parsePlyWindow(body.plies, edl.startPly ?? 0);
       if (!span.ok) throw new StepRefused(span.error);
       const lastPly = item.candidate.movesCount - 1;
-      if (span.to > lastPly) {
+      if (!whole && span.to > lastPly) {
         throw new StepRefused(
           `the preview ends at ply ${span.to}, after the game's last ply ${lastPly}`,
         );
@@ -1889,6 +1919,7 @@ export const createDaily = ({
         itemId: item.id,
         from: span.from,
         to: span.to,
+        draft,
         edlText,
         state: "queued",
         video: null,
@@ -1986,7 +2017,8 @@ export const createDaily = ({
       json(res, 200, {
         previewId: id,
         itemId: p.itemId,
-        plies: `${p.from}..${p.to}`,
+        plies: p.from === null ? null : `${p.from}..${p.to}`,
+        draft: p.draft,
         state: p.state,
         progress: progress.get(id) ?? null,
         video: p.video,

@@ -71,6 +71,17 @@
  * that the app counts the view. Run by hand, read the WARNING: that
  * render was one view of the game that nothing counted.
  *
+ * A QUICK LOOK (--draft, with --plies or --from-cache) is composed exactly
+ * as the render (the same timeline, sound and seconds), then encoded at
+ * 15 fps and 540x960 and not checked frame by frame (renderer R2,
+ * 2026-10-29). It always reads the capture, and only the MP4 comes back,
+ * also for the whole list: a quick look is never an item's video, and a
+ * clean one is not a clean render. RESULT.draft must be what the job asked
+ * for:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --edl <edl.json> --job-id <id> --out <out.mp4> --from-cache --draft
+ *
  * The app asks first, so a preview of a game with no capture is refused
  * before it is queued. This prints "cached" or "none" and exits 0, or
  * fails when it cannot look:
@@ -270,6 +281,7 @@ const main = async () => {
   const hasCapture = arg("has-capture");
   const threadsOf = arg("threads-of");
   const lint = process.argv.includes("--lint");
+  const draft = process.argv.includes("--draft");
   const workers = Number(arg("workers") ?? WORKERS);
   const host = process.env.WALLGAME_GPU_HOST;
   if (
@@ -278,7 +290,7 @@ const main = async () => {
     (!edlPath || !jobId || (!out && !lint))
   ) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--workers N], or --lint --edl <edl.json> --job-id <id>, or --has-capture <gameId>, or --threads-of <job id>,...",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--draft] [--workers N], or --lint --edl <edl.json> --job-id <id>, or --has-capture <gameId>, or --threads-of <job id>,...",
     );
   }
   if (!Number.isInteger(workers) || workers < 1 || workers > BUDGET.perJob) {
@@ -358,6 +370,12 @@ const main = async () => {
       "--lint reads the cache and makes no video: no --plies, --from-cache or --out",
     );
   }
+  // A live capture is one view of the game: never for a quick look.
+  if (draft && !span && !fullFromCache) {
+    fail("--draft reads the capture: give --plies or --from-cache");
+  }
+  // Only the MP4 comes back from a preview or a quick look.
+  const mp4Only = Boolean(span || draft);
 
   // The app asked already (--has-capture), but this adapter also runs by
   // hand, and without the capture the renderer would fail after desktop-run
@@ -408,6 +426,7 @@ const main = async () => {
     ...(span ? ["--from-cache", "--plies", plies] : []),
     ...(fullFromCache ? ["--from-cache"] : []),
     ...(lint ? ["--from-cache", "--lint"] : []),
+    ...(draft ? ["--draft"] : []),
   ]);
   const unit = DESKTOP_JOB.exec(desktop.stdout)?.[1];
   if (desktop.code !== 0 || !unit) {
@@ -503,6 +522,14 @@ const main = async () => {
     return;
   }
 
+  // A quick look is never a video to post, so it must say what it is.
+  if ((result.draft === true) !== draft) {
+    fail(
+      draft
+        ? "the 4090 gave a full render, not a quick look: the render kit may be older than --draft, so sync it"
+        : "the 4090 gave a quick look (RESULT.draft), not the render this job asked for",
+    );
+  }
   // A preview reports its window and no list hash (render-game-video.mjs),
   // so it can never pass for the day's render.
   if (
@@ -528,14 +555,14 @@ const main = async () => {
     .split("/")
     .pop();
   if (
-    !span &&
+    !mp4Only &&
     (!SHEET_NAME.test(sheetName) || result.sheet.png !== `${dir}/${sheetName}`)
   ) {
     fail(`the render gave no contact sheet in ${dir}`);
   }
 
   console.log(
-    span
+    mp4Only
       ? "[render] copying the preview back"
       : "[render] copying the video and the contact sheet back",
   );
@@ -546,7 +573,7 @@ const main = async () => {
   const fetchDir = join(outDir, `.fetch-${jobId}`);
   mkdirSync(fetchDir, { recursive: true });
   const copied = await scpBack(
-    [`${dir}/out.mp4`, ...(span ? [] : [result.sheet.png])],
+    [`${dir}/out.mp4`, ...(mp4Only ? [] : [result.sheet.png])],
     fetchDir,
   );
   if (copied.code !== 0) {
@@ -574,7 +601,7 @@ const main = async () => {
   };
   const sha256 = take("out.mp4", out, result);
   const sheetPng = `${out}-sheet.png`;
-  if (!span) take(sheetName, sheetPng, result.sheet);
+  if (!mp4Only) take(sheetName, sheetPng, result.sheet);
   rmSync(fetchDir, { recursive: true, force: true });
   step("fetch");
   await ssh(`rm -rf ${dir} ${jobs}`);
@@ -586,7 +613,7 @@ const main = async () => {
       mp4: out,
       bytes: statSync(out).size,
       sha256,
-      sheet: span ? null : { ...result.sheet, png: sheetPng },
+      sheet: mp4Only ? null : { ...result.sheet, png: sheetPng },
       // The adapter's steps, and the renderer's own when it gives them.
       timings: {
         ...timings,

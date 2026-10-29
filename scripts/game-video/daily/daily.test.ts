@@ -2044,7 +2044,8 @@ afterEach(() => {
  * A stand-in for render-4090.mjs that follows the same contract. A live
  * render saves the game's capture (a file "captured-<game>"), which
  * --has-capture reports and --from-cache needs; the file "probe-fails"
- * makes --has-capture fail as an unreachable 4090 would.
+ * makes --has-capture fail as an unreachable 4090 would, and the file
+ * "claim-draft" makes the render say it is a quick look (RESULT.draft).
  */
 const STUB_RENDER = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
@@ -2092,6 +2093,7 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
           ({ ...c, at: i === 0 ? 0 : 10 })),
   ending: edl.ending, edlSha256: hash(raw),
   fromCache: existsSync(__dirname + "/lie-about-cache") ? !fromCache : fromCache,
+  draft: existsSync(__dirname + "/claim-draft"),
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
     board: { x: 81, y: 380, w: 918, h: 852 },
     caption: { x: 81, y: 285, w: 918, h: 60 } },
@@ -2369,6 +2371,15 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
     "the render was from the capture, but the app asked for a live capture",
   );
   expect(viewsToday(dir)).toEqual({ TESTGAME1: 4 });
+
+  // A quick look (RESULT.draft) is never the item's video.
+  unlinkSync(join(dir, "lie-about-cache"));
+  writeFileSync(join(dir, "claim-draft"), "");
+  ({ it } = await render());
+  expect(stage(it)).toBe("render-failed");
+  expect(it.render?.error).toBe(
+    "the render step gave a quick look (RESULT.draft), not the item's video",
+  );
 }, 30_000);
 
 test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", async () => {
@@ -3191,7 +3202,11 @@ test("a carry-over: a new item with the game of one that was dropped", async () 
   );
 }, 30_000);
 
-/** A stand-in for render-4090.mjs --has-capture and --plies. */
+/**
+ * A stand-in for render-4090.mjs --has-capture, --plies and --draft (also
+ * of the whole list, --from-cache). The file "no-draft" makes it give a
+ * full render where a quick look was asked for.
+ */
 const STUB_PREVIEW = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
@@ -3229,15 +3244,20 @@ if (existsSync(__dirname + "/slow")) {
 require("node:fs").appendFileSync(__dirname + "/jobs.log", JSON.stringify({
   job: at("job-id"), workers: Number(at("workers")), start: started,
   end: Date.now() }) + "\\n");
-writeFileSync(__dirname + "/last-plies", at("plies") + " " + edl.events.length);
+const plies = process.argv.includes("--plies") ? at("plies") : null;
+const draft = process.argv.includes("--draft");
+writeFileSync(__dirname + "/last-plies",
+  (plies ?? "all") + " " + edl.events.length + (draft ? " draft" : ""));
 execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
   "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
   "-c:v", "mpeg4", at("out")]);
 const bytes = readFileSync(at("out"));
-const [from, to] = at("plies").split("..").map(Number);
+const [from, to] = (plies ?? "").split("..").map(Number);
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 1, fromCache: true,
-  preview: { from, to }, edlSha256: null, sheet: null }));
+  draft: draft && !existsSync(__dirname + "/no-draft"),
+  preview: plies ? { from, to } : null,
+  edlSha256: plies ? null : hash(readFileSync(at("edl"))), sheet: null }));
 `;
 
 test("a preview: a few plies from the capture, and the item does not change", async () => {
@@ -3638,6 +3658,70 @@ test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () =>
   expect(jobs[2].start).toBeGreaterThanOrEqual(
     Math.min(jobs[0].end, jobs[1].end),
   );
+}, 30_000);
+
+test("a quick look: the whole list or a few plies at 15 fps, never the item's video", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  // Its own process: crew below blocks this one while it runs.
+  const base = await serve(dir, stub);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  await directOver(base, id);
+  interface Look {
+    plies: string | null;
+    draft: boolean;
+    state: string;
+    video: { path: string } | null;
+    error: string | null;
+  }
+  const look = async (body: object) => {
+    const started = await call<{ previewId: string; error?: string }>(
+      base,
+      "/api/daily/preview",
+      { item: id, ...body },
+    );
+    if (started.status !== 200) return started.body.error;
+    for (let i = 0; i < 100; i++) {
+      const p = await call<Look>(
+        base,
+        `/api/daily/preview?id=${encodeURIComponent(started.body.previewId)}`,
+      );
+      if (["done", "failed"].includes(p.body.state)) return p.body;
+      await Bun.sleep(100);
+    }
+    throw new Error("the quick look did not end");
+  };
+
+  // The whole list: from the capture, with the list's hash, into previews/.
+  const whole = (await look({ draft: true })) as Look;
+  expect(whole).toMatchObject({ plies: null, draft: true, state: "done" });
+  expect(whole.video?.path).toContain("/previews/");
+  expect(readFileSync(join(dir, "last-plies"), "utf8")).toMatch(
+    /^all \d+ draft$/,
+  );
+  // A few plies, as a preview.
+  expect(await look({ draft: true, plies: "20..23" })).toMatchObject({
+    plies: "20..23",
+    draft: true,
+    state: "done",
+  });
+  // Only a quick look may leave out the plies.
+  expect(await look({})).toContain("plies");
+  expect(await look({ draft: "yes" })).toBe("draft is true or false");
+  // A full render where a quick look was asked for fails.
+  writeFileSync(join(dir, "no-draft"), "");
+  expect(await look({ draft: true })).toMatchObject({
+    state: "failed",
+    error: "the render step gave a full render, not a quick look",
+  });
+  unlinkSync(join(dir, "no-draft"));
+
+  // crew: the whole list, said as a quick look.
+  const out = crew(base, "preview", "--item", id, "--draft");
+  expect(out.out).toContain("quick look of the whole list: ");
+  expect(out.out).toContain("A clean quick look is not a clean render.");
+  expect((await fetchItem(base, id)).render).toBeNull();
 }, 30_000);
 
 test("the app forgets only finished lints: a queued one keeps its record", async () => {

@@ -85,6 +85,15 @@
  *                                  frame. With several --edl (variants of
  *                                  the game's list), all are queued first,
  *                                  then each prints when it is done
+ *   preview --item ID --draft [--plies FROM..TO] [--edl F]...
+ *                                  a QUICK LOOK: the same video at 15 fps and
+ *                                  540x960, not checked frame by frame, in
+ *                                  about 15 s for a whole video on the
+ *                                  4090. Without --plies, the whole list,
+ *                                  its music where the video plays it. For
+ *                                  timing and story; a clean quick look is
+ *                                  not a clean render (its 15 fps can miss
+ *                                  what the render stops)
  *   sheet --item ID                the contact sheet's path and its stills, in
  *                                  order: look at the PNG before `check`.
  *                                  Also the event strips (strips.mjs): each
@@ -678,7 +687,11 @@ const commands = {
    * refuses (a typo in a variant) prints why and the others go on.
    */
   async preview() {
-    const plies = flag("plies") ?? die("preview needs --plies FROM..TO");
+    const draft = has("draft");
+    const plies =
+      flag("plies") ??
+      (draft ? undefined : die("preview needs --plies FROM..TO, or --draft"));
+    const kind = draft ? "quick look" : "preview";
     const item = itemFlag();
     const paths = flagsAll("edl");
     const lists = paths.length
@@ -693,15 +706,16 @@ const commands = {
       const name = path ? ` (${basename(path)})` : "";
       const { ok, status, json } = await appTry("POST", "/api/daily/preview", {
         item,
-        plies,
+        ...(plies !== undefined && { plies }),
         ...(edl && { edl }),
+        ...(draft && { draft }),
       });
       if (!ok) {
-        console.error(`preview${name} refused: ${json.error ?? status}`);
+        console.error(`${kind}${name} refused: ${json.error ?? status}`);
         failed += 1;
         continue;
       }
-      console.log(`preview ${json.previewId} queued${name}`);
+      console.log(`${kind} ${json.previewId} queued${name}`);
       queued.push({ previewId: json.previewId, path });
     }
     for (const { previewId, path } of queued) {
@@ -715,18 +729,19 @@ const commands = {
         const name = path ? ` (${basename(path)})` : "";
         // A queued preview that waits for the 4090 says why, once a reason.
         if (p.state === "queued" && p.progress && p.progress !== said) {
-          console.log(`preview ${previewId}${name}: ${p.progress}`);
+          console.log(`${kind} ${previewId}${name}: ${p.progress}`);
           said = p.progress;
         }
         if (p.state === "failed") {
-          console.error(`preview ${previewId}${name} failed: ${p.error}`);
+          console.error(`${kind} ${previewId}${name} failed: ${p.error}`);
           failed += 1;
           break;
         }
         if (p.state === "done") {
+          const of = p.plies ? `plies ${p.plies}` : "the whole list";
           console.log(
             [
-              `preview of plies ${p.plies}${name}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the item's video: the item did not change.`,
+              `${kind} of ${of}${name}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB${draft ? ", 15 fps, 540x960" : ""}). Not the item's video: the item did not change.${draft ? " A clean quick look is not a clean render." : ""}`,
               ...timingLines(p.timings),
             ].join("\n"),
           );
@@ -734,7 +749,7 @@ const commands = {
         }
       }
     }
-    if (failed) die(`${failed} of ${lists.length} previews failed`);
+    if (failed) die(`${failed} of ${lists.length} ${kind}s failed`);
   },
 
   async direct() {
