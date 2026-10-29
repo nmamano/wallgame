@@ -85,7 +85,7 @@ import {
   fastForwardTag,
   areaOf,
   dailySeatColors,
-  dailySeatName,
+  dailySeatNames,
   DEFAULT_SLOT_SOUNDS,
   edlSoundUses,
   EDL_LIMITS,
@@ -3636,12 +3636,22 @@ const renderStyle = async (styleName) => {
   /** The seats as the daily look orders them: red on the left, blue on the right. */
   const [redSeat, blueSeat] = seatColors?.[1] === "blue" ? [2, 1] : [1, 2];
   /**
+   * The name the daily look shows for a player, wherever it shows one: the
+   * strip, an overlay's {red}/{blue}, the ending (edl.mjs dailySeatNames:
+   * "Bot" or "Human", with the colour when both seats are one kind).
+   */
+  const seatOf = (id) => apiPlayers.find((p) => p.playerId === id) ?? {};
+  const dailyNames = dailySeatNames({
+    red: seatOf(redSeat),
+    blue: seatOf(blueSeat),
+  });
+  const dailyName = (id) => (id === redSeat ? dailyNames.red : dailyNames.blue);
+  /**
    * The players strip under the daily board (stage.html #strip): each side's
-   * portrait and name in its colour, the name from the record only
-   * (edl.mjs dailySeatName: a bot's or a guest's, else "Human").
+   * portrait and its daily name in its colour.
    */
   const stripSide = (id) => ({
-    name: dailySeatName(apiPlayers.find((p) => p.playerId === id) ?? {}),
+    name: dailyName(id),
     portrait: side(id).portrait,
     hex: side(id).hex,
   });
@@ -3950,7 +3960,7 @@ const renderStyle = async (styleName) => {
     const w = overlayWindows.at(-1);
     return w && (w.end === null || elapsed < w.end - 1e-6) ? w : null;
   };
-  /** An overlay's line, with the seats' names put in (dailySeatName). */
+  /** An overlay's line, with the seats' names put in (dailySeatNames). */
   const overlayText = (ev) =>
     (ev.text ?? OVERLAYS[ev.asset].line ?? "")
       .replace("{red}", stripSide(redSeat).name)
@@ -5926,8 +5936,11 @@ const renderStyle = async (styleName) => {
           before: fileUrl(boardFrames[ply - 1]),
           stamp: FINISH_WORD,
           how: `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`,
-          winner: side(winnerId),
-          loser: side(winnerId === 1 ? 2 : 1),
+          winner: { ...side(winnerId), name: dailyName(winnerId) },
+          loser: {
+            ...side(winnerId === 1 ? 2 : 1),
+            name: dailyName(winnerId === 1 ? 2 : 1),
+          },
         });
         cue(sounds.finish, "finish", { at: elapsed + timing.impact });
         const endingFrames = Math.round(timing.seconds * FPS);

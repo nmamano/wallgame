@@ -35,7 +35,7 @@
  *
  *   draw     how the stage draws it:
  *            toast    a game-chat toast: the EDL's `text`, with {red} and
- *                     {blue} put in as the seats' names (dailySeatName);
+ *                     {blue} put in as the seats' names (dailySeatNames);
  *            loading  "CAPTURE LOADING" and a bar at 96..99% as the closest
  *                     hunter's steps fall; ERROR when they rise (the save).
  *                     It lasts until that rise, so the EDL sets no seconds;

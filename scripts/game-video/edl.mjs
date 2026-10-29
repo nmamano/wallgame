@@ -221,24 +221,21 @@ export const dailySeatColors = (isBot) => {
 export const ENDINGS = ["replay", "gg", "ko"];
 
 /**
- * A guest's seat name (server/games/guest-names.ts): "Guest " and an animal,
- * and a number when two guests share the animal. An account name may not
- * contain "guest", so only a guest can have a name of this form.
+ * The names the daily video shows for its two seats, wherever it shows one
+ * (the players strip, a {red} or {blue} in an overlay's text, the ending):
+ * "Bot" or "Human" by the seat's kind, never a bot's, a guest's or an
+ * account's name (Nil, 2026-10-29: "we should never show "Normal Bot" or
+ * "Guest Ibex". Bot and Human is less text and conveys the same"). When
+ * both seats are the same kind, each name starts with its seat's colour:
+ * "Red Bot" and "Blue Bot", "Red Human" and "Blue Human".
+ * @param {{ red: { configType?: string, displayName?: string }, blue: { configType?: string, displayName?: string } }} seats
+ * @returns {{ red: string, blue: string }}
  */
-const GUEST_NAME = /^Guest [A-Z][a-z]+(?: \d+)?$/;
-
-/**
- * The name the daily video shows for a seat (the players strip): a bot's
- * name, or a guest's, from the replay's record of the seat. Any other seat
- * is a signed-in person, whose account name a video never shows: "Human",
- * as the VS overlay says.
- * @param {{ configType?: string, displayName?: string }} seat
- */
-export const dailySeatName = (seat) =>
-  seat.configType === "bot" ||
-  (seat.configType === "human" && GUEST_NAME.test(seat.displayName ?? ""))
-    ? (seat.displayName ?? "Human")
-    : "Human";
+export const dailySeatNames = ({ red, blue }) => {
+  const kind = (seat) => (seat.configType === "bot" ? "Bot" : "Human");
+  const [r, b] = [kind(red), kind(blue)];
+  return r === b ? { red: `Red ${r}`, blue: `Blue ${b}` } : { red: r, blue: b };
+};
 
 /**
  * The daily video's frame, and the part of it that the apps do not paint

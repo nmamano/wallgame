@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   checkEdlAgainstGame,
   dailySeatColors,
-  dailySeatName,
+  dailySeatNames,
   DEFAULT_FREEZE_HOLD_SECONDS,
   DEFAULT_PATH_HOLD_SECONDS,
   DEFAULT_SLOT_SOUNDS,
@@ -714,20 +714,38 @@ describe("parsePlyWindow", () => {
   });
 });
 
-describe("dailySeatName", () => {
-  test("shows a bot's or a guest's name, and no signed-in person's", () => {
-    const seat = (configType: string, displayName: string) => ({
-      configType,
-      displayName,
+describe("dailySeatNames (Nil, 2026-10-29: Bot and Human, never a name)", () => {
+  const bot = { configType: "bot", displayName: "Normal Bot" };
+  const human = { configType: "human", displayName: "Guest Ibex" };
+  test("a bot and a human: Bot and Human", () => {
+    expect(dailySeatNames({ red: bot, blue: human })).toEqual({
+      red: "Bot",
+      blue: "Human",
     });
-    expect(dailySeatName(seat("bot", "Normal Bot"))).toBe("Normal Bot");
-    expect(dailySeatName(seat("human", "Guest Ibex"))).toBe("Guest Ibex");
-    expect(dailySeatName(seat("human", "Guest Ibex 2"))).toBe("Guest Ibex 2");
-    expect(dailySeatName(seat("human", "nilmamano"))).toBe("Human");
-    expect(dailySeatName(seat("human", "Guestbook Fan"))).toBe("Human");
-    expect(dailySeatName(seat("human", "Guest ibex"))).toBe("Human");
-    expect(dailySeatName(seat("custom", "Guest Ibex"))).toBe("Human");
-    expect(dailySeatName({})).toBe("Human");
+    expect(dailySeatNames({ red: human, blue: bot })).toEqual({
+      red: "Human",
+      blue: "Bot",
+    });
+  });
+  test("two bots: Red Bot and Blue Bot", () => {
+    expect(dailySeatNames({ red: bot, blue: bot })).toEqual({
+      red: "Red Bot",
+      blue: "Blue Bot",
+    });
+  });
+  test("two humans, guests or signed in: Red Human and Blue Human", () => {
+    expect(
+      dailySeatNames({
+        red: human,
+        blue: { configType: "human", displayName: "nilmamano" },
+      }),
+    ).toEqual({ red: "Red Human", blue: "Blue Human" });
+  });
+  test("a seat with no kind is a human", () => {
+    expect(dailySeatNames({ red: {}, blue: bot })).toEqual({
+      red: "Human",
+      blue: "Bot",
+    });
   });
 });
 
