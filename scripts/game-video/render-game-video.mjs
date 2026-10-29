@@ -4049,7 +4049,11 @@ const renderStyle = async (styleName) => {
    * narrative"), the race counter ticks, and the camera holds and lets go.
    * The ply's other events and its rest follow, as for any move.
    */
-  const playLeadZoom = async (ply, plyIndex, ev) => {
+  /**
+   * `pullOut` false: the zoom holds to its last frame and the ending cuts
+   * in from it (intoEnding, below).
+   */
+  const playLeadZoom = async (ply, plyIndex, ev, { pullOut = true } = {}) => {
     const start = elapsed;
     const z = frameZoom(ev.frame, ev.scale);
     const push = Math.round(LEAD_PUSH * FPS);
@@ -4065,7 +4069,9 @@ const renderStyle = async (styleName) => {
     }
     land(plyIndex);
     if (ev.sound) cueEvent(meme(ev.sound), ev);
-    const frames = Math.round((ev.holdSeconds + ZOOM_OUT) * FPS);
+    const frames = Math.round(
+      (ev.holdSeconds + (pullOut ? ZOOM_OUT : 0)) * FPS,
+    );
     const stillAt = Math.round(LEAD_STILL_AT * FPS);
     for (let i = 0; i < frames; i += 1) {
       if (i === stillAt) {
@@ -4114,8 +4120,14 @@ const renderStyle = async (styleName) => {
    * under them. Like the shake, every effect must give the board back exactly
    * as it found it, so the box is read again afterwards and must match.
    */
-  const playEvents = async (ply, plyIndex) => {
-    for (const ev of landingEventsAt(plyIndex)) {
+  /**
+   * `intoEnding`: the ending cuts in after these events, so a zoom that is
+   * the last of them holds to its last frame and no rest follows it.
+   */
+  const playEvents = async (ply, plyIndex, { intoEnding = false } = {}) => {
+    const landing = landingEventsAt(plyIndex);
+    const endsInZoom = intoEnding && landing.at(-1)?.kind === "zoom";
+    for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
       if (ev.sound) {
@@ -4137,7 +4149,8 @@ const renderStyle = async (styleName) => {
       }
       if (ev.kind === "zoom") {
         const z = frameZoom(ev.frame, ev.scale);
-        const frames = Math.round((ZOOM_IN + ev.holdSeconds + ZOOM_OUT) * FPS);
+        const out = endsInZoom && ev === landing.at(-1) ? 0 : ZOOM_OUT;
+        const frames = Math.round((ZOOM_IN + ev.holdSeconds + out) * FPS);
         const mid = Math.round((ZOOM_IN + ev.holdSeconds / 2) * FPS);
         for (let i = 0; i < frames; i += 1) {
           if (i === mid) stillNext = label;
@@ -4211,10 +4224,14 @@ const renderStyle = async (styleName) => {
       }
       spanOf(ev, start);
     }
-    await emit(playState(ply), EFFECT_REST_SECONDS, {
-      kind: "move",
-      ply: plyIndex,
-    });
+    if (!endsInZoom) {
+      await emit(playState(ply), EFFECT_REST_SECONDS, {
+        kind: "move",
+        ply: plyIndex,
+      });
+    }
+    // The board's layout box, not the camera layer: after a zoom that runs
+    // into the ending (endsInZoom) the camera is still zoomed here.
     const after = await boardRectNow();
     if (JSON.stringify(after) !== JSON.stringify(encodedBoardRect)) {
       throw new Error(
@@ -4312,8 +4329,27 @@ const renderStyle = async (styleName) => {
     beatStartAt.set(plyIndex, elapsed);
     if (wallz) await playFreeze(ply, plyIndex);
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
-    if (lead) await playLeadZoom(ply, plyIndex, lead);
-    else land(plyIndex);
+    /*
+      The capture's zoom runs straight into the ending's impact: no pull-out
+      and no still board before it (Wall Game Director, 2026-10-29: a still,
+      silent board held 0.6-0.8 s after the climax). Only into an ending
+      whose impact is its first frame (gg, ko): its white flash covers the
+      camera's cut back to the whole board.
+    */
+    const intoEnding =
+      wallz &&
+      isLast &&
+      winnerId !== null &&
+      endingTimings[style.ending].impact === 0;
+    const leadIntoEnding =
+      intoEnding &&
+      lead !== undefined &&
+      landingEventsAt(plyIndex).length === 0;
+    if (lead) {
+      await playLeadZoom(ply, plyIndex, lead, { pullOut: !leadIntoEnding });
+    } else {
+      land(plyIndex);
+    }
     if (wallz) {
       // A fast-forward's overlay closes as the move after its range lands.
       const live = liveOverlay();
@@ -4347,8 +4383,8 @@ const renderStyle = async (styleName) => {
         under them, and an ending frame is not a plain position of the game.
       */
       if (landingEventsAt(plyIndex).length > 0) {
-        await playEvents(ply, plyIndex);
-      } else {
+        await playEvents(ply, plyIndex, { intoEnding });
+      } else if (!leadIntoEnding) {
         await emit(playState(ply), paceAt(plyIndex), {
           kind: "move",
           ply: plyIndex,
