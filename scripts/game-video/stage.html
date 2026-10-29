@@ -1210,10 +1210,14 @@
        *       winner, loser }
        */
       window.__ENDINGS = {
-        replay: { seconds: 2.0, impact: 1.4, hold: 1.3 },
-        gg: { seconds: 1.0, impact: 0, hold: 1.6 },
-        ko: { seconds: 1.0, impact: 0, hold: 1.5 },
+        replay: { seconds: 2.0, impact: 1.4, hold: 1.3, flash: 0 },
+        gg: { seconds: 1.0, impact: 0, hold: 1.6, flash: 0.18 },
+        ko: { seconds: 1.0, impact: 0, hold: 1.5, flash: 0.12 },
       };
+      /*
+        window.__TEXT_TIMING: how long text takes to come in and go out
+        (overlays.mjs TEXT_TIMING), set by the renderer before any frame.
+      */
 
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
       const easeOut3 = (x) => 1 - Math.pow(1 - x, 3);
@@ -1385,7 +1389,7 @@
 
       /**
        * An EDL stamp in the middle of the game: the word punches in like the
-       * VS mark and fades over its last quarter second.
+       * VS mark and fades over its last quarter second (__TEXT_TIMING).
        *   m = { text, t: seconds into the stamp, seconds: its length,
        *         at: {x, y} its centre on the board image (0..1), where the
        *         renderer measured it to cover the least of the move,
@@ -1398,10 +1402,11 @@
         el.textContent = m.text;
         el.style.left = m.at.x * 100 + "%";
         el.style.top = m.at.y * 100 + "%";
-        el.style.opacity = 1 - span(m.t, m.seconds - 0.25, m.seconds);
+        const { stampPunch, stampFade } = window.__TEXT_TIMING;
+        el.style.opacity = 1 - span(m.t, m.seconds - stampFade, m.seconds);
         el.style.transform =
           "translate(-50%,-50%) rotate(-8deg) scale(" +
-          punch(span(m.t, 0, 0.25)) * m.fit +
+          punch(span(m.t, 0, stampPunch)) * m.fit +
           ")";
       };
 
@@ -1734,8 +1739,9 @@
        * An EDL overlay (overlays.mjs, render-game-video.mjs overlayFrame):
        * drawn from o.draw and the facts the renderer put in, at the box it
        * placed (o.place, 0..1 of the board). It pops in over its first
-       * 0.15 s and fades by o.alpha. With no place yet (the renderer places
-       * an overlay once its window closes), nothing shows.
+       * overlayPop (TEXT_TIMING) and fades by o.alpha. With no place yet
+       * (the renderer places an overlay once its window closes), nothing
+       * shows.
        */
       const ERROR_HIT_SECONDS = 0.3;
       const OVERLAY_FIT_FLOOR = 0.6;
@@ -1749,7 +1755,7 @@
         el.style.top = p.y * 100 + "%";
         el.style.width = p.w * 100 + "%";
         el.style.height = p.h * 100 + "%";
-        const pop = easeOut3(span(o.t, 0, 0.15));
+        const pop = easeOut3(span(o.t, 0, window.__TEXT_TIMING.overlayPop));
         el.style.opacity = pop * o.alpha;
         // The save hits the loading bar: over ERROR_HIT_SECONDS the panel
         // shakes side to side, dying out, and the bar drains (Wall Game
@@ -2277,8 +2283,9 @@
         }
 
         if (e.kind === "gg") {
-          show($("flash"), t < 0.18);
-          $("flash").style.opacity = 0.85 * (1 - span(t, 0, 0.18));
+          const flash = window.__ENDINGS.gg.flash;
+          show($("flash"), t < flash);
+          $("flash").style.opacity = 0.85 * (1 - span(t, 0, flash));
           // Translation only, like the capture shake: a scale would not
           // come back to where it began.
           const k = 1 - span(t, 0, 0.5);
@@ -2313,8 +2320,9 @@
         if (e.kind === "ko") {
           $("boardImg").style.filter =
             "brightness(" + (1 - 0.4 * span(t, 0, 0.4)) + ")";
-          show($("flash"), t < 0.12);
-          $("flash").style.opacity = 0.6 * (1 - span(t, 0, 0.12));
+          const flash = window.__ENDINGS.ko.flash;
+          show($("flash"), t < flash);
+          $("flash").style.opacity = 0.6 * (1 - span(t, 0, flash));
           if (t < 0.95) {
             // The loser's pawn, from the capture cell up and across the
             // frame, spinning and growing as it goes, off the far side.

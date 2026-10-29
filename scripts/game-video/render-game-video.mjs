@@ -105,6 +105,7 @@ import {
   placeOverlay,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
+  TEXT_TIMING,
   overlayWords,
   readingSeconds,
 } from "./overlays.mjs";
@@ -777,7 +778,9 @@ const LAUGH_SECONDS = 1.3;
 const STAMP_SECONDS = 1.0;
 /**
  * A stamp lands this long after its move, so the move is seen first (audit
- * item 4); its event lasts STAMP_LAND_AT + STAMP_SECONDS.
+ * item 4); its event lasts STAMP_LAND_AT + stampSeconds: STAMP_SECONDS, or
+ * longer when its word needs more to be read fully shown. A trap's word
+ * the same, from TRAP_STAMP_AT.
  */
 const STAMP_LAND_AT = 0.3;
 /**
@@ -834,10 +837,9 @@ const introPathSeconds = (points) =>
   drawSeconds(points) + INTRO_PATH_HOLD_SECONDS + PATH_FADE_SECONDS;
 /**
  * An overlay (edl.mjs "overlay") fades out over its last
- * OVERLAY_FADE_SECONDS; the capture loading bar holds its ERROR for
- * LOADING_ERROR_SECONDS after the save lands, then closes.
+ * TEXT_TIMING.overlayFade (overlays.mjs); the capture loading bar holds its
+ * ERROR for LOADING_ERROR_SECONDS after the save lands, then closes.
  */
-const OVERLAY_FADE_SECONDS = 0.2;
 const LOADING_ERROR_SECONDS = 0.9;
 const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
@@ -2987,6 +2989,10 @@ const renderStyle = async (styleName) => {
         document.documentElement.style.setProperty(k, v);
       }
     }, layout.vars);
+    // The text timings it paints with (overlays.mjs TEXT_TIMING).
+    await page.evaluate((t) => {
+      window.__TEXT_TIMING = t;
+    }, TEXT_TIMING);
     /*
       The VS names are fitted by measuring them, and a measurement taken while
       a font still loads is wrong, so no frame is taken before the fonts are in.
@@ -3008,8 +3014,17 @@ const renderStyle = async (styleName) => {
   const { page: stage, board: dailyBoard } = await openStage(browser);
   if (wallz) log(`daily board ${dailyBoard}px, inside the safe area`);
 
-  /** Published by stage.html: each ending's length, hold and impact second. */
+  /**
+   * Published by stage.html: each ending's length, hold, impact second and
+   * white flash.
+   */
   const endingTimings = await stage.evaluate(() => window.__ENDINGS);
+  /** A stamp's length from its landing: punch, reading time, fade. */
+  const stampSeconds = (text) =>
+    Math.max(
+      STAMP_SECONDS,
+      TEXT_TIMING.stampPunch + readingSeconds({}, text) + TEXT_TIMING.stampFade,
+    );
 
   /** Published by stage.html, so the sting can be aligned to the visual punch. */
   const vsPunchFraction = await stage.evaluate(
@@ -3248,7 +3263,14 @@ const renderStyle = async (styleName) => {
       ev,
       asset: OVERLAYS[ev.asset],
       start: elapsed,
-      end: ev.seconds === null ? null : elapsed + ev.seconds,
+      // `seconds` is the time it is fully shown: its pop and fade come on top.
+      end:
+        ev.seconds === null
+          ? null
+          : elapsed +
+            TEXT_TIMING.overlayPop +
+            ev.seconds +
+            TEXT_TIMING.overlayFade,
       // The board the move after the fast-forward range leads to.
       closesOnBoard: fast ? fast.toPly + 2 : null,
       // A bar's: the boxes the ending draws, measured (endingBoxes).
@@ -3446,9 +3468,16 @@ const renderStyle = async (styleName) => {
       const text = w.ev.text ?? w.asset.line;
       const read = readingSeconds(w.asset, text);
       const showsFor = w.end - w.start;
-      if (showsFor + 0.5 / FPS < read) {
+      // Fully shown: after its pop (on a won ending, the bar's white flash
+      // if longer) and before its fade.
+      const comesIn =
+        w.asset.form === "bar" && winnerId !== null
+          ? Math.max(TEXT_TIMING.overlayPop, endingTimings[style.ending].flash)
+          : TEXT_TIMING.overlayPop;
+      const fullFor = showsFor - comesIn - TEXT_TIMING.overlayFade;
+      if (fullFor + 0.5 / FPS < read) {
         throw new Error(
-          `${where} shows ${showsFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending holds for its bar, so this is a bug" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
+          `${where} is fully shown ${fullFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending holds for its bar, so this is a bug" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
         );
       }
       /*
@@ -3494,7 +3523,7 @@ const renderStyle = async (styleName) => {
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
-          Math.min(1, (w.end - f.at) / OVERLAY_FADE_SECONDS),
+          Math.min(1, (w.end - f.at) / TEXT_TIMING.overlayFade),
         );
       }
       eventSpans.push({
@@ -4168,11 +4197,11 @@ const renderStyle = async (styleName) => {
       const seconds = {
         scared: SCARED_SECONDS,
         laugh: LAUGH_SECONDS,
-        stamp: STAMP_LAND_AT + STAMP_SECONDS,
+        stamp: STAMP_LAND_AT + stampSeconds(ev.text),
         blunder: BLUNDER_SECONDS,
         brilliant: BRILLIANT_SECONDS,
         react: REACT_SECONDS,
-        trap: TRAP_SECONDS,
+        trap: Math.max(TRAP_SECONDS, TRAP_STAMP_AT + stampSeconds(ev.text)),
         race: RACE_FLASH_SECONDS,
         path: ev.kind === "path" ? pathSeconds(ev) : 0,
       }[ev.kind];
@@ -4412,8 +4441,14 @@ const renderStyle = async (styleName) => {
             bar.text ?? OVERLAYS[bar.asset].line,
           )
         : 0;
-      const holdFor = (shows) => {
-        const more = Math.ceil(Math.max(0, barRead - shows) * FPS) / FPS;
+      // Fully shown for its reading time: its pop (or the ending's white
+      // flash, if longer) and its fade at the video's end come on top.
+      const holdFor = (shows, flash) => {
+        const needs =
+          barRead +
+          Math.max(TEXT_TIMING.overlayPop, flash) +
+          TEXT_TIMING.overlayFade;
+        const more = Math.ceil(Math.max(0, needs - shows) * FPS) / FPS;
         if (more > 0) log(`ending held +${more.toFixed(1)} s for the bar`);
         return more;
       };
@@ -4460,7 +4495,7 @@ const renderStyle = async (styleName) => {
             ending: ending(timing.seconds),
             credit: creditAt(timing.seconds),
           }),
-          timing.hold + (bar ? holdFor(barShows) : 0),
+          timing.hold + (bar ? holdFor(barShows, timing.flash) : 0),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else if (creditText) {
@@ -4481,14 +4516,14 @@ const renderStyle = async (styleName) => {
           playState(ply, { credit: creditAt(CREDIT_FADE_SECONDS) }),
           DRAW_HOLD_SECONDS -
             fade / FPS +
-            (bar ? holdFor(DRAW_HOLD_SECONDS) : 0),
+            (bar ? holdFor(DRAW_HOLD_SECONDS, 0) : 0),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else {
         if (bar) openOverlay(bar);
         await emit(
           playState(ply),
-          DRAW_HOLD_SECONDS + (bar ? holdFor(DRAW_HOLD_SECONDS) : 0),
+          DRAW_HOLD_SECONDS + (bar ? holdFor(DRAW_HOLD_SECONDS, 0) : 0),
           { kind: "move", ply: plyIndex },
         );
       }

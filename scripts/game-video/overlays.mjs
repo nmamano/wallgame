@@ -232,6 +232,21 @@ export const OVERLAY_NAME_TOKENS = ["{red}", "{blue}"];
  * as a word, an emoji or a symbol (->) does not, and a seat's name
  * ({red}, {blue}) counts as NAME_WORDS ("Guest Jackal").
  */
+/**
+ * How long text takes to come in and go out, in seconds: an overlay's pop
+ * and fade, a stamp's (or trap word's) punch and fade. A reading time is
+ * the time a text is fully shown, so these come on top of it (Wall Game
+ * Director, 2026-10-29: every timed text got 0.1-0.2 s less than the
+ * rule). edl.mjs and the renderer read them here, and the renderer gives
+ * them to stage.html, which paints with them.
+ */
+export const TEXT_TIMING = {
+  overlayPop: 0.15,
+  overlayFade: 0.2,
+  stampPunch: 0.25,
+  stampFade: 0.25,
+};
+
 export const READ_BASE_SECONDS = 1.2;
 export const READ_WORD_SECONDS = 0.3;
 const NAME_WORDS = 2;

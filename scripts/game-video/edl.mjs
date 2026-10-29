@@ -164,6 +164,7 @@ import {
   PORTRAIT_DRAWS,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
+  TEXT_TIMING,
   overlayWords,
   readingSeconds,
 } from "./overlays.mjs";
@@ -865,13 +866,13 @@ export const validateEdl = (raw) => {
     }
     const onScreen = (r.toPly - r.fromPly + 1) * r.secondsPerMove;
     const asset = OVERLAYS[e.asset];
-    const needs = Math.max(
-      EDL_LIMITS.overlayFastSeconds,
-      readingSeconds(asset, e.text ?? asset.line),
-    );
-    if (onScreen < needs) {
+    // Fully shown for its reading time: its pop and fade come on top.
+    const read = readingSeconds(asset, e.text ?? asset.line);
+    const comes = TEXT_TIMING.overlayPop + TEXT_TIMING.overlayFade;
+    const needs = Math.max(EDL_LIMITS.overlayFastSeconds, read + comes);
+    if (onScreen < needs - 1e-9) {
       fail(
-        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; ${e.asset} needs ${needs} s to be read`,
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; ${e.asset} needs ${needs.toFixed(2)} s (${read} s to be read, ${comes.toFixed(2)} s to come in and go out)`,
       );
     }
     e.seconds = null;

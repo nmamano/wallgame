@@ -837,15 +837,22 @@ describe("the overlay event", () => {
     // do-something is a cut-out clip since 2026-10-29; a clip or a panel
     // may cover the range.
     const clip = { form: "clip", asset: "do-something", seat: "blue" };
-    // Its line reads in 2.1 s: 11 plies at 0.2 s.
-    expect(accept(overlay(clip, ff(3, 13))).events[0]).toMatchObject({
+    // Its line reads in 2.1 s, fully shown: with its pop and fade, 2.45 s,
+    // so 13 plies at 0.2 s.
+    expect(accept(overlay(clip, ff(3, 15))).events[0]).toMatchObject({
       seconds: null,
     });
-    expect(accept(overlay(toast, ff(3, 13))).events[0]).toMatchObject({
+    expect(accept(overlay(toast, ff(3, 15))).events[0]).toMatchObject({
       seconds: null,
     });
     expect(errorsOf(overlay(clip, ff(3, 8)))).toEqual([
-      "events[0]: the fastForward range 3-8 is on screen 1.20 s; do-something needs 2.1 s to be read",
+      "events[0]: the fastForward range 3-8 is on screen 1.20 s; do-something needs 2.45 s (2.1 s to be read, 0.35 s to come in and go out)",
+    ]);
+    // On screen as long as its reading time alone: the render would show it
+    // fully for less, so the list is refused here (Video Reviewer 1, review
+    // 55).
+    expect(errorsOf(overlay(clip, ff(3, 13)))).toEqual([
+      "events[0]: the fastForward range 3-13 is on screen 2.20 s; do-something needs 2.45 s (2.1 s to be read, 0.35 s to come in and go out)",
     ]);
     expect(errorsOf(overlay(clip, ff(2, 8)))[0]).toContain(
       "only one overlay on its first ply",
@@ -866,14 +873,14 @@ describe("the overlay event", () => {
       )[0],
     ).toContain("lasts the range");
     const two = {
-      ...overlay(clip, ff(3, 13)),
+      ...overlay(clip, ff(3, 15)),
       events: [
         { ply: 3, kind: "overlay", ...clip },
         { ply: 3, kind: "overlay", ...toast },
       ],
     };
     expect(errorsOf(two)).toEqual([
-      "events[1]: the fastForward range 3-13 has an overlay already; it shows one",
+      "events[1]: the fastForward range 3-15 has an overlay already; it shows one",
     ]);
   });
 
