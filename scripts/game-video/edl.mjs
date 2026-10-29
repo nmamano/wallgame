@@ -89,6 +89,10 @@
  *            lands as its event starts.
  *     zoom    the camera punches in to fit every cell and wall in `frame`
  *             (at most `scale`), holds for `holdSeconds`, and lets go.
+ *             A window that would cut a pawn grows (down to 1.0) or
+ *             closes in (up to 10% above `scale`, never above the
+ *             largest zoomScale), whichever is nearer to that scale
+ *             (render-game-video.mjs frameZoom).
  *             With "lead": true it starts BEFORE the move: the camera
  *             pushes in on the position before it, the move lands inside
  *             the zoom with the zoom's sound, then the hold and the let-go

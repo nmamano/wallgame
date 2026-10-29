@@ -88,6 +88,7 @@ import {
   dailySeatName,
   DEFAULT_SLOT_SOUNDS,
   edlSoundUses,
+  EDL_LIMITS,
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
@@ -2539,6 +2540,13 @@ const cellAtTerm = (term) => {
 const termOfCell = ([row, col]) =>
   `${String.fromCharCode(97 + col)}${GRID.rows - row}`;
 
+/** The cell of a pawn as the page drew it (pawnSpots). */
+const drawnPawnCell = (p) =>
+  termOfCell([
+    Math.round((p.y - GRID.y(0)) / GRID.pitchY - 0.5),
+    Math.round((p.x - GRID.x(0)) / GRID.pitchX - 0.5),
+  ]);
+
 /**
  * An EDL wall as the line it draws on the board image, [x1, y1, x2, y2] in
  * 0..1: ^h4 is the top edge of h4, >h4 its right edge.
@@ -2580,22 +2588,176 @@ const litWallLine = (term, boardIndex) => {
  * keeps every edge of the magnified board outside the frame.
  */
 const ZOOM_MARGIN = 0.75;
-const frameZoom = (terms, maxScale) => {
+/**
+ * A zoom never cuts a pawn in half at the frame's edge (Wall Game Director,
+ * 2026-10-29: the zoom on VX-IPenv ply 12 cut the red cat on f2). When the
+ * window shows a pawn of `boards` (the board indexes the zoom shows) only
+ * in part, it either grows until each such pawn is fully inside (the pawn
+ * joins the box; a grown window can catch the next pawn, so it repeats), or
+ * closes in on the same centre until each is fully outside, while it still
+ * holds the terms plus CLOSE_MARGIN cells, at most CLOSE_MOST times the
+ * scale asked and never above the EDL's largest zoom scale. Of the two, the scale nearer to
+ * the one asked wins; a tie grows. The hold drifts `drift` above the scale
+ * (zoomAt), and with one origin the windows nest: a pawn is safe for the
+ * whole hold when it is whole in the smallest window or unseen in the
+ * largest. A pawn left out still crosses the edge during the push and the
+ * pull-out, as the camera moves. The 1.05 floor is for the frame asked; a grown window may go
+ * down to 1.0, the whole board, which cuts nothing (only a drift above 1.0
+ * can, and then a WARNING says so).
+ */
+const PAWN_AIR = 0.1;
+const CLOSE_MARGIN = 0.3;
+const CLOSE_MOST = 1.1;
+const frameZoom = (terms, maxScale, { boards, drift = 0, label }) => {
   const boxes = terms.map(termBox);
-  const top = Math.min(...boxes.map((b) => b[0])) - ZOOM_MARGIN;
-  const left = Math.min(...boxes.map((b) => b[1])) - ZOOM_MARGIN;
-  const bottom = Math.max(...boxes.map((b) => b[2])) + ZOOM_MARGIN;
-  const right = Math.max(...boxes.map((b) => b[3])) + ZOOM_MARGIN;
-  const w = (right - left) * GRID.pitchX;
-  const h = (bottom - top) * GRID.pitchY;
-  const scale = Math.max(1.05, Math.min(maxScale, 1 / Math.max(w, h)));
-  const centre = {
-    x: GRID.x((left + right) / 2),
-    y: GRID.y((top + bottom) / 2),
+  /** The terms' box plus `margin` cells, in cells. */
+  const spanOf = (margin) => ({
+    top: Math.min(...boxes.map((b) => b[0])) - margin,
+    left: Math.min(...boxes.map((b) => b[1])) - margin,
+    bottom: Math.max(...boxes.map((b) => b[2])) + margin,
+    right: Math.max(...boxes.map((b) => b[3])) + margin,
+  });
+  const centreOf = (box) => ({
+    x: GRID.x((box.left + box.right) / 2),
+    y: GRID.y((box.top + box.bottom) / 2),
+  });
+  // At 1.0 any origin shows the whole board; the centre is where a drift
+  // pushes in.
+  const at = (scale, centre) => {
+    const origin = (c) =>
+      Math.max(
+        0,
+        Math.min(1, scale === 1 ? c : (scale * c - 0.5) / (scale - 1)),
+      );
+    return { scale, x: origin(centre.x), y: origin(centre.y) };
   };
-  const origin = (c) =>
-    Math.max(0, Math.min(1, (scale * c - 0.5) / (scale - 1)));
-  return { scale, x: origin(centre.x), y: origin(centre.y) };
+  /** The scale at which `box` fills the frame `less` below its peak. */
+  const fill = (box, floor, less) => {
+    const w = (box.right - box.left) * GRID.pitchX;
+    const h = (box.bottom - box.top) * GRID.pitchY;
+    return Math.max(floor, Math.min(maxScale, 1 / Math.max(w, h) - less));
+  };
+  /** The window on the board image at `up` above the zoom's scale, 0..1. */
+  const windowOf = (z, up) => {
+    const s = z.scale + up;
+    return {
+      x0: z.x - z.x / s,
+      x1: z.x + (1 - z.x) / s,
+      y0: z.y - z.y / s,
+      y1: z.y + (1 - z.y) / s,
+    };
+  };
+  const eps = 1e-6;
+  const pawns = boards.flatMap((b) => pawnSpots.get(b) ?? []);
+  /**
+   * The pawns that the window cuts at some time of the hold: not whole in
+   * its smallest window (the peak) and seen in its largest (the hold's
+   * start).
+   */
+  const cutBy = (z) => {
+    const small = windowOf(z, drift);
+    const large = windowOf(z, 0);
+    return pawns.filter((p) => {
+      const [x0, x1, y0, y1] = [
+        p.x - p.w / 2,
+        p.x + p.w / 2,
+        p.y - p.h / 2,
+        p.y + p.h / 2,
+      ];
+      const whole =
+        x0 >= small.x0 - eps &&
+        x1 <= small.x1 + eps &&
+        y0 >= small.y0 - eps &&
+        y1 <= small.y1 + eps;
+      const seen =
+        x0 < large.x1 && x1 > large.x0 && y0 < large.y1 && y1 > large.y0;
+      return seen && !whole;
+    });
+  };
+  const cells = (ps) => [...new Set(ps.map(drawnPawnCell))].join(", ");
+
+  const box = spanOf(ZOOM_MARGIN);
+  // As before T9: no drift in the asked fit, so a zoom that cuts no pawn
+  // is the same to the byte.
+  const asked = at(fill(box, 1.05, 0), centreOf(box));
+  const cut = cutBy(asked);
+  if (cut.length === 0) return asked;
+
+  let grown = asked;
+  const grownBox = { ...box };
+  const grownFor = [];
+  for (let pass = 0; pass < 6 && cutBy(grown).length > 0; pass += 1) {
+    for (const p of cutBy(grown)) {
+      grownFor.push(p);
+      grownBox.top = Math.min(
+        grownBox.top,
+        (p.y - p.h / 2 - GRID.y(0)) / GRID.pitchY - PAWN_AIR,
+      );
+      grownBox.left = Math.min(
+        grownBox.left,
+        (p.x - p.w / 2 - GRID.x(0)) / GRID.pitchX - PAWN_AIR,
+      );
+      grownBox.bottom = Math.max(
+        grownBox.bottom,
+        (p.y + p.h / 2 - GRID.y(0)) / GRID.pitchY + PAWN_AIR,
+      );
+      grownBox.right = Math.max(
+        grownBox.right,
+        (p.x + p.w / 2 - GRID.x(0)) / GRID.pitchX + PAWN_AIR,
+      );
+    }
+    grown = at(fill(grownBox, 1, drift), centreOf(grownBox));
+  }
+
+  const must = spanOf(CLOSE_MARGIN);
+  const holds = (z) => {
+    const v = windowOf(z, drift);
+    return (
+      Math.max(0, GRID.x(must.left)) >= v.x0 - eps &&
+      Math.min(1, GRID.x(must.right)) <= v.x1 + eps &&
+      Math.max(0, GRID.y(must.top)) >= v.y0 - eps &&
+      Math.min(1, GRID.y(must.bottom)) <= v.y1 + eps
+    );
+  };
+  // At most CLOSE_MOST above the scale asked, and never above the largest
+  // scale an EDL may ask for (Wall Game Director, 2026-10-29, after Video
+  // Reviewer 2 found "nearer wins" alone took 2.00 to 2.51 and 3.0 to
+  // almost 5). Above the cap, close-in is no candidate and the zoom grows.
+  const cap = Math.min(asked.scale * CLOSE_MOST, EDL_LIMITS.zoomScale[1]);
+  let closer = null;
+  let closeStop = "cap";
+  for (let step = 1; asked.scale + step / 100 <= cap + eps; step += 1) {
+    const z = at(asked.scale + step / 100, centreOf(box));
+    if (!holds(z)) {
+      closeStop = "frame";
+      break;
+    }
+    if (cutBy(z).length === 0) {
+      closer = z;
+      break;
+    }
+  }
+  const noCloser =
+    closeStop === "frame"
+      ? " (it cannot close in and keep the frame)"
+      : ` (closing in needs more than ${cap.toFixed(2)}, the cap)`;
+
+  const z =
+    closer && closer.scale - asked.scale < asked.scale - grown.scale
+      ? closer
+      : grown;
+  log(
+    z === closer
+      ? `${label}: ${asked.scale.toFixed(2)} -> ${z.scale.toFixed(2)}, the window closes in and leaves the pawn on ${cells(cut)} out (to show it whole: ${grown.scale.toFixed(2)})`
+      : `${label}: ${asked.scale.toFixed(2)} -> ${z.scale.toFixed(2)}, the window grows and shows the pawn on ${cells(grownFor)} whole${closer ? "" : noCloser}`,
+  );
+  const still = cutBy(z);
+  if (still.length > 0) {
+    log(
+      `WARNING: ${label} still cuts the pawn on ${cells(still)} at the frame's edge`,
+    );
+  }
+  return z;
 };
 
 if (EDL) {
@@ -2928,12 +3090,12 @@ const easeInOut = (x) =>
  * The camera scale at `t` seconds into a punch-in to `scale` that holds for
  * `hold`. It drifts in a little during the hold, so the frame never freezes.
  */
+const ZOOM_DRIFT = 0.04;
 const zoomAt = (t, scale, hold) => {
-  const drift = 0.04;
   if (t < ZOOM_IN) return 1 + (scale - 1) * easeOut(t / ZOOM_IN);
-  if (t < ZOOM_IN + hold) return scale + (drift * (t - ZOOM_IN)) / hold;
+  if (t < ZOOM_IN + hold) return scale + (ZOOM_DRIFT * (t - ZOOM_IN)) / hold;
   const back = Math.min(1, (t - ZOOM_IN - hold) / ZOOM_OUT);
-  return scale + drift - (scale + drift - 1) * easeInOut(back);
+  return scale + ZOOM_DRIFT - (scale + ZOOM_DRIFT - 1) * easeInOut(back);
 };
 
 const sha256Of = (file) =>
@@ -3466,11 +3628,7 @@ const renderStyle = async (styleName) => {
         y1: p.y + p.h / 2,
       };
       const box = boxOnScreen(drawn, state.zoom);
-      const cell = termOfCell([
-        Math.round((p.y - GRID.y(0)) / GRID.pitchY - 0.5),
-        Math.round((p.x - GRID.x(0)) / GRID.pitchX - 0.5),
-      ]);
-      return box ? [{ ...box, what: `pawn on ${cell}` }] : [];
+      return box ? [{ ...box, what: `pawn on ${drawnPawnCell(p)}` }] : [];
     });
   /**
    * What a frame shows in play, as boxes in the board as the camera shows
@@ -3987,6 +4145,7 @@ const renderStyle = async (styleName) => {
     const z = frameZoom(
       walls.length > 0 ? walls : at ? [termOfCell(at)] : ["a1"],
       COLD_OPEN_SCALE,
+      { boards: [coldPly + 1], label: `cold open on ply ${coldPly}` },
     );
     cue(moveClick(coldPly), "cold-open");
     const coldLines = walls.map((w) => litWallLine(w, coldPly + 1));
@@ -4325,7 +4484,10 @@ const renderStyle = async (styleName) => {
     }
     const start = elapsed;
     if (ev.sound) cueEvent(meme(ev.sound), ev);
-    const z = frameZoom([termOfCell(at)], FREEZE_SCALE);
+    const z = frameZoom([termOfCell(at)], FREEZE_SCALE, {
+      boards: [ply - 1],
+      label: `freeze on ply ${plyIndex}`,
+    });
     const frames = Math.round((FREEZE_PUSH + ev.holdSeconds) * FPS);
     const mid = Math.round((FREEZE_PUSH + ev.holdSeconds / 2) * FPS);
     for (let i = 0; i < frames; i += 1) {
@@ -4363,7 +4525,12 @@ const renderStyle = async (styleName) => {
    */
   const playLeadZoom = async (ply, plyIndex, ev, { pullOut = true } = {}) => {
     const start = elapsed;
-    const z = frameZoom(ev.frame, ev.scale);
+    // The push shows the board before the move, the hold the board after.
+    const z = frameZoom(ev.frame, ev.scale, {
+      boards: [ply - 1, ply],
+      drift: ZOOM_DRIFT,
+      label: `lead zoom on ply ${plyIndex}`,
+    });
     const push = Math.round(LEAD_PUSH * FPS);
     // The position before the move can close a fastForward range; the zoom
     // is a slow moment all the same, so it shows no speed tag.
@@ -4456,7 +4623,11 @@ const renderStyle = async (styleName) => {
         continue;
       }
       if (ev.kind === "zoom") {
-        const z = frameZoom(ev.frame, ev.scale);
+        const z = frameZoom(ev.frame, ev.scale, {
+          boards: [ply],
+          drift: ZOOM_DRIFT,
+          label: `zoom on ply ${plyIndex}`,
+        });
         const out = endsInZoom && ev === landing.at(-1) ? 0 : ZOOM_OUT;
         const frames = Math.round((ZOOM_IN + ev.holdSeconds + out) * FPS);
         const mid = Math.round((ZOOM_IN + ev.holdSeconds / 2) * FPS);
