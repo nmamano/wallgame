@@ -14,7 +14,7 @@ import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
 import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
-import { feedbackLines, storyWarning } from "./crew.mjs";
+import { feedbackLines, storyWarning, timingLines } from "./crew.mjs";
 import { noStoryLine, STORY_MAX_BYTES } from "./post-instagram.mjs";
 import { quoteLines } from "./quote.mjs";
 import {
@@ -1005,6 +1005,29 @@ describe("what the director reads", () => {
       "  reply, verbatim:",
       "  > B, the save reads best",
     ]);
+  });
+
+  test("a render's times, by step, in one line; none before the timings", () => {
+    expect(
+      timingLines({
+        check: 0.4,
+        send: 0.3,
+        start: 1.5,
+        render: 34.1,
+        fetch: 7.7,
+        cleanup: 0.4,
+        total: 44.4,
+        workers: 8,
+        renderer: null,
+      }),
+    ).toEqual([
+      "  times (s): check 0.4, send 0.3, start 1.5, render 34.1, fetch 7.7, cleanup 0.4; total 44.4, 8 workers",
+    ]);
+    expect(
+      timingLines({ total: 9, workers: 8, renderer: { shoot: 5.9 } }),
+    ).toEqual(["  times (s): total 9, 8 workers; renderer: shoot 5.9"]);
+    expect(timingLines(null)).toEqual([]);
+    expect(timingLines(undefined)).toEqual([]);
   });
 
   test("a video the poster posts no Story of: one line for Nil, the same as a WARNING for the director", () => {

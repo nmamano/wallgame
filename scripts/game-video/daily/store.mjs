@@ -937,6 +937,8 @@ export const openStore = (dataDir) => {
           item.render.quality = outcome.quality;
           // When and what plays (strips.mjs); null from a kit without it.
           item.render.timeline = outcome.timeline ?? null;
+          // How long each step took; null from an adapter without it.
+          item.render.timings = outcome.timings ?? null;
         },
         `render ${jobId} ${outcome.error ? "failed" : "done"}`,
       );

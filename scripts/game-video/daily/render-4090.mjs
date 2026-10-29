@@ -90,12 +90,14 @@ import { createHash } from "node:crypto";
 import {
   createReadStream,
   existsSync,
+  mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 /** Relative to the 4090 user's home. Each job gets its own folder here. */
@@ -109,13 +111,26 @@ export const RENDER_KIT = "nil/wallgame-video";
 export const CAPTURE_CACHE = `${RENDER_KIT}/tmp/game-video/capture-cache`;
 const RENDERER = "scripts/game-video/render-game-video.mjs";
 const BUN = ".bun/bin/bun";
-/** Worker 2's figure for one render: 4 threads and 4 GB are enough. */
-const THREADS = "4";
-const MEMORY = "4G";
+/**
+ * The renderer's Chromium workers for the shoot, and the threads and memory
+ * desktop-run gives the job. 8 is desktop-status's budget while Nil may use
+ * the PC (~/nil/infra/DESKTOP-COMPUTE.md); the shoot takes about half of a
+ * render, and 8 workers shoot about twice as fast as 4 (Wall Game Director,
+ * 2026-10-26: 28.9 -> 56.7 fps). desktop-status takes about 10 s, so it is
+ * not asked for each job.
+ */
+export const WORKERS = 8;
+const MEMORY = "8G";
 const DESKTOP_RUN = join(homedir(), "nil/infra/bin/desktop-run");
 
-const POLL_MS = 10_000;
+/** Between two tries of a remote step that failed (ssh dropped). */
+const RETRY_MS = 5_000;
 const COPY_ATTEMPTS = 3;
+/**
+ * One remote wait for the job's end: it checks the meta file every 0.25 s
+ * for up to 60 s, then answers "running" (one short line, as ssh needs).
+ */
+const WAIT_CHECKS = 240;
 
 const JOB_ID = /^[A-Za-z0-9_-]{8,80}$/;
 /** A preview's window of plies, as the renderer's --plies takes it (edl.mjs). */
@@ -125,7 +140,48 @@ const GAME_ID = /^[A-Za-z0-9_-]{1,80}$/;
 /** The sheet's file name in the remote job folder, as the renderer gives it. */
 const SHEET_NAME = /^[A-Za-z0-9._-]{1,80}\.png$/;
 const DESKTOP_JOB = /^started job-([0-9TZ]+-wg-video-[0-9a-f]{12})$/m;
-const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20"];
+/**
+ * The keepalives let ssh see a 4090 that goes away silently (Windows sleep,
+ * a WSL network reset): the shared connection closes within about 30 s and
+ * the next call opens a new one. Without them, a call waits for TCP's own
+ * keepalive (2 h), and the job hangs until its deadline.
+ */
+const SSH_OPTIONS = [
+  "-o",
+  "BatchMode=yes",
+  "-o",
+  "ConnectTimeout=20",
+  "-o",
+  "ServerAliveInterval=10",
+  "-o",
+  "ServerAliveCountMax=3",
+];
+
+/**
+ * ONE ssh CONNECTION FOR THE JOB (OpenSSH ControlMaster): the first ssh or
+ * scp opens it, and each later one takes about 0.4 s, not 1.6 s (measured
+ * 2026-10-29; a job makes about 10 of them). The socket is in a folder that
+ * only this user can open; when the folder is not that, each call opens
+ * its own connection, as before.
+ */
+const connectionOptions = () => {
+  const dir = join(tmpdir(), `wg-video-ssh-${process.getuid?.() ?? "u"}`);
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const st = statSync(dir);
+    if (st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) return [];
+  } catch {
+    return [];
+  }
+  return [
+    "-o",
+    "ControlMaster=auto",
+    "-o",
+    `ControlPath=${dir}/%C`,
+    "-o",
+    "ControlPersist=60",
+  ];
+};
 
 const arg = (name) => {
   const at = process.argv.indexOf(`--${name}`);
@@ -174,30 +230,25 @@ const tail = (text) => text.trim().split("\n").slice(-10).join("\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * "cached" or "none": whether the 4090 has the game's capture. It fails when
- * it cannot look. `ssh` runs one command there; one short line comes back.
+ * The 4090's home folder and, for `gameId`, "cached" or "none": whether it
+ * has the game's capture. One ssh call, two short lines; it fails when it
+ * cannot look. ssh starts in the home folder, so the cache path is relative.
  */
-const captureOf = async (ssh, cache, gameId) => {
-  if (!GAME_ID.test(String(gameId))) fail(`not a game id: ${gameId}`);
+const homeAndCapture = async (ssh, gameId) => {
+  if (gameId !== null && !GAME_ID.test(String(gameId))) {
+    fail(`not a game id: ${gameId}`);
+  }
   const probe = await ssh(
-    `if test -f ${cache}/${gameId}/capture.json; then echo cached; else echo none; fi`,
+    `printf '%s\\n' "$HOME"${gameId === null ? "" : `; if test -f ${CAPTURE_CACHE}/${gameId}/capture.json; then echo cached; else echo none; fi`}`,
   );
-  const answer = probe.stdout.trim();
-  if (answer !== "cached" && answer !== "none") {
+  const [home, capture = null] = probe.stdout.trim().split("\n");
+  if (!home?.startsWith("/")) fail("could not read the 4090's home folder");
+  if (gameId !== null && capture !== "cached" && capture !== "none") {
     fail(
       `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
     );
   }
-  return answer;
-};
-
-/** Fail unless the 4090 has the game's capture. */
-const requireCapture = async (ssh, cache, gameId) => {
-  if ((await captureOf(ssh, cache, gameId)) === "none") {
-    fail(
-      `the 4090 has no capture of game ${gameId} yet: render from the cache needs the capture that a live render of the game saves`,
-    );
-  }
+  return { home, capture };
 };
 
 const main = async () => {
@@ -217,19 +268,39 @@ const main = async () => {
       "WALLGAME_GPU_HOST is not set (see ops-private/wallgamer-agent-notes.md)",
     );
   }
-  const ssh = (command) => run("ssh", [...SSH_OPTIONS, host, command]);
-  const readHome = async () => {
-    const path = (await ssh('printf %s "$HOME"')).stdout.trim();
-    if (!path.startsWith("/")) fail("could not read the 4090's home folder");
-    return path;
+  const options = [...SSH_OPTIONS, ...connectionOptions()];
+  const ssh = (command) => run("ssh", [...options, host, command]);
+  /** scp remote files of the job's host into `localDir`, with retries. */
+  const scpBack = async (remotes, localDir) => {
+    let copied = null;
+    for (let attempt = 1; attempt <= COPY_ATTEMPTS; attempt++) {
+      copied = await run("scp", [
+        ...options,
+        "-q",
+        ...remotes.map((r) => `${host}:${r}`),
+        `${localDir}/`,
+      ]);
+      if (copied.code === 0) break;
+      await sleep(RETRY_MS);
+    }
+    return copied;
   };
 
   if (hasCapture !== undefined) {
-    console.log(
-      await captureOf(ssh, `${await readHome()}/${CAPTURE_CACHE}`, hasCapture),
-    );
+    console.log((await homeAndCapture(ssh, hasCapture)).capture);
     return;
   }
+
+  // The time of each step, in seconds, for RESULT.timings (Wall Game
+  // Director, 2026-10-29: measure first).
+  const started = Date.now();
+  let mark = started;
+  const timings = {};
+  const step = (name) => {
+    const now = Date.now();
+    timings[name] = Math.round((now - mark) / 100) / 10;
+    mark = now;
+  };
 
   if (!existsSync(DESKTOP_RUN)) fail(`${DESKTOP_RUN} is missing`);
   if (!JOB_ID.test(jobId)) fail(`not a job id: ${jobId}`);
@@ -240,30 +311,36 @@ const main = async () => {
   const fullFromCache = process.argv.includes("--from-cache");
   if (span && fullFromCache) fail("--plies reads the cache already");
 
-  const home = await readHome();
-  const dir = `${home}/${REMOTE_JOBS}/${jobId}`;
-  const cache = `${home}/${CAPTURE_CACHE}`;
-
   // The app asked already (--has-capture), but this adapter also runs by
   // hand, and without the capture the renderer would fail after desktop-run
   // started it.
-  if (span || fullFromCache) {
-    const gameId = JSON.parse(readFileSync(edlPath, "utf8")).gameId;
-    await requireCapture(ssh, cache, gameId);
+  const needsCapture = Boolean(span || fullFromCache);
+  const gameId = needsCapture
+    ? JSON.parse(readFileSync(edlPath, "utf8")).gameId
+    : null;
+  const { home, capture } = await homeAndCapture(ssh, gameId);
+  if (needsCapture && capture === "none") {
+    fail(
+      `the 4090 has no capture of game ${gameId} yet: render from the cache needs the capture that a live render of the game saves`,
+    );
   }
+  const dir = `${home}/${REMOTE_JOBS}/${jobId}`;
+  const cache = `${home}/${CAPTURE_CACHE}`;
+  step("check");
 
   console.log("[render] sending the job to the 4090");
   const sent = await run(
     "ssh",
-    [...SSH_OPTIONS, host, `mkdir -p ${dir} && cat > ${dir}/edl.json`],
+    [...options, host, `mkdir -p ${dir} && cat > ${dir}/edl.json`],
     edlPath,
   );
   if (sent.code !== 0) fail(`could not send the job: ${tail(sent.stderr)}`);
+  step("send");
 
   console.log("[render] starting the render on the 4090");
-  const started = await run(DESKTOP_RUN, [
+  const desktop = await run(DESKTOP_RUN, [
     desktopName(jobId),
-    THREADS,
+    String(WORKERS),
     MEMORY,
     "--",
     `${home}/${BUN}`,
@@ -276,18 +353,21 @@ const main = async () => {
     `${dir}/render.log`,
     "--encoder",
     "nvenc",
+    "--workers",
+    String(WORKERS),
     "--cache",
     cache,
     ...(span ? ["--from-cache", "--plies", plies] : []),
     ...(fullFromCache ? ["--from-cache"] : []),
   ]);
-  const unit = DESKTOP_JOB.exec(started.stdout)?.[1];
-  if (started.code !== 0 || !unit) {
+  const unit = DESKTOP_JOB.exec(desktop.stdout)?.[1];
+  if (desktop.code !== 0 || !unit) {
     fail(
-      `desktop-run did not start the render: ${tail(started.stderr || started.stdout)}`,
+      `desktop-run did not start the render: ${tail(desktop.stderr || desktop.stdout)}`,
     );
   }
   const jobs = `${home}/jobs/${unit}`;
+  step("start");
 
   // The app's deadline arrives as SIGTERM. Stop the remote render with it.
   process.on("SIGTERM", () => {
@@ -297,54 +377,43 @@ const main = async () => {
   console.log(
     `[render] rendering on the 4090 (job-${unit}), ${span || fullFromCache ? "from the game's capture: no view" : "with a live capture: one view of the game"}`,
   );
+  // One remote call waits for the end, then writes the RESULT line into a
+  // file: the unit log also takes the renderer's stderr, so RESULT need not
+  // be last, and the line grows with the contact sheet's stills, so it
+  // comes back by scp (ssh stalls above about 1 KB of stdout). After 60 s
+  // the call answers "running" and the next one waits on; a dropped ssh
+  // only means another call.
+  const waitForEnd = [
+    `for i in $(seq 1 ${WAIT_CHECKS}); do`,
+    `l=$(tail -n 1 ${jobs}/meta 2>/dev/null);`,
+    `case "$l" in exit=*) grep '^RESULT ' ${jobs}/log | tail -n 1 > ${dir}/result.line; echo "$l"; exit 0;; esac;`,
+    "sleep 0.25; done; echo running",
+  ].join(" ");
   let exit = null;
-  for (;;) {
-    await sleep(POLL_MS);
-    const meta = await ssh(`tail -n 1 ${jobs}/meta`);
-    const m = /^exit=(\d+)$/.exec(meta.stdout.trim());
-    if (m) {
-      exit = Number(m[1]);
-      break;
-    }
+  while (exit === null) {
+    const waited = await ssh(waitForEnd);
+    const m = /^exit=(\d+)$/.exec(waited.stdout.trim());
+    if (m) exit = Number(m[1]);
+    else if (waited.code !== 0) await sleep(RETRY_MS);
   }
-  /** scp one remote file to `local`, with retries; the scp result. */
-  const scpBack = async (remote, local) => {
-    let copied = null;
-    for (let attempt = 1; attempt <= COPY_ATTEMPTS; attempt++) {
-      copied = await run("scp", [
-        ...SSH_OPTIONS,
-        "-q",
-        `${host}:${remote}`,
-        local,
-      ]);
-      if (copied.code === 0) break;
-      await sleep(POLL_MS);
-    }
-    return copied;
-  };
+  step("render");
 
-  // The unit log also takes the renderer's stderr, so RESULT need not be
-  // last. The line grows with the contact sheet's stills (edl.mjs allows 40
-  // events), and ssh stalls above about 1 KB of stdout, so the line goes into
-  // a file on the 4090 and comes back by scp, which has no such limit.
-  // A dropped ssh here would turn a finished render into "no RESULT line",
-  // so the write is retried with the copy.
-  const resultLocal = `${out}.result`;
+  // The RESULT line and the render log, in one copy. The render log is
+  // small and is the only record of what the render did. The renderer
+  // writes the log (--log) before it exits, so with exit 0 both are there.
+  const outDir = dirname(out);
+  const resultLocal = join(outDir, "result.line");
   let result = null;
-  for (let attempt = 1; exit === 0 && !result; attempt++) {
-    const wrote = await ssh(
-      `grep '^RESULT ' ${jobs}/log | tail -n 1 > ${dir}/result.line`,
+  if (exit === 0) {
+    const fetched = await scpBack(
+      [`${dir}/result.line`, `${dir}/render.log`],
+      outDir,
     );
-    if (wrote.code === 0) {
-      const fetched = await scpBack(`${dir}/result.line`, resultLocal);
-      if (fetched.code === 0) {
-        result = parseResult(readFileSync(resultLocal, "utf8"));
-      }
-      if (existsSync(resultLocal)) unlinkSync(resultLocal);
+    if (fetched.code === 0 && existsSync(resultLocal)) {
+      result = parseResult(readFileSync(resultLocal, "utf8"));
     }
-    if (result || attempt === COPY_ATTEMPTS) break;
-    await sleep(POLL_MS);
   }
+  if (existsSync(resultLocal)) unlinkSync(resultLocal);
   if (exit !== 0 || !result) {
     const why = await ssh(`tail -n 5 ${dir}/render.log | cut -c1-180`);
     // Exit 4 also has other causes, so the renderer's line says which.
@@ -388,50 +457,66 @@ const main = async () => {
     fail(`the render gave no contact sheet in ${dir}`);
   }
 
-  /** Copy one remote file to `local`, checked against the 4090's hash. */
-  const copyBack = async (remote, local, want) => {
-    const scratch = `${local}.part`;
-    const copied = await scpBack(remote, scratch);
-    if (copied.code !== 0) {
-      fail(
-        `could not copy ${remote} back after ${COPY_ATTEMPTS} tries; it stays on the 4090: ${tail(copied.stderr)}`,
-      );
-    }
+  console.log(
+    span
+      ? "[render] copying the preview back"
+      : "[render] copying the video and the contact sheet back",
+  );
+  // The video and the sheet in one copy, into a folder of this job; then
+  // each is checked against the 4090's hash and moved into place. A
+  // preview's sheet (its window's events) stays out: the check reads only
+  // the full render's.
+  const fetchDir = join(outDir, `.fetch-${jobId}`);
+  mkdirSync(fetchDir, { recursive: true });
+  const copied = await scpBack(
+    [`${dir}/out.mp4`, ...(span ? [] : [result.sheet.png])],
+    fetchDir,
+  );
+  if (copied.code !== 0) {
+    rmSync(fetchDir, { recursive: true, force: true });
+    fail(
+      `could not copy the video back after ${COPY_ATTEMPTS} tries; it stays on the 4090: ${tail(copied.stderr)}`,
+    );
+  }
+  /** Move one fetched file to `local`, checked against the 4090's hash. */
+  const take = (name, local, want) => {
+    const scratch = join(fetchDir, name);
     const bytes = readFileSync(scratch);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     if (
       sha256 !== want.sha256 ||
       (want.bytes !== undefined && bytes.length !== want.bytes)
     ) {
-      unlinkSync(scratch);
+      rmSync(fetchDir, { recursive: true, force: true });
       fail(
-        `the copy of ${remote} does not match the 4090's file (${bytes.length} bytes, ${sha256.slice(0, 12)} vs ${String(want.sha256).slice(0, 12)}); it stays on the 4090`,
+        `the copy of ${name} does not match the 4090's file (${bytes.length} bytes, ${sha256.slice(0, 12)} vs ${String(want.sha256).slice(0, 12)}); it stays on the 4090`,
       );
     }
     renameSync(scratch, local);
     return sha256;
   };
-
-  console.log(
-    span
-      ? "[render] copying the preview back"
-      : "[render] copying the video and the contact sheet back",
-  );
-  const sha256 = await copyBack(`${dir}/out.mp4`, out, result);
-  // A preview's sheet (its window's events) stays out: the check reads
-  // only the full render's.
+  const sha256 = take("out.mp4", out, result);
   const sheetPng = `${out}-sheet.png`;
-  if (!span) await copyBack(result.sheet.png, sheetPng, result.sheet);
-  // The render log is small and is the only record of what the render did.
-  await run("scp", [
-    ...SSH_OPTIONS,
-    "-q",
-    `${host}:${dir}/render.log`,
-    join(dirname(out), "render.log"),
-  ]);
+  if (!span) take(sheetName, sheetPng, result.sheet);
+  rmSync(fetchDir, { recursive: true, force: true });
+  step("fetch");
   await ssh(`rm -rf ${dir} ${jobs}`);
+  step("cleanup");
+  timings.total = Math.round((Date.now() - started) / 100) / 10;
   console.log(
-    `RESULT ${JSON.stringify({ ...result, mp4: out, bytes: statSync(out).size, sha256, sheet: span ? null : { ...result.sheet, png: sheetPng } })}`,
+    `RESULT ${JSON.stringify({
+      ...result,
+      mp4: out,
+      bytes: statSync(out).size,
+      sha256,
+      sheet: span ? null : { ...result.sheet, png: sheetPng },
+      // The adapter's steps, and the renderer's own when it gives them.
+      timings: {
+        ...timings,
+        workers: WORKERS,
+        renderer: result.timings ?? null,
+      },
+    })}`,
   );
 };
 

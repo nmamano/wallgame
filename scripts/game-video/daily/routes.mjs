@@ -671,6 +671,8 @@ export const createDaily = ({
       music: played,
       sound: result.sound ?? null,
       timeline: timelineOf(result.timeline),
+      // How long each step took (render-4090.mjs), for the director.
+      timings: result.timings ?? null,
       quality: {
         loudness: loudnessVerdict(result.loudness),
         safeArea: safeAreaVerdict(result.layout, FRAME),
@@ -735,7 +737,7 @@ export const createDaily = ({
       durationSeconds: result.durationSeconds ?? null,
     };
     renameSync(scratch, video.path);
-    return { state: "done", video };
+    return { state: "done", video, timings: result.timings ?? null };
   };
 
   const runPreview = async ({ jobId }) => {
@@ -1666,6 +1668,7 @@ export const createDaily = ({
         state: p.state,
         progress: progress.get(id) ?? null,
         video: p.video,
+        timings: p.timings ?? null,
         error: p.error,
       });
     },

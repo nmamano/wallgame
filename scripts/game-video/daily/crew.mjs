@@ -260,6 +260,26 @@ export const storyWarning = (video) => {
   return line ? [`  WARNING ${line}`] : [];
 };
 
+/**
+ * How long a render or preview took, by step (render-4090.mjs timings), in
+ * one line; none for a render from before the timings.
+ */
+export const timingLines = (t) => {
+  if (!t) return [];
+  const steps = ["check", "send", "start", "render", "fetch", "cleanup"]
+    .filter((k) => typeof t[k] === "number")
+    .map((k) => `${k} ${t[k]}`)
+    .join(", ");
+  const renderer = t.renderer
+    ? `; renderer: ${Object.entries(t.renderer)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(", ")}`
+    : "";
+  return [
+    `  times (s): ${[steps, `total ${t.total}`].filter(Boolean).join("; ")}, ${t.workers} workers${renderer}`,
+  ];
+};
+
 /** One item, in lines: its game, list, render, check, block and reviews. */
 const itemLines = (k, progress = null) => {
   const g = k.candidate;
@@ -290,6 +310,7 @@ const itemLines = (k, progress = null) => {
           : `render ${k.render.jobId}: running - ${progress ?? "queued"}`,
       ...measureLines(k.render.quality),
       ...storyWarning(k.render.video),
+      ...timingLines(k.render.timings),
     );
   }
   if (k.check) {
@@ -579,8 +600,10 @@ const commands = {
     });
     console.log(`render ${jobId} queued`);
     if (!has("wait")) return;
+    // The app is on this box: a read each second costs nothing and saves
+    // the director up to a poll's wait (Wall Game Director, 2026-10-29).
     for (;;) {
-      await new Promise((r) => setTimeout(r, 5000));
+      await new Promise((r) => setTimeout(r, 1000));
       const k = await itemNamed(id);
       if (k.render?.jobId !== jobId || k.render.finishedAt) {
         return console.log(await itemSummary(id));
@@ -598,7 +621,7 @@ const commands = {
     });
     console.log(`preview ${previewId} queued`);
     for (;;) {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 1000));
       const p = await app(
         "GET",
         `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
@@ -606,7 +629,10 @@ const commands = {
       if (p.state === "failed") die(`preview failed: ${p.error}`);
       if (p.state === "done") {
         return console.log(
-          `preview of plies ${p.plies}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the item's video: the item did not change.`,
+          [
+            `preview of plies ${p.plies}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the item's video: the item did not change.`,
+            ...timingLines(p.timings),
+          ].join("\n"),
         );
       }
     }

@@ -253,6 +253,7 @@ interface Item {
     quality: Record<string, { ok: boolean; note: string }> | null;
     music: { fromPly: number; track: string; at: number }[] | null;
     timeline: { events: object[] } | null;
+    timings?: object | null;
   } | null;
   check: { ok: boolean } | null;
   // Absent on an item from before vets.
@@ -2080,6 +2081,7 @@ const stills = edl.events.map((e) => ({ ply: e.ply, kind: e.kind, sound: e.sound
 console.log("[render] rendering on the 4090");
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
+  timings: { check: 0.4, render: 20.5, total: 23.1, workers: 8, renderer: null },
   // As the renderer: no music ([]) is RESULT music null.
   music: existsSync(__dirname + "/music-override")
     ? JSON.parse(readFileSync(__dirname + "/music-override", "utf8"))
@@ -2449,6 +2451,14 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   expect(it.render?.effect).toBe("daily");
   expect(it.render?.ending).toBe("replay");
   expect(it.render?.quality?.loudness?.ok).toBe(true);
+  // How long each step took, as the adapter said (S4).
+  expect(it.render?.timings).toEqual({
+    check: 0.4,
+    render: 20.5,
+    total: 23.1,
+    workers: 8,
+    renderer: null,
+  });
   expect(it.render?.quality?.safeArea?.ok).toBe(true);
   const sheet = it.render?.sheet;
   expect(sheet?.stills).toEqual([{ ply: 22, kind: "zoom", sound: "fuahhh-1" }]);
