@@ -11,6 +11,12 @@
  * what a viewer sees (detour, self-trap, escape, standoff, the capture).
  * One label set with the Director Rewriter's meme list (2026-10-29): a meme
  * goes only on a move whose label matches its line.
+ *
+ * KNOWN LIMITS. A label can read the NEXT move (a turn is a flip that the
+ * reply keeps), so the labels of an unfinished game can change when one
+ * more move is scored. The strength of an engine label saturates at a drop
+ * of 0.5 in win chance, so several blunders can share strength 1: rank by
+ * strength, then by drop, when picking moments.
  */
 import type { PlayerId, Variant } from "../../../shared/domain/game-types";
 import { minJumpFor, type Hunt } from "../race-replay";
@@ -147,6 +153,11 @@ export const labelGame = (facts: GameFacts): GameLabels => {
   const threats = new Map<number, HuntChange>();
 
   plies.forEach((f, ply) => {
+    if (f.hunts.length === 0) {
+      throw new Error(
+        `ply ${ply}: the variant ${variant} has no hunt, so no move has a focus`,
+      );
+    }
     const e = f.engine;
     const mine = own(f);
     const yours = theirs(f);

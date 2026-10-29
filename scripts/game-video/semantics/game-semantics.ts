@@ -52,7 +52,12 @@ interface Args {
 const parseArgs = (argv: string[]): Args => {
   const value = (name: string) => {
     const i = argv.indexOf(`--${name}`);
-    return i === -1 ? undefined : argv[i + 1];
+    if (i === -1) return undefined;
+    const v = argv[i + 1];
+    // "--out --sentences" (an empty shell variable) must not name a folder.
+    if (v === undefined || v.startsWith("--"))
+      throw new Error(`--${name} needs a value`);
+    return v;
   };
   const out = value("out");
   if (!out) throw new Error("--out DIR is required");

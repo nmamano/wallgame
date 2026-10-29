@@ -189,6 +189,34 @@ describe("labelGame", () => {
   });
 });
 
+describe("trap words", () => {
+  test("a self-trap allows a trap of one's own cat, not of the other side", () => {
+    const game = gameOf([
+      { w1: [4, 8], w2: [8, 9], wc: [0.5, 0.48], walls: ["^a1"] },
+    ]);
+    const l = labelGame(game);
+    const facts = factsOf(game, l, 0);
+    const cite = ["0.play", "0.label", "0.walk2"];
+    const seats = ["Guest Ferret", "Normal Bot"];
+    expect(
+      checkSentence(
+        "Guest Ferret traps the own cat with ^a1.",
+        cite,
+        facts,
+        seats,
+      ),
+    ).toEqual([]);
+    expect(
+      checkSentence(
+        "Guest Ferret traps Normal Bot with ^a1.",
+        cite,
+        facts,
+        seats,
+      ),
+    ).toEqual(['"traps" needs a cited fact that says trap-closes or seal']);
+  });
+});
+
 describe("factsOf", () => {
   test("the best move's walk is told only where it is better for the mover", () => {
     const best = (bestWalks: [number, number]) => {
@@ -268,6 +296,59 @@ describe("checkSentence", () => {
         seats,
       ),
     ).toEqual([]);
+  });
+
+  test('"best" needs the top-choice fact, "misses" the preferred fact (VR1 B2)', () => {
+    // Move 1 is the engine's top choice; move 0 is not (see the game above).
+    const top = ["1.best", "1.play"];
+    const notTop = ["0.best", "0.play"];
+    expect(
+      checkSentence("Normal Bot plays the best move.", top, facts, seats),
+    ).toEqual([]);
+    expect(
+      checkSentence("Guest Ferret plays the best move.", notTop, facts, seats),
+    ).toEqual(['"best" needs a cited fact that says top choice']);
+    expect(
+      checkSentence("Guest Ferret misses >c4.", notTop, facts, seats),
+    ).toEqual([]);
+    expect(
+      checkSentence("Normal Bot skips a wall.", top, facts, seats),
+    ).toEqual(['"skips" needs a cited fact that says preferred']);
+  });
+
+  test('number words are checked, "one" before a unit too (VR1 B3)', () => {
+    const check = (sentence: string) =>
+      checkSentence(sentence, ids("walk2"), facts, seats);
+    expect(check("Normal Bot's cat is one step from the mouse.")).toEqual([
+      '"one step" (1) is not in the cited facts',
+    ]);
+    expect(check("Normal Bot's cat needs seventeen steps.")).toEqual([
+      '"seventeen" (17) is not in the cited facts',
+    ]);
+    expect(check("Normal Bot's cat needs thirty steps.")).toHaveLength(1);
+    expect(check("Normal Bot's cat needs four steps.")).toEqual([]);
+    expect(check("One of the walls is >c4.")).toHaveLength(1); // >c4 uncited
+  });
+
+  test('"from N to M" must be a cited before/after pair, in order', () => {
+    const check = (sentence: string) =>
+      checkSentence(sentence, ids("walk2", "engine"), facts, seats);
+    expect(check("Normal Bot's walk falls from 6 to 4.")).toEqual([]);
+    expect(check("Normal Bot's walk grows from 4 to 6.")).toEqual([
+      '"from 4 to 6" is not a before/after pair of the cited facts',
+    ]);
+    expect(check("Guest Ferret's chance falls from 70% to 20%.")).toEqual([]);
+  });
+
+  test("colour words and uppercase cells are checked", () => {
+    const check = (sentence: string) =>
+      checkSentence(sentence, ids("play"), facts, seats);
+    expect(check("Red's cat moves.")).toEqual([
+      '"Red" is not in the cited facts',
+    ]);
+    expect(check("Guest Ferret goes to C5.")).toEqual([
+      "C5 is not in the cited facts",
+    ]);
   });
 
   test("a walk names its owner", () => {

@@ -19,6 +19,16 @@
  * its own move and of linked moves; it says nothing about intent ("tries",
  * "panics"). A sentence that fails gets one retry with the reasons; if it
  * fails again, the move's own play fact stands in and is marked `fallback`.
+ * A "from N to M" must be a before/after pair of a cited fact, in order.
+ *
+ * KNOWN GAPS of a word check (VR1, 2026-10-29). Apart from "from N to M",
+ * numbers, cells and names are checked as a bag over the cited facts, not
+ * bound to each other: "Guest X's walk" with the other side's numbers, or
+ * a cell given to the wrong pawn, can pass. The word lists (intent, colour,
+ * judgment) are open: a new word for intent passes until it is listed. A
+ * seat name other than the game's is caught only in the "Guest X" and
+ * "X Bot" forms. "walk" as a verb also needs its owner ("Guest X's cat
+ * walks").
  */
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameFacts, HuntChange, PlyFacts } from "./facts";
@@ -146,12 +156,12 @@ export const factsOf = (
         : `The engine gives ${names[f.mover]} a ${pct(e.before)} win chance before this move and ${pct(e.after)} after it.`,
     );
     if (e.playedBest) {
-      add("best", "This is the engine's best move.");
+      add("best", "This move is the engine's top choice.");
     } else if (e.bestMove) {
       const walls = e.bestWalls.length
         ? `, with ${e.bestWalls.length === 1 ? "the wall" : "the walls"} ${e.bestWalls.join(" and ")}`
         : ", with no wall";
-      let what = `The engine's best move here was ${e.bestMove}${walls}.`;
+      let what = `The engine preferred ${e.bestMove}${walls} to this move.`;
       if (e.bestWalks) {
         // Only a walk the best move makes better FOR THE MOVER says why it
         // is best: the other side's walk longer, or the mover's own shorter.
@@ -199,26 +209,21 @@ export const factsOf = (
 
 /* ------------------------------------------------------------ the check -- */
 
-const NUMBER_WORDS: Record<string, string> = {
-  zero: "0",
-  one: "1",
-  two: "2",
-  three: "3",
-  four: "4",
-  five: "5",
-  six: "6",
-  seven: "7",
-  eight: "8",
-  nine: "9",
-  ten: "10",
-  eleven: "11",
-  twelve: "12",
-  thirteen: "13",
-  fourteen: "14",
-  fifteen: "15",
-  sixteen: "16",
-  twenty: "20",
-};
+const UNITS = (
+  "zero one two three four five six seven eight nine ten eleven twelve " +
+  "thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
+).split(" ");
+const TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split(" ");
+const NUMBER_WORDS: Record<string, string> = { hundred: "100" };
+UNITS.forEach((w, i) => (NUMBER_WORDS[w] = String(i)));
+TENS.forEach((w, i) => (NUMBER_WORDS[w] = String(20 + 10 * i)));
+
+/**
+ * "one" is a count only before a unit ("one step", "one wall"); elsewhere
+ * ("one of the walls") it is not checked.
+ */
+const ONE_COUNT =
+  /\bone\s+(?:more\s+|extra\s+)?(?:step|move|wall|square|cell|turn|ply)s?\b/gi;
 
 /** A judgment word, and the stem a cited fact must hold for it. */
 const JUDGMENTS: [RegExp, string][] = [
@@ -227,20 +232,48 @@ const JUDGMENTS: [RegExp, string][] = [
   [/\b(sav(e|es|ed|ing)|rescu\w*)\b/i, "save"],
   [/\b(escap\w*|flee\w*|flees|fled)\b/i, "escape"],
   [/\b(threat\w*|danger\w*)\b/i, "threat"],
-  [/\b(trap\w*|cage\w*|seal\w*|lock\w*|box(es|ed)? in)\b/i, "trap|seal"],
+  [/\b(trap\w*|cage\w*|seal\w*|lock\w*|box(es|ed)? in)\b/i, "trap-closes|seal"],
   [/\b(win|wins|won|winner|victory)\b/i, "wins"],
   [/\b(catch\w*|caught|captur\w*)\b/i, "capture"],
-  [/\bbest\b/i, "best"],
-  [/\bmiss\w*\b/i, "missed|best move"],
+  // The two engine facts use distinct words (VR1 B2): "top choice" only on
+  // the engine's own move, "preferred" only on another.
+  [/\b(best|top choice|optimal|perfect|correct)\b/i, "top choice"],
+  [
+    /\b(miss\w*|skip\w*|ignor\w*|overlook\w*|instead of the engine)\b/i,
+    "preferred",
+  ],
   [/\b(turn(s|ed)? the game|turning point|flip\w*)\b/i, "turn"],
   [/\bstandoff\b/i, "standoff"],
 ];
 
 /** Words about intent or feeling: the facts cannot show them. */
 const INTENT =
-  /\b(tr(y|ies|ied)|want\w*|hop(e|es|ed)|panic\w*|think\w*|thought|plan\w*|decid\w*|desperate\w*|smart\w*|genius|brilliant\w*|clever\w*|lucky|luck|finally|sneak\w*|confus\w*|scared|afraid|nervous|realiz\w*|forgot\w*|expect\w*|surpris\w*|intend\w*)\b/i;
+  /\b(tr(y|ies|ied)|want\w*|hop(e|es|ed)|panic\w*|think\w*|thought|plan\w*|decid\w*|desperate\w*|smart\w*|genius|brilliant\w*|clever\w*|lucky|luck|finally|sneak\w*|confus\w*|scared|afraid|nervous|realiz\w*|forgot\w*|expect\w*|surpris\w*|intend\w*|aim\w*|sees?|saw|seen|know\w*|rush\w*|gives? up|gave up|notic\w*)\b/i;
 
-const CELL = /(?<![\w>^])[>^]?[a-l](?:1[0-2]|[1-9])\b/g;
+const CELL = /(?<![\w>^])[>^]?[a-l](?:1[0-2]|[1-9])\b/gi;
+const COLOURS =
+  /\b(red|blue|green|yellow|orange|purple|pink|white|black|grey|gray|brown)\b/i;
+
+/**
+ * Every "from N to M" a cited fact holds, as "N>M": a walk's before and
+ * after, a win chance's before and after, and a best move's "would need X,
+ * not Y" (from Y to X).
+ */
+const citedPairs = (cited: string): Set<string> => {
+  const pairs = new Set<string>();
+  const add = (re: RegExp, from: number, to: number) => {
+    for (const m of cited.matchAll(re)) pairs.add(`${m[from]}>${m[to]}`);
+  };
+  add(
+    /needs (\d+) steps? to reach [^;.]*; before the move it needed (\d+)/g,
+    2,
+    1,
+  );
+  add(/(\d+)% win chance before this move and (\d+)% after/g, 1, 2);
+  add(/from (\d+)% to (\d+)%/g, 1, 2);
+  add(/would need (\d+) steps? to reach [^,.]*, not (\d+)/g, 2, 1);
+  return pairs;
+};
 const PAWN = /\b(cat|cats|mouse|mice|home|dog|elephant)\b/gi;
 
 /** Reasons the sentence breaks the rules; [] when it passes. */
@@ -250,6 +283,8 @@ export const checkSentence = (
   allowed: Fact[],
   seatNames: string[],
 ): string[] => {
+  if (seatNames.length === 0)
+    throw new Error("checkSentence needs the seat names");
   const reasons: string[] = [];
   const byId = new Map(allowed.map((f) => [f.id, f.text]));
   for (const id of factIds) {
@@ -266,7 +301,8 @@ export const checkSentence = (
   if (/[.!?]\s+\S/.test(sentence.trim()))
     reasons.push("is more than one sentence");
   // Numbers: digits, percents and number words.
-  const citedNumbers = new Set(cited.match(/\d+/g) ?? []);
+  // A cell's digits ("a1") are no number.
+  const citedNumbers = new Set(cited.replace(CELL, " ").match(/\d+/g) ?? []);
   const textNoCells = sentence.replace(CELL, " ");
   for (const n of textNoCells.match(/\d+/g) ?? []) {
     if (!citedNumbers.has(n))
@@ -278,10 +314,25 @@ export const checkSentence = (
       reasons.push(`"${w}" (${n}) is not in the cited facts`);
     }
   }
+  for (const one of sentence.matchAll(ONE_COUNT)) {
+    if (!citedNumbers.has("1"))
+      reasons.push(`"${one[0]}" (1) is not in the cited facts`);
+  }
+  // A "from N to M" must be one of the cited before/after pairs, in that
+  // direction (VR1, 2026-10-29: a bag of numbers lets "3 to 8" pass for 8
+  // to 3).
+  const pairs = citedPairs(cited);
+  for (const m of sentence.matchAll(/\bfrom (\d+)%?(?: steps?)? to (\d+)/gi)) {
+    if (!pairs.has(`${m[1]}>${m[2]}`))
+      reasons.push(`"${m[0]}" is not a before/after pair of the cited facts`);
+  }
   // Cells and walls.
-  const citedCells = new Set(cited.match(CELL) ?? []);
+  const citedCells = new Set(
+    (cited.match(CELL) ?? []).map((c) => c.toLowerCase()),
+  );
   for (const c of sentence.match(CELL) ?? []) {
-    if (!citedCells.has(c)) reasons.push(`${c} is not in the cited facts`);
+    if (!citedCells.has(c.toLowerCase()))
+      reasons.push(`${c} is not in the cited facts`);
   }
   // Pawn words.
   for (const p of sentence.match(PAWN) ?? []) {
@@ -292,14 +343,21 @@ export const checkSentence = (
     if (!citedLower.includes(base))
       reasons.push(`"${p}" is not in the cited facts`);
   }
-  // Seat names: any "Guest X" or "X Bot" must be a seat, and cited.
+  // Seat names: every seat named must be cited; a colour must be in the
+  // cited facts ("Red's cat" says nothing the facts bind).
+  for (const name of seatNames) {
+    if (sentence.includes(name) && !cited.includes(name))
+      reasons.push(`"${name}" is not in the cited facts`);
+  }
+  const colour = COLOURS.exec(sentence);
+  if (colour && !citedLower.includes(colour[0].toLowerCase()))
+    reasons.push(`"${colour[0]}" is not in the cited facts`);
+  // Any other "Guest X" or "X Bot" is no player of this game.
   for (const name of sentence.match(
     /\bGuest [A-Z][a-z]+\b|\b[A-Z][a-z]+ Bot\b/g,
   ) ?? []) {
     if (!seatNames.includes(name))
       reasons.push(`"${name}" is not a player of this game`);
-    else if (!cited.includes(name))
-      reasons.push(`"${name}" is not in the cited facts`);
   }
   // A walk names its owner (Wall Game PM, 2026-10-29: "the walk at 4
   // steps" left the reader to guess whose): "Normal Bot's walk" or
@@ -317,8 +375,16 @@ export const checkSentence = (
   // Judgment words.
   const plain = sentence.replace(/\bwin chance\b/gi, "chance");
   for (const [word, stems] of JUDGMENTS) {
-    const hit = plain.match(word);
+    const hit = word.exec(plain);
     if (!hit) continue;
+    // A self-trap lets the sentence say the mover trapped its own cat, not
+    // that it trapped the other side (VR1, 2026-10-29).
+    if (
+      stems.startsWith("trap") &&
+      citedLower.includes("self-trap") &&
+      /\b(own|itself|themselves)\b/i.test(sentence)
+    )
+      continue;
     if (!stems.split("|").some((s) => citedLower.includes(s))) {
       reasons.push(
         `"${hit[0]}" needs a cited fact that says ${stems.replace("|", " or ")}`,
@@ -347,7 +413,8 @@ Rules:
 - Simple English, present tense, at most 30 words, one sentence. Name who acts. Use digits for numbers.
 - Write cells and walls exactly as in the facts (c5, ^a1, >e4). Use player names exactly as in the facts.
 - Name the owner of every walk: "Normal Bot's walk" or "Normal Bot's cat walk", never "the walk" or "its walk".
-- Words like blunder, punish, save, escape, threat, trap, wins, capture, best, missed: use them only when a fact you cite says so.
+- Words like blunder, punish, save, escape, threat, trap, wins, capture: use them only when a fact you cite says so. Say "best" only when a cited fact says "top choice"; say "skips" or "misses" only when a cited fact says the engine "preferred" another move.
+- "from N to M" must be a before/after pair of a cited fact, in that order.
 - factIds: the ids of every fact your sentence uses (numbers, cells, names, words). Cite enough.
 
 Return JSON: {"sentences": [{"ply": <ply>, "sentence": "...", "factIds": ["..."]}]}, one entry per move given.`;
