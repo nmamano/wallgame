@@ -944,6 +944,11 @@ const SOUND_FLOOR_DB = -50;
 const SCALE_TOLERANCE = 0.001;
 /** How long a wallz video holds its last position when nobody won. */
 const DRAW_HOLD_SECONDS = 1.3;
+/**
+ * How deep, in cells, the ending's bar may touch the capture picture on the
+ * ending's frames (endingTouch). Nothing else may touch anything.
+ */
+const ENDING_TOUCH_CELLS = 0.1;
 
 /* ------------------------------------------------------------- geometry -- */
 
@@ -3742,7 +3747,8 @@ const renderStyle = async (styleName) => {
    * as the pawn, and a bar refused for a groove has no place on a board
    * with pawns near both edges (2026-10-29). A frame with the capture
    * picture adds its catcher and caught pawn, bigger than the page's
-   * (Video Reviewer 1, review 57).
+   * (Video Reviewer 1, review 57), each as the box of its art's opaque
+   * pixels, as the page's pawns are their drawn box.
    */
   const pawnBoxes = (state) => [
     ...(pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
@@ -3756,12 +3762,14 @@ const renderStyle = async (styleName) => {
       return box ? [{ ...box, what: `pawn on ${drawnPawnCell(p)}` }] : [];
     }),
     ...(state.capture
-      ? [state.capture.mouse, state.capture.cat].flatMap((b) => {
-          const box = boxOnScreen(
-            { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h },
-            state.zoom,
-          );
-          return box ? [{ ...box, what: "the capture picture" }] : [];
+      ? [
+          ...(state.capture.mouseSrc ? [state.capture.mouseArt] : []),
+          state.capture.catArt,
+        ].flatMap((art) => {
+          const box = boxOnScreen(art, state.zoom);
+          return box
+            ? [{ ...box, what: "the capture picture", capture: true }]
+            : [];
         })
       : []),
   ];
@@ -3834,6 +3842,47 @@ const renderStyle = async (styleName) => {
     });
 
   /**
+   * The capture picture's box as the ending's bar avoids it: on an ending
+   * frame (from its impact, the board greyed and darkened, the action over)
+   * the bar may touch the art up to ENDING_TOUCH_CELLS deep, so a bar has a
+   * place beside a caught pawn at the board's edge (8Fro, 2026-10-29: 0.06
+   * cell of the mouse's feet). `full` keeps the whole box, for the log.
+   * During play, and every other pawn, keeps the strict rule (Wall Game
+   * Director, 2026-10-29: "never hide the action" holds until the impact).
+   */
+  const endingTouch = (box, state) => {
+    if (
+      !state.ending ||
+      state.ending.t < endingTimings[state.ending.kind].impact
+    )
+      return box;
+    const s = state.zoom?.scale ?? 1;
+    const dx = ENDING_TOUCH_CELLS * GRID.pitchX * s;
+    const dy = ENDING_TOUCH_CELLS * GRID.pitchY * s;
+    return {
+      ...box,
+      x0: box.x0 + dx,
+      y0: box.y0 + dy,
+      x1: box.x1 - dx,
+      y1: box.y1 - dy,
+      full: { ...box, cellW: GRID.pitchX * s, cellH: GRID.pitchY * s },
+    };
+  };
+  /**
+   * How far a place ({x, y, w, h}) goes into a box ({full}, as endingTouch
+   * gives it), in cells as shown: the lesser of its two overlaps, 0 when
+   * they are apart.
+   */
+  const touchDepth = (p, { full: k }) =>
+    Math.max(
+      0,
+      Math.min(
+        (Math.min(p.x + p.w, k.x1) - Math.max(p.x, k.x0)) / k.cellW,
+        (Math.min(p.y + p.h, k.y1) - Math.max(p.y, k.y0)) / k.cellH,
+      ),
+    );
+
+  /**
    * Once the video is composed: each overlay's place, where it hides nothing
    * in play on any frame it covered (or the render stops), its fade, the
    * fit of its line (or the render stops), its span in RESULT.timeline and
@@ -3884,9 +3933,9 @@ const renderStyle = async (styleName) => {
               ...w.avoid.map((b) => ({ ...b, what: "the ending" })),
               ...w.frames.flatMap((f) => [
                 ...(style.ending === "replay" ? inPlay(f.state) : []),
-                ...pawnBoxes(f.state).filter(
-                  (p) => !w.avoid.some((a) => inside(p, a)),
-                ),
+                ...pawnBoxes(f.state)
+                  .filter((p) => !w.avoid.some((a) => inside(p, a)))
+                  .map((p) => (p.capture ? endingTouch(p, f.state) : p)),
               ]),
             ]
           : w.frames.flatMap((f) => [
@@ -3910,7 +3959,14 @@ const renderStyle = async (styleName) => {
         continue;
       }
       Object.assign(w.place, place);
-      log(`${where}: ${placeName(place)}`);
+      // How far it goes into the capture picture, where endingTouch let it.
+      const touch = Math.max(
+        0,
+        ...busy.flatMap((b) => (b.full ? [touchDepth(place, b)] : [])),
+      );
+      log(
+        `${where}: ${placeName(place)}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
+      );
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
@@ -4160,7 +4216,7 @@ const renderStyle = async (styleName) => {
       );
     const sprite = async (p, file) => {
       const url = boardUrl(L - 1);
-      const png = await stage.evaluate(
+      const { png, art } = await stage.evaluate(
         ([u, b, key]) => window.__pawnSprite(u, b, key),
         [
           url,
@@ -4175,14 +4231,27 @@ const renderStyle = async (styleName) => {
       );
       const path = join(WORK, file);
       writeFileSync(path, Buffer.from(png.split(",")[1], "base64"));
-      return fileUrl(path);
+      return { src: fileUrl(path), art };
     };
+    const boxes = layoutOn(pounce ? CAPTURE_POUNCE : CAPTURE_INSIDE, mirrored);
+    const mouse = await sprite(caught[0], "capture-mouse.png");
+    const cat = await sprite(catcher[0], "capture-cat.png");
+    // Where each pawn's art is drawn (its box less the picture's clear
+    // margin): what an overlay avoids (pawnBoxes).
+    const artIn = (b, a) => ({
+      x0: b.x + a.x0 * b.w,
+      y0: b.y + a.y0 * b.h,
+      x1: b.x + a.x1 * b.w,
+      y1: b.y + a.y1 * b.h,
+    });
     return {
       cell: cellBox,
       under: await colourAt(boardUrl(L), at.x, at.y),
-      ...layoutOn(pounce ? CAPTURE_POUNCE : CAPTURE_INSIDE, mirrored),
-      mouseSrc: await sprite(caught[0], "capture-mouse.png"),
-      catSrc: await sprite(catcher[0], "capture-cat.png"),
+      ...boxes,
+      mouseSrc: mouse.src,
+      catSrc: cat.src,
+      mouseArt: artIn(boxes.mouse, mouse.art),
+      catArt: artIn(boxes.cat, cat.art),
     };
   })();
 
@@ -4219,10 +4288,22 @@ const renderStyle = async (styleName) => {
     race: raceHud(boardIndex),
     goal: wallz && goalOn ? GOAL_LINE : null,
     fastForward: fastForwardAt(boardIndex),
-    // Settled; emit plays its pounce frame by frame.
+    /*
+      Settled; emit plays its pounce frame by frame. It stays under a gg or
+      ko ending, which shows the whole board after its flash (Wall Game
+      Director, 2026-10-29: without it the catch shrank back to two small
+      icons); a ko throws the caught pawn off, so only the catcher stays. A
+      replay ending replays the move, so it shows the page's board.
+    */
     capture:
-      capturePicture && boardIndex === LAST_BOARD && !extra.ending
-        ? { ...capturePicture, pounce: 1 }
+      capturePicture &&
+      boardIndex === LAST_BOARD &&
+      (!extra.ending || ["gg", "ko"].includes(extra.ending.kind))
+        ? {
+            ...capturePicture,
+            pounce: 1,
+            ...(extra.ending?.kind === "ko" && { mouseSrc: null }),
+          }
         : null,
     ...extra,
   });

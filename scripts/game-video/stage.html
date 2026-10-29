@@ -1475,7 +1475,8 @@
        * A pawn as a picture with a clear background: the board image's
        * `box` (0..1) with the colour `key` ("rgb(r,g,b)", its cell's colour
        * as __cellColour reads it) made clear, with a soft edge so the art
-       * keeps its outline. A PNG data: URL.
+       * keeps its outline: { png: a PNG data: URL, art: the box of its
+       * opaque pixels, as shares of the picture }.
        */
       window.__pawnSprite = async (url, box, key) => {
         const img = new Image();
@@ -1506,14 +1507,33 @@
           );
         }
         g.putImageData(data, 0, 0);
-        return canvas.toDataURL("image/png");
+        // The art's own box, the clear margin left out, as shares of the
+        // picture: what an overlay must not cover.
+        let ax0 = w;
+        let ay0 = h;
+        let ax1 = 0;
+        let ay1 = 0;
+        for (let y = 0; y < h; y += 1) {
+          for (let x = 0; x < w; x += 1) {
+            if (d[(y * w + x) * 4 + 3] < 128) continue;
+            ax0 = Math.min(ax0, x);
+            ay0 = Math.min(ay0, y);
+            ax1 = Math.max(ax1, x + 1);
+            ay1 = Math.max(ay1, y + 1);
+          }
+        }
+        return {
+          png: canvas.toDataURL("image/png"),
+          art: { x0: ax0 / w, y0: ay0 / h, x1: ax1 / w, y1: ay1 / h },
+        };
       };
 
       /**
        * The capture picture (render-game-video.mjs CAPTURE_INSIDE,
        * CAPTURE_POUNCE): c = { cell, mouse, cat: boxes {x, y, w, h} in the
        * board image (0..1); under: the capture cell's colour; mouseSrc,
-       * catSrc: the two pawns' pictures; pounce: 0..1, how far the catcher
+       * catSrc: the two pawns' pictures (mouseSrc null when a ko ending
+       * has thrown the caught pawn off); pounce: 0..1, how far the catcher
        * has landed }.
        */
       const paintCapture = (c) => {
@@ -1529,8 +1549,12 @@
         };
         place($("capUnder"), c.cell);
         $("capUnder").style.background = c.under;
-        place($("capMouse"), c.mouse);
-        $("capMouse").src = c.mouseSrc;
+        // A ko ending throws the caught pawn off the board: it is not here.
+        show($("capMouse"), !!c.mouseSrc);
+        if (c.mouseSrc) {
+          place($("capMouse"), c.mouse);
+          $("capMouse").src = c.mouseSrc;
+        }
         place($("capCat"), c.cat);
         $("capCat").src = c.catSrc;
         // It grows from its feet to its box, never past it, so the pounce
@@ -2324,6 +2348,16 @@
       });
 
       /**
+       * A filter on the board as the camera shows it: its image and the
+       * capture picture over it, so the picture greys and darkens with the
+       * board under an ending.
+       */
+      const boardFilter = (f) => {
+        $("boardImg").style.filter = f;
+        $("captureFx").style.filter = f;
+      };
+
+      /**
        * A freeze before a move lands: the position before it in grey, and a
        * pause mark. The renderer pushes the camera in (s.zoom).
        *   f = { t: seconds into it }
@@ -2332,8 +2366,7 @@
         show($("freezeBadge"), !!f);
         if (!f) return;
         const g = easeOut3(span(f.t, 0, 0.12));
-        $("boardImg").style.filter =
-          "grayscale(" + g + ") contrast(" + (1 + 0.15 * g) + ")";
+        boardFilter("grayscale(" + g + ") contrast(" + (1 + 0.15 * g) + ")");
         $("freezeBadge").style.opacity = g;
       };
 
@@ -2350,7 +2383,7 @@
         ]) {
           show($(id), false);
         }
-        $("boardImg").style.filter = "";
+        boardFilter("");
         $("boardWrap").style.transform = "";
         if (!e) return;
         const t = e.t;
@@ -2394,8 +2427,9 @@
           show($("crack"), true);
           paintCracks(e.at.x, e.at.y, easeOut3(span(t, 0, 0.35)));
           const g = span(t, 0.15, 0.6);
-          $("boardImg").style.filter =
-            "grayscale(" + g + ") brightness(" + (1 - 0.55 * g) + ")";
+          boardFilter(
+            "grayscale(" + g + ") brightness(" + (1 - 0.55 * g) + ")",
+          );
           if (t >= 0.55) {
             const p = easeOut3(span(t, 0.55, 0.95));
             show($("ggCard"), true);
@@ -2413,8 +2447,7 @@
         }
 
         if (e.kind === "ko") {
-          $("boardImg").style.filter =
-            "brightness(" + (1 - 0.4 * span(t, 0, 0.4)) + ")";
+          boardFilter("brightness(" + (1 - 0.4 * span(t, 0, 0.4)) + ")");
           const flash = window.__ENDINGS.ko.flash;
           show($("flash"), t < flash);
           $("flash").style.opacity = 0.6 * (1 - span(t, 0, flash));
