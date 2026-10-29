@@ -78,6 +78,33 @@ describe("event strips", () => {
     );
   });
 
+  test("a walk's ticks are one entry each, not one a step", () => {
+    const tick = (start: number) => ({
+      name: "tick",
+      role: "tick",
+      start,
+      event: 0,
+    });
+    const [row] = stripPlan(
+      {
+        moves: [{ ply: 9, at: 4 }],
+        events: [{ index: 0, ply: 9, kind: "path", start: 4, end: 6.5 }],
+        sounds: [
+          { name: "pawn", role: "move", start: 4, event: null },
+          // The walk before the wall (6 steps), then the walk after it.
+          ...[4.07, 4.13, 4.19, 4.25, 4.31, 4.37].map(tick),
+          ...[5.5, 5.56, 5.62].map(tick),
+          // The settle click is not a step (f6f2a925).
+          { name: "settle", role: "tick", start: 6.1, event: 0 },
+        ],
+      },
+      10,
+    );
+    expect(row.lines[1]).toBe(
+      "sounds: pawn (move) starts 4.00 s, +0.00 s from the landing; ticks x6 4.07-4.37 s; ticks x3 5.50-5.62 s; settle (tick) starts 6.10 s, +2.10 s from the landing",
+    );
+  });
+
   test("times are held inside the video, and a ply with no move says so", () => {
     const plan = stripPlan(
       {

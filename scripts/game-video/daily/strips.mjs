@@ -79,6 +79,35 @@ const s2 = (t) => t.toFixed(2);
 const signed = (d) => `${d >= 0 ? "+" : "-"}${Math.abs(d).toFixed(2)} s`;
 
 /**
+ * A walk ticks once a step (name "tick", bf913247): a path event has many.
+ * The settle click (name "settle") has role "tick" too, and keeps its line.
+ * Each run of ticks with at most TICK_GAP s between two becomes one entry,
+ * {ticks: [start, ...]}, in the place of its first tick (Video Editor
+ * (renderer), 2026-10-29: "Fold role tick into one line for each walk").
+ * @param {TimelineSound[]} sounds
+ * @returns {(TimelineSound & { ticks?: undefined } | { ticks: number[] })[]}
+ */
+const TICK_GAP = 0.3;
+const foldTicks = (sounds) => {
+  /** @type {(TimelineSound & { ticks?: undefined } | { ticks: number[] })[]} */
+  const out = [];
+  /** @type {{ ticks: number[] } | null} */
+  let run = null;
+  for (const s of sounds) {
+    if (s.name !== "tick") {
+      out.push(s);
+      run = null;
+    } else if (run && s.start - run.ticks.at(-1) <= TICK_GAP) {
+      run.ticks.push(s.start);
+    } else {
+      run = { ticks: [s.start] };
+      out.push(run);
+    }
+  }
+  return out;
+};
+
+/**
  * One row per event: its four frames (time order, each with a label) and
  * its text lines. The frames are 0.5 s before the move lands, the event's
  * start, the landing, and 0.5 s after the event's start; a time outside the
@@ -114,17 +143,19 @@ export const stripPlan = (timeline, durationSeconds) => {
         label: `${s2(clamp(t))} s ${label}`,
       }))
       .sort((a, b) => a.t - b.t);
-    const sounds = timeline.sounds
-      .filter(
+    const sounds = foldTicks(
+      timeline.sounds.filter(
         (s) =>
           s.event === e.index ||
           (at !== null && s.event === null && Math.abs(s.start - at) < 0.005),
-      )
-      .map((s) =>
-        at === null
+      ),
+    ).map((s) =>
+      s.ticks
+        ? `ticks x${s.ticks.length} ${s2(s.ticks[0])}-${s2(s.ticks.at(-1))} s`
+        : at === null
           ? `${s.name} (${s.role}) starts ${s2(s.start)} s`
           : `${s.name} (${s.role}) starts ${s2(s.start)} s, ${signed(s.start - at)} from the landing`,
-      );
+    );
     return {
       index: e.index,
       ply: e.ply,
