@@ -11,6 +11,34 @@ const FPS = 30;
 const frames = (n: number, kind: string, ply: number) =>
   Array.from({ length: n }, () => ({ seconds: 1 / FPS, kind, ply, file: "f" }));
 
+describe("allocateFrameRanges for a draft (sample)", () => {
+  test("a 30 fps timeline at 15 fps keeps every other frame, on the same seconds", () => {
+    const timeline = [
+      ...frames(4, "move", 0),
+      { seconds: 0.5, kind: "move", ply: 1, file: "g" },
+    ];
+    expect(() => allocateFrameRanges(timeline, 15)).toThrow("zero frames");
+    const ranges = allocateFrameRanges(timeline, 15, { sample: true });
+    // 1/30 s items end on frames 0.5, 1, 1.5, 2 at 15 fps: two get one.
+    expect(ranges).toHaveLength(3);
+    expect(ranges[0]).toMatchObject({
+      timelineIndex: 0,
+      startFrame: 0,
+      endFrame: 1,
+    });
+    expect(ranges[1]).toMatchObject({
+      timelineIndex: 2,
+      startFrame: 1,
+      endFrame: 2,
+    });
+    expect(ranges[2]).toMatchObject({
+      timelineIndex: 4,
+      startFrame: 2,
+      endFrame: 10,
+    });
+  });
+});
+
 describe("movesUnderOverlay", () => {
   test("finds a move that lands while the banners slide out", () => {
     // The old timing: the first move at the START of the 0.6 s exit.

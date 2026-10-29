@@ -165,7 +165,7 @@ const USAGE =
   "  plumbing, for the app rather than for a person:\n" +
   "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
   "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint]";
+  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint] [--draft]";
 
 /**
  * Every flag the renderer takes: "value" (--name VALUE) or "switch". The
@@ -181,6 +181,7 @@ const FLAGS = {
   "board-theme": "value",
   browser: "value",
   cache: "value",
+  draft: "switch",
   edl: "value",
   encoder: "value",
   ffmpeg: "value",
@@ -239,6 +240,15 @@ const flag = (name) => argv.includes(`--${listed(name)}`);
  * RESULT line is {lint: {faults, counts}, timings}.
  */
 const LINT = flag("lint");
+/**
+ * A draft (R2, Wall Game Director, 2026-10-29: quick tries of timing and
+ * story): the same composition, sound and seconds, shot at DRAFT_FPS and
+ * DRAFT_SCALE of the frame's size, and not checked frame by frame against
+ * its images. RESULT.draft says so; a draft is never a video to post.
+ */
+const DRAFT = flag("draft");
+const DRAFT_FPS = 15;
+const DRAFT_SCALE = 0.5;
 // A lint reads the capture, so it never costs a view (Video Editor (daily
 // app), 2026-10-29).
 if (LINT && !flag("from-cache")) {
@@ -5415,8 +5425,23 @@ const renderStyle = async (styleName) => {
   }
   const shotStart = Date.now();
   const composeSeconds = secondsSince(composeStarted);
+  /*
+    The frames of the video: one range of frames per image. A draft at
+    DRAFT_FPS gives no frame to some images (most of them a 1/30 s frame of
+    an effect); those are not shot. The stills of the contact sheet are shot
+    all the same.
+  */
+  const videoFps = DRAFT ? DRAFT_FPS : FPS;
+  const encodedRanges = allocateFrameRanges(timeline, videoFps, {
+    sample: DRAFT,
+  });
+  const shown = new Set(encodedRanges.map((r) => r.timelineIndex));
+  const stillFiles = new Set(stills.map((st) => st.file));
+  const toShoot = shots.filter(
+    (st, i) => shown.has(i) || stillFiles.has(st.file),
+  );
   // A part starts at a plain position, never inside an effect.
-  const parts = partsOf(shots.length, WORKERS, (i) => shots[i].rest);
+  const parts = partsOf(toShoot.length, WORKERS, (i) => toShoot[i].rest);
   await Promise.all(
     parts.map(async ([from, to]) => {
       const worker = await launchBrowser();
@@ -5435,19 +5460,32 @@ const renderStyle = async (styleName) => {
           const { data } = await cdp.send("Page.captureScreenshot", {
             format: "png",
             optimizeForSpeed: true,
+            // A draft is shot smaller; the page is laid out the same.
+            ...(DRAFT && {
+              clip: {
+                x: 0,
+                y: 0,
+                width: layout.width,
+                height: layout.height,
+                scale: DRAFT_SCALE,
+              },
+            }),
           });
           writeFileSync(file, Buffer.from(data, "base64"));
         };
         await page.evaluate(
           preloadImages,
-          fileUrlsIn(shots.slice(from, to).map((s) => s.state)),
+          fileUrlsIn(toShoot.slice(from, to).map((s) => s.state)),
         );
         if (from > 0) {
-          await page.evaluate((s) => window.__stage(s), shots[from - 1].state);
+          await page.evaluate(
+            (s) => window.__stage(s),
+            toShoot[from - 1].state,
+          );
         }
         for (let i = from; i < to; i += 1) {
-          await page.evaluate((s) => window.__stage(s), shots[i].state);
-          await screenshot(shots[i].file);
+          await page.evaluate((s) => window.__stage(s), toShoot[i].state);
+          await screenshot(toShoot[i].file);
         }
       } finally {
         await worker.close();
@@ -5457,12 +5495,12 @@ const renderStyle = async (styleName) => {
   const shootSeconds = secondsSince(shotStart);
   const encodeStarted = Date.now();
   log(
-    `${shots.length} images shot by ${parts.length} workers in ${shootSeconds}s`,
+    `${toShoot.length} images shot by ${parts.length} workers in ${shootSeconds}s${DRAFT ? ` (a draft: ${shots.length} composed)` : ""}`,
   );
   // Each image's hash, so two renders can be compared frame by frame.
   writeFileSync(
     join(work, "frame-hashes.json"),
-    JSON.stringify(shots.map((s) => sha256Of(s.file))),
+    JSON.stringify(toShoot.map((s) => sha256Of(s.file))),
   );
   log(`${timeline.length} frames written`);
 
@@ -5472,7 +5510,6 @@ const renderStyle = async (styleName) => {
   const frameSequence = join(work, "cfr");
   rmSync(frameSequence, { recursive: true, force: true });
   mkdirSync(frameSequence, { recursive: true });
-  const encodedRanges = allocateFrameRanges(timeline, FPS);
   if (overlay) {
     const under = movesUnderOverlay(encodedRanges, START_PLY - 1);
     if (under.length > 0) {
@@ -5493,7 +5530,7 @@ const renderStyle = async (styleName) => {
   writeFileSync(
     join(work, "timeline-manifest.json"),
     JSON.stringify(
-      { fps: FPS, totalFrames: encodedFrame, ranges: encodedRanges },
+      { fps: videoFps, totalFrames: encodedFrame, ranges: encodedRanges },
       null,
       2,
     ),
@@ -5510,6 +5547,7 @@ const renderStyle = async (styleName) => {
   let loudness = null;
   /** The cues the soundtrack holds; none in a silent video. */
   let mixed = [];
+  const audioStarted = Date.now();
   if (AUDIO) {
     try {
       ({ audioPath, loudness, mixed } = buildAudio({
@@ -5575,10 +5613,12 @@ const renderStyle = async (styleName) => {
           "-crf",
           "20",
         ];
+  log(`soundtrack in ${secondsSince(audioStarted)}s`);
+  const mp4Started = Date.now();
   mkdirSync(dirname(out), { recursive: true });
   ff([
     "-framerate",
-    String(FPS),
+    String(videoFps),
     "-i",
     join(frameSequence, "v-%06d.png"),
     ...(audioPath ? ["-i", audioPath] : []),
@@ -5593,19 +5633,26 @@ const renderStyle = async (styleName) => {
     out,
   ]);
 
-  const encodedReport = verifyEncodedVideo({
-    ffmpeg: FFMPEG,
-    video: out,
-    framePattern: join(frameSequence, "v-%06d.png"),
-    fps: FPS,
-    ranges: encodedRanges,
-    crop: encodedBoardRect,
-  });
-  writeFileSync(
-    join(work, "encoded-verification.json"),
-    JSON.stringify(encodedReport, null, 2),
-  );
+  // A draft is not checked: its frames are smaller than the board box the
+  // check crops, and it is never posted.
+  if (DRAFT) {
+    log("a draft: the video is not checked frame by frame");
+  } else {
+    const encodedReport = verifyEncodedVideo({
+      ffmpeg: FFMPEG,
+      video: out,
+      framePattern: join(frameSequence, "v-%06d.png"),
+      fps: FPS,
+      ranges: encodedRanges,
+      crop: encodedBoardRect,
+    });
+    writeFileSync(
+      join(work, "encoded-verification.json"),
+      JSON.stringify(encodedReport, null, 2),
+    );
+  }
 
+  log(`MP4 written and checked in ${secondsSince(mp4Started)}s`);
   const sheet = wallz ? await writeContactSheet(stills, out) : null;
   for (const f of readdirSync(work)) {
     if (/^f-\d+\.png$/.test(f)) unlinkSync(join(work, f));
@@ -5635,7 +5682,9 @@ const renderStyle = async (styleName) => {
     mp4: out,
     bytes,
     sha256: sha256Of(out),
-    durationSeconds: Number((encodedFrame / FPS).toFixed(3)),
+    durationSeconds: Number((encodedFrame / videoFps).toFixed(3)),
+    /** A draft (--draft): smaller, fewer frames, not checked; never posted. */
+    draft: DRAFT,
     effect: styleName,
     /**
      * The music cues that played: each track by slug, its first ply and the
@@ -5654,7 +5703,7 @@ const renderStyle = async (styleName) => {
     /** The plies a --plies preview played, or null for a full render. */
     preview: PLY_WINDOW,
     timeline: videoTimeline({
-      fps: FPS,
+      fps: videoFps,
       moves: moveTimes,
       events: eventSpans,
       sounds: [

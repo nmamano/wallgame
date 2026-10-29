@@ -1,5 +1,9 @@
-/** Convert timed timeline items to exact cumulative CFR frame ranges. */
-export function allocateFrameRanges(timeline, fps) {
+/**
+ * Convert timed timeline items to exact cumulative CFR frame ranges. With
+ * `sample`, a draft at a lower rate than the timeline was made for: an item
+ * that gets no frame is left out (it is never shot), not an error.
+ */
+export function allocateFrameRanges(timeline, fps, { sample = false } = {}) {
   const ranges = [];
   let endFrame = 0;
   let seconds = 0;
@@ -7,6 +11,7 @@ export function allocateFrameRanges(timeline, fps) {
     seconds += item.seconds;
     const targetEndFrame = Math.round(seconds * fps);
     if (targetEndFrame <= endFrame) {
+      if (sample) continue;
       throw new Error(`timeline item ${timelineIndex} has zero frames`);
     }
     ranges.push({
