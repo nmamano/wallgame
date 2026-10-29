@@ -4606,9 +4606,11 @@ const renderStyle = async (styleName) => {
    */
   const stampSpots = new Map();
   /**
-   * What the lint says of a stamp or trap word when it plays, as [kind,
-   * message] pairs: it covers some of its move (it warns), or something at
-   * its edge leaves it almost no slam (a note).
+   * What the lint says of a stamp or trap word when it plays: `covers`, it
+   * covers some of its move (stamp-covers warns), and `flat`, something at
+   * its edge leaves it almost no slam (stamp-flat, a note); each a message
+   * or null. The kinds stay literal in fault() calls, where the LINT_KINDS
+   * test reads them.
    */
   const stampLints = new Map();
   /** How big a stamp starts its slam (stage.html punch at its start). */
@@ -4694,26 +4696,18 @@ const renderStyle = async (styleName) => {
         punchFrom,
       );
       stampSpots.set(ev, { at: spot.at, fit, pop: spot.pop });
-      stampLints.set(ev, [
-        ...(spot.covered > 0.01
-          ? [
-              [
-                "stamp-covers",
-                `the ${ev.kind} word "${ev.text}" covers ${spot.covered.toFixed(2)} cells of the move: no band of the board is free of it`,
-              ],
-            ]
-          : []),
+      stampLints.set(ev, {
+        covers:
+          spot.covered > 0.01
+            ? `the ${ev.kind} word "${ev.text}" covers ${spot.covered.toFixed(2)} cells of the move: no band of the board is free of it`
+            : null,
         // Wall Game Director, 2026-10-29: so a flat slam is seen without
         // watching, and the beat can move to another ply.
-        ...(spot.pop < STAMP_FLAT_POP
-          ? [
-              [
-                "stamp-flat",
-                `the ${ev.kind} word "${ev.text}" slams in from only ${spot.pop.toFixed(2)}x, so it looks flat: a pawn or wall is at its edge`,
-              ],
-            ]
-          : []),
-      ]);
+        flat:
+          spot.pop < STAMP_FLAT_POP
+            ? `the ${ev.kind} word "${ev.text}" slams in from only ${spot.pop.toFixed(2)}x, so it looks flat: a pawn or wall is at its edge`
+            : null,
+      });
       log(
         `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move, slams in from ${spot.pop.toFixed(2)}`,
       );
@@ -4945,9 +4939,9 @@ const renderStyle = async (styleName) => {
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
-      for (const [kind, message] of stampLints.get(ev) ?? []) {
-        fault(kind, plyIndex, message);
-      }
+      const said = stampLints.get(ev);
+      if (said?.covers) fault("stamp-covers", plyIndex, said.covers);
+      if (said?.flat) fault("stamp-flat", plyIndex, said.flat);
       if (fxCovers.has(ev))
         fault("mark-covers-wall", plyIndex, fxCovers.get(ev));
       if (ev.sound) {
