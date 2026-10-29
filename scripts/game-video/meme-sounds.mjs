@@ -139,7 +139,8 @@ export const MEME_FAMILIES = {
  * The families that are a voice: someone on screen says it, so a viewer
  * must see who (Nil, 2026-10-29: "zoom on the mouse so it's clear who is
  * talking"). The renderer's lint warns of one with no speaker shown
- * (voice-no-speaker).
+ * (voice-no-speaker). Not ooh: it is a crowd off screen, with no speaker
+ * to show (Director, 2026-10-29).
  */
 export const VOICE_FAMILIES = [
   "seeya",
@@ -148,7 +149,6 @@ export const VOICE_FAMILIES = [
   "getout",
   "letsgo",
   "oof",
-  "ooh",
   "wow",
 ];
 
