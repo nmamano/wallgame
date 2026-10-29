@@ -93,7 +93,7 @@ import {
   MAX_MEME_LUFS,
 } from "./quality.mjs";
 import { FRAME, STRIP_AREA, validateEdl } from "../edl.mjs";
-import { batchLines, scriptDraft } from "./script.mjs";
+import { batchLines, scriptChecklist, scriptDraft } from "./script.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -2388,7 +2388,15 @@ const viewsToday = (dir: string) =>
 /** crew.mjs against the app at `base`. */
 const crew = (base: string, ...args: string[]) => {
   const run = Bun.spawnSync(
-    ["node", resolve(import.meta.dir, "crew.mjs"), ...args, "--app", base],
+    [
+      "node",
+      resolve(import.meta.dir, "crew.mjs"),
+      ...args,
+      "--app",
+      base,
+      "--docs",
+      import.meta.dir,
+    ],
     { env: { PATH: process.env.PATH! } },
   );
   return {
@@ -3893,6 +3901,7 @@ describe("phase 1, the script (SCRIPT.md)", () => {
       edl,
       timeline: { moves: [{ ply: 22, at: 10.04 }], events: [], sounds: [] },
       timesNote: "from the lint of this list",
+      checklist: ["[ ] one", "[ ] two"],
     });
     const lines = text.split("\n");
     expect(lines[0]).toBe(
@@ -3917,13 +3926,42 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     );
     expect(text).toContain("- director, wall jump: ply 22 ");
     expect(text).toContain(
-      '22 | ~10.0 | <sees> | zoom + fuahhh-1 | payoff "he was not" | <speaker> | steps red 12, blue 7; wall jump ',
+      '22 | <label> | ~10.0 | <sees> | zoom + fuahhh-1 | payoff "he was not" | <speaker> | steps red 12, blue 7; wall jump ',
     );
     expect(text).toContain(
-      '30 | ~? | <sees> | trap + sting-1 | "NO EXIT" | <speaker> | steps red 12, blue 7',
+      '30 | <label> | ~? | <sees> | trap + sting-1 | "NO EXIT" | <speaker> | steps red 12, blue 7',
     );
     expect(text).toContain("- plies 0-20: 0.3 s a move, fast-forward");
-    expect(text).toContain("[ ] a forced capture is explained");
+    expect(text.split("CHECKLIST")[1].split("\n").slice(1)).toEqual([
+      "[ ] one",
+      "[ ] two",
+    ]);
+  });
+
+  test("a row's label is its explain event's; the checklist is SCRIPT.md's", () => {
+    const text = scriptDraft({
+      item,
+      edl: {
+        ...edl,
+        events: [{ ply: 22, kind: "explain", label: "detour" }, ...edl.events],
+      },
+      timeline: null,
+      timesNote: "no times",
+      checklist: scriptChecklist(
+        readFileSync(join(import.meta.dir, "SCRIPT.md"), "utf8"),
+      ),
+    });
+    expect(text).toContain(
+      "\n22 | detour | ~? | <sees> | explain; zoom + fuahhh-1 | ",
+    );
+    expect(text).toContain(
+      "\n[ ] Every meme sits on a move whose label matches its meme-list line.\n",
+    );
+    // A wrapped item is one line.
+    expect(text).toContain(
+      "\n[ ] Each beat names a moment the viewer sees and says why it is funny; its cause is on screen just before it. No moment, no meme.\n",
+    );
+    expect(() => scriptChecklist("# no checklist")).toThrow("## Checklist");
   });
 
   test("the batch: the other videos' texts and sounds, not this one's", () => {
@@ -3993,8 +4031,10 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(drafted.out).toContain(`script draft: ${out}`);
     const draft = readFileSync(out, "utf8");
     expect(draft).toContain("Times: from the lint of this list");
-    expect(draft).toContain("22 | ~12.5 | <sees> | zoom + fuahhh-1");
-    expect(draft).toContain('30 | ~18.0 | <sees> | trap + sting-1 | "NO EXIT"');
+    expect(draft).toContain("22 | <label> | ~12.5 | <sees> | zoom + fuahhh-1");
+    expect(draft).toContain(
+      '30 | <label> | ~18.0 | <sees> | trap + sting-1 | "NO EXIT"',
+    );
     // Never over a file that exists.
     expect(crew(base, "script", "--item", id, "--out", out).err).toContain(
       `${out} exists`,

@@ -211,7 +211,8 @@
  *                                  failure. It never pushes or merges
  *
  * The app is found through the office's app registry (name game-video), or
- * given with --app http://127.0.0.1:<port>.
+ * given with --app http://127.0.0.1:<port>. The briefs are read from the
+ * main checkout's daily folder (MAIN_DAILY), or from --docs DIR.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -237,6 +238,7 @@ import { renderScriptReview, scriptAfterRender } from "./store.mjs";
 import {
   batchLines,
   directorLines,
+  scriptChecklist,
   scriptDraft,
   seatColors,
 } from "./script.mjs";
@@ -247,6 +249,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const STORYBOARD = resolve(HERE, "../storyboard.ts");
 /** By full path, as nightly-candidates.sh: a unit's PATH has no bun. */
 const BUN = join(homedir(), ".bun/bin/bun");
+/**
+ * The daily folder of the main checkout. The briefs crew.mjs prints
+ * (SCRIPT.md's checklist, SCRIPT-REVIEW.md, VET-BRIEF.md) are docs: read
+ * from main, a docs edit is live at once, where the release copy this runs
+ * from lags main until a ship (Wall Game PM, 2026-10-29).
+ */
+const MAIN_DAILY = join(homedir(), "nil/wallgame/scripts/game-video/daily");
+/** Where the briefs are: MAIN_DAILY, or --docs DIR (the tests' own copy). */
+const docsDir = () => flag("docs") ?? MAIN_DAILY;
+/** A brief from docsDir(), its leading comment left out. */
+const brief = (name) =>
+  readFileSync(join(docsDir(), name), "utf8")
+    .replace(/^<!--[\s\S]*?-->\n+/, "")
+    .trimEnd();
 /** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
 const STORYBOARD_TIMEOUT_MS = 120_000;
 const APP_NAME = "game-video";
@@ -1210,7 +1226,13 @@ const commands = {
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(
       out,
-      scriptDraft({ item: c, edl, timeline, timesNote }) + "\n",
+      scriptDraft({
+        item: c,
+        edl,
+        timeline,
+        timesNote,
+        checklist: scriptChecklist(brief("SCRIPT.md")),
+      }) + "\n",
     );
     console.log(
       `script draft: ${out}\n  complete every <...> and ? and tick the checklist, then: script-review-prompt --item ${c.id} --script ${out}`,
@@ -1239,15 +1261,13 @@ const commands = {
     const { items } = await app("GET", "/api/daily/state");
     console.log(
       [
-        readFileSync(join(HERE, "SCRIPT-REVIEW.md"), "utf8")
-          .replace(/^<!--[\s\S]*?-->\n+/, "")
-          .trimEnd(),
+        brief("SCRIPT-REVIEW.md"),
         "",
         `## Your task: item ${c.id}, game ${c.gameId}`,
         `- SCRIPT: ${script}`,
         `- STORYBOARD: ${board.png} (${board.plies} plies)`,
         `- LIST: ${edl ?? "none yet (the script comes first)"}`,
-        `- RULES: ${join(HERE, "DIRECTOR.md")}`,
+        `- RULES: ${join(docsDir(), "DIRECTOR.md")}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- FACTS (plies 0-based in the director lines):",
         ...c.candidate.facts.map((f) => `  - ${f}`),
@@ -1324,9 +1344,7 @@ const commands = {
     }
     console.log(
       [
-        readFileSync(join(HERE, "VET-BRIEF.md"), "utf8")
-          .replace(/^<!--[\s\S]*?-->\n+/, "")
-          .trimEnd(),
+        brief("VET-BRIEF.md"),
         "",
         `## Your task: item ${c.id}, game ${c.gameId}`,
         `- VIDEO: ${video.path} (sha256 ${video.sha256}, ${video.durationSeconds ?? "?"} s)`,
@@ -1337,7 +1355,7 @@ const commands = {
         script
           ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}; its review notes: ${scriptNotes})`
           : "- SCRIPT: none recorded (this item rendered before phase 1)",
-        `- RULES: ${join(HERE, "DIRECTOR.md")}`,
+        `- RULES: ${join(docsDir(), "DIRECTOR.md")}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- THE GAME (the winner and how):",
         ...c.candidate.facts.map((f) => `  - ${f}`),

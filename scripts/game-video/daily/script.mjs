@@ -64,15 +64,40 @@ const eventLabel = (e) => {
 };
 
 /**
+ * SCRIPT.md's checklist, one "[ ] ..." line an item: the items of its
+ * "## Checklist" section, each item's wrapped lines joined.
+ * @param {string} markdown  SCRIPT.md
+ * @returns {string[]}
+ */
+export const scriptChecklist = (markdown) => {
+  const section = markdown
+    .split(/^## /m)
+    .find((s) => s.startsWith("Checklist"));
+  if (!section) throw new Error("SCRIPT.md has no ## Checklist section");
+  const items = [];
+  for (const line of section.split("\n").slice(1)) {
+    if (/^- \[ \] /.test(line)) items.push(line.slice(2).trim());
+    else if (/^\s+\S/.test(line) && items.length > 0) {
+      items[items.length - 1] += ` ${line.trim()}`;
+    }
+  }
+  if (items.length === 0) throw new Error("SCRIPT.md's checklist is empty");
+  return items;
+};
+
+/**
  * The script file's draft: the header, the texts, the game's facts and a
  * BEATS row for each ply with an event or a fact, then the pace and the
  * checklist. `timeline` (RESULT.timeline's shape, from the lint) gives each
- * ply's second; without it the times are "~?". The director completes
- * every "<...>" and "?" before the review.
- * @param {{ item: object, edl: object | null, timeline: { moves: { ply: number, at: number }[], events?: object[], sounds?: object[] } | null, timesNote: string }} o
+ * ply's second; without it the times are "~?". A row's label is its explain
+ * event's (edl.mjs, the Game Semantics Worker's move label), else
+ * "<label>". `checklist` is SCRIPT.md's (scriptChecklist), so the draft
+ * never keeps a second copy. The director completes every "<...>" and "?"
+ * before the review.
+ * @param {{ item: object, edl: object | null, timeline: { moves: { ply: number, at: number }[], events?: object[], sounds?: object[] } | null, timesNote: string, checklist: string[] }} o
  * @returns {string}
  */
-export const scriptDraft = ({ item, edl, timeline, timesNote }) => {
+export const scriptDraft = ({ item, edl, timeline, timesNote, checklist }) => {
   const c = item.candidate;
   const colors = seatColors(c);
   const seat = (p) => c.seats.find((s) => s.playerOrder === p);
@@ -135,14 +160,16 @@ export const scriptDraft = ({ item, edl, timeline, timesNote }) => {
     ...c.facts.map((f) => `- ${f}`),
     ...directorLines(c).map((l) => `- ${l}`),
     "",
-    `BEATS (ply | ~t s | what the viewer sees | effect + sound | on-screen text | speaker | fact). Times: ${timesNote}`,
+    `BEATS (ply | label | ~t s | what the viewer sees | effect + sound | on-screen text | speaker | fact). Times: ${timesNote}`,
     ...plies.map((ply) => {
       const here = events.filter((e) => e.ply === ply);
       const text = here.map(eventText).filter(Boolean);
       const payoff =
         edl?.payoff?.ply === ply ? [`payoff "${edl.payoff.text}"`] : [];
+      const label = here.find((e) => e.kind === "explain")?.label;
       return [
         ply,
+        label ?? "<label>",
         time(ply),
         "<sees>",
         here.length ? here.map(eventLabel).join("; ") : "-",
@@ -159,16 +186,7 @@ export const scriptDraft = ({ item, edl, timeline, timesNote }) => {
     ),
     "",
     "CHECKLIST (SCRIPT.md; tick each before the review)",
-    "[ ] the hook is in the caption from 0 s; the ending pays it off",
-    "[ ] the first meme beat lands about 3 s after the first move",
-    "[ ] no stretch of about 6 s without a beat",
-    "[ ] every text is true at its ply; the side that waits or suffers speaks; a voice sound has a visible speaker",
-    "[ ] race only where a side's steps change by 3 or more",
-    "[ ] a danger reaction ends before the save lands",
-    "[ ] no fast-forward over a wall jump, a danger or a save",
-    "[ ] no effect kind 3 times; sweat at most twice; no cut-out label, caption or ending line twice across the batch",
-    "[ ] the climax: a lead zoom and a hit on the capture; the end word matches how the game ended",
-    "[ ] a forced capture is explained on the ply its exit closes",
+    ...checklist,
   ].join("\n");
 };
 
