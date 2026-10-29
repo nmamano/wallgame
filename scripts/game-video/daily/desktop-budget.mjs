@@ -79,7 +79,8 @@ export const parseStatus = (text) => {
  * `reading` is {at, status, others, error}: `others` is the threads of the
  * running jobs that are not the app's. `ownThreads` is what the app's
  * running jobs use, and `behind` how many jobs wait after this one.
- * `backupWindow` null is for a test that runs at any time of day.
+ * `backupWindow` null is for a test that runs at any time of day. `want`
+ * is a fixed worker count (a lint asks for 1).
  */
 export const planJob = ({
   reading,
@@ -88,6 +89,7 @@ export const planJob = ({
   behind,
   now,
   backupWindow = BACKUP_WINDOW,
+  want = /** @type {number | undefined} */ (undefined),
 }) => {
   const d = new Date(now);
   const minute = d.getUTCHours() * 60 + d.getUTCMinutes();
@@ -126,6 +128,15 @@ export const planJob = ({
   );
   const used = ownThreads + reading.others;
   const free = total - used;
+  // A job that asks for a number (a lint: 1, it has no shoot) takes it
+  // whenever that much is free.
+  if (want !== undefined) {
+    return free >= want
+      ? { workers: want }
+      : {
+          wait: `the 4090's budget is in use: ${used} of ${total} workers (${s.locked ? "screen locked" : "Nil may use the PC"})`,
+        };
+  }
   // Alone, a job takes all it can; with company (running or waiting),
   // half, so that two run side by side.
   const share =

@@ -78,6 +78,14 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --has-capture <gameId>
  *
+ * The lint (Wall Game Director's R1, 2026-10-29): the renderer composes the
+ * list from the capture and stops before the shoot pass, so it makes no
+ * image, no MP4 and no view. One worker; RESULT {lint: {faults, notes,
+ * counts}, timings}; exit 0 with faults or not:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --lint --edl <edl.json> --job-id <id>
+ *
  * The app also asks how many workers the other users' jobs on the 4090 take
  * (desktop-run's meta files), to keep the budget for all jobs together.
  * This prints the sum, or fails when a job has no meta file:
@@ -261,15 +269,16 @@ const main = async () => {
   const plies = arg("plies");
   const hasCapture = arg("has-capture");
   const threadsOf = arg("threads-of");
+  const lint = process.argv.includes("--lint");
   const workers = Number(arg("workers") ?? WORKERS);
   const host = process.env.WALLGAME_GPU_HOST;
   if (
     hasCapture === undefined &&
     threadsOf === undefined &&
-    (!edlPath || !jobId || !out)
+    (!edlPath || !jobId || (!out && !lint))
   ) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--workers N], or --has-capture <gameId>, or --threads-of <job id>,...",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--workers N], or --lint --edl <edl.json> --job-id <id>, or --has-capture <gameId>, or --threads-of <job id>,...",
     );
   }
   if (!Number.isInteger(workers) || workers < 1 || workers > BUDGET.perJob) {
@@ -344,11 +353,16 @@ const main = async () => {
   // A preview always reads the cache; a full render reads it when asked.
   const fullFromCache = process.argv.includes("--from-cache");
   if (span && fullFromCache) fail("--plies reads the cache already");
+  if (lint && (span || fullFromCache || out)) {
+    fail(
+      "--lint reads the cache and makes no video: no --plies, --from-cache or --out",
+    );
+  }
 
   // The app asked already (--has-capture), but this adapter also runs by
   // hand, and without the capture the renderer would fail after desktop-run
   // started it.
-  const needsCapture = Boolean(span || fullFromCache);
+  const needsCapture = Boolean(span || fullFromCache || lint);
   const gameId = needsCapture
     ? JSON.parse(readFileSync(edlPath, "utf8")).gameId
     : null;
@@ -393,6 +407,7 @@ const main = async () => {
     cache,
     ...(span ? ["--from-cache", "--plies", plies] : []),
     ...(fullFromCache ? ["--from-cache"] : []),
+    ...(lint ? ["--from-cache", "--lint"] : []),
   ]);
   const unit = DESKTOP_JOB.exec(desktop.stdout)?.[1];
   if (desktop.code !== 0 || !unit) {
@@ -409,7 +424,7 @@ const main = async () => {
   });
 
   console.log(
-    `[render] rendering on the 4090 (job-${unit}), ${span || fullFromCache ? "from the game's capture: no view" : "with a live capture: one view of the game"}`,
+    `[render] ${lint ? "linting" : "rendering"} on the 4090 (job-${unit}), ${needsCapture ? "from the game's capture: no view" : "with a live capture: one view of the game"}`,
   );
   // One remote call waits for the end, then writes the RESULT line into a
   // file: the unit log also takes the renderer's stderr, so RESULT need not
@@ -438,7 +453,9 @@ const main = async () => {
   // only record of what the render did; it stays as <out>-render.log. The
   // renderer writes the log (--log) before it exits, so with exit 0 both
   // are there.
-  const outDir = dirname(out);
+  // A lint has no --out: its log goes next to its list, as <edl>-render.log.
+  const base = out ?? edlPath;
+  const outDir = dirname(base);
   const resultDir = join(outDir, `.result-${jobId}`);
   mkdirSync(resultDir, { recursive: true });
   const resultLocal = join(resultDir, "result.line");
@@ -453,7 +470,7 @@ const main = async () => {
       result = parseResult(readFileSync(resultLocal, "utf8"));
     }
   }
-  if (existsSync(logLocal)) renameSync(logLocal, `${out}-render.log`);
+  if (existsSync(logLocal)) renameSync(logLocal, `${base}-render.log`);
   rmSync(resultDir, { recursive: true, force: true });
   if (exit !== 0 || !result) {
     const why = await ssh(`tail -n 5 ${dir}/render.log | cut -c1-180`);
@@ -465,6 +482,25 @@ const main = async () => {
     fail(
       `the 4090 render failed (exit ${exit}): ${tail(why.stdout) || "no RESULT line"}${hint}`,
     );
+  }
+
+  if (lint) {
+    if (!Array.isArray(result.lint?.faults)) {
+      fail(
+        "the 4090 gave no lint: the render kit may be older than --lint, so sync it",
+      );
+    }
+    step("fetch");
+    await ssh(`rm -rf ${dir} ${jobs}`);
+    step("cleanup");
+    timings.total = Math.round((Date.now() - started) / 100) / 10;
+    console.log(
+      `RESULT ${JSON.stringify({
+        lint: result.lint,
+        timings: { ...timings, workers, renderer: result.timings ?? null },
+      })}`,
+    );
+    return;
   }
 
   // A preview reports its window and no list hash (render-game-video.mjs),

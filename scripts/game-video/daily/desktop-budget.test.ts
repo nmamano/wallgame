@@ -191,6 +191,23 @@ describe("the 4090's budget (desktop-budget.mjs)", () => {
     expect(readings).toBe(stoppedAt);
   });
 
+  test("a lint takes its one worker whenever one is free", () => {
+    const lint = (ownThreads: number) =>
+      planJob({
+        reading: { at: now, status: status(FREE), others: 0 },
+        ownThreads,
+        ownJobs: ownThreads ? 2 : 0,
+        behind: 3,
+        now,
+        want: 1,
+      });
+    expect(lint(0)).toEqual({ workers: 1 });
+    expect(lint(11)).toEqual({ workers: 1 });
+    expect(lint(12)).toEqual({
+      wait: "the 4090's budget is in use: 12 of 12 workers (Nil may use the PC)",
+    });
+  });
+
   test("two jobs of 6 stay inside the 12 GB of all render jobs", () => {
     expect(memoryFor(6)).toBe("6G");
     expect(memoryFor(12)).toBe("8G");

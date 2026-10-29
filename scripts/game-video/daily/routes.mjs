@@ -86,6 +86,7 @@ import {
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
+import { lintNotes, lintStops } from "./lint.mjs";
 import {
   BACKUP_WINDOW,
   createBudgetReader,
@@ -778,6 +779,102 @@ export const createDaily = ({
     }
   };
 
+  /*
+    The lint (Wall Game Director's R1, 2026-10-29; lint.mjs): the app's
+    checks of a list and the renderer's --lint from the capture (one worker,
+    about 2 s on the 4090, no image, no view), every fault at once. lintId
+    -> {itemId, key, state, errors, skipped, lint, timings, error, edlText}.
+    direct stores a list only with a done lint of the same text (key) that
+    nothing stops, so a list that cannot render is never stored. The app
+    forgets lints when it restarts.
+  */
+  const lints = new Map();
+  const LINTS_KEPT = 50;
+  let lintCount = 0;
+  /** The text direct stores for `edl`, and its hash: the lint's key. */
+  const listText = (edl) => JSON.stringify(edl, null, 2) + "\n";
+
+  const runLint = async ({ jobId, workers }) => {
+    const rec = lints.get(jobId);
+    if (!rec) return;
+    rec.state = "running";
+    try {
+      const work = join(dirs.work, jobId);
+      mkdirSync(work, { recursive: true });
+      const edlPath = join(work, "edl.json");
+      writeFileSync(edlPath, rec.edlText);
+      const { result, error } = await runAdapter(jobId, [
+        "--lint",
+        "--edl",
+        edlPath,
+        "--job-id",
+        jobId,
+        "--workers",
+        String(workers),
+      ]);
+      if (error) {
+        Object.assign(rec, { state: "failed", error });
+      } else if (!Array.isArray(result.lint?.faults)) {
+        Object.assign(rec, {
+          state: "failed",
+          error: "the render step gave no lint",
+        });
+      } else {
+        Object.assign(rec, {
+          state: "done",
+          lint: result.lint,
+          timings: result.timings ?? null,
+        });
+      }
+    } catch (err) {
+      Object.assign(rec, {
+        state: "failed",
+        error: `the lint step failed: ${err.message}`,
+      });
+    }
+  };
+
+  /**
+   * The summary lines of a list that direct may store, or a refusal: the
+   * list's lint (`lintId`) must be done, of this text, with nothing that
+   * stops it. `noLint` stores without one, for a 4090 that cannot lint.
+   */
+  const lintGate = (item, text, { lint: lintId, noLint }) => {
+    if (noLint === true) {
+      return [
+        "NOT LINTED (direct --no-lint): the render checks the list before its shoot pass",
+      ];
+    }
+    const rec = typeof lintId === "string" ? lints.get(lintId) : undefined;
+    if (!rec) {
+      throw new StepRefused(
+        "direct stores a list only after a lint of it: crew.mjs direct runs one (or give --no-lint when the 4090 cannot lint)",
+      );
+    }
+    if (rec.itemId !== item.id || rec.key !== sha256(text)) {
+      throw new StepRefused(
+        "the lint was of another list: lint this list (crew.mjs direct does)",
+      );
+    }
+    if (rec.state !== "done") {
+      throw new StepRefused(
+        `the lint is ${rec.state}${rec.error ? `: ${rec.error}` : ""}`,
+      );
+    }
+    const stops = lintStops(rec);
+    if (stops.length) {
+      throw new StepRefused(
+        `the lint found ${stops.length} fault(s) that stop the list: ${stops.join("; ")}`,
+      );
+    }
+    return rec.skipped
+      ? [`not linted by the renderer: ${rec.skipped}`]
+      : [
+          `lint: nothing stops the list (${rec.lint.counts?.seconds ?? "?"} s)`,
+          ...lintNotes(rec),
+        ];
+  };
+
   /**
    * {cached: true|false}, or {error} when the app could not ask: the
    * adapter's --has-capture, one ssh line. A preview without a capture is
@@ -815,6 +912,17 @@ export const createDaily = ({
         });
       });
     });
+
+  /**
+   * Forget the oldest finished lints over LINTS_KEPT. A queued or running
+   * lint stays: its job in the queue reads its record.
+   */
+  const pruneLints = () => {
+    const finished = [...lints].filter(([, l]) =>
+      ["done", "failed"].includes(l.state),
+    );
+    for (const [id] of finished.slice(0, -LINTS_KEPT)) lints.delete(id);
+  };
 
   /** Forget the oldest finished previews over PREVIEWS_KEPT, with their MP4s. */
   const prunePreviews = () => {
@@ -888,7 +996,9 @@ export const createDaily = ({
 
   const pump = () => {
     while (queue.length > 0) {
-      const head = queue[0];
+      // A lint goes first: it takes one worker for about 2 s, and direct
+      // waits for it (R1).
+      const head = queue.find((job) => job.kind === "lint") ?? queue[0];
       const plan = liveClash(head)
         ? { wait: liveClash(head) }
         : planJob({
@@ -898,6 +1008,7 @@ export const createDaily = ({
             behind: queue.length - 1,
             now: Date.now(),
             backupWindow,
+            ...(head.kind === "lint" && { want: 1 }),
           });
       if (plan.wait) {
         for (const job of queue) {
@@ -906,18 +1017,30 @@ export const createDaily = ({
         budget.wake();
         return;
       }
-      const job = { ...queue.shift(), workers: plan.workers };
+      const job = {
+        ...queue.splice(queue.indexOf(head), 1)[0],
+        workers: plan.workers,
+      };
       progress.delete(job.jobId);
       running.push(job);
       budget.wake();
       void (async () => {
         try {
-          await (job.kind === "preview" ? runPreview(job) : runJob(job));
+          await (job.kind === "preview"
+            ? runPreview(job)
+            : job.kind === "lint"
+              ? runLint(job)
+              : runJob(job));
         } finally {
           running.splice(running.indexOf(job), 1);
           pump();
         }
-      })();
+      })().catch((err) => {
+        // An unhandled rejection stops Bun, and every render with it.
+        console.warn(
+          `${job.kind ?? "render"} ${job.jobId}: ${err?.message ?? err}`,
+        );
+      });
     }
   };
 
@@ -1350,6 +1473,90 @@ export const createDaily = ({
   const picked = (res, item) =>
     json(res, 200, { ...item, sameGame: store.sameGame(item) });
 
+  /**
+   * Every check of a list for `item` before it is stored, the same for
+   * direct and lint: {edl, risk, errors}. A list that is not a list at all
+   * (validateEdl, another game) is refused at once.
+   */
+  const listChecks = (item, rawEdl, claimRiskOk) => {
+    const checked = validateEdl(rawEdl);
+    if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
+    const { edl } = checked;
+    if (!Array.isArray(claimRiskOk) || !claimRiskOk.every(claimRisk)) {
+      throw new StepRefused(
+        "claimRiskOk is a list of sounds with a high claim risk",
+      );
+    }
+    const risk = claimRiskLines(edl, claimRiskOk);
+    if (edl.gameId !== item.candidate.gameId) {
+      throw new StepRefused(
+        `the list is for ${edl.gameId}, but ${item.id}'s game is ${item.candidate.gameId}`,
+      );
+    }
+    if (!item.candidate.moves) {
+      throw new StepRefused(
+        "the candidate report has no move list, so the list cannot be checked; pick from a newer report",
+      );
+    }
+    if (!item.candidate.distances) {
+      throw new StepRefused(
+        "the candidate has no race counts, so the captions cannot be checked against the counter; drop the item and pick its game from a newer report",
+      );
+    }
+    // The contact sheet has one still per event; with no event there is no
+    // sheet, and the render would fail after it spent its view.
+    if (edl.events.length === 0) {
+      throw new StepRefused(
+        "the list needs at least one event, or the render has no contact sheet to check",
+      );
+    }
+    const errors = [
+      ...checkEdlAgainstGame(edl, {
+        notations: item.candidate.moves,
+        cols: item.candidate.boardWidth,
+        rows: item.candidate.boardHeight,
+        initialState: item.candidate.initialState,
+      }),
+      ...saveFrameProblems(edl, item.candidate.beats),
+      ...storyProblems(edl, item.candidate),
+      ...risk.problems,
+      // Without a named track the renderer picks one at random, so a
+      // second render of the list (from the capture) could play another
+      // song.
+      ...(edl.music
+        ? []
+        : [
+            `name a music track ("music"): a list without one gets a random track, so a second render of it can play another song`,
+          ]),
+      // The renderer refuses the track too; direct says it while the list
+      // is still being written.
+      ...(edl.music ?? []).flatMap((cue) => blockedMusic(cue.track)),
+      // The daily video has no cold open; edl.mjs keeps the field for a
+      // hand render.
+      ...(edl.coldOpenPly === null
+        ? []
+        : [
+            `coldOpenPly is cut from the daily video (Nil, 2026-10-26: "the initial 1s hook doesn't work for me, it's too confusing. cut it"); remove it`,
+          ]),
+    ];
+    // The caption and stamps are burned into the video, which is posted.
+    const shown = Object.fromEntries(
+      [
+        ["video caption", edl.caption ?? ""],
+        ["video payoff", edl.payoff?.text ?? ""],
+        ...edl.events
+          .filter((e) => e.text)
+          .map((e, i) => [`stamp ${i + 1}`, e.text]),
+      ].filter(([, t]) => t),
+    );
+    const problems = textProblems(
+      shown,
+      item.candidate.gameId,
+      playerNames(item.candidate),
+    );
+    return { edl, risk, errors: [...errors, ...problems] };
+  };
+
   const routes = {
     "GET /daily": (req, res) => {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1497,85 +1704,14 @@ export const createDaily = ({
     "POST /api/daily/direct": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
-      const checked = validateEdl(body.edl);
-      if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
-      const { edl } = checked;
-      const claimRiskOk = body.claimRiskOk ?? [];
-      if (!Array.isArray(claimRiskOk) || !claimRiskOk.every(claimRisk)) {
-        throw new StepRefused(
-          "claimRiskOk is a list of sounds with a high claim risk",
-        );
-      }
-      const risk = claimRiskLines(edl, claimRiskOk);
-      if (edl.gameId !== item.candidate.gameId) {
-        throw new StepRefused(
-          `the list is for ${edl.gameId}, but ${item.id}'s game is ${item.candidate.gameId}`,
-        );
-      }
-      if (!item.candidate.moves) {
-        throw new StepRefused(
-          "the candidate report has no move list, so the list cannot be checked; pick from a newer report",
-        );
-      }
-      if (!item.candidate.distances) {
-        throw new StepRefused(
-          "the candidate has no race counts, so the captions cannot be checked against the counter; drop the item and pick its game from a newer report",
-        );
-      }
-      // The contact sheet has one still per event; with no event there is no
-      // sheet, and the render would fail after it spent its view.
-      if (edl.events.length === 0) {
-        throw new StepRefused(
-          "the list needs at least one event, or the render has no contact sheet to check",
-        );
-      }
-      const errors = [
-        ...checkEdlAgainstGame(edl, {
-          notations: item.candidate.moves,
-          cols: item.candidate.boardWidth,
-          rows: item.candidate.boardHeight,
-          initialState: item.candidate.initialState,
-        }),
-        ...saveFrameProblems(edl, item.candidate.beats),
-        ...storyProblems(edl, item.candidate),
-        ...risk.problems,
-        // Without a named track the renderer picks one at random, so a
-        // second render of the list (from the capture) could play another
-        // song.
-        ...(edl.music
-          ? []
-          : [
-              `name a music track ("music"): a list without one gets a random track, so a second render of it can play another song`,
-            ]),
-        // The renderer refuses the track too; direct says it while the list
-        // is still being written.
-        ...(edl.music ?? []).flatMap((cue) => blockedMusic(cue.track)),
-        // The daily video has no cold open; edl.mjs keeps the field for a
-        // hand render.
-        ...(edl.coldOpenPly === null
-          ? []
-          : [
-              `coldOpenPly is cut from the daily video (Nil, 2026-10-26: "the initial 1s hook doesn't work for me, it's too confusing. cut it"); remove it`,
-            ]),
-      ];
+      const { edl, risk, errors } = listChecks(
+        item,
+        body.edl,
+        body.claimRiskOk ?? [],
+      );
       if (errors.length) throw new StepRefused(errors.join("; "));
-      // The caption and stamps are burned into the video, which is posted.
-      const shown = Object.fromEntries(
-        [
-          ["video caption", edl.caption ?? ""],
-          ["video payoff", edl.payoff?.text ?? ""],
-          ...edl.events
-            .filter((e) => e.text)
-            .map((e, i) => [`stamp ${i + 1}`, e.text]),
-        ].filter(([, t]) => t),
-      );
-      const problems = textProblems(
-        shown,
-        item.candidate.gameId,
-        playerNames(item.candidate),
-      );
-      if (problems.length) throw new StepRefused(problems.join("; "));
-      const text = JSON.stringify(edl, null, 2) + "\n";
+      const text = listText(edl);
+      const linted = lintGate(item, text, body);
       json(
         res,
         200,
@@ -1587,6 +1723,7 @@ export const createDaily = ({
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
             ...risk.notes,
             ...lastMoveSoundNotes(edl, item.candidate.movesCount),
+            ...linted,
           ],
         }),
       );
@@ -1767,6 +1904,75 @@ export const createDaily = ({
       });
       pump();
       json(res, 200, { itemId: item.id, previewId: jobId });
+    },
+
+    /**
+     * {item, edl?, claimRiskOk?}: lint the list (or the item's stored one):
+     * the app's checks now, the renderer's from the capture in the queue.
+     * {lintId}; GET /api/daily/lint?id= gives the record. A game with no
+     * capture yet gets only the app's checks (skipped says so).
+     */
+    "POST /api/daily/lint": async (req, res) => {
+      const body = await readJson(req);
+      const item = itemOf(body.item);
+      const raw = body.edl ?? item.edl?.doc;
+      if (!raw) {
+        throw new StepRefused(
+          `${item.id} has no edit list yet: give lint an --edl`,
+        );
+      }
+      const { edl, errors } = listChecks(item, raw, body.claimRiskOk ?? []);
+      const capture = await captureOf(edl.gameId);
+      if (capture.error) throw new StepRefused(capture.error);
+      lintCount += 1;
+      const lintId = `${item.id}-${item.gameId}-l${Date.now().toString(36)}${lintCount}`;
+      const text = listText(edl);
+      lints.set(lintId, {
+        itemId: item.id,
+        key: sha256(text),
+        state: capture.cached ? "queued" : "done",
+        errors,
+        skipped: capture.cached
+          ? null
+          : `the 4090 has no capture of game ${edl.gameId} yet; the first render checks the list before its shoot pass`,
+        lint: null,
+        timings: null,
+        error: null,
+        edlText: text,
+      });
+      pruneLints();
+      if (capture.cached) {
+        queue.push({
+          itemId: item.id,
+          jobId: lintId,
+          kind: "lint",
+          gameId: item.gameId,
+          live: false,
+        });
+        pump();
+      }
+      json(res, 200, { itemId: item.id, lintId });
+    },
+
+    "GET /api/daily/lint": (req, res, url) => {
+      const id = url.searchParams.get("id") ?? "";
+      const rec = lints.get(id);
+      if (!rec) {
+        return json(res, 404, {
+          error: `no lint ${id} (the app forgets lints when it restarts)`,
+        });
+      }
+      json(res, 200, {
+        lintId: id,
+        itemId: rec.itemId,
+        state: rec.state,
+        progress: progress.get(id) ?? null,
+        errors: rec.errors,
+        skipped: rec.skipped,
+        lint: rec.lint,
+        timings: rec.timings,
+        error: rec.error,
+      });
     },
 
     "GET /api/daily/preview": (req, res, url) => {

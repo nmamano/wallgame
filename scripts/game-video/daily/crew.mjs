@@ -41,14 +41,27 @@
  *                                  allows a disliked one and names it. A
  *                                  sound with a high claim risk is listed
  *                                  last, and `direct` refuses it
- *   direct --item ID --edl F [--claim-risk-ok K,K]
+ *   direct --item ID --edl F [--claim-risk-ok K,K] [--no-lint]
  *                                  the director's edit decision list for the
  *                                  item's game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending.
+ *                                  It lints the list first and stores it
+ *                                  only when nothing stops it (R1).
  *                                  --claim-risk-ok accepts those sounds with
  *                                  a high claim risk on purpose (only when
- *                                  Nil asks for one). A finished item goes
- *                                  back to draft
+ *                                  Nil asks for one). --no-lint stores
+ *                                  without the lint, only when the 4090
+ *                                  cannot lint. A finished item goes back to
+ *                                  draft
+ *   lint --item ID [--edl F] [--claim-risk-ok K,K]
+ *                                  every fault of the item's list (or of F)
+ *                                  at once, with ply and second: the app's
+ *                                  checks and the renderer's, composed from
+ *                                  the 4090's capture with no image (about
+ *                                  2 s there, no view). STOP stops the list;
+ *                                  WARN and NOTE are for you to read. Exits
+ *                                  1 when something stops it. A game with
+ *                                  no capture yet gets the app's checks
  *   render --item ID [--wait] [--force] [--live]
  *                                  a 4090 render of the item's list; --wait
  *                                  polls until it ends. When the 4090 has the
@@ -159,6 +172,7 @@ import { stripPlan, writeStrips } from "./strips.mjs";
 import { copyLines } from "./copy.mjs";
 import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
+import { lintReport, lintStops } from "./lint.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(
@@ -224,6 +238,46 @@ const app = async (method, path, body) => {
   return json;
 };
 
+/**
+ * Lint `edl` (or the item's stored list when it is undefined): queue it in
+ * the app, wait, print the report and give the record. A list the app
+ * refuses outright (not a list, another game) dies with why.
+ */
+const lintOf = async (item, edl, claimRiskOk) => {
+  const posted = await appTry("POST", "/api/daily/lint", {
+    item,
+    ...(edl !== undefined && { edl }),
+    claimRiskOk,
+  });
+  if (!posted.ok) {
+    die(
+      `POST /api/daily/lint: ${posted.json.error ?? posted.status}; with the 4090 down, direct --no-lint stores without it`,
+    );
+  }
+  const { lintId } = posted.json;
+  let said = null;
+  for (;;) {
+    const rec = await app(
+      "GET",
+      `/api/daily/lint?id=${encodeURIComponent(lintId)}`,
+    );
+    if (rec.state === "failed") {
+      die(
+        `lint ${lintId} failed: ${rec.error}; with the 4090 down, direct --no-lint stores without it`,
+      );
+    }
+    if (rec.state === "done") {
+      console.log([...lintReport(rec), ...timingLines(rec.timings)].join("\n"));
+      return rec;
+    }
+    if (rec.state === "queued" && rec.progress && rec.progress !== said) {
+      console.log(`lint ${lintId}: ${rec.progress}`);
+      said = rec.progress;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+};
+
 /** The item a production command works on: --item <id>. */
 const itemFlag = () =>
   flag("item") ??
@@ -281,7 +335,7 @@ export const timingLines = (t) => {
         .join(", ")}`
     : "";
   return [
-    `  times (s): ${[steps, `total ${t.total}`].filter(Boolean).join("; ")}, ${t.workers} workers${renderer}`,
+    `  times (s): ${[steps, `total ${t.total}`].filter(Boolean).join("; ")}, ${t.workers} worker${t.workers === 1 ? "" : "s"}${renderer}`,
   ];
 };
 
@@ -686,12 +740,32 @@ const commands = {
   async direct() {
     const id = itemFlag();
     const path = flag("edl") ?? die("direct needs --edl <edl.json>");
+    const edl = JSON.parse(readFileSync(path, "utf8"));
+    const claimRiskOk = flag("claim-risk-ok")?.split(",") ?? [];
+    const noLint = process.argv.includes("--no-lint");
+    // R1: a list that cannot render is never stored.
+    const linted = noLint ? null : await lintOf(id, edl, claimRiskOk);
+    if (linted && lintStops(linted).length) {
+      die(`${basename(path)} is not stored: the lint stops it (see above)`);
+    }
     await app("POST", "/api/daily/direct", {
       item: id,
-      edl: JSON.parse(readFileSync(path, "utf8")),
-      claimRiskOk: flag("claim-risk-ok")?.split(",") ?? [],
+      edl,
+      claimRiskOk,
+      ...(linted ? { lint: linted.lintId } : { noLint: true }),
     });
     console.log(await itemSummary(id));
+  },
+
+  async lint() {
+    const id = itemFlag();
+    const path = flag("edl");
+    const rec = await lintOf(
+      id,
+      path ? JSON.parse(readFileSync(path, "utf8")) : undefined,
+      flag("claim-risk-ok")?.split(",") ?? [],
+    );
+    if (lintStops(rec).length) process.exitCode = 1;
   },
 
   async queue() {

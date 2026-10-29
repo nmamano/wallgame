@@ -236,6 +236,7 @@ interface Item {
   // Only a carry-over has it.
   source: { carriedFrom?: string };
   candidate: { gameId: string };
+  edl: { sha256: string } | null;
   copy: {
     block: Record<string, string>;
     sha256: string;
@@ -2239,11 +2240,15 @@ const renderAndWait = async (base: string, id: string, body: object = {}) => {
   return { started, it: await rendered(base, id) };
 };
 
-/** Direct EDL, changed by `edl`, with the app's default ending. */
+/**
+ * Direct EDL, changed by `edl`, with the app's default ending. No lint:
+ * the lint's own test ("a list that cannot render is never stored") runs it.
+ */
 const directOver = async (base: string, id: string, edl: object = {}) =>
   call(base, "/api/daily/direct", {
     item: id,
     edl: { ...EDL, ending: (await dailyState(base)).suggestedEnding, ...edl },
+    noLint: true,
   });
 
 /** The live captures of each game today (UTC), over every item. */
@@ -2410,6 +2415,7 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     post("direct", {
       item: id,
       edl: { ...EDL, vsSound: "win-2" },
+      noLint: true,
       ...(claimRiskOk === undefined ? {} : { claimRiskOk }),
     });
   const riskRefused = await risky();
@@ -2426,7 +2432,7 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   );
   // What the video says must match the counter, and the payoff goes out too.
   const told = (edl: Record<string, unknown>) =>
-    post("direct", { item: id, edl: { ...EDL, ...edl } });
+    post("direct", { item: id, edl: { ...EDL, ...edl }, noLint: true });
   const coldOpen = await told({ coldOpenPly: 22 });
   expect(coldOpen.status).toBe(409);
   expect(coldOpen.body.error).toContain(
@@ -2936,7 +2942,11 @@ test("two music cues: direct takes them, and the render must play both from thei
       { fromPly: 10, track: "skippy" },
     ];
     const direct = (music: object[] = cues) =>
-      call(base, "/api/daily/direct", { item: id, edl: { ...EDL, music } });
+      call(base, "/api/daily/direct", {
+        item: id,
+        edl: { ...EDL, music },
+        noLint: true,
+      });
     expect((await direct()).status).toBe(200);
 
     // The stub plays the list's cues, the second from second 10.
@@ -3079,6 +3089,7 @@ test("a carry-over: a new item with the game of one that was dropped", async () 
     `${first} is draft: carry over only an item that is discarded;`,
   );
   await ok("/api/daily/direct", {
+    noLint: true,
     item: first,
     edl: {
       ...EDL,
@@ -3194,6 +3205,17 @@ if (process.argv.includes("--threads-of")) {
 }
 if (process.argv.includes("--has-capture")) {
   console.log(existsSync(__dirname + "/no-capture") ? "none" : "cached");
+  process.exit(0);
+}
+if (process.argv.includes("--lint")) {
+  // The renderer's lint: lint.json next to the stub when a test writes one.
+  writeFileSync(__dirname + "/last-lint-args", process.argv.slice(2).join(" "));
+  const file = __dirname + "/lint.json";
+  const lint = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {
+    faults: [], notes: [],
+    counts: { seconds: 30, events: {}, overlays: {}, sounds: {} } };
+  console.log("RESULT " + JSON.stringify({ lint, timings: { check: 0.3,
+    total: 2.1, workers: 1, renderer: { compose: 1.3, total: 1.6 } } }));
   process.exit(0);
 }
 const edl = JSON.parse(readFileSync(at("edl"), "utf8"));
@@ -3390,6 +3412,161 @@ test("a preview: a few plies from the capture, and the item does not change", as
   expect(lost.error).toContain("the preview step failed: ENOENT");
 }, 30_000);
 
+test("the lint: every fault at once, and a list that cannot render is never stored", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  const base = await serve(dir, stub);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  const ending = (await dailyState(base)).suggestedEnding;
+  const list = (name: string, edl: object = {}) => {
+    const path = join(dir, name);
+    writeFileSync(path, JSON.stringify({ ...EDL, ending, ...edl }));
+    return path;
+  };
+  const good = list("good.json");
+  const renderer = (lint: object) =>
+    writeFileSync(
+      join(dir, "lint.json"),
+      JSON.stringify({
+        notes: [],
+        counts: {
+          seconds: 31.5,
+          events: { zoom: 1 },
+          overlays: {},
+          sounds: { "fuahhh-1": 1 },
+        },
+        ...lint,
+      }),
+    );
+  const silence = {
+    kind: "silence",
+    ply: 12,
+    at: 19.9,
+    stops: false,
+    message: "no sound for 1.7 s, from 19.9 s to 21.6 s",
+  };
+  const zoomNote = {
+    kind: "zoom-scale",
+    ply: 22,
+    at: 20,
+    message: "zoom on ply 22: 1.50 -> 1.56, the window closes in",
+  };
+  const noPlace = {
+    kind: "overlay-place",
+    ply: 33,
+    at: 41.2,
+    stops: true,
+    message: "no free place: top-left: pawn on d5",
+  };
+
+  // Nothing stops it: warnings and notes are shown, with the counts.
+  renderer({ faults: [silence], notes: [zoomNote] });
+  const clean = crew(base, "lint", "--item", id, "--edl", good);
+  expect(clean.code).toBe(0);
+  expect(clean.out).toContain("lint: nothing stops the list");
+  expect(clean.out).toContain(
+    "WARN ply 12, 19.9 s, silence: no sound for 1.7 s",
+  );
+  expect(clean.out).toContain("NOTE ply 22, 20.0 s, zoom-scale:");
+  expect(clean.out).toContain(
+    "31.5 s; events: zoom 1; overlays: none; sounds: fuahhh-1 1",
+  );
+  // One worker: a lint has no shoot.
+  expect(readFileSync(join(dir, "last-lint-args"), "utf8")).toContain(
+    "--lint --edl",
+  );
+  expect(readFileSync(join(dir, "last-lint-args"), "utf8")).toContain(
+    "--workers 1",
+  );
+
+  // A fault that stops it, and the app's own checks, all at once: direct
+  // does not store the list.
+  renderer({ faults: [silence, noPlace] });
+  const mention = list("mention.json", {
+    caption: "Can Ruby get home?",
+    payoff: { ply: 22, text: "ask @someone" },
+  });
+  const refused = crew(base, "direct", "--item", id, "--edl", mention);
+  expect(refused.code).toBe(1);
+  expect(refused.out).toContain("lint: 2 fault(s) stop the list");
+  expect(refused.out).toContain("STOP video payoff must not mention");
+  expect(refused.out).toContain(
+    "STOP ply 33, 41.2 s, overlay-place: no free place: top-left: pawn on d5",
+  );
+  expect(refused.err).toContain(
+    "mention.json is not stored: the lint stops it",
+  );
+  expect((await fetchItem(base, id)).edl).toBeNull();
+
+  // The app holds the line too: no lint, a lint of another list, a lint
+  // that a fault stops.
+  const direct = (edl: object, extra: object) =>
+    call(base, "/api/daily/direct", {
+      item: id,
+      edl: { ...EDL, ending, ...edl },
+      ...extra,
+    });
+  const lintId = async (edl: object) =>
+    (
+      await call<{ lintId: string }>(base, "/api/daily/lint", {
+        item: id,
+        edl: { ...EDL, ending, ...edl },
+      })
+    ).body.lintId;
+  const lintDone = async (lid: string) => {
+    for (let i = 0; i < 100; i++) {
+      const r = await call<{ state: string }>(
+        base,
+        `/api/daily/lint?id=${encodeURIComponent(lid)}`,
+      );
+      if (r.body.state === "done") return;
+      await Bun.sleep(100);
+    }
+    throw new Error("the lint did not end");
+  };
+  expect((await direct({}, {})).body.error).toContain(
+    "direct stores a list only after a lint of it",
+  );
+  const stopped = await lintId({});
+  await lintDone(stopped);
+  const stoppedDirect = await direct({}, { lint: stopped });
+  expect(stoppedDirect.status).toBe(409);
+  expect(stoppedDirect.body.error).toContain(
+    "the lint found 1 fault(s) that stop the list: ply 33, 41.2 s, overlay-place",
+  );
+  renderer({ faults: [silence], notes: [zoomNote] });
+  const passed = await lintId({});
+  await lintDone(passed);
+  expect(
+    (await direct({ caption: "another caption" }, { lint: passed })).body.error,
+  ).toContain("the lint was of another list");
+
+  // crew direct: lint, then store; the summary keeps the warnings.
+  const stored = crew(base, "direct", "--item", id, "--edl", good);
+  expect(stored.code).toBe(0);
+  const item = JSON.stringify(await fetchItem(base, id));
+  expect(item).toContain("lint: nothing stops the list (31.5 s)");
+  expect(item).toContain("WARN ply 12, 19.9 s, silence");
+
+  // No capture yet: only the app's checks, and direct says so.
+  writeFileSync(join(dir, "no-capture"), "");
+  const early = crew(base, "direct", "--item", id, "--edl", good);
+  expect(early.code).toBe(0);
+  expect(early.out).toContain(
+    "the renderer did not lint: the 4090 has no capture of game TESTGAME1 yet",
+  );
+  expect(JSON.stringify(await fetchItem(base, id))).toContain(
+    "not linted by the renderer: the 4090 has no capture",
+  );
+  // --no-lint, for a 4090 that cannot lint.
+  const bypass = crew(base, "direct", "--item", id, "--edl", good, "--no-lint");
+  expect(bypass.code).toBe(0);
+  expect(JSON.stringify(await fetchItem(base, id))).toContain(
+    "NOT LINTED (direct --no-lint)",
+  );
+}, 30_000);
+
 test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-preview.cjs");
@@ -3462,6 +3639,55 @@ test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () =>
     Math.min(jobs[0].end, jobs[1].end),
   );
 }, 30_000);
+
+test("the app forgets only finished lints: a queued one keeps its record", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  const { base } = await serveHere(dir, stub, 100);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  const ending = (await dailyState(base)).suggestedEnding;
+  const lint = async () =>
+    (
+      await call<{ lintId: string }>(base, "/api/daily/lint", {
+        item: id,
+        edl: { ...EDL, ending },
+      })
+    ).body.lintId;
+  const state = async (lid: string) =>
+    (
+      await call<{ state?: string }>(
+        base,
+        `/api/daily/lint?id=${encodeURIComponent(lid)}`,
+      )
+    ).body.state;
+
+  // The 4090 says WAIT: 51 lints queue, more than the 50 kept, and the
+  // first one keeps its record while its job waits in the queue.
+  writeFileSync(
+    join(dir, "desktop-status.txt"),
+    "budget=WAIT: Windows CPU 75%. Wait, or ask Infra & Security.\n",
+  );
+  const ids: string[] = [];
+  for (let i = 0; i < 51; i++) ids.push(await lint());
+  expect(await state(ids[0])).toBe("queued");
+
+  // Free: all 51 run. The next lint forgets the oldest finished one.
+  unlinkSync(join(dir, "desktop-status.txt"));
+  for (const lid of ids) {
+    for (let i = 0; (await state(lid)) !== "done"; i++) {
+      expect(i).toBeLessThan(200);
+      await Bun.sleep(50);
+    }
+  }
+  const last = await lint();
+  for (let i = 0; (await state(last)) !== "done"; i++) {
+    expect(i).toBeLessThan(100);
+    await Bun.sleep(50);
+  }
+  expect(await state(ids[0])).toBeUndefined();
+  expect(await state(ids[1])).toBe("done");
+}, 60_000);
 
 test("a new app start removes the previews that the last one forgot", () => {
   const dir = tempDir();
