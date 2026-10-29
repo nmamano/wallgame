@@ -2578,14 +2578,8 @@ const bubbleSide = (boardIndex, at, covered = new Set()) => {
  * Where a stamp or trap word goes (stamp-spot.mjs), over the position after
  * `boardIndex` plies: it avoids the pawns the page drew there (their
  * measured boxes), the cell and walls of the move `plyIndex`, and
- * `extraWalls` (a trap's). `size` is the word's measured box.
- *
- * The word slams in from `punchFrom` times its size (stage.html punch)
- * down to it, and the place is chosen for its own size. So it also gives
- * `pop`: the largest size, from 1 to punchFrom, at which the word covers
- * nothing it does not cover at rest; the stage starts the slam there
- * (Wall Game Director, 2026-10-29: "WALLED" on 8FroT1GU ply 12 covered a
- * third of the red mouse for two frames as it popped).
+ * `extraWalls` (a trap's). `size` is the word's measured box; `pop`
+ * (stampSpot) is where its slam starts.
  */
 const placeStamp = (boardIndex, plyIndex, size, extraWalls, punchFrom) => {
   const ofCells = ([top, left, bottom, right]) => [
@@ -2608,23 +2602,14 @@ const placeStamp = (boardIndex, plyIndex, size, extraWalls, punchFrom) => {
     ...(cell ? [ofCells([cell[0], cell[1], cell[0] + 1, cell[1] + 1])] : []),
     ...[...moveWalls, ...extraWalls].map((t) => ofCells(termBox(t))),
   ];
-  const spot = stampSpot({
+  return stampSpot({
     size,
     pad: GRID.pad,
     avoid,
     cellArea: GRID.pitchX * GRID.pitchY,
     focus: cell ? cellAt(cell) : null,
+    punchFrom,
   });
-  // The word, grown by s about its centre, reaches box k once s passes
-  // both of its distances to k over its half sizes; a box it covers at
-  // rest sets no limit.
-  const reach = ([x0, y0, x1, y1]) => {
-    const dx = Math.max(x0 - spot.at.x, spot.at.x - x1, 0);
-    const dy = Math.max(y0 - spot.at.y, spot.at.y - y1, 0);
-    const s = Math.max(dx / (size.w / 2), dy / (size.h / 2));
-    return s >= 1 ? s : Infinity;
-  };
-  return { ...spot, pop: Math.min(punchFrom, ...avoid.map(reach)) };
 };
 
 /** The centre of an EDL cell on the board image (0..1), for the mouse overlays. */
