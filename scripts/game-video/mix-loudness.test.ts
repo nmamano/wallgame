@@ -4,9 +4,15 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  MASTER_LUFS,
+  masterFault,
+  masterFilters,
+  masterRetryLimit,
+  measureMaster,
   memeLoudness,
   memeOverBed,
   mixGraph,
+  mixIntegrated,
   parseMomentary,
 } from "./mix-loudness.mjs";
 
@@ -56,11 +62,13 @@ describe("memeOverBed", () => {
   });
 });
 
-test("parseMomentary reads the windows and the true peak of ffmpeg's log", () => {
+test("parseMomentary reads the windows, the integrated loudness and the true peak of ffmpeg's log", () => {
   const log = [
     "[Parsed_ebur128_0 @ 0x1] t: 0.1  TARGET:-23 LUFS    M: -120.7 S:-120.7     I: -70.0 LUFS       LRA:   0.0 LU  FTPK: -inf dBFS  TPK: -inf dBFS",
     "[Parsed_ebur128_0 @ 0x1] t: 0.2  TARGET:-23 LUFS    M: -21.4 S:-120.7     I: -21.4 LUFS       LRA:   0.0 LU",
     "[Parsed_ebur128_0 @ 0x1] Summary:",
+    "  Integrated loudness:",
+    "    I:         -21.6 LUFS",
     "  True peak:",
     "    Peak:       -9.8 dBFS",
   ].join("\n");
@@ -70,6 +78,7 @@ test("parseMomentary reads the windows and the true peak of ffmpeg's log", () =>
       { t: 0.2, m: -21.4 },
     ],
     truePeakDbtp: -9.8,
+    integratedLufs: -21.6,
   });
   expect(() => parseMomentary("no audio")).toThrow(/no loudness windows/);
 });
@@ -210,5 +219,85 @@ describe("mixGraph", () => {
     expect(() => mixGraph({ cues: [], totalSeconds: 33, music: [] })).toThrow(
       "nothing to mix",
     );
+  });
+});
+
+describe("the master", () => {
+  test("one gain to MASTER_LUFS, then the true-peak limiter with no auto level", () => {
+    const { gainDb, filters } = masterFilters(-25.8);
+    expect(gainDb).toBe(11.8);
+    expect(filters).toContain("volume=11.8dB,aresample=176400,");
+    expect(filters).toContain(":level=0:");
+    expect(filters.endsWith("aresample=44100")).toBe(true);
+    expect(() => masterFilters(-Infinity)).toThrow("silent");
+  });
+
+  test("an encode that overshoots the peak gets one more with the limit lowered by the overshoot", () => {
+    expect(masterRetryLimit(-2, -0.7)).toBe(-2.5);
+    expect(masterFilters(-25.8, -2.5).filters).toContain("limit=0.7499:");
+  });
+
+  test("the gate: -15 to -13 LUFS, true peak at most -1 dBTP", () => {
+    expect(masterFault({ lufs: -14.1, truePeakDbtp: -1.3 })).toBeNull();
+    expect(masterFault({ lufs: -15.2, truePeakDbtp: -2 })).toContain("outside");
+    expect(masterFault({ lufs: -12.9, truePeakDbtp: -2 })).toContain("outside");
+    expect(masterFault({ lufs: -14, truePeakDbtp: -0.8 })).toContain(
+      "true peak",
+    );
+  });
+
+  test("a quiet mix with a loud hit reaches the feed level, under the peak limit, and keeps the hit over the bed", () => {
+    // A bed 26 dB under full scale and a hit 20 dB over it: the gain alone
+    // would clip the hit, so the limiter must hold it.
+    const dir = mkdtempSync(join(tmpdir(), "mix-master-"));
+    const tone = (name: string, seconds: number, volume: number) => {
+      const file = join(dir, `${name}.wav`);
+      execFileSync("ffmpeg", [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        `sine=frequency=1000:duration=${seconds}:sample_rate=44100`,
+        "-af",
+        `volume=${volume}`,
+        "-ac",
+        "2",
+        file,
+      ]);
+      return file;
+    };
+    const graph = mixGraph({
+      cues: [
+        { file: tone("bed", 6, 0.05), gain: 1, at: 0, rate: 1, meme: null },
+        { file: tone("hit", 0.5, 0.5), gain: 1, at: 3, rate: 1, meme: null },
+      ],
+      totalSeconds: 6,
+      music: [],
+    });
+    const { gainDb, filters } = masterFilters(
+      mixIntegrated("ffmpeg", graph, ""),
+    );
+    const out = join(dir, "master.m4a");
+    execFileSync("ffmpeg", [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      ...graph.inputs,
+      "-filter_complex",
+      [...graph.chains, `[mix]${filters}[out]`].join(";"),
+      "-map",
+      "[out]",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k",
+      out,
+    ]);
+    const master = measureMaster("ffmpeg", out, gainDb);
+    expect(master.gainDb).toBeGreaterThan(10);
+    expect(Math.abs(master.lufs - MASTER_LUFS)).toBeLessThan(0.6);
+    expect(masterFault(master)).toBeNull();
   });
 });

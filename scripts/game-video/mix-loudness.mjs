@@ -121,9 +121,14 @@ export const parseMomentary = (log) => {
   if (windows.length === 0 || !peak) {
     throw new Error("ffmpeg gave no loudness windows");
   }
+  const integrated = log.slice(at).match(/\bI:\s*(-?[\d.]+|-inf|nan) LUFS/);
   return {
     windows,
     truePeakDbtp: peak[1] === "-inf" ? -Infinity : Number(peak[1]),
+    integratedLufs:
+      !integrated || integrated[1] === "-inf" || integrated[1] === "nan"
+        ? -Infinity
+        : Number(integrated[1]),
   };
 };
 
@@ -164,8 +169,11 @@ export const memeOverBed = (cue, meme, bed) => {
   };
 };
 
-/** Run one part of the mix through ebur128. */
-const measurePart = (ffmpeg, graph) => {
+/**
+ * Run one part of the mix through ebur128; `tail` is a filter chain that
+ * goes between [mix] and the measure (it ends in a comma).
+ */
+const measurePart = (ffmpeg, graph, tail = "") => {
   const run = spawnSync(
     ffmpeg,
     [
@@ -173,7 +181,7 @@ const measurePart = (ffmpeg, graph) => {
       "-nostats",
       ...graph.inputs,
       "-filter_complex",
-      [...graph.chains, "[mix]ebur128=peak=true[m]"].join(";"),
+      [...graph.chains, `[mix]${tail}ebur128=peak=true[m]`].join(";"),
       "-map",
       "[m]",
       "-f",
@@ -212,4 +220,99 @@ export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
       ),
     ),
   };
+};
+
+/*
+  The master (Nil, ask 99dbae48, answer B "feed level"; Wall Game Director,
+  2026-10-29): the whole mix goes to about MASTER_LUFS integrated with a true
+  peak at most MASTER_MAX_TRUE_PEAK, the level of the feed it plays in.
+  Two passes: measure the mix, then one linear gain to the target and a
+  true-peak limiter. A linear gain keeps every relative level of the mix
+  (each meme over its bed, the stings, the capture hits); one-pass dynamic
+  loudnorm would pump the bed under the memes. The limiter runs at 4x the
+  sample rate, so its sample peak is the true peak, and it stops at
+  MASTER_LIMIT_DBTP, under the gate, because the AAC encode lifts the peaks:
+  measured 2026-10-29 on VX, a limit at -1.5 dBTP came out at -0.7 dBTP,
+  one at -2.0 at -1.4 dBTP (masterRetryLimit when a mix overshoots more).
+*/
+export const MASTER_LUFS = -14;
+/** A master outside these LUFS, or over this true peak, fails the render. */
+export const MASTER_LUFS_RANGE = [-15, -13];
+export const MASTER_MAX_TRUE_PEAK = -1;
+export const MASTER_LIMIT_DBTP = -2;
+const OVERSAMPLE = 4;
+
+/**
+ * The master's filters for a mix that measures `mixLufs` integrated: the
+ * gain to MASTER_LUFS, then the true-peak limiter. No auto level (alimiter
+ * `level`), which would lift the limited peaks back to 0 dBFS.
+ * @param {number} mixLufs
+ * @param {number} limitDbtp
+ */
+export const masterFilters = (mixLufs, limitDbtp = MASTER_LIMIT_DBTP) => {
+  if (!(mixLufs > SILENT_LUFS)) {
+    throw new Error(
+      `the mix is silent (${mixLufs} LUFS), so it has no master gain`,
+    );
+  }
+  const gainDb = tenth(MASTER_LUFS - mixLufs);
+  const limit = 10 ** (limitDbtp / 20);
+  return {
+    gainDb,
+    filters:
+      `volume=${gainDb}dB,aresample=${44100 * OVERSAMPLE},` +
+      `alimiter=limit=${limit.toFixed(4)}:level=0:latency=1,aresample=44100`,
+  };
+};
+
+/**
+ * Integrated loudness of the mix that `graph` builds, after `tail`.
+ * @param {string} ffmpeg
+ * @param {{ inputs: string[], chains: string[] }} graph  ends in [mix]
+ * @param {string} tail  filters after [mix], each ending in a comma
+ */
+export const mixIntegrated = (ffmpeg, graph, tail) =>
+  measurePart(ffmpeg, graph, tail).integratedLufs;
+
+/**
+ * The master as a listener gets it: the integrated loudness and true peak
+ * of the encoded track, and the gain that the master gave.
+ * @param {string} ffmpeg
+ * @param {string} file
+ * @param {number} gainDb
+ */
+export const measureMaster = (ffmpeg, file, gainDb) => {
+  const m = measurePart(ffmpeg, {
+    inputs: ["-i", file],
+    chains: ["[0:a]anull[mix]"],
+  });
+  return {
+    gainDb,
+    lufs: tenth(m.integratedLufs),
+    truePeakDbtp: tenth(m.truePeakDbtp),
+  };
+};
+
+/**
+ * The limit for one more encode of a master whose encoded true peak went
+ * over the gate: lower by the overshoot, and 0.2 dB more.
+ * @param {number} limitDbtp  the limit of the encode that overshot
+ * @param {number} truePeakDbtp  its encoded true peak
+ */
+export const masterRetryLimit = (limitDbtp, truePeakDbtp) =>
+  tenth(limitDbtp - (truePeakDbtp - MASTER_MAX_TRUE_PEAK) - 0.2);
+
+/**
+ * Why a master fails the gate, or null when it passes.
+ * @param {{ lufs: number, truePeakDbtp: number }} master
+ */
+export const masterFault = ({ lufs, truePeakDbtp }) => {
+  const [lo, hi] = MASTER_LUFS_RANGE;
+  if (!(lufs >= lo && lufs <= hi)) {
+    return `the master is ${lufs} LUFS, outside ${lo} to ${hi} LUFS`;
+  }
+  if (!(truePeakDbtp <= MASTER_MAX_TRUE_PEAK)) {
+    return `the master's true peak is ${truePeakDbtp} dBTP, over ${MASTER_MAX_TRUE_PEAK} dBTP`;
+  }
+  return null;
 };

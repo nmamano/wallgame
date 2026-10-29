@@ -36,8 +36,11 @@ import { SAFE_AREA, STRIP_AREA, areaOf } from "../edl.mjs";
  * in a rest of Tea For Two (the song near -45 LUFS at 19.5 s) stands 17 to
  * 37 LU over it. As a gate it would fail good videos by chance.
  *
- * THE LIMIT IS ABSOLUTE: it holds only while the master is not
- * loudness-normalized. A change that normalizes the mix must move it.
+ * The memes are measured in the mix BEFORE the master (mix-loudness.mjs
+ * masterFilters, 2026-10-29), so the limit keeps its value and passes the
+ * same mixes. The master's gain is not one offset: it is what each mix needs
+ * to reach the feed level (VX edl-3j +11.8 dB), so a moved limit would pass
+ * a different set of mixes for each video. RESULT.loudness.master gives it.
  */
 export const MAX_MEME_LUFS = -18.5;
 

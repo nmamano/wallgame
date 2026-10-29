@@ -139,7 +139,17 @@ import {
 } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
-import { memeLoudness, mixGraph } from "./mix-loudness.mjs";
+import {
+  MASTER_LIMIT_DBTP,
+  MASTER_MAX_TRUE_PEAK,
+  masterFault,
+  masterFilters,
+  masterRetryLimit,
+  measureMaster,
+  memeLoudness,
+  mixGraph,
+  mixIntegrated,
+} from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import {
   allocateFrameRanges,
@@ -2403,8 +2413,9 @@ const musicParts = ({ beatStartAt, musicStart, musicEndAt, bed }) => {
  * was one where the music was ~9.5 dB below what the constant said.
  *
  * Returns the track, and each meme sound's loudness over the rest of the
- * mix (mix-loudness.mjs) for the RESULT line; both null when no sound
- * exists.
+ * mix with the master's measure (mix-loudness.mjs) for the RESULT line;
+ * both null when no sound exists. A master outside the gate (masterFault)
+ * fails the render.
  */
 const buildAudio = ({ cues, totalSeconds, music, work }) => {
   const present = cues.filter((e) => existsSync(e.file));
@@ -2421,13 +2432,17 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
   }
   if (present.length === 0)
     return { audioPath: null, loudness: null, mixed: [] };
-  const { inputs, chains } = mixGraph({ cues: present, totalSeconds, music });
+  const graph = mixGraph({ cues: present, totalSeconds, music });
+  const { inputs, chains } = graph;
   // The whole mix fades over its last END_FADE_SECONDS, so no sound stops
   // at full level at the loop's seam.
-  chains.push(
-    `[mix]alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)},` +
-      `afade=t=out:st=${Math.max(0, totalSeconds - END_FADE_SECONDS).toFixed(3)}:d=${END_FADE_SECONDS}[out]`,
-  );
+  const finish =
+    `atrim=0:${totalSeconds.toFixed(3)},` +
+    `afade=t=out:st=${Math.max(0, totalSeconds - END_FADE_SECONDS).toFixed(3)}:d=${END_FADE_SECONDS}`;
+  // The master (mix-loudness.mjs): pass 1 measures the mix, pass 2 (encode)
+  // gives it one gain to the feed level and a true-peak limiter. A draft
+  // gets the same master, so it sounds as the final does.
+  const mixLufs = mixIntegrated(FFMPEG, graph, `${finish},`);
 
   // What went into the mix, so its parts can be rebuilt and measured apart.
   writeFileSync(
@@ -2443,18 +2458,32 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
     ),
   );
   const audioPath = join(work, "track.m4a");
-  ff([
-    ...inputs,
-    "-filter_complex",
-    chains.join(";"),
-    "-map",
-    "[out]",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "160k",
-    audioPath,
-  ]);
+  const encode = (limitDbtp) => {
+    const { gainDb, filters } = masterFilters(mixLufs, limitDbtp);
+    ff([
+      ...inputs,
+      "-filter_complex",
+      [...chains, `[mix]${filters},${finish}[out]`].join(";"),
+      "-map",
+      "[out]",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k",
+      audioPath,
+    ]);
+    return measureMaster(FFMPEG, audioPath, gainDb);
+  };
+  let master = encode(MASTER_LIMIT_DBTP);
+  if (master.truePeakDbtp > MASTER_MAX_TRUE_PEAK) {
+    const limit = masterRetryLimit(MASTER_LIMIT_DBTP, master.truePeakDbtp);
+    log(
+      `the encode lifted the master's true peak to ${master.truePeakDbtp} dBTP; encoding again with the limit at ${limit} dBTP`,
+    );
+    master = encode(limit);
+  }
+  const masterProblem = masterFault(master);
+  if (masterProblem) throw new Error(masterProblem);
   // A measure that cannot run is reported, not fatal: the gate fails it.
   let loudness;
   try {
@@ -2467,7 +2496,9 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
   } catch (err) {
     loudness = { error: String(err.message ?? err).slice(0, 300) };
   }
-  return { audioPath, loudness, mixed: present };
+  // The memes are measured in the mix before the master gain, so
+  // MAX_MEME_LUFS (daily/quality.mjs) passes the same mixes as before it.
+  return { audioPath, loudness: { ...loudness, master }, mixed: present };
 };
 
 /* ----------------------------------------------------------- compose it -- */
@@ -5894,7 +5925,7 @@ const renderStyle = async (styleName) => {
           ),
           sounds: EDL ? tally(edlSoundUses(EDL).map(([, key]) => key)) : {},
         },
-        // As a render's RESULT.loudness.
+        // As a render's RESULT.loudness, with no master: a lint mixes nothing.
         loudness: lintLoudness,
         /*
           The composed timeline, as a render's RESULT.timeline: every cue
@@ -6077,6 +6108,12 @@ const renderStyle = async (styleName) => {
         );
       }
       if (loudness?.error) log(`meme loudness not measured: ${loudness.error}`);
+      if (loudness?.master) {
+        const { gainDb, lufs, truePeakDbtp } = loudness.master;
+        log(
+          `master: ${lufs} LUFS, true peak ${truePeakDbtp} dBTP (gain ${gainDb} dB)`,
+        );
+      }
       log(
         music.length > 0
           ? `soundtrack built, with music under the effects (${music.map((m) => m.file).join(", then ")})`
