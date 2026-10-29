@@ -14,7 +14,8 @@ import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
 import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
-import { feedbackLines } from "./crew.mjs";
+import { feedbackLines, storyWarning } from "./crew.mjs";
+import { noStoryLine, STORY_MAX_BYTES } from "./post-instagram.mjs";
 import { quoteLines } from "./quote.mjs";
 import {
   REVIEW_PAGE,
@@ -76,6 +77,7 @@ interface View {
     approveProblem: string | null;
     claimRiskSounds: string[];
     youtubeTitle: string | null;
+    noStory: string | null;
   }[];
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
@@ -560,9 +562,28 @@ describe("the review page's view", () => {
       "claimRiskSounds",
       "copySha256",
       "id",
+      "noStory",
       "videoSha256",
       "youtubeTitle",
     ]);
+    expect(viewOf(store).items[0].noStory).toBeNull();
+  });
+
+  test("a video over 60 s: the card tells Nil it posts no Instagram Story", () => {
+    const { store } = withItemInReview();
+    store.updateItem(
+      "v-2026-10-28-1",
+      ["finished"],
+      (it: { render: { video: { durationSeconds: number } } }) => {
+        it.render.video.durationSeconds = 72.5;
+      },
+      "a long render (test)",
+    );
+    expect(viewOf(store).items[0].noStory).toBe(
+      "No Instagram Story: the video is 72.5 s (Stories take 60 s at most).",
+    );
+    // Approve still works: Nil approves the exception knowingly.
+    expect(viewOf(store).items[0].approveProblem).toBeNull();
   });
 
   test("every item in review, oldest first, with its caption: the post's X line without the music credit", () => {
@@ -984,6 +1005,28 @@ describe("what the director reads", () => {
       "  reply, verbatim:",
       "  > B, the save reads best",
     ]);
+  });
+
+  test("a video the poster posts no Story of: one line for Nil, the same as a WARNING for the director", () => {
+    const MB = 1024 * 1024;
+    expect(noStoryLine({ bytes: 9 * MB, durationSeconds: 60 })).toBeNull();
+    expect(noStoryLine({ bytes: 9 * MB, durationSeconds: 61.2 })).toBe(
+      "No Instagram Story: the video is 61.2 s (Stories take 60 s at most).",
+    );
+    // The poster's other limits give its own reason.
+    const big = STORY_MAX_BYTES + 1;
+    expect(noStoryLine({ bytes: big, durationSeconds: 40 })).toBe(
+      `No Instagram Story: the video is ${big} bytes; a Story takes ${STORY_MAX_BYTES} at most.`,
+    );
+    expect(noStoryLine({ bytes: 9 * MB, durationSeconds: null })).toBe(
+      "No Instagram Story: the video has no known duration.",
+    );
+    expect(storyWarning({ bytes: 9 * MB, durationSeconds: 61.2 })).toEqual([
+      "  WARNING No Instagram Story: the video is 61.2 s (Stories take 60 s at most).",
+    ]);
+    expect(storyWarning({ bytes: 9 * MB, durationSeconds: 60 })).toEqual([]);
+    // A render that is still running has no video yet.
+    expect(storyWarning(undefined)).toEqual([]);
   });
 
   test("another live video of the same game blocks Approve; a discarded one does not", () => {

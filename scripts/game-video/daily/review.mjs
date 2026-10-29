@@ -7,7 +7,9 @@
  * line: postCaption), the YouTube title when it differs (a small "YouTube:"
  * line: it is its own text, and Approve binds it), one red line for each sound with a high claim risk
  * that the video plays (Wall Game Director, 2026-10-28: the director kept
- * it on purpose, so Nil sees the risk) and three actions:
+ * it on purpose, so Nil sees the risk), one red line when the video posts
+ * no Instagram Story (noStoryLine; Wall Game PM, 2026-10-29: Nil approves
+ * that knowingly) and three actions:
  *
  *   Approve  -> approved: the item posts at the next slot (Wall Game Worker
  *               1's scheduler), bound to this video and this block
@@ -52,6 +54,7 @@ import { StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
 import { claimRisk, soundUses } from "./sounds.mjs";
+import { noStoryLine } from "./post-instagram.mjs";
 
 /** The office member who reviews: Nil (his id in the office's users.json). */
 export const REVIEWER_MEMBER_ID = "6f26107a";
@@ -102,6 +105,7 @@ export const reviewView = (store) => ({
           .filter((key) => claimRisk(key)),
       ),
     ],
+    noStory: noStoryLine(it.render.video),
   })),
 });
 
@@ -273,6 +277,7 @@ export const REVIEW_PAGE = `<!doctype html>
     box.append(video, el("div", "caption", it.caption));
     if (it.youtubeTitle) box.append(el("div", "alt", "YouTube: " + it.youtubeTitle));
     for (const key of it.claimRiskSounds) box.append(el("div", "risk", "Uses " + key + ": a claim is possible."));
+    if (it.noStory) box.append(el("div", "risk", it.noStory));
     box.append(notes, row, why);
     return box;
   };

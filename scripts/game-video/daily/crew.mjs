@@ -156,6 +156,7 @@ import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { copyLines } from "./copy.mjs";
 import { quoteLines } from "./quote.mjs";
+import { noStoryLine } from "./post-instagram.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(
@@ -249,6 +250,16 @@ const measureLines = (quality) =>
     ([name, m]) => `  measure ${name}: ${m.ok ? "ok" : "FAILED"} - ${m.note}`,
   );
 
+/**
+ * A warning when the video posts no Instagram Story (Wall Game Director,
+ * 2026-10-29): the line Nil sees next to Approve. Not a measure: it does
+ * not fail the check, and the video posts everywhere else.
+ */
+export const storyWarning = (video) => {
+  const line = video && noStoryLine(video);
+  return line ? [`  WARNING ${line}`] : [];
+};
+
 /** One item, in lines: its game, list, render, check, block and reviews. */
 const itemLines = (k, progress = null) => {
   const g = k.candidate;
@@ -278,6 +289,7 @@ const itemLines = (k, progress = null) => {
           ? `render ${k.render.jobId}: ${k.render.video.path} (${k.render.video.bytes} bytes, sha256 ${k.render.video.sha256.slice(0, 12)}), sheet ${k.render.sheet.path}`
           : `render ${k.render.jobId}: running - ${progress ?? "queued"}`,
       ...measureLines(k.render.quality),
+      ...storyWarning(k.render.video),
     );
   }
   if (k.check) {
@@ -724,6 +736,7 @@ const commands = {
     // A failed measure fails the check whatever the stills show, so the
     // director sees it before writing verdicts.
     for (const l of measureLines(c.render.quality)) console.log(l);
+    for (const l of storyWarning(c.render.video)) console.log(l);
   },
 
   async check() {

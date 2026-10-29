@@ -103,8 +103,10 @@ export const STORY_MAX_BYTES = 100e6;
 const MEDIA_TYPE = { reel: "REELS", story: "STORIES" };
 
 /**
- * Why `video` cannot be a Story, or null.
- * @param {{ video: Buffer, durationSeconds: number }} o
+ * Why `video` cannot be a Story, or null. It reads only the video's
+ * length in bytes, so a Buffer or a render's record ({length: bytes}) will
+ * do (noStoryLine).
+ * @param {{ video: { length: number }, durationSeconds: number | null | undefined }} o
  */
 export const storyProblem = ({ video, durationSeconds }) => {
   if (!Number.isFinite(durationSeconds)) {
@@ -120,6 +122,26 @@ export const storyProblem = ({ video, durationSeconds }) => {
     return `instagram story: the video is ${video.length} bytes; a Story takes ${STORY_MAX_BYTES} at most`;
   }
   return null;
+};
+
+/**
+ * The line Nil sees when the poster will post no Instagram Story of this
+ * video, or null (Wall Game PM, 2026-10-29: Instagram always cross-posts to
+ * Stories, and a video outside the Story limits is Nil's informed
+ * exception). The test is the poster's own storyProblem, on the render's
+ * record (it reads only the length of the file), so the page and the poster
+ * cannot disagree. The usual case, a video over 60 s, has the PM's words.
+ * @param {{ bytes: number, durationSeconds?: number | null }} video
+ */
+export const noStoryLine = (video) => {
+  const problem = storyProblem({
+    video: { length: video.bytes },
+    durationSeconds: video.durationSeconds,
+  });
+  if (!problem) return null;
+  return video.durationSeconds > STORY_MAX_SECONDS
+    ? `No Instagram Story: the video is ${video.durationSeconds} s (Stories take ${STORY_MAX_SECONDS} s at most).`
+    : `No Instagram Story: ${problem.replace(/^instagram story: /, "")}.`;
 };
 
 export const instagramDryRunReply = (req) => {
