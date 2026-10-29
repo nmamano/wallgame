@@ -90,6 +90,7 @@ import {
   edlSoundUses,
   EDL_LIMITS,
   LINT_KINDS,
+  MAX_VIDEO_SECONDS,
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
@@ -487,14 +488,15 @@ const START_PLY = PLY_WINDOW?.from ?? EDL?.startPly ?? 0;
 /** Whether this render plays the video's opening: the cold open and VS. */
 const PLAYS_OPENING = START_PLY === (EDL?.startPly ?? 0);
 /**
- * The events that play after their move lands, in list order. A freeze and
- * a lead zoom start before the move; the move loop places them. An overlay
+ * The events that play after their move lands, in list order. A freeze, an
+ * explain and a lead zoom start before the move; the move loop places them. An overlay
  * takes no time of its own: it rides over the frames after its move lands.
  */
 const landingEventsAt = (plyIndex) =>
   eventsAt(plyIndex).filter(
     (e) =>
       e.kind !== "freeze" &&
+      e.kind !== "explain" &&
       e.kind !== "overlay" &&
       !(e.kind === "zoom" && e.lead),
   );
@@ -884,6 +886,22 @@ const drawSeconds = (points) =>
     PATH_DRAW_MAX_SECONDS,
     Math.max(PATH_DRAW_MIN_SECONDS, (points.length - 1) * PATH_STEP_SECONDS),
   );
+/**
+ * An explain (edl.mjs "explain"), in seconds: the old walk draws
+ * (drawSeconds) and rests EXPLAIN_BEFORE_REST_SECONDS before the move; the
+ * move lands and its walls and pawns glow for EXPLAIN_LAND_SECONDS; the new
+ * walk draws over the old one, a ghost at EXPLAIN_GHOST alpha, and holds
+ * EXPLAIN_AFTER_HOLD_SECONDS, the last PATH_FADE_SECONDS of it a fade.
+ * A change of steps under EXPLAIN_MIN_CHANGE has little to show
+ * (explain-flat).
+ */
+const EXPLAIN_BEFORE_REST_SECONDS = 0.7;
+const EXPLAIN_LAND_SECONDS = 0.8;
+const EXPLAIN_AFTER_HOLD_SECONDS = 1.2;
+const EXPLAIN_GHOST = 0.35;
+const EXPLAIN_MIN_CHANGE = 2;
+/** How far a moved pawn's glowing trail stops short of each cell centre. */
+const EXPLAIN_TRAIL_GAP = 0.4;
 /**
  * The opening walks (edl.mjs introPaths): each draws as a path event's
  * walk does and shows its steps INTRO_PATH_HOLD_SECONDS. The hold was 0.6
@@ -3115,6 +3133,61 @@ const pathSeconds = (ev) =>
   drawSeconds(PATHS.get(ev).walks.at(-1).points) +
   ev.holdSeconds +
   PATH_FADE_SECONDS;
+/**
+ * Each explain event's facts (edl.mjs "explain"), from the game record as
+ * the race counter has them: the hunter (the EDL's, or the side whose steps
+ * change most), its shortest walk before and after the move with their
+ * steps, the walls the move placed, and the pawns it moved, as [from, to]
+ * cells.
+ */
+const EXPLAINS = new Map();
+for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
+  if (!RACE_DISTANCES) {
+    console.error(
+      `the explain on ply ${ev.ply} draws a hunter's walk, and ${replay.state.config.variant} gives a side nothing to hunt`,
+    );
+    await browser.close();
+    process.exit(2);
+  }
+  const [k0, k1] = [ev.ply, ev.ply + 1];
+  const change = (id) =>
+    Math.abs(RACE_DISTANCES[k1][id] - RACE_DISTANCES[k0][id]);
+  const player = ev.hunter
+    ? SEAT_COLORS(replay)[1] === ev.hunter
+      ? 1
+      : 2
+    : change(2) > change(1)
+      ? 2
+      : 1;
+  const walkIn = (state) => {
+    const walks = huntsFor(state.config.variant)
+      .filter((h) => h.hunter.player === player)
+      .map((h) => huntPath(state.grid, state.pawns, h));
+    return drawnWalk(
+      state.pawns,
+      walks.reduce((a, b) => (b.length < a.length ? b : a)),
+    );
+  };
+  const before = REPLAYED.states[k0];
+  const after = REPLAYED.states[k1];
+  const key = (p) => `${p.playerId}:${p.type}`;
+  const was = new Map(boardPawns(before.pawns).map((p) => [key(p), p.cell]));
+  EXPLAINS.set(ev, {
+    player,
+    before: walkIn(before),
+    after: walkIn(after),
+    steps: [RACE_DISTANCES[k0][player], RACE_DISTANCES[k1][player]],
+    walls: String(history[ev.ply].notation ?? "")
+      .split(".")
+      .filter((t) => t.startsWith(">") || t.startsWith("^")),
+    moved: boardPawns(after.pawns)
+      .filter((p) => {
+        const from = was.get(key(p));
+        return from && (from[0] !== p.cell[0] || from[1] !== p.cell[1]);
+      })
+      .map((p) => [was.get(key(p)), p.cell]),
+  });
+}
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
   console.error(
     `the EDL flashes the race counter, but ${replay.state.config.variant} gives a side nothing to hunt, so the video shows no counter`,
@@ -5085,6 +5158,147 @@ const renderStyle = async (styleName) => {
   };
 
   /**
+   * An explain (edl.mjs), around the move of `plyIndex`: the hunter's old
+   * walk draws on the position before the move, with a tick a step; the
+   * move lands with its walls and its pawns' steps glowing (the trap's
+   * glow); the old walk stays as a ghost while the new one draws and holds.
+   * The whole board stays in view. The ply's other events follow. Faults:
+   * the script's `expect` against the game (explain-mismatch), and a change
+   * too small to show (explain-flat).
+   */
+  const playExplain = async (ply, plyIndex, ev) => {
+    const f = EXPLAINS.get(ev);
+    const start = elapsed;
+    const [was, now] = f.steps;
+    const said = [];
+    if (ev.expect?.before !== undefined && ev.expect.before !== was) {
+      said.push(`${ev.expect.before} steps before, the game has ${was}`);
+    }
+    if (ev.expect?.after !== undefined && ev.expect.after !== now) {
+      said.push(`${ev.expect.after} steps after, the game has ${now}`);
+    }
+    const sameWalls = (a, b) =>
+      a.length === b.length && a.every((w) => b.includes(w));
+    if (ev.expect?.walls && !sameWalls(ev.expect.walls, f.walls)) {
+      said.push(
+        `walls ${ev.expect.walls.join(" ") || "none"}, the move places ${f.walls.join(" ") || "none"}`,
+      );
+    }
+    if (said.length > 0) {
+      fault(
+        "explain-mismatch",
+        plyIndex,
+        `the explain on ply ${plyIndex} expects ${seatColors[f.player]}: ${said.join("; ")}`,
+      );
+    }
+    if (Math.abs(now - was) < EXPLAIN_MIN_CHANGE) {
+      fault(
+        "explain-flat",
+        plyIndex,
+        `the explain on ply ${plyIndex} shows ${seatColors[f.player]}'s steps going from ${was} to ${now}; it has little to show under a change of ${EXPLAIN_MIN_CHANGE}`,
+      );
+    }
+    const hex = side(f.player).hex;
+    const span01 = (x) => Math.max(0, Math.min(1, x));
+    const line = (walk, drawn, alpha) => ({
+      hex,
+      points: walk.points,
+      holes: walk.holes,
+      steps: walk.points.length - 1,
+      drawn,
+      alpha,
+    });
+    const glow = (t) => ({
+      t,
+      walls: [
+        ...f.walls.map((w) => litWallLine(w, ply)),
+        ...f.moved.map(([a, b]) => {
+          // The glow paints over the board image, pawns included: the
+          // trail stops EXPLAIN_TRAIL_GAP cells short of each end, so it
+          // runs between the two cells and covers neither pawn.
+          const [p, q] = [cellAt(a), cellAt(b)];
+          const [dx, dy] = [q.x - p.x, q.y - p.y];
+          const cells = Math.hypot(dx / GRID.pitchX, dy / GRID.pitchY);
+          const k = Math.min(0.5, EXPLAIN_TRAIL_GAP / cells);
+          return [p.x + k * dx, p.y + k * dy, q.x - k * dx, q.y - k * dy];
+        }),
+      ],
+    });
+    // 1. The old walk, on the position before the move.
+    const drawBefore = drawSeconds(f.before.points);
+    cueWalkTicks(f.before.points, start);
+    const beforeFrames = Math.round(
+      (drawBefore + EXPLAIN_BEFORE_REST_SECONDS) * FPS,
+    );
+    for (let i = 0; i < beforeFrames; i += 1) {
+      if (i === beforeFrames - 1) {
+        stillNext = { ply: plyIndex, kind: "explain-before", sound: null };
+      }
+      // The position before the move can close a fastForward range; the
+      // explain is a slow moment all the same, so it shows no speed tag.
+      await emit(
+        playState(ply - 1, {
+          path: {
+            cell: GRID.pitchX,
+            lines: [line(f.before, span01(i / FPS / drawBefore), 1)],
+          },
+          fastForward: null,
+        }),
+        1 / FPS,
+        { kind: "explain", ply: plyIndex },
+      );
+    }
+    // 2. The move lands; its walls and its pawns' steps glow.
+    land(plyIndex);
+    const landed = elapsed;
+    const landFrames = Math.round(EXPLAIN_LAND_SECONDS * FPS);
+    for (let i = 0; i < landFrames; i += 1) {
+      await emit(
+        playState(ply, {
+          race: raceHud(ply, i / FPS),
+          trap: glow(i / FPS),
+          path: {
+            cell: GRID.pitchX,
+            lines: [line(f.before, 1, EXPLAIN_GHOST)],
+          },
+        }),
+        1 / FPS,
+        { kind: "explain", ply: plyIndex },
+      );
+    }
+    // 3. The new walk draws over the ghost of the old one, and holds.
+    const drawAfter = drawSeconds(f.after.points);
+    cueWalkTicks(f.after.points, elapsed);
+    const afterSeconds = drawAfter + EXPLAIN_AFTER_HOLD_SECONDS;
+    const afterFrames = Math.round(afterSeconds * FPS);
+    for (let i = 0; i < afterFrames; i += 1) {
+      const t = i / FPS;
+      if (i === Math.round((drawAfter + 0.2) * FPS)) {
+        stillNext = { ply: plyIndex, kind: "explain-after", sound: null };
+      }
+      const fade =
+        1 -
+        span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
+      await emit(
+        playState(ply, {
+          race: raceHud(ply, elapsed - landed),
+          trap: glow(elapsed - landed),
+          path: {
+            cell: GRID.pitchX,
+            lines: [
+              line(f.before, 1, EXPLAIN_GHOST * fade),
+              line(f.after, span01(t / drawAfter), fade),
+            ],
+          },
+        }),
+        1 / FPS,
+        { kind: "explain", ply: plyIndex },
+      );
+    }
+    spanOf(ev, start);
+  };
+
+  /**
    * A lead zoom (edl.mjs "lead": true), around the move of `plyIndex`: the
    * camera pushes in on `frame` over the position before the move, in
    * colour; the move lands inside the zoom with its click and the zoom's
@@ -5422,7 +5636,7 @@ const renderStyle = async (styleName) => {
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;
-  /** The second each ply's beat starts: a freeze or a lead zoom included. */
+  /** The second each ply's beat starts: a freeze, explain or lead zoom included. */
   const beatStartAt = new Map();
 
   for (let ply = START_PLY + 1; ply <= LAST_BOARD; ply += 1) {
@@ -5431,6 +5645,9 @@ const renderStyle = async (styleName) => {
     beatStartAt.set(plyIndex, elapsed);
     if (wallz) await playFreeze(ply, plyIndex);
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
+    const explain = wallz
+      ? eventsAt(plyIndex).find((e) => e.kind === "explain")
+      : undefined;
     /*
       The capture's zoom runs straight into the ending's impact: no pull-out
       and no still board before it (Wall Game Director, 2026-10-29: a still,
@@ -5449,6 +5666,8 @@ const renderStyle = async (styleName) => {
       landingEventsAt(plyIndex).length === 0;
     if (lead) {
       await playLeadZoom(ply, plyIndex, lead, { pullOut: !leadIntoEnding });
+    } else if (explain) {
+      await playExplain(ply, plyIndex, explain);
     } else {
       land(plyIndex);
     }
@@ -5468,8 +5687,9 @@ const renderStyle = async (styleName) => {
     */
     const plainMove =
       wallz && !isLast && landingEventsAt(plyIndex).length === 0;
+    // A lead zoom and an explain tick the counter in their own frames.
     const ticked =
-      wallz && !lead
+      wallz && !lead && !explain
         ? await playRaceTick(
             ply,
             plyIndex,
@@ -5883,6 +6103,16 @@ const renderStyle = async (styleName) => {
         0,
       );
     }
+  }
+  // A Story is at most MAX_VIDEO_SECONDS (Wall Game PM, 2026-10-29: each
+  // explain adds about 2.7 s).
+  if (EDL && videoSeconds > MAX_VIDEO_SECONDS) {
+    fault(
+      "video-long",
+      null,
+      `the video is ${videoSeconds.toFixed(1)} s long; an Instagram Story holds ${MAX_VIDEO_SECONDS} s`,
+      videoSeconds,
+    );
   }
   faults.sort((a, b) => a.at - b.at);
   const videoFps = DRAFT ? DRAFT_FPS : FPS;

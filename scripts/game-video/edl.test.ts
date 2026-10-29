@@ -151,6 +151,51 @@ describe("the moment kinds", () => {
     expect(one({ ply: 1, kind: "freeze", holdSeconds: 5 })).toBe(false);
   });
 
+  test("an explain names its hunter and the script's facts, and is its ply's only explanation", () => {
+    const explain = {
+      ply: 12,
+      kind: "explain",
+      hunter: "blue",
+      label: "detour",
+      expect: { walls: ["^a1", "^b1"], before: 2, after: 16 },
+    };
+    const edl = accept({
+      ...base,
+      events: [explain, { ply: 12, kind: "zoom", frame: ["^a1", "b1"] }],
+    });
+    expect(edl.events[0]).toMatchObject({ hunter: "blue", label: "detour" });
+    expect(
+      accept({ ...base, events: [{ ply: 12, kind: "explain" }] }).events[0],
+    ).toMatchObject({ hunter: null, label: null, expect: null });
+    const errors = (ev: object) =>
+      (validateEdl({ ...base, events: [ev] }).errors ?? []) as string[];
+    expect(errors({ ...explain, hunter: "green" })).toContain(
+      'events[0]: hunter must be "red" or "blue"',
+    );
+    expect(errors({ ...explain, label: "Near Catch" })).toContain(
+      "events[0]: label must be a kebab-case word (near-catch)",
+    );
+    expect(errors({ ...explain, expect: { walls: ["a1"] } })).toContain(
+      "events[0]: expect.walls must list walls (^h4, >h4)",
+    );
+    expect(errors({ ...explain, expect: { before: 2.5 } })).toContain(
+      "events[0]: expect.before must be a whole number of steps",
+    );
+    expect(errors({ ...explain, expect: { steps: 2 } }).length).toBe(1);
+    for (const [other, said] of [
+      [{ ply: 12, kind: "freeze" }, "a freeze"],
+      [{ ply: 12, kind: "path", cell: "b1" }, "a path"],
+      [{ ply: 12, kind: "zoom", frame: ["b1"], lead: true }, "a lead zoom"],
+      [{ ply: 12, kind: "explain" }, "another explain"],
+    ] as const) {
+      expect(
+        validateEdl({ ...base, events: [explain, other] }).errors,
+      ).toContain(
+        `ply 12 has an explain and ${said}; the explain is the ply's explanation, so use it alone`,
+      );
+    }
+  });
+
   test("freeze a move once", () => {
     expect(
       validateEdl({

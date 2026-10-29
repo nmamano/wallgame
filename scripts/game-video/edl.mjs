@@ -131,6 +131,24 @@
  *             ESCAPE) it first shows the walk BEFORE the move, then the
  *             walk after it, so the wall's effect shows (2, then 12).
  *             `holdSeconds` (default 0.8) holds the last walk.
+ *     explain a meme moment made readable (Nil, 2026-10-29: the memes did
+ *             not make sense to a viewer), BEFORE the ply's other events:
+ *             the board holds on the position before the move while the
+ *             hunter's walk to its target draws in dots with its steps;
+ *             the move lands slowly, each wall it placed glowing and each
+ *             pawn it moved drawn as a glowing line from its old cell;
+ *             then the old walk stays as a ghost and the new walk draws
+ *             (2, then 16). The whole board stays in view. `hunter`
+ *             ("red" or "blue") names the cat whose walk is the story;
+ *             absent, the one whose steps change most. The renderer
+ *             computes the walls and both walks from the game record, as
+ *             the race counter does; `expect` (optional: { walls, before,
+ *             after }, the steps of that hunter) is what the script says,
+ *             and a render whose game says otherwise stops
+ *             (explain-mismatch). `label` (optional, kebab-case: detour,
+ *             near-catch, blunder, punish) goes to RESULT.timeline only.
+ *             At most one on a ply, and not with a freeze, a lead zoom or
+ *             a path on that ply: it is the ply's explanation.
  *     overlay a meme over the board while the game goes on under it
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
@@ -308,6 +326,9 @@ export const LINT_KINDS = {
   "mark-covers-wall": "warns",
   "finish-cut": "warns",
   "race-small": "warns",
+  "explain-mismatch": "stops",
+  "explain-flat": "warns",
+  "video-long": "warns",
   "voice-no-speaker": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
@@ -326,6 +347,7 @@ export const EVENT_KINDS = [
   "react",
   "path",
   "overlay",
+  "explain",
 ];
 
 /** The fields each kind takes, besides ply, kind and sound. */
@@ -343,6 +365,7 @@ const KIND_FIELDS = {
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
   overlay: ["form", "asset", "text", "seconds", "seat"],
+  explain: ["hunter", "label", "expect"],
 };
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
@@ -373,6 +396,11 @@ export const fastForwardTag = (secondsPerMove) =>
 /** The zoom's most scale and its hold, where the EDL sets none. */
 export const DEFAULT_ZOOM_SCALE = 1.5;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
+/**
+ * The longest video that a story can carry (Instagram, 2026-10-29: a Story
+ * is at most 60 s); --lint warns over it (video-long).
+ */
+export const MAX_VIDEO_SECONDS = 60;
 /** A freeze's hold. */
 export const DEFAULT_FREEZE_HOLD_SECONDS = 0.9;
 export const DEFAULT_TRAP_TEXT = "TRAPPED";
@@ -841,6 +869,48 @@ export const validateEdl = (raw) => {
           );
         }
       }
+      if (ev.kind === "explain") {
+        out.hunter = ev.hunter ?? null;
+        out.label = ev.label ?? null;
+        out.expect = ev.expect ?? null;
+        if (out.hunter !== null && !["red", "blue"].includes(out.hunter)) {
+          fail(`${where}: hunter must be "red" or "blue"`);
+        }
+        if (
+          out.label !== null &&
+          !(
+            typeof out.label === "string" &&
+            /^[a-z]+(-[a-z]+)*$/.test(out.label)
+          )
+        ) {
+          fail(`${where}: label must be a kebab-case word (near-catch)`);
+        }
+        if (out.expect !== null) {
+          const x = out.expect;
+          if (typeof x !== "object" || Array.isArray(x)) {
+            fail(`${where}: expect must be { walls, before, after }`);
+          } else {
+            unknown(x, ["walls", "before", "after"], `${where}.expect`);
+            if (
+              x.walls !== undefined &&
+              !(
+                Array.isArray(x.walls) &&
+                x.walls.every((t) => typeof t === "string" && WALL.test(t))
+              )
+            ) {
+              fail(`${where}: expect.walls must list walls (^h4, >h4)`);
+            }
+            for (const k of ["before", "after"]) {
+              if (
+                x[k] !== undefined &&
+                !(Number.isInteger(x[k]) && x[k] >= 0)
+              ) {
+                fail(`${where}: expect.${k} must be a whole number of steps`);
+              }
+            }
+          }
+        }
+      }
       if (ev.kind === "path") {
         out.compare = ev.compare ?? false;
         out.holdSeconds = ev.holdSeconds ?? DEFAULT_PATH_HOLD_SECONDS;
@@ -908,6 +978,25 @@ export const validateEdl = (raw) => {
   });
   if (coldOpenPly !== null && fastRangeOf(coldOpenPly)) {
     fail(`coldOpenPly ${coldOpenPly} is inside a fastForward range`);
+  }
+
+  // An explain is its ply's explanation: one a ply, with no other
+  // explanation (a freeze, a lead zoom or a path) beside it.
+  for (const e of filled.filter((x) => x.kind === "explain")) {
+    const others = filled.filter(
+      (x) =>
+        x !== e &&
+        x.ply === e.ply &&
+        (x.kind === "explain" ||
+          x.kind === "freeze" ||
+          x.kind === "path" ||
+          (x.kind === "zoom" && x.lead)),
+    );
+    if (others.length > 0) {
+      fail(
+        `ply ${e.ply} has an explain and ${others.map((x) => (x.kind === "zoom" ? "a lead zoom" : x.kind === "explain" ? "another explain" : `a ${x.kind}`)).join(", ")}; the explain is the ply's explanation, so use it alone`,
+      );
+    }
   }
 
   // Before its move lands, a ply shows one thing: one freeze or one lead zoom.

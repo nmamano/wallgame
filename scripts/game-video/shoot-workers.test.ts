@@ -138,6 +138,15 @@ describe("isRestShot: no part starts inside any effect", () => {
         },
       },
     ],
+    explain: [
+      {
+        kind: "explain",
+        state: {
+          ...plain,
+          trap: { t: 0.2, walls: [[0.1, 0.2, 0.3, 0.2]] },
+        },
+      },
+    ],
     react: [{ kind: "beat-react", state: { ...plain, ...cell } }],
     path: [
       {
