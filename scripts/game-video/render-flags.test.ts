@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { Script } from "node:vm";
 import { dirname, join } from "node:path";
 import { LINT_KINDS } from "./edl.mjs";
 import { REPO, renderKitFiles } from "./render-kit.mjs";
@@ -98,6 +99,20 @@ describe("the lint (--lint)", () => {
     expect(used.size).toBeGreaterThan(5);
     expect([...used].filter((k) => !(k in LINT_KINDS))).toEqual([]);
     expect(Object.keys(LINT_KINDS).filter((k) => !used.has(k))).toEqual([]);
+  });
+});
+
+describe("the stage", () => {
+  test("its script parses", () => {
+    // A syntax error there shows only as a missing window.__ function in
+    // the middle of a render (2026-10-29).
+    const html = readFileSync(join(import.meta.dir, "stage.html"), "utf8");
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const [, code] of scripts) {
+      // Compiled, not run.
+      expect(() => new Script(code)).not.toThrow();
+    }
   });
 });
 

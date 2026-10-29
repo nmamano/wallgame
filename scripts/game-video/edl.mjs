@@ -303,6 +303,7 @@ export const LINT_KINDS = {
   silence: "warns",
   "still-before-ending": "warns",
   "zoom-cuts-pawn": "warns",
+  "stamp-covers": "warns",
   "zoom-scale": "note",
 };
 export const EVENT_KINDS = [

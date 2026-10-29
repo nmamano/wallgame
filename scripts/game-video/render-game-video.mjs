@@ -857,11 +857,16 @@ const drawSeconds = (points) =>
   );
 /**
  * The opening walks (edl.mjs introPaths): each draws as a path event's
- * walk does, holds INTRO_PATH_HOLD_SECONDS with its steps, and fades. The
- * hold was 0.6 s, too short to take the number in (Wall Game Director,
- * 2026-10-29).
+ * walk does and shows its steps INTRO_PATH_HOLD_SECONDS. The hold was 0.6
+ * s, too short to take the number in (Wall Game Director, 2026-10-29). The
+ * last one fades over the end of its hold, not after it: with the fade
+ * after it, 0.65 s of silence came before the first move (vets of
+ * 2026-10-29). The settle click sounds SETTLE_AT seconds into that hold,
+ * which leaves about 0.35 s of silence on each side of it (the Director's
+ * target: no gap over 0.4 s from the VS hit to the first move).
  */
 const INTRO_PATH_HOLD_SECONDS = 1;
+const SETTLE_AT = 0.45;
 /**
  * The next opening walk starts this long after the one before has drawn its
  * last step, while that one holds its number (Wall Game Director,
@@ -2558,8 +2563,15 @@ const bubbleSide = (boardIndex, at) => {
  * `boardIndex` plies: it avoids the pawns the page drew there (their
  * measured boxes), the cell and walls of the move `plyIndex`, and
  * `extraWalls` (a trap's). `size` is the word's measured box.
+ *
+ * The word slams in from `punchFrom` times its size (stage.html punch)
+ * down to it, and the place is chosen for its own size. So it also gives
+ * `pop`: the largest size, from 1 to punchFrom, at which the word covers
+ * nothing it does not cover at rest; the stage starts the slam there
+ * (Wall Game Director, 2026-10-29: "WALLED" on 8FroT1GU ply 12 covered a
+ * third of the red mouse for two frames as it popped).
  */
-const placeStamp = (boardIndex, plyIndex, size, extraWalls) => {
+const placeStamp = (boardIndex, plyIndex, size, extraWalls, punchFrom) => {
   const ofCells = ([top, left, bottom, right]) => [
     GRID.x(left),
     GRID.y(top),
@@ -2570,22 +2582,33 @@ const placeStamp = (boardIndex, plyIndex, size, extraWalls) => {
   const moveWalls = String(history[plyIndex]?.notation ?? "")
     .split(".")
     .filter((t) => t.startsWith(">") || t.startsWith("^"));
-  return stampSpot({
+  const avoid = [
+    ...(pawnSpots.get(boardIndex) ?? []).map((p) => [
+      p.x - p.w / 2,
+      p.y - p.h / 2,
+      p.x + p.w / 2,
+      p.y + p.h / 2,
+    ]),
+    ...(cell ? [ofCells([cell[0], cell[1], cell[0] + 1, cell[1] + 1])] : []),
+    ...[...moveWalls, ...extraWalls].map((t) => ofCells(termBox(t))),
+  ];
+  const spot = stampSpot({
     size,
     pad: GRID.pad,
-    avoid: [
-      ...(pawnSpots.get(boardIndex) ?? []).map((p) => [
-        p.x - p.w / 2,
-        p.y - p.h / 2,
-        p.x + p.w / 2,
-        p.y + p.h / 2,
-      ]),
-      ...(cell ? [ofCells([cell[0], cell[1], cell[0] + 1, cell[1] + 1])] : []),
-      ...[...moveWalls, ...extraWalls].map((t) => ofCells(termBox(t))),
-    ],
+    avoid,
     cellArea: GRID.pitchX * GRID.pitchY,
     focus: cell ? cellAt(cell) : null,
   });
+  // The word, grown by s about its centre, reaches box k once s passes
+  // both of its distances to k over its half sizes; a box it covers at
+  // rest sets no limit.
+  const reach = ([x0, y0, x1, y1]) => {
+    const dx = Math.max(x0 - spot.at.x, spot.at.x - x1, 0);
+    const dy = Math.max(y0 - spot.at.y, spot.at.y - y1, 0);
+    const s = Math.max(dx / (size.w / 2), dy / (size.h / 2));
+    return s >= 1 ? s : Infinity;
+  };
+  return { ...spot, pop: Math.min(punchFrom, ...avoid.map(reach)) };
 };
 
 /** The centre of an EDL cell on the board image (0..1), for the mouse overlays. */
@@ -2920,7 +2943,7 @@ const INTRO_WALKS =
  * When each opening walk plays, in seconds from the first one's start: it
  * draws in drawSeconds; the next starts INTRO_WALK_GAP_SECONDS after it,
  * and it fades as the next one has drawn, so its number shows the whole
- * time; the last holds INTRO_PATH_HOLD_SECONDS and fades.
+ * time; the last shows INTRO_PATH_HOLD_SECONDS, its fade included.
  */
 const INTRO_PLAN = (() => {
   let at = 0;
@@ -2933,7 +2956,7 @@ const INTRO_PLAN = (() => {
     const next = plan[k + 1];
     p.fadeAt = next
       ? next.start + next.draw
-      : p.start + p.draw + INTRO_PATH_HOLD_SECONDS;
+      : p.start + p.draw + INTRO_PATH_HOLD_SECONDS - PATH_FADE_SECONDS;
   });
   return plan;
 })();
@@ -4469,6 +4492,10 @@ const renderStyle = async (styleName) => {
    * to fit (STAMP_MAX_WIDTH), keyed by its event.
    */
   const stampSpots = new Map();
+  /** A stamp or trap word that covers some of its move: the lint warns. */
+  const stampCovers = new Map();
+  /** How big a stamp starts its slam (stage.html punch at its start). */
+  const punchFrom = await stage.evaluate(() => window.__PUNCH_FROM);
   /**
    * The colour of each scared or laughing mouse's cell with no pawn, read
    * from the board it shows (stage.html __cellColour), for the window its
@@ -4508,10 +4535,17 @@ const renderStyle = async (styleName) => {
         ev.ply,
         { w: measured.w * fit, h: measured.h * fit },
         ev.kind === "trap" ? ev.walls : [],
+        punchFrom,
       );
-      stampSpots.set(ev, { at: spot.at, fit });
+      stampSpots.set(ev, { at: spot.at, fit, pop: spot.pop });
+      if (spot.covered > 0.01) {
+        stampCovers.set(
+          ev,
+          `the ${ev.kind} word "${ev.text}" covers ${spot.covered.toFixed(2)} cells of the move: no band of the board is free of it`,
+        );
+      }
       log(
-        `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move`,
+        `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move, slams in from ${spot.pop.toFixed(2)}`,
       );
     }
   }
@@ -4741,6 +4775,9 @@ const renderStyle = async (styleName) => {
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
+      if (stampCovers.has(ev)) {
+        fault("stamp-covers", plyIndex, stampCovers.get(ev));
+      }
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's sound lands with its word.
@@ -4903,8 +4940,8 @@ const renderStyle = async (styleName) => {
   /*
     The opening walks (edl.mjs introPaths) on the start position, as
     INTRO_PLAN times them: each ticks its steps as it draws; the last one's
-    hold gets a soft settle sound halfway, so the opening has no gap of
-    silence longer than about 0.6 s (Wall Game Director, 2026-10-29). A
+    hold gets a soft settle sound SETTLE_AT into it, so the opening has no
+    gap of silence over about 0.4 s (Wall Game Director, 2026-10-29). A
     contact-sheet still of each once it is drawn.
   */
   const introStart = elapsed;
@@ -4924,7 +4961,7 @@ const renderStyle = async (styleName) => {
         gain: SITE_VOLUMES.wall * MOVE_GAIN * SETTLE_STEP,
       },
       "tick",
-      { at: introStart + last.start + last.draw + INTRO_PATH_HOLD_SECONDS / 2 },
+      { at: introStart + last.start + last.draw + SETTLE_AT },
     );
   }
   const span01 = (x) => Math.max(0, Math.min(1, x));

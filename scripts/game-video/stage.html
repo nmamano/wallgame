@@ -1246,6 +1246,8 @@
       /** The VS mark's punch: lands big, overshoots once, settles at 1. */
       const punch = (p) =>
         p >= 1 ? 1 : 1.9 - 0.9 * easeOut3(p) - 0.14 * Math.sin(p * Math.PI);
+      /** The size a punch starts at, for the renderer's room check. */
+      window.__PUNCH_FROM = punch(0);
 
       /**
        * A long name shrinks until it fits, instead of ending in "...". The
@@ -1411,7 +1413,9 @@
        *   m = { text, t: seconds into the stamp, seconds: its length,
        *         at: {x, y} its centre on the board image (0..1), where the
        *         renderer measured it to cover the least of the move,
-       *         fit: its size, 1 or less so a long word fits the board }
+       *         fit: its size, 1 or less so a long word fits the board,
+       *         pop: the size its slam starts at, from 1 to __PUNCH_FROM:
+       *         the largest at which it covers nothing new }
        */
       const paintMidStamp = (m) => {
         const el = $("midStamp");
@@ -1424,7 +1428,10 @@
         el.style.opacity = 1 - span(m.t, m.seconds - stampFade, m.seconds);
         el.style.transform =
           "translate(-50%,-50%) rotate(-8deg) scale(" +
-          punch(span(m.t, 0, stampPunch)) * m.fit +
+          (1 +
+            ((punch(span(m.t, 0, stampPunch)) - 1) * (m.pop - 1)) /
+              (window.__PUNCH_FROM - 1)) *
+            m.fit +
           ")";
       };
 
@@ -1546,6 +1553,7 @@
           seconds: 1,
           at: { x: 0.5, y: 0.5 },
           fit: 1,
+          pop: 1,
         });
         const r = $("midStamp").getBoundingClientRect();
         const b = $("boardWrap").getBoundingClientRect();
