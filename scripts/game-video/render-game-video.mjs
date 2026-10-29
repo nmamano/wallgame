@@ -4551,10 +4551,14 @@ const renderStyle = async (styleName) => {
    * walk reaches it, so the steps can be counted by ear. The site's pawn
    * click, pitched up (TICK_RATE): short and dry, never a ding
    * (Wall Game Director, 2026-10-29: Nil disliked the three dings).
+   * `fromStart`: one more tick as the walk starts, on the hunter's cell. An
+   * explain draws on a still board after a mark, and its first step comes
+   * a step's time later: without it, that was 1.6 s of silence on
+   * VX-IPenv ply 11 (Wall Game Director and Wall Game PM, 2026-10-29).
    */
-  const cueWalkTicks = (points, from) => {
+  const cueWalkTicks = (points, from, { fromStart = false } = {}) => {
     const steps = points.length - 1;
-    for (let k = 1; k <= steps; k += 1) {
+    for (let k = fromStart ? 0 : 1; k <= steps; k += 1) {
       cue(
         {
           name: "tick",
@@ -5066,6 +5070,21 @@ const renderStyle = async (styleName) => {
   };
 
   /**
+   * A voice needs its speaker on screen (DIRECTOR.md): a zoom, a mark on a
+   * pawn or a portrait cut-out on the ply. An explain's walk is not a
+   * speaker (Wall Game PM, 2026-10-29), so it does not count.
+   */
+  const lintVoice = (ev, plyIndex) => {
+    if (!ev.sound || !VOICE_FAMILIES.includes(memeFamily(ev.sound))) return;
+    if (speakerShown(plyIndex)) return;
+    fault(
+      "voice-no-speaker",
+      plyIndex,
+      `the voice ${ev.sound} on ply ${plyIndex} has no speaker on screen: add a zoom, a mark on the speaking pawn or a cut-out on this ply`,
+    );
+  };
+
+  /**
    * One frame of an after-landing EDL effect, `t` seconds (frame `i`) into
    * its `seconds`, as the stage state it adds to the position.
    */
@@ -5187,6 +5206,7 @@ const renderStyle = async (styleName) => {
   const playExplain = async (ply, plyIndex, ev) => {
     const f = EXPLAINS.get(ev);
     const start = elapsed;
+    lintVoice(ev, plyIndex);
     const [was, now] = f.steps;
     const said = [];
     if (ev.expect?.before !== undefined && ev.expect.before !== was) {
@@ -5244,7 +5264,7 @@ const renderStyle = async (styleName) => {
     });
     // 1. The old walk, on the position before the move.
     const drawBefore = drawSeconds(f.before.points);
-    cueWalkTicks(f.before.points, start);
+    cueWalkTicks(f.before.points, start, { fromStart: true });
     const beforeFrames = Math.round(
       (drawBefore + EXPLAIN_BEFORE_REST_SECONDS) * FPS,
     );
@@ -5289,7 +5309,7 @@ const renderStyle = async (styleName) => {
     }
     // 3. The new walk draws over the ghost of the old one, and holds.
     const drawAfter = drawSeconds(f.after.points);
-    cueWalkTicks(f.after.points, elapsed);
+    cueWalkTicks(f.after.points, elapsed, { fromStart: true });
     // The explain's sound is the reaction to the new number: it plays as
     // the new walk is fully drawn and the counter shows its steps.
     if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawAfter);
@@ -5438,15 +5458,7 @@ const renderStyle = async (styleName) => {
           );
         }
       }
-      if (ev.sound && VOICE_FAMILIES.includes(memeFamily(ev.sound))) {
-        if (!speakerShown(plyIndex)) {
-          fault(
-            "voice-no-speaker",
-            plyIndex,
-            `the voice ${ev.sound} on ply ${plyIndex} has no speaker on screen: add a zoom, a mark on the speaking pawn or a cut-out on this ply`,
-          );
-        }
-      }
+      lintVoice(ev, plyIndex);
       const said = stampLints.get(ev);
       if (said?.covers) fault("stamp-covers", plyIndex, said.covers);
       if (said?.flat) fault("stamp-flat", plyIndex, said.flat);
