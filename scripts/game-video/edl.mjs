@@ -228,11 +228,19 @@ export const ENDINGS = ["replay", "gg", "ko"];
  * "Guest Ibex". Bot and Human is less text and conveys the same"). When
  * both seats are the same kind, each name starts with its seat's colour:
  * "Red Bot" and "Blue Bot", "Red Human" and "Blue Human".
+ * A seat whose kind is not "bot" or "human" stops the render.
  * @param {{ red: { configType?: string, displayName?: string }, blue: { configType?: string, displayName?: string } }} seats
  * @returns {{ red: string, blue: string }}
  */
 export const dailySeatNames = ({ red, blue }) => {
-  const kind = (seat) => (seat.configType === "bot" ? "Bot" : "Human");
+  const kind = (seat) => {
+    if (seat.configType === "bot") return "Bot";
+    if (seat.configType === "human") return "Human";
+    // A seat with no kind is a fault in the game record, not a human.
+    throw new Error(
+      `dailySeatNames: a seat has no kind (configType ${JSON.stringify(seat.configType)}), so it cannot be named Bot or Human`,
+    );
+  };
   const [r, b] = [kind(red), kind(blue)];
   return r === b ? { red: `Red ${r}`, blue: `Blue ${b}` } : { red: r, blue: b };
 };

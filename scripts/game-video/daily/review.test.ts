@@ -378,9 +378,20 @@ describe("a card names the other videos of its game (Nil, 2026-10-29, C15)", () 
       sameGameItem(store, "v-2026-10-27-2", state);
       const mine = viewOf(store).items.find((x) => x.id === "v-2026-10-28-1");
       expect(mine?.version).toBe(
-        `2nd version of game ${gameId}; the other is v-2026-10-27-2 (${shown})`,
+        `one of 2 videos of game ${gameId}; the other is v-2026-10-27-2 (${shown})`,
       );
     }
+  });
+
+  test("both cards of a two-video game say the same count: the older one never reads as the remake", () => {
+    const { store } = withItemInReview();
+    const gameId = (store.item("v-2026-10-28-1") as Item).gameId;
+    sameGameItem(store, "v-2026-10-27-2", "finished");
+    const lines = viewOf(store).items.map((x) => x.version);
+    expect(lines).toEqual([
+      `one of 2 videos of game ${gameId}; the other is v-2026-10-28-1 (in review)`,
+      `one of 2 videos of game ${gameId}; the other is v-2026-10-27-2 (in review)`,
+    ]);
   });
 
   test("no line when the game has no other item, or only a discarded one", () => {
@@ -390,14 +401,14 @@ describe("a card names the other videos of its game (Nil, 2026-10-29, C15)", () 
     expect(viewOf(store).items[0].version).toBeNull();
   });
 
-  test("three videos of a game: 3rd version, the others named", () => {
+  test("three videos of a game: a count, the others named", () => {
     expect(
       versionLine({ gameId: "VX-IPenv" }, [
         { id: "v-a", shown: "posted" },
         { id: "v-b", shown: "draft" },
       ]),
     ).toBe(
-      "3rd version of game VX-IPenv; the others are v-a (posted), v-b (draft)",
+      "one of 3 videos of game VX-IPenv; the others are v-a (posted), v-b (draft)",
     );
   });
 });

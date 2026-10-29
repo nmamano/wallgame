@@ -88,10 +88,10 @@ export const postCaption = (block) =>
  */
 export const versionLine = (item, others) => {
   if (others.length === 0) return null;
-  const n = others.length + 1;
-  const nth = n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
+  // A count, not a rank: every card of the game says the same, so the
+  // older card never reads as the remake (VR1 and Wall Game PM, review 79).
   const list = others.map((o) => `${o.id} (${o.shown})`).join(", ");
-  return `${nth} version of game ${item.gameId}; the other${others.length > 1 ? "s are" : " is"} ${list}`;
+  return `one of ${others.length + 1} videos of game ${item.gameId}; the other${others.length > 1 ? "s are" : " is"} ${list}`;
 };
 
 export const reviewView = (store) => ({

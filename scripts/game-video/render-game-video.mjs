@@ -3640,7 +3640,13 @@ const renderStyle = async (styleName) => {
    * strip, an overlay's {red}/{blue}, the ending (edl.mjs dailySeatNames:
    * "Bot" or "Human", with the colour when both seats are one kind).
    */
-  const seatOf = (id) => apiPlayers.find((p) => p.playerId === id) ?? {};
+  const seatOf = (id) => {
+    const seat = apiPlayers.find((p) => p.playerId === id);
+    // A seat missing from the game's players is a data fault: stop, never
+    // name it "Human" by default (VR1, review 79).
+    if (!seat) throw new Error(`seat ${id} is not in the game's players`);
+    return seat;
+  };
   const dailyNames = dailySeatNames({
     red: seatOf(redSeat),
     blue: seatOf(blueSeat),

@@ -741,11 +741,11 @@ describe("dailySeatNames (Nil, 2026-10-29: Bot and Human, never a name)", () => 
       }),
     ).toEqual({ red: "Red Human", blue: "Blue Human" });
   });
-  test("a seat with no kind is a human", () => {
-    expect(dailySeatNames({ red: {}, blue: bot })).toEqual({
-      red: "Human",
-      blue: "Bot",
-    });
+  test("a seat with no kind is refused, never named Human (VR1, review 79)", () => {
+    expect(() => dailySeatNames({ red: {}, blue: bot })).toThrow(/no kind/);
+    expect(() =>
+      dailySeatNames({ red: human, blue: { configType: "robot" } }),
+    ).toThrow(/no kind/);
   });
 });
 
