@@ -19,6 +19,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { boardGrid } from "../board-grid.mjs";
+import { FRAME } from "../edl.mjs";
 
 /** Where every tool writes. Never the app's folders. */
 export const TOOLS_DIR = join(tmpdir(), "daily-tools");
@@ -157,6 +159,95 @@ export const cropBox = (text, { width, height }) => {
     throw new Error(`--box ${text} is not inside the ${width}x${height} frame`);
   }
   return { x, y, w, h };
+};
+
+const isRect = (r) =>
+  ["x", "y", "width", "height"].every((k) => Number.isFinite(r?.[k]));
+
+/**
+ * The renderer's RESULT.layout.grid ({clip, first, last, cols, rows}, css
+ * px of the full FRAME, board-grid.mjs's shape), or null: a style other
+ * than wallz has none, and a kit from before it sends none.
+ */
+export const gridOf = (g) =>
+  isRect(g?.clip) &&
+  isRect(g.first) &&
+  isRect(g.last) &&
+  Number.isInteger(g.cols) &&
+  Number.isInteger(g.rows) &&
+  g.cols >= 2 &&
+  g.rows >= 2
+    ? { clip: g.clip, first: g.first, last: g.last, cols: g.cols, rows: g.rows }
+    : null;
+
+/**
+ * The events that move the board for all or part of their span: a zoom
+ * (and its lead push), a freeze (the camera pushes in) and a blunder (the
+ * board shakes over its first half second; the whole span, to be safe).
+ */
+const MOVES_BOARD = ["zoom", "freeze", "blunder"];
+
+/**
+ * Why the board is not at rest at second `at`, or null. The grid holds
+ * only at rest (Video Reviewer 1, 2026-10-29): an event of MOVES_BOARD,
+ * the ending from the last move on (it moves or scales the board, or
+ * shakes it on a capture, and RESULT.timeline has no span for it; Video
+ * Reviewer 2, 2026-10-29), and a cold open, a zoom before the first move.
+ */
+export const boardMoved = (timeline, at, { coldOpen }) => {
+  const inside = timeline.events.find(
+    (e) => MOVES_BOARD.includes(e.kind) && at >= e.start && at <= e.end,
+  );
+  if (inside) {
+    return `${at} s is inside the ${inside.kind} on ply ${inside.ply} (${inside.start}-${inside.end} s)`;
+  }
+  const last = Math.max(...timeline.moves.map((m) => m.at));
+  if (at >= last) {
+    return `${at} s is at or after the last move (${last} s): the ending moves the board`;
+  }
+  const first = timeline.moves[0]?.at;
+  if (coldOpen && first !== undefined && at < first) {
+    return `${at} s is before the first move (${first} s), and the list has a cold open (a zoom)`;
+  }
+  return null;
+};
+
+/**
+ * The crop box around a cell ("e7": column a.., row 1 at the bottom, as
+ * the lint names cells) with `radius` cells on each side, cut at the
+ * board's edge: whole pixels of a video of `width` x `height`. The grid is
+ * in px of the full FRAME, so a draft video (half size) scales it.
+ */
+export const cellBox = (cell, radius, grid, { width, height }) => {
+  const m = /^([a-z])([0-9]{1,2})$/.exec(String(cell ?? ""));
+  const g = boardGrid(grid);
+  const col = m ? m[1].charCodeAt(0) - 97 : -1;
+  const row = m ? g.rows - Number(m[2]) : -1;
+  if (col < 0 || col >= g.cols || row < 0 || row >= g.rows) {
+    throw new Error(
+      `--cell is a cell of the ${g.cols}x${g.rows} board, a1 to ${String.fromCharCode(96 + g.cols)}${g.rows}, got ${cell}`,
+    );
+  }
+  if (!(Number.isInteger(radius) && radius >= 0)) {
+    throw new Error(`--radius is a whole number of cells, got ${radius}`);
+  }
+  const scale = width / FRAME.w;
+  if (Math.abs(height / FRAME.h - scale) > 0.01) {
+    throw new Error(
+      `the ${width}x${height} video is not ${FRAME.w}x${FRAME.h} or a scale of it`,
+    );
+  }
+  const { clip } = grid;
+  const px = (u) => (clip.x + g.x(u) * clip.width) * scale;
+  const py = (v) => (clip.y + g.y(v) * clip.height) * scale;
+  const x0 = Math.max(0, Math.floor(px(Math.max(0, col - radius))));
+  const y0 = Math.max(0, Math.floor(py(Math.max(0, row - radius))));
+  const x1 = Math.min(width, Math.ceil(px(Math.min(g.cols, col + radius + 1))));
+  const y1 = Math.min(
+    height,
+    Math.ceil(py(Math.min(g.rows, row + radius + 1))),
+  );
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 };
 
 /**
@@ -316,14 +407,29 @@ export const strip = ({ video, name, from, seconds, fps }) => {
   ];
 };
 
-/** One full-size crop of the frame at second `at`. */
-export const crop = ({ video, name, at, box }) => {
+/**
+ * One full-size crop of the frame at second `at`: of `box` ("X,Y,W,H"), or
+ * around `cell` ({cell, radius, grid, timeline, coldOpen}, from the item's
+ * render) when the board is at rest there.
+ * @param {{ video: string, name: string, at: number, box?: string,
+ *   cell?: { cell: string, radius: number, grid: any, timeline: any,
+ *   coldOpen: boolean } }} o
+ */
+export const crop = ({ video, name, at, box, cell }) => {
   const info = probe(video);
   const last = lastFrameAt(info);
   if (!(at >= 0 && at <= last)) {
     throw new Error(`--at must be in 0..${last} s, got ${at}`);
   }
-  const b = cropBox(box, info);
+  let b;
+  if (cell) {
+    const moved = boardMoved(cell.timeline, at, cell);
+    if (moved)
+      throw new Error(`${moved}: --cell holds only at rest; use --box`);
+    b = cellBox(cell.cell, cell.radius, cell.grid, info);
+  } else {
+    b = cropBox(box, info);
+  }
   const out = frameAt({
     video,
     at,
@@ -332,7 +438,7 @@ export const crop = ({ video, name, at, box }) => {
   });
   return [
     `crop: ${out}`,
-    `  ${b.w}x${b.h} at ${b.x},${b.y} of the ${info.width}x${info.height} frame, t=${at} s`,
+    `  ${b.w}x${b.h} at ${b.x},${b.y} of the ${info.width}x${info.height} frame, t=${at} s${cell ? ` (${cell.cell}, radius ${cell.radius}; --box ${b.x},${b.y},${b.w},${b.h})` : ""}`,
   ];
 };
 

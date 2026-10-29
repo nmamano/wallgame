@@ -997,6 +997,9 @@ export const openStore = (dataDir) => {
           item.render.quality = outcome.quality;
           // When and what plays (strips.mjs); null from a kit without it.
           item.render.timeline = outcome.timeline ?? null;
+          // The board's cells at rest; null in a style other than wallz,
+          // or from a kit without it.
+          item.render.grid = outcome.grid ?? null;
           // How long each step took; null from an adapter without it.
           item.render.timings = outcome.timings ?? null;
         },
@@ -1149,6 +1152,12 @@ export const openStore = (dataDir) => {
           if (fileSha256(item.render.video.path) !== videoSha256) {
             refuse(
               `${id}'s video file is not the one in its record; tell Video Editor (daily app)`,
+            );
+          }
+          // The video must tell the story that passed (renderScriptReview).
+          if (scriptAfterRender(item)) {
+            refuse(
+              `${id}: a script review came after this render, so the video tells an older story: render again from the current script`,
             );
           }
           item.vets = [

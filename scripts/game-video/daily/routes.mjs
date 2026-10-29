@@ -86,6 +86,7 @@ import {
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
+import { gridOf } from "./tools.mjs";
 import { lintNotes, lintStops } from "./lint.mjs";
 import {
   BACKUP_WINDOW,
@@ -702,6 +703,8 @@ export const createDaily = ({
       music: played,
       sound: result.sound ?? null,
       timeline: timelineOf(result.timeline),
+      // Where the board's cells are at rest (crew.mjs crop --cell).
+      grid: gridOf(result.layout?.grid),
       // How long each step took (render-4090.mjs), for the director.
       timings: result.timings ?? null,
       quality: {

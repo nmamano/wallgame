@@ -154,6 +154,12 @@
  *                                  second (4): a beat, an overlay's life
  *   crop V --at T --box X,Y,W,H    one full-size crop of the frame at T s:
  *                                  does a mark touch a wall or a pawn?
+ *   crop --item ID --at T --cell e7 [--radius N]
+ *                                  the same around a cell and N cells (1)
+ *                                  on each side, from the render's board
+ *                                  grid; refused where the board is not at
+ *                                  rest (a zoom, a freeze, a blunder, the
+ *                                  ending, a cold open)
  *   audio V [--from T --seconds D] every silence, the loudness and true
  *                                  peak; with a range, the peak of each
  *                                  0.1 s too
@@ -619,13 +625,7 @@ const toolVideo = async () => {
   if (given.length !== 1) {
     die("name one video: --item ID, --preview ID or --video FILE");
   }
-  if (flag("item")) {
-    const c = await itemNamed(flag("item"));
-    const path =
-      c.render?.video?.path ?? die(`${c.id} has no video yet: render it`);
-    if (!existsSync(path)) die(`${c.id}'s video ${path} is not there`);
-    return { video: path, name: c.id };
-  }
+  if (flag("item")) return itemVideo(await itemNamed(flag("item")));
   if (flag("preview")) {
     const id = flag("preview");
     const p = await app(
@@ -650,9 +650,20 @@ const numberFlag = (name, fallback) => {
 };
 
 /** Run one tool; its lines, or its fault as one line and exit 1. */
-const runTool = async (fn, options) => {
+/** An item's current video, for a tool. */
+const itemVideo = (c) => {
+  const path =
+    c.render?.video?.path ?? die(`${c.id} has no video yet: render it`);
+  if (!existsSync(path)) die(`${c.id}'s video ${path} is not there`);
+  return { video: path, name: c.id };
+};
+
+/** A tool on the video the flags name, or on `source` ({video, name}). */
+const runTool = async (fn, options, source) => {
   try {
-    console.log(fn({ ...(await toolVideo()), ...options }).join("\n"));
+    console.log(
+      fn({ ...(source ?? (await toolVideo())), ...options }).join("\n"),
+    );
   } catch (err) {
     die(`${command}: ${err.message}`);
   }
@@ -1093,11 +1104,50 @@ const commands = {
     });
   },
 
+  /**
+   * --box X,Y,W,H, or --cell e7 [--radius N] (an item's render only: its
+   * grid and timeline say where the cell is and whether the board is at
+   * rest).
+   */
   async crop() {
-    await runTool(tools.crop, {
-      at: numberFlag("at") ?? die("crop needs --at T (s)"),
-      box: flag("box") ?? die("crop needs --box X,Y,W,H (video pixels)"),
-    });
+    const at = numberFlag("at") ?? die("crop needs --at T (s)");
+    if (flag("box") && flag("cell"))
+      die("crop takes --box or --cell, not both");
+    if (!flag("cell")) {
+      return runTool(tools.crop, {
+        at,
+        box: flag("box") ?? die("crop needs --box X,Y,W,H or --cell e7"),
+      });
+    }
+    if (!flag("item") || flag("preview") || flag("video")) {
+      die("--cell reads the grid of an item's render: --item ID only");
+    }
+    // One read: the grid, the timeline and the video of one render.
+    const c = await itemNamed(flag("item"));
+    const grid =
+      c.render?.grid ??
+      die(
+        `${c.id}'s render has no board grid (a style other than wallz, or a render from before the grid): use --box`,
+      );
+    const timeline =
+      c.render.timeline ??
+      die(
+        `${c.id}'s render has no timeline, so a zoom cannot be told: use --box`,
+      );
+    await runTool(
+      tools.crop,
+      {
+        at,
+        cell: {
+          cell: flag("cell"),
+          radius: numberFlag("radius", 1),
+          grid,
+          timeline,
+          coldOpen: c.edl?.doc?.coldOpenPly != null,
+        },
+      },
+      itemVideo(c),
+    );
   },
 
   async audio() {

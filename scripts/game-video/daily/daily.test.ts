@@ -259,6 +259,7 @@ interface Item {
     quality: Record<string, { ok: boolean; note: string }> | null;
     music: { fromPly: number; track: string; at: number }[] | null;
     timeline: { events: object[] } | null;
+    grid?: object | null;
     timings?: object | null;
   } | null;
   check: { ok: boolean } | null;
@@ -707,6 +708,16 @@ describe("the independent review of the final video (vet)", () => {
       videoSha256: video.sha256,
     });
     expect(out.events.at(-1)?.what).toBe("vet pass by Video Reviewer 1");
+  });
+
+  test("no vet of a video when a script review came after its render", async () => {
+    const { store, id, video } = finishedWithFile();
+    await Bun.sleep(2);
+    store.recordScriptReview(id, SCRIPT_PASS);
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(() => void store.recordVet(id, pass(video.sha256))).toThrow(
+      `${id}: a script review came after this render, so the video tells an older story`,
+    );
   });
 
   test("copy needs the LATEST vet of the CURRENT video to pass; an item from before vets has none", () => {
@@ -2203,7 +2214,11 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
     board: { x: 81, y: 380, w: 918, h: 852 },
     caption: { x: 81, y: 285, w: 918, h: 60 } },
-    captionText: edl.caption ? { caption: { lines: 1, width: 640 } } : {} },
+    captionText: edl.caption ? { caption: { lines: 1, width: 640 } } : {},
+    grid: { clip: { x: 170, y: 490, width: 740, height: 740 },
+      first: { x: 180, y: 500, width: 80, height: 80 },
+      last: { x: 810, y: 1130, width: 80, height: 80 },
+      cols: 8, rows: 8, extra: "dropped" } },
   loudness: { memes: [{ key: "shotgun-2", at: 0.9, loudestAt: 0.9,
     memeLufs: -24, bedLufs: -33.7, overLU: 9.7, truePeakDbtp: -14.3 }] },
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills },
@@ -2624,6 +2639,14 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     kind: EDL.events[0].kind,
     start: 10,
     end: 11,
+  });
+  // The board's cells at rest, for crew.mjs crop --cell, without extras.
+  expect(it.render?.grid).toEqual({
+    clip: { x: 170, y: 490, width: 740, height: 740 },
+    first: { x: 180, y: 500, width: 80, height: 80 },
+    last: { x: 810, y: 1130, width: 80, height: 80 },
+    cols: 8,
+    rows: 8,
   });
   expect(it.render?.effect).toBe("daily");
   expect(it.render?.ending).toBe("replay");
@@ -4015,6 +4038,34 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(it.scriptReviews?.[1].script).toBe(draft);
   }, 30_000);
 });
+
+test("crew: crop --cell reads the grid, the timeline and the video of one render", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const base = await serve(dir, stub);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  await directOver(base, id);
+  await renderAndWait(base, id);
+  // The stub's events play at 10-11 s, so 0.5 s is at rest; its video is
+  // 64x64, so the refusal shows the cell's box met the video's own size.
+  expect(
+    crew(base, "crop", "--item", id, "--at", "0.5", "--cell", "e7").err,
+  ).toContain("the 64x64 video is not 1080x1920 or a scale of it");
+  // Only an item's render has a grid.
+  expect(
+    crew(
+      base,
+      "crop",
+      "--video",
+      join(dir, "x.mp4"),
+      "--at",
+      "0.5",
+      "--cell",
+      "e7",
+    ).err,
+  ).toContain("--cell reads the grid of an item's render: --item ID only");
+}, 30_000);
 
 test("the app forgets only finished lints: a queued one keeps its record", async () => {
   const dir = tempDir();
