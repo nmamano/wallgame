@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  NO_REACH,
   OVERLAYS,
   OVERLAY_FORMS,
   boxOnScreen,
@@ -18,6 +19,12 @@ const cell = (x: number, y: number, size = 0.125) => ({
   x1: x + size,
   y1: y + size,
 });
+
+/** A place with no art past its box. */
+const place = (
+  asset: Parameters<typeof placeOverlay>[0],
+  busy: Parameters<typeof placeOverlay>[1],
+) => placeOverlay(asset, busy, NO_REACH);
 
 describe("overlays", () => {
   test("every asset has a form, a draw and its risks", () => {
@@ -40,7 +47,7 @@ describe("overlays", () => {
 
   test("every place lies inside the board", () => {
     for (const a of Object.values(OVERLAYS)) {
-      for (const p of overlayPlaces(a)) {
+      for (const p of overlayPlaces(a, NO_REACH)) {
         expect(p.x).toBeGreaterThanOrEqual(0);
         expect(p.y).toBeGreaterThanOrEqual(0);
         expect(p.x + p.w).toBeLessThanOrEqual(1);
@@ -51,19 +58,19 @@ describe("overlays", () => {
 
   test("a panel is a band: top, bottom, then every height; none free, null", () => {
     const panel = OVERLAYS["capture-loading"];
-    expect(placeOverlay(panel, [])?.where).toBe("top");
-    expect(placeOverlay(panel, [cell(0.4, 0.1)])?.where).toBe("bottom");
+    expect(place(panel, [])?.where).toBe("top");
+    expect(place(panel, [cell(0.4, 0.1)])?.where).toBe("bottom");
     // Pawns near both edges: the band between them (Nil, 2026-10-28: an
     // overlay never covers a pawn, so a half-board panel rarely fit).
-    expect(placeOverlay(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])?.where).toBe(
+    expect(place(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])?.where).toBe(
       "band 0.25",
     );
-    const band = placeOverlay(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])!;
+    const band = place(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])!;
     expect(band.y).toBeGreaterThanOrEqual(0.225);
     expect(band.y + band.h).toBeLessThanOrEqual(0.8);
     // A pawn on every row band: none.
     expect(
-      placeOverlay(
+      place(
         panel,
         [0.05, 0.3, 0.55, 0.8].map((y) => cell(0.4, y)),
       ),
@@ -72,31 +79,31 @@ describe("overlays", () => {
 
   test("the ending's bar takes the strip the ending leaves free", () => {
     const bar = OVERLAYS["ending-caption"];
-    expect(placeOverlay(bar, [])?.where).toBe("top");
+    expect(place(bar, [])?.where).toBe("top");
     // The GG card: the middle of the board.
-    expect(
-      placeOverlay(bar, [{ x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 }])?.where,
-    ).toBe("top");
-    expect(
-      placeOverlay(bar, [{ x0: 0.2, y0: 0.1, x1: 0.8, y1: 0.8 }])?.where,
-    ).toBe("bottom");
+    expect(place(bar, [{ x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 }])?.where).toBe(
+      "top",
+    );
+    expect(place(bar, [{ x0: 0.2, y0: 0.1, x1: 0.8, y1: 0.8 }])?.where).toBe(
+      "bottom",
+    );
     // The ko ending, measured 2026-10-28: its pawn on top, its banner below.
     expect(
-      placeOverlay(bar, [
+      place(bar, [
         { x0: 0.5, y0: 0.01, x1: 0.62, y1: 0.13 },
         { x0: -0.35, y0: 0.52, x1: 1.35, y1: 1.02 },
       ])?.where,
     ).toBe("band 0.15");
-    expect(placeOverlay(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toBeNull();
+    expect(place(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toBeNull();
   });
 
   test("a clip takes the first free corner, bottom right first", () => {
     const clip = OVERLAYS["chat-toast"];
-    expect(placeOverlay(clip, [])?.where).toBe("bottom-right");
-    expect(placeOverlay(clip, [cell(0.875, 0.875)])?.where).toBe("bottom-left");
-    expect(placeOverlay(clip, [cell(0.4, 0.875)])?.where).toBe("top-right");
+    expect(place(clip, [])?.where).toBe("bottom-right");
+    expect(place(clip, [cell(0.875, 0.875)])?.where).toBe("bottom-left");
+    expect(place(clip, [cell(0.4, 0.875)])?.where).toBe("top-right");
     expect(
-      placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)])?.where,
+      place(clip, [cell(0.5, 0.875), cell(0.5, 0)])?.where,
     ).toBeUndefined();
   });
 
@@ -104,7 +111,7 @@ describe("overlays", () => {
     const reactor = OVERLAYS["reactor-shock"];
     expect(reactor.small!.w).toBeLessThan(reactor.size!.w);
     expect(reactor.small!.h).toBeLessThan(reactor.size!.h);
-    const big = placeOverlay(reactor, [])!;
+    const big = place(reactor, [])!;
     expect([big.where, big.scale, placeName(big)]).toEqual([
       "bottom-right",
       1,
@@ -119,13 +126,13 @@ describe("overlays", () => {
       cell(edge, 1 - edge - 0.125),
       cell(1 - edge - 0.125, 1 - edge - 0.125),
     ];
-    const small = placeOverlay(reactor, pawns)!;
+    const small = place(reactor, pawns)!;
     expect(placeName(small)).toBe("bottom-right, small");
     expect(small.scale).toBeCloseTo(0.36 / 0.46);
     // A clip with no small size stops there.
-    expect(placeOverlay(OVERLAYS["chat-toast"], [cell(0, 0, 1)])).toBeNull();
+    expect(place(OVERLAYS["chat-toast"], [cell(0, 0, 1)])).toBeNull();
     // The bottom half busy too: the next small corner, in the same order.
-    expect(placeName(placeOverlay(reactor, [...pawns, cell(0, 0.6, 1)])!)).toBe(
+    expect(placeName(place(reactor, [...pawns, cell(0, 0.6, 1)])!)).toBe(
       "top-right, small",
     );
   });
@@ -143,10 +150,38 @@ describe("overlays", () => {
   });
 
   test("coveredBy gives the boxes a place overlaps", () => {
-    const [bottomRight] = overlayPlaces(OVERLAYS["chat-toast"]);
+    const [bottomRight] = overlayPlaces(OVERLAYS["chat-toast"], NO_REACH);
     const far = { ...cell(0.1, 0.1), cell: "far" };
     const near = { ...cell(0.875, 0.875), cell: "near" };
     expect(coveredBy(bottomRight, [far, near])).toEqual([near]);
+  });
+
+  test("a corner keeps its whole art inside the board", () => {
+    // The shock reactor's punch-in and 💦 reach past the top of its box
+    // (VX ply 14, 2026-10-29).
+    const reactor = OVERLAYS["reactor-shock"];
+    const reach = () => ({ top: 0.2, right: 0.1, bottom: 0, left: 0.05 });
+    for (const p of overlayPlaces(reactor, reach)) {
+      expect(p.full.x).toBeGreaterThanOrEqual(0.025 - 1e-9);
+      expect(p.full.y).toBeGreaterThanOrEqual(0.025 - 1e-9);
+      expect(p.full.x + p.full.w).toBeLessThanOrEqual(0.975 + 1e-9);
+      expect(p.full.y + p.full.h).toBeLessThanOrEqual(0.975 + 1e-9);
+      expect(p.full.y).toBeCloseTo(p.y - 0.2 * p.h, 9);
+    }
+    const top = overlayPlaces(reactor, reach).find(
+      (p) => p.where === "top-right",
+    )!;
+    expect(top.y).toBeCloseTo(0.025 + 0.2 * 0.42, 9);
+  });
+
+  test("a place is refused for a pawn under its art, not only its box", () => {
+    const reactor = OVERLAYS["reactor-shock"];
+    const reach = () => ({ top: 0.3, right: 0, bottom: 0, left: 0 });
+    // Just above the bottom-right box, under its art's reach.
+    const box = overlayPlaces(reactor, reach)[0];
+    const pawn = cell(0.8, box.y - 0.1, 0.05);
+    expect(placeOverlay(reactor, [pawn], NO_REACH)?.where).toBe("bottom-right");
+    expect(placeOverlay(reactor, [pawn], reach)?.where).toBe("bottom-left");
   });
 
   test("a zoom moves a box away from its point and cuts it to the board", () => {

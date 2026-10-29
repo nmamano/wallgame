@@ -2059,6 +2059,81 @@
         if (faceMove) el.querySelector(".face").style.transform = faceMove;
       };
 
+      /**
+       * How far the overlay as painted now (after __stage) reaches past its
+       * box, as shares of the box on each side ({top, right, bottom, left},
+       * 0 or more): the union of its own box and every part in it that
+       * paints (a picture as the box it is drawn in), their motion
+       * included (overlays.mjs overlayPlaces `reach`). #boardWrap
+       * cuts what passes the board's edge (Wall Game Director, 2026-10-29:
+       * VX ply 14, the cat's ears and the 💦 cut flat).
+       */
+      window.__overlayReach = () => {
+        const el = $("overlay");
+        const wrap = $("boardWrap").getBoundingClientRect();
+        const x0 = wrap.left + (parseFloat(el.style.left) / 100) * wrap.width;
+        const y0 = wrap.top + (parseFloat(el.style.top) / 100) * wrap.height;
+        const w = (parseFloat(el.style.width) / 100) * wrap.width;
+        const h = (parseFloat(el.style.height) / 100) * wrap.height;
+        let u = { left: x0, top: y0, right: x0 + w, bottom: y0 + h };
+        // A picture shown with object-fit: contain fills only part of its
+        // element: its drawn box, at the size that fits, centred as the
+        // reactor's portrait is (a sequence's frames sit in a corner of
+        // their element, which stays inside the overlay's box anyway).
+        const drawn = (part) => {
+          const r = part.getBoundingClientRect();
+          if (part.tagName !== "IMG" || !part.naturalWidth) return r;
+          const k = Math.min(
+            r.width / part.naturalWidth,
+            r.height / part.naturalHeight,
+          );
+          const w = part.naturalWidth * k;
+          const h = part.naturalHeight * k;
+          const left = r.left + (r.width - w) / 2;
+          const top = r.top + (r.height - h) / 2;
+          return {
+            left,
+            top,
+            right: left + w,
+            bottom: top + h,
+            width: w,
+            height: h,
+          };
+        };
+        // A part that paints: a picture, its own text, a background or a
+        // border. A bare container (the reactor's .face) paints nothing,
+        // however its motion scales it.
+        const paints = (part) => {
+          const st = getComputedStyle(part);
+          return (
+            ["IMG", "svg"].includes(part.tagName) ||
+            [...part.childNodes].some(
+              (n) => n.nodeType === 3 && n.textContent.trim() !== "",
+            ) ||
+            st.backgroundColor !== "rgba(0, 0, 0, 0)" ||
+            st.backgroundImage !== "none" ||
+            parseFloat(st.borderTopWidth) > 0
+          );
+        };
+        for (const part of el.querySelectorAll("*")) {
+          if (!paints(part)) continue;
+          const r = drawn(part);
+          if (r.width === 0 || r.height === 0) continue;
+          u = {
+            left: Math.min(u.left, r.left),
+            top: Math.min(u.top, r.top),
+            right: Math.max(u.right, r.right),
+            bottom: Math.max(u.bottom, r.bottom),
+          };
+        }
+        return {
+          top: (y0 - u.top) / h,
+          right: (u.right - x0 - w) / w,
+          bottom: (u.bottom - y0 - h) / h,
+          left: (x0 - u.left) / w,
+        };
+      };
+
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);

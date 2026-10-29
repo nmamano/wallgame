@@ -286,6 +286,19 @@ export const readingSeconds = (asset, text) => {
 const INSET = 0.025;
 
 /**
+ * How far an overlay's art reaches past its box, as shares of the box on
+ * each side, 0 or more.
+ * @typedef {{ top: number, right: number, bottom: number, left: number }} Reach
+ */
+/**
+ * A place for an overlay: its box (x, y, w, h in the board, 0..1), the
+ * scale its content is drawn at, and `full`, the box of its whole art.
+ * @typedef {{ where: string, x: number, y: number, w: number, h: number, scale: number, full: { x: number, y: number, w: number, h: number } }} Place
+ */
+/** The reach of art that stays inside its box. */
+export const NO_REACH = () => ({ top: 0, right: 0, bottom: 0, left: 0 });
+
+/**
  * The places an overlay may go, in the order they are tried, each as a box
  * in the board (0..1) with the scale its content is drawn at: a bar's or a
  * panel's band (the top first: the eye starts there; then the bottom, then
@@ -294,10 +307,19 @@ const INSET = 0.025;
  * corners at that size, its content scaled down with it (Wall Game
  * Director, 2026-10-29: the big cut-out reads best on a phone, and the
  * small one saves a late-game moment that no big corner fits).
+ *
+ * A clip's art can reach past its box (a reactor's punch-in and its 💦),
+ * and the board cuts what passes its edge (Wall Game Director, 2026-10-29:
+ * VX ply 14, the cat's ears cut flat). `reach(scale)` is how far, as
+ * shares of the box on each side (render-game-video.mjs measures it on the
+ * stage): a corner sits so that its whole art, `full`, keeps INSET from
+ * the board's edge, and `full` is what a place must keep off the pawns. A
+ * bar's or a panel's `full` is its box.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, small?: { w: number, h: number } }} asset
- * @returns {{ where: string, x: number, y: number, w: number, h: number, scale: number }[]}
+ * @param {(scale: number) => Reach} reach
+ * @returns {Place[]}
  */
-export const overlayPlaces = (asset) => {
+export const overlayPlaces = (asset, reach) => {
   if (asset.form === "bar" || asset.form === "panel") {
     // The edges first; then every band from the top down: for an ending
     // that covers both edges (ko: its pawn on top, its banner below), and
@@ -320,19 +342,34 @@ export const overlayPlaces = (asset) => {
       { where: "top", x, y: INSET, w, h, scale: 1 },
       { where: "bottom", x, y: 1 - INSET - h, w, h, scale: 1 },
       ...bands,
-    ];
+    ].map((p) => ({ ...p, full: { x: p.x, y: p.y, w, h } }));
   }
   const corners = (/** @type {{ w: number, h: number }} */ { w, h }) => {
     const scale = w / asset.size.w;
-    const left = INSET;
-    const right = 1 - INSET - w;
-    const top = INSET;
-    const bottom = 1 - INSET - h;
+    const r = reach(scale);
+    const left = INSET + r.left * w;
+    const right = 1 - INSET - w - r.right * w;
+    const top = INSET + r.top * h;
+    const bottom = 1 - INSET - h - r.bottom * h;
+    const place = (where, x, y) => ({
+      where,
+      x,
+      y,
+      w,
+      h,
+      scale,
+      full: {
+        x: x - r.left * w,
+        y: y - r.top * h,
+        w: w * (1 + r.left + r.right),
+        h: h * (1 + r.top + r.bottom),
+      },
+    });
     return [
-      { where: "bottom-right", x: right, y: bottom, w, h, scale },
-      { where: "bottom-left", x: left, y: bottom, w, h, scale },
-      { where: "top-right", x: right, y: top, w, h, scale },
-      { where: "top-left", x: left, y: top, w, h, scale },
+      place("bottom-right", right, bottom),
+      place("bottom-left", left, bottom),
+      place("top-right", right, top),
+      place("top-left", left, top),
     ];
   };
   return [...corners(asset.size), ...(asset.small ? corners(asset.small) : [])];
@@ -373,13 +410,17 @@ export const coveredBy = (p, boxes) =>
   );
 
 /**
- * The first place for `asset` that overlaps none of the `busy` boxes (in
- * the board as shown, 0..1), or null when every place hides something.
+ * The first place for `asset` whose whole art (`full`) overlaps none of
+ * the `busy` boxes (in the board as shown, 0..1), or null when every place
+ * hides something.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
+ * @param {(scale: number) => Reach} reach
  */
-export const placeOverlay = (asset, busy) =>
-  overlayPlaces(asset).find((p) => coveredBy(p, busy).length === 0) ?? null;
+export const placeOverlay = (asset, busy, reach) =>
+  overlayPlaces(asset, reach).find(
+    (p) => coveredBy(p.full, busy).length === 0,
+  ) ?? null;
 
 /**
  * The loading bar's percent for a hunter `steps` from its target: 99% one

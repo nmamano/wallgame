@@ -305,6 +305,7 @@ export const LINT_KINDS = {
   "zoom-cuts-pawn": "warns",
   "stamp-covers": "warns",
   "mark-covers-wall": "warns",
+  "finish-cut": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
 };

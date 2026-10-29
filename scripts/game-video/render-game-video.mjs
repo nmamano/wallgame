@@ -102,6 +102,7 @@ import {
   boxOnScreen,
   coveredBy,
   loadingPercent,
+  NO_REACH,
   overlayPlaces,
   placeName,
   placeOverlay,
@@ -925,6 +926,15 @@ const CAPTURE_POUNCE_SECONDS = 0.15;
 const COLD_OPEN_SECONDS = 1.0;
 const COLD_OPEN_SCALE = 1.35;
 const LOOP_SECONDS = 0.5;
+/**
+ * The whole mix fades out over the video's last END_FADE_SECONDS, so a
+ * sound the end cuts does not stop at full level (Wall Game Director,
+ * 2026-10-29: VX's trombone stopped at -16 dBFS, then the loop's seam
+ * jumped to the quiet whoosh). A finish sound cut by more than
+ * FINISH_CUT_SECONDS is a lint warning (finish-cut).
+ */
+const END_FADE_SECONDS = 0.3;
+const FINISH_CUT_SECONDS = 1;
 /**
  * The music under the daily ending: it fades to this share of its level as
  * the ending starts and holds there to the end, instead of to silence
@@ -2394,8 +2404,11 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
   if (present.length === 0)
     return { audioPath: null, loudness: null, mixed: [] };
   const { inputs, chains } = mixGraph({ cues: present, totalSeconds, music });
+  // The whole mix fades over its last END_FADE_SECONDS, so no sound stops
+  // at full level at the loop's seam.
   chains.push(
-    `[mix]alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
+    `[mix]alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)},` +
+      `afade=t=out:st=${Math.max(0, totalSeconds - END_FADE_SECONDS).toFixed(3)}:d=${END_FADE_SECONDS}[out]`,
   );
 
   // What went into the mix, so its parts can be rebuilt and measured apart.
@@ -3922,6 +3935,43 @@ const renderStyle = async (styleName) => {
       ),
     );
 
+  /** A reach in words for the log, or nothing when the art stays in its box. */
+  const reachWords = (r) =>
+    Object.values(r).some((v) => v > 0.005)
+      ? `, its art reaching past its box by ${Object.entries(r)
+          .filter(([, v]) => v > 0.005)
+          .map(([k, v]) => `${v.toFixed(2)} ${k}`)
+          .join(", ")}`
+      : "";
+  /**
+   * How far a clip's art reaches past its box (overlays.mjs Reach), by the
+   * scale of the place: the most over every frame of its window, painted
+   * at a corner of that scale (the reach is in shares of the box, the same
+   * at every corner). A bar's or a panel's art stays in its box.
+   */
+  const reachOf = async (w) => {
+    if (w.asset.form !== "clip") return NO_REACH;
+    const reaches = new Map();
+    for (const probe of overlayPlaces(w.asset, NO_REACH)) {
+      if (reaches.has(probe.scale)) continue;
+      const most = { top: 0, right: 0, bottom: 0, left: 0 };
+      for (const f of w.frames) {
+        const r = await stage.evaluate(
+          (st) => {
+            window.__stage(st);
+            return window.__overlayReach();
+          },
+          { ...f.state, overlay: { ...f.o, place: probe } },
+        );
+        for (const side of Object.keys(most)) {
+          most[side] = Math.max(most[side], r[side]);
+        }
+      }
+      reaches.set(probe.scale, most);
+    }
+    return (scale) => reaches.get(scale);
+  };
+
   /**
    * Once the video is composed: each overlay's place, where it hides nothing
    * in play on any frame it covered (or the render stops), its fade, the
@@ -3982,18 +4032,19 @@ const renderStyle = async (styleName) => {
               ...inPlay(f.state),
               ...pawnBoxes(f.state),
             ]);
-      const place = placeOverlay(w.asset, busy);
+      const reach = await reachOf(w);
+      const place = placeOverlay(w.asset, busy, reach);
       if (!place) {
         // What is under each place, each thing once: the director moves the
         // overlay to a ply where one place is free.
-        const under = overlayPlaces(w.asset).map(
+        const under = overlayPlaces(w.asset, reach).map(
           (p) =>
-            `${placeName(p)}: ${[...new Set(coveredBy(p, busy).map((b) => b.what))].join(", ")}`,
+            `${placeName(p)}: ${[...new Set(coveredBy(p.full, busy).map((b) => b.what))].join(", ")}`,
         );
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s); under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;
@@ -4002,10 +4053,10 @@ const renderStyle = async (styleName) => {
       // How far it goes into the capture picture, where endingTouch let it.
       const touch = Math.max(
         0,
-        ...busy.flatMap((b) => (b.full ? [touchDepth(place, b)] : [])),
+        ...busy.flatMap((b) => (b.full ? [touchDepth(place.full, b)] : [])),
       );
       log(
-        `${where}: ${placeName(place)}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
+        `${where}: ${placeName(place)}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
       for (const f of w.frames) {
         f.o.alpha = Math.max(
@@ -5603,6 +5654,18 @@ const renderStyle = async (styleName) => {
         c.at + first / 8000 / c.rate,
         c.at + (last + 1) / 8000 / c.rate,
       ]);
+    }
+    // The video's end cuts a long finish sound: the end fade only softens
+    // the cut (Wall Game Director, 2026-10-29: VX's trombone-1 was cut
+    // 1.6 s before its end).
+    const cut = c.at + (last + 1) / 8000 / c.rate - videoSeconds;
+    if (c.role === "finish" && first >= 0 && cut > FINISH_CUT_SECONDS) {
+      fault(
+        "finish-cut",
+        plyAt(c.at),
+        `the video's end cuts the finish sound ${c.name} ${cut.toFixed(1)} s before its end (${FINISH_CUT_SECONDS} s at most): pick a shorter finish sound`,
+        videoSeconds - END_FADE_SECONDS,
+      );
     }
   }
   for (const m of musicParts({
