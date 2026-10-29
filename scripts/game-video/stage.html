@@ -2235,8 +2235,10 @@
             const p = easeOut3(span(t, 0.55, 0.95));
             show($("ggCard"), true);
             $("ggCard").style.opacity = p;
+            // It grows in where it rests, never sliding: the ending's bar
+            // may take the band below it (Wall Game Director, 2026-10-29).
             $("ggCard").style.transform =
-              "translate(-50%, calc(-50% + " + (1 - p) * 40 + "%))";
+              "translate(-50%, -50%) scale(" + (0.92 + 0.08 * p) + ")";
             $("ggAv").src = e.winner.portrait;
             $("ggName").textContent = e.winner.name;
             $("ggName").style.color = e.winner.hex;

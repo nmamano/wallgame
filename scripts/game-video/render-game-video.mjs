@@ -3310,11 +3310,20 @@ const renderStyle = async (styleName) => {
   /**
    * Every pawn of a frame, as boxes in the board as the camera shows it,
    * each named by its cell ("pawn on e7"), for the message of an overlay
-   * with no free place.
+   * with no free place. Each box is the pawn the page drew (pawnSpots), not
+   * its cell's pitch: the pitch holds the wall grooves, half again as wide
+   * as the pawn, and a bar refused for a groove has no place on a board
+   * with pawns near both edges (2026-10-29).
    */
   const pawnBoxes = (state) =>
     (pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
-      const box = boxOnScreen(around(p), state.zoom);
+      const drawn = {
+        x0: p.x - p.w / 2,
+        y0: p.y - p.h / 2,
+        x1: p.x + p.w / 2,
+        y1: p.y + p.h / 2,
+      };
+      const box = boxOnScreen(drawn, state.zoom);
       const cell = termOfCell([
         Math.round((p.y - GRID.y(0)) / GRID.pitchY - 0.5),
         Math.round((p.x - GRID.x(0)) / GRID.pitchX - 0.5),
@@ -3414,21 +3423,26 @@ const renderStyle = async (styleName) => {
         );
       }
       /*
-        A bar avoids what the ending draws; on a replay ending also the
-        pawns and walls in play, because the replay shows the capture again
-        and the bar must never cover it (Wall Game Director, 2026-10-28).
-        On gg and ko the ending covers the board, so its own boxes are all.
-        Every other overlay hides no pawn and nothing in play on any frame
-        it shows, a fast-forward's included (Nil, 2026-10-28: "Overlays
-        should never cover the pawns").
+        No overlay hides a pawn on any frame it shows, a fast-forward's and
+        the ending's included (Nil, 2026-10-28: "Overlays should never cover
+        the pawns"; the ending's bar too, Wall Game Director, 2026-10-29).
+        A bar also avoids what the ending draws, and a pawn that the ending
+        already hides whole needs no room. Every other overlay also hides
+        nothing in play; so does a bar on a replay ending, because the
+        replay shows the capture again (Wall Game Director, 2026-10-28).
       */
+      const inside = (p, a) =>
+        p.x0 >= a.x0 && p.y0 >= a.y0 && p.x1 <= a.x1 && p.y1 <= a.y1;
       const busy =
         w.asset.form === "bar"
           ? [
               ...w.avoid.map((b) => ({ ...b, what: "the ending" })),
-              ...(style.ending === "replay"
-                ? w.frames.flatMap((f) => inPlay(f.state))
-                : []),
+              ...w.frames.flatMap((f) => [
+                ...(style.ending === "replay" ? inPlay(f.state) : []),
+                ...pawnBoxes(f.state).filter(
+                  (p) => !w.avoid.some((a) => inside(p, a)),
+                ),
+              ]),
             ]
           : w.frames.flatMap((f) => [
               ...inPlay(f.state),
