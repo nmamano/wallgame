@@ -165,7 +165,10 @@ export const labelGame = (facts: GameFacts): GameLabels => {
 
     // The end on the board.
     if (f.end) {
-      const caught = mine.find((h) => h.after === 0);
+      // Whoever moved: a mouse can also step onto the cat (v-lQeZ8T's
+      // last move, 2026-10-29), and that is the capture too.
+      const caught =
+        mine.find((h) => h.after === 0) ?? f.hunts.find((h) => h.after === 0);
       if (caught) {
         fit(ply, caught.target.type === "home" ? "home" : "capture", 1, caught);
       }

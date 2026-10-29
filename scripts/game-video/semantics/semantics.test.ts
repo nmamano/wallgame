@@ -183,6 +183,20 @@ describe("labelGame", () => {
     expect(l.plies[0].label).toBe("self-trap");
   });
 
+  test("a mouse that steps onto the cat is the capture too", () => {
+    // Ply 1 is P2's move: P1's cat walk (w1) to P2's mouse goes 2 -> 0.
+    const game = gameOf([
+      { w1: [3, 2], w2: [5, 5], wc: [0.9, 0.95] },
+      { w1: [2, 0], w2: [5, 5], wc: [0.05, 0], end: true },
+    ]);
+    game.plies[1].end = { winner: 1, reason: "capture" };
+    const l = labelGame(game);
+    expect(l.plies[1].label).toBe("capture");
+    expect(factsOf(game, l, 1).find((f) => f.id === "1.end")!.text).toBe(
+      "Normal Bot's mouse steps onto Guest Ferret's cat (a capture): Guest Ferret wins.",
+    );
+  });
+
   test("the move that reaches the mouse is the capture", () => {
     const l = labels([{ w1: [2, 0], w2: [5, 5], wc: [1, 1], end: true }], 1);
     expect(l.plies[0].label).toBe("capture");

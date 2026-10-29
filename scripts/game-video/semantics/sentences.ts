@@ -197,14 +197,17 @@ export const factsOf = (
     .filter((k) => k.from === ply || k.to === ply)
     .forEach((k, i) => add(`link${i + 1}`, linkText(k, ply, facts, names)));
   if (f.end) {
-    const caught = f.hunts.find(
-      (h) => h.after === 0 && h.hunter.player === f.mover,
-    );
+    const caught =
+      f.hunts.find((h) => h.after === 0 && h.hunter.player === f.mover) ??
+      f.hunts.find((h) => h.after === 0);
+    const wins = f.end.winner ? `${names[f.end.winner]} wins` : "the game ends";
     add(
       "end",
-      caught
-        ? `${names[f.mover]}'s ${caught.hunter.type} reaches ${caught.target.type === "home" ? "its home" : `${names[caught.target.player]}'s ${caught.target.type}`} (a capture): ${f.end.winner ? `${names[f.end.winner]} wins` : "the game ends"}.`
-        : `The game ends: ${f.end.winner ? `${names[f.end.winner]} wins` : "no winner"}.`,
+      !caught
+        ? `The game ends: ${f.end.winner ? `${names[f.end.winner]} wins` : "no winner"}.`
+        : caught.hunter.player === f.mover
+          ? `${names[f.mover]}'s ${caught.hunter.type} reaches ${caught.target.type === "home" ? "its home" : `${names[caught.target.player]}'s ${caught.target.type}`} (a capture): ${wins}.`
+          : `${names[f.mover]}'s ${caught.target.type} steps onto ${names[caught.hunter.player]}'s ${caught.hunter.type} (a capture): ${wins}.`,
     );
   }
   return out;
