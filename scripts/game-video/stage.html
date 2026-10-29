@@ -1624,10 +1624,10 @@
        *          open cuts in on walls that are already lit) }
        */
       /**
-       * A hunter's walk (edl.mjs "path"): p = { hex, cell, lines: [{
+       * A hunter's walk (edl.mjs "path"): p = { cell, lines: [{ hex,
        * points, steps, drawn, alpha }] }, points and the cell's size as
        * fractions of the board, from the hunter to its target. Each line is
-       * a dotted trail in the hunter's colour, drawn from the hunter up to
+       * a dotted trail in its hunter's colour (hex), drawn from the hunter up to
        * `drawn` of its length; once whole it shows its steps in a disc half
        * a cell beside the target: across the walk's last step (towards the
        * board's middle first), or else ahead of it, on the first side that
@@ -1705,7 +1705,7 @@
                   '" r="' +
                   r +
                   '" fill="' +
-                  p.hex +
+                  l.hex +
                   '" stroke="#0b0f1c" stroke-width="8"/>' +
                   '<text x="' +
                   k(end.x) +
@@ -1726,7 +1726,7 @@
               '<polyline points="' +
               d +
               '" fill="none" stroke="' +
-              p.hex +
+              l.hex +
               '" stroke-width="27" stroke-linecap="round" stroke-dasharray="0 52"/>' +
               disc +
               "</g>"

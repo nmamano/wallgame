@@ -722,12 +722,13 @@ const MOVE_CLICK_VARIANTS = [
  */
 const FAST_FORWARD_CLICK_STEP = 10 ** (-6 / 20);
 /**
- * A walk's tick a step (cueWalkTicks): the pawn click a fifth up and
- * -14 dB, so ten of them in under a second count the steps under the
- * moves and memes rather than over them.
+ * A walk's tick a step (cueWalkTicks): the pawn click a fifth up, as loud
+ * as a pawn click, about 6 dB under the VS hit (Wall Game Director,
+ * 2026-10-29: 14 dB quieter, the ticks were near-silence on a phone).
  */
 const TICK_RATE = 1.5;
-const TICK_STEP = 10 ** (-14 / 20);
+/** The settle click in the last opening walk's hold: 9 dB under a wall. */
+const SETTLE_STEP = 10 ** (-9 / 20);
 
 /** Seconds the music takes to arrive, and to leave before the end card. */
 const MUSIC_FADE_IN = 1.6;
@@ -833,8 +834,12 @@ const drawSeconds = (points) =>
  * 2026-10-29).
  */
 const INTRO_PATH_HOLD_SECONDS = 1;
-const introPathSeconds = (points) =>
-  drawSeconds(points) + INTRO_PATH_HOLD_SECONDS + PATH_FADE_SECONDS;
+/**
+ * The next opening walk starts this long after the one before has drawn its
+ * last step, while that one holds its number (Wall Game Director,
+ * 2026-10-29: a 0.9 s silent hold between the walks).
+ */
+const INTRO_WALK_GAP_SECONDS = 0.5;
 /**
  * An overlay (edl.mjs "overlay") fades out over its last
  * TEXT_TIMING.overlayFade (overlays.mjs); the capture loading bar holds its
@@ -2097,6 +2102,16 @@ const meme = (name) => {
  */
 const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
 const STING_DIR = join(REPO, "assets/stings");
+/**
+ * The daily VS banners' whoosh (make-stings.mjs): its peak meets the
+ * banners' exit, about 6 dB under the VS hit (Wall Game Director,
+ * 2026-10-29: choice (b), Nil's 4.0 s VS card kept).
+ */
+const VS_WHOOSH = {
+  name: "vs-whoosh",
+  file: join(STING_DIR, "vs-whoosh.wav"),
+  gain: 10 ** (-5 / 20),
+};
 const SOUNDS = {
   vsStamp: {
     name: "vs-b-riser",
@@ -2152,8 +2167,11 @@ const soundsFor = (styleName) => {
   missing. That keeps the repository free of generated audio without making a
   fresh checkout render a silent VS screen.
 */
-if (AUDIO && !existsSync(SOUNDS.vsStamp.file)) {
-  log("riser not built yet; running make-stings.mjs");
+if (
+  AUDIO &&
+  (!existsSync(SOUNDS.vsStamp.file) || !existsSync(VS_WHOOSH.file))
+) {
+  log("stings not built yet; running make-stings.mjs");
   execFileSync(process.execPath, [join(HERE, "make-stings.mjs")], {
     stdio: "inherit",
   });
@@ -2620,6 +2638,27 @@ const INTRO_WALKS =
         });
       })()
     : [];
+/**
+ * When each opening walk plays, in seconds from the first one's start: it
+ * draws in drawSeconds; the next starts INTRO_WALK_GAP_SECONDS after it,
+ * and it fades as the next one has drawn, so its number shows the whole
+ * time; the last holds INTRO_PATH_HOLD_SECONDS and fades.
+ */
+const INTRO_PLAN = (() => {
+  let at = 0;
+  const plan = INTRO_WALKS.map((w) => {
+    const p = { ...w, start: at, draw: drawSeconds(w.points), fadeAt: 0 };
+    at = p.start + p.draw + INTRO_WALK_GAP_SECONDS;
+    return p;
+  });
+  plan.forEach((p, k) => {
+    const next = plan[k + 1];
+    p.fadeAt = next
+      ? next.start + next.draw
+      : p.start + p.draw + INTRO_PATH_HOLD_SECONDS;
+  });
+  return plan;
+})();
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
   const [row, col] = [
@@ -3675,7 +3714,7 @@ const renderStyle = async (styleName) => {
   /**
    * The ticks of a walk that starts to draw at `from`: one a step, as the
    * walk reaches it, so the steps can be counted by ear. The site's pawn
-   * click, pitched up and TICK_STEP quieter: short and dry, never a ding
+   * click, pitched up (TICK_RATE): short and dry, never a ding
    * (Wall Game Director, 2026-10-29: Nil disliked the three dings).
    */
   const cueWalkTicks = (points, from) => {
@@ -3686,7 +3725,7 @@ const renderStyle = async (styleName) => {
           name: "tick",
           file: join(AUDIO_DIR, "pawn.wav"),
           rate: TICK_RATE,
-          gain: SITE_VOLUMES.pawn * MOVE_GAIN * TICK_STEP,
+          gain: SITE_VOLUMES.pawn * MOVE_GAIN,
         },
         "tick",
         { at: from + (k / steps) * drawSeconds(points) },
@@ -3743,6 +3782,13 @@ const renderStyle = async (styleName) => {
     const vsSound = sounds[style.vsSound];
     cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
       at: overlayStart + overlay.entry * vsPunchFraction,
+    });
+    cue(VS_WHOOSH, "vs", {
+      at:
+        overlayStart +
+        overlay.seconds -
+        overlay.exit -
+        stingManifest.whooshPeakSeconds,
     });
   }
 
@@ -3968,13 +4014,13 @@ const renderStyle = async (styleName) => {
       const span01 = (x) => Math.max(0, Math.min(1, x));
       return {
         path: {
-          hex: side(player).hex,
           cell: GRID.pitchX,
           lines: walks.map((points, k) => {
             const last = k === walks.length - 1;
             const from = last ? lastFrom : 0;
             const fadeAt = last ? seconds - PATH_FADE_SECONDS : lastFrom;
             return {
+              hex: side(player).hex,
               points,
               steps: points.length - 1,
               drawn: span01((t - from) / drawSeconds(points)),
@@ -4285,12 +4331,22 @@ const renderStyle = async (styleName) => {
     rest.
   */
   const goalRead = goalOn ? readingSeconds({}, GOAL_LINE) : 0;
-  const introSeconds = INTRO_WALKS.reduce(
-    (sum, w) => sum + introPathSeconds(w.points),
-    0,
-  );
-  const firstMoveAt = overlay
-    ? overlayStart + Math.max(overlay.seconds, goalRead - introSeconds)
+  /*
+    The opening walks start as the VS banners start to leave, so no silence
+    follows the VS hit (Wall Game Director, 2026-10-29); a move still waits
+    for the banners to be gone, and the walks outlast their exit.
+  */
+  const introSeconds =
+    INTRO_PLAN.length > 0 ? INTRO_PLAN.at(-1).fadeAt + PATH_FADE_SECONDS : 0;
+  const walksAt = overlay
+    ? overlayStart +
+      Math.max(
+        INTRO_PLAN.length > 0
+          ? overlay.seconds - overlay.exit
+          : overlay.seconds,
+        overlay.seconds - introSeconds,
+        goalRead - introSeconds,
+      )
     : 0;
   // With a startPly, the opening position is the one before that ply; it is
   // labelled as that earlier ply, which the video never plays on its own.
@@ -4298,52 +4354,64 @@ const renderStyle = async (styleName) => {
     playState(START_PLY),
     Math.max(
       paceAt(START_PLY),
-      Math.ceil((firstMoveAt - elapsed) * FPS - 1e-6) / FPS,
+      Math.ceil((walksAt - elapsed) * FPS - 1e-6) / FPS,
     ),
     { kind: "initial", ply: START_PLY - 1 },
   );
 
   /*
-    The opening walks (edl.mjs introPaths): before the first move, each
-    side's hunter draws its shortest walk to its target with its steps, one
-    after the other, on the start position. A contact-sheet still of each
-    once it is drawn.
+    The opening walks (edl.mjs introPaths) on the start position, as
+    INTRO_PLAN times them: each ticks its steps as it draws; the last one's
+    hold gets a soft settle sound halfway, so the opening has no gap of
+    silence longer than about 0.6 s (Wall Game Director, 2026-10-29). A
+    contact-sheet still of each once it is drawn.
   */
-  for (const { player, points } of INTRO_WALKS) {
-    const seconds = introPathSeconds(points);
-    const frames = Math.round(seconds * FPS);
-    const stillAt = Math.round((drawSeconds(points) + 0.2) * FPS);
-    cueWalkTicks(points, elapsed);
-    for (let i = 0; i < frames; i += 1) {
-      const t = i / FPS;
-      const span01 = (x) => Math.max(0, Math.min(1, x));
-      if (i === stillAt) {
-        stillNext = { ply: START_PLY, kind: "intro-path", sound: null };
-      }
-      await emit(
-        playState(START_PLY, {
-          path: {
-            hex: side(player).hex,
-            cell: GRID.pitchX,
-            lines: [
-              {
-                points,
-                steps: points.length - 1,
-                drawn: span01(t / drawSeconds(points)),
-                alpha:
-                  1 -
-                  span01(
-                    (t - (seconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS,
-                  ),
-              },
-            ],
-          },
-        }),
-        1 / FPS,
-        { kind: "intro-path", ply: START_PLY - 1 },
-      );
+  const introStart = elapsed;
+  for (const w of INTRO_PLAN) {
+    cueWalkTicks(w.points, introStart + w.start);
+    log(`intro path: ${side(w.player).name}, ${w.points.length - 1} steps`);
+  }
+  if (INTRO_PLAN.length > 0) {
+    const last = INTRO_PLAN.at(-1);
+    cue(
+      {
+        name: "settle",
+        // The wall click, low and soft: the walks have done their counting.
+        file: join(AUDIO_DIR, "wall.wav"),
+        rate: 0.75,
+        // Under the ticks: it ends the counting, it does not hit.
+        gain: SITE_VOLUMES.wall * MOVE_GAIN * SETTLE_STEP,
+      },
+      "tick",
+      { at: introStart + last.start + last.draw + INTRO_PATH_HOLD_SECONDS / 2 },
+    );
+  }
+  const span01 = (x) => Math.max(0, Math.min(1, x));
+  const stillsAt = INTRO_PLAN.map((w) =>
+    Math.round((w.start + w.draw + 0.2) * FPS),
+  );
+  const introFrames = Math.round(introSeconds * FPS);
+  for (let i = 0; i < introFrames; i += 1) {
+    const t = i / FPS;
+    if (stillsAt.includes(i)) {
+      stillNext = { ply: START_PLY, kind: "intro-path", sound: null };
     }
-    log(`intro path: ${side(player).name}, ${points.length - 1} steps`);
+    await emit(
+      playState(START_PLY, {
+        path: {
+          cell: GRID.pitchX,
+          lines: INTRO_PLAN.filter((w) => t >= w.start).map((w) => ({
+            hex: side(w.player).hex,
+            points: w.points,
+            steps: w.points.length - 1,
+            drawn: span01((t - w.start) / w.draw),
+            alpha: 1 - span01((t - w.fadeAt) / PATH_FADE_SECONDS),
+          })),
+        },
+      }),
+      1 / FPS,
+      { kind: "intro-path", ply: START_PLY - 1 },
+    );
   }
   goalOn = false;
 

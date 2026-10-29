@@ -1,5 +1,6 @@
 /**
- * Build the VS riser - the one synthesised sting Nil kept.
+ * Build the VS riser - the one synthesised sting Nil kept - and the VS
+ * whoosh, under the daily VS banners' exit.
  *
  * Board task f89e649f. This file once produced six candidates for the VS stamp
  * and the win. Nil rejected five of them as synthetic and chose real
@@ -146,6 +147,28 @@ build("vs-b-riser", 3.2, [
   },
 ]);
 
+/* ---------------------------------------------------------- the whoosh -- */
+
+/*
+  Under the daily VS banners: soft pink noise in the middle of the band
+  swells for WHOOSH_SWELL seconds to its peak as the banners start to leave,
+  then dies with their exit, so the hook has no silence between the VS hit
+  and the first walk (Wall Game Director, 2026-10-29). No tone and no hit,
+  so it never reads as a ding. A fixed seed keeps it the same every build.
+*/
+const WHOOSH_SWELL = 1.0;
+const WHOOSH_FADE = 0.6;
+build("vs-whoosh", WHOOSH_SWELL + WHOOSH_FADE, [
+  {
+    gen: `anoisesrc=d=${WHOOSH_SWELL + WHOOSH_FADE}:c=pink:a=0.5:seed=1029:r=44100`,
+    filter: "highpass=f=300,lowpass=f=3500",
+    at: 0,
+    gain: 1.0,
+    fadeIn: WHOOSH_SWELL,
+    fadeOut: { at: WHOOSH_SWELL, dur: WHOOSH_FADE, curve: "qsin" },
+  },
+]);
+
 /*
   Publish where the impact sits inside a VS sting, so the renderer can line the
   sound up with the visual punch instead of keeping its own copy of the number.
@@ -155,6 +178,7 @@ writeFileSync(
   JSON.stringify(
     {
       vsHitSeconds: HIT,
+      whooshPeakSeconds: WHOOSH_SWELL,
       builtFrom: "our own audio plus ffmpeg synthesis; nothing downloaded",
     },
     null,
