@@ -78,6 +78,13 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --has-capture <gameId>
  *
+ * The app also asks how many workers the other users' jobs on the 4090 take
+ * (desktop-run's meta files), to keep the budget for all jobs together.
+ * This prints the sum, or fails when a job has no meta file:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --threads-of <job id>,<job id>...
+ *
  * WALLGAME_GPU_HOST is an env var only because the repo is public; the value
  * is in ops-private/wallgamer-agent-notes.md (the same variable the step-1
  * candidate script reads). The app gets it on its registered command line.
@@ -95,10 +102,10 @@ import {
   renameSync,
   rmSync,
   statSync,
-  unlinkSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { BUDGET, desktopName, memoryFor } from "./desktop-budget.mjs";
 
 /** Relative to the 4090 user's home. Each job gets its own folder here. */
 export const REMOTE_JOBS = "nil/wallgame-video-jobs";
@@ -112,15 +119,13 @@ export const CAPTURE_CACHE = `${RENDER_KIT}/tmp/game-video/capture-cache`;
 const RENDERER = "scripts/game-video/render-game-video.mjs";
 const BUN = ".bun/bin/bun";
 /**
- * The renderer's Chromium workers for the shoot, and the threads and memory
- * desktop-run gives the job. 8 is desktop-status's budget while Nil may use
- * the PC (~/nil/infra/DESKTOP-COMPUTE.md); the shoot takes about half of a
- * render, and 8 workers shoot about twice as fast as 4 (Wall Game Director,
- * 2026-10-26: 28.9 -> 56.7 fps). desktop-status takes about 10 s, so it is
- * not asked for each job.
+ * The renderer's Chromium workers for the shoot, and the threads desktop-run
+ * gives the job, when the app gives no --workers (a run by hand). The app
+ * gives each job its share of the 4090's budget (desktop-budget.mjs); the
+ * shoot takes about half of a render, and 8 workers shoot about twice as
+ * fast as 4 (Wall Game Director, 2026-10-26: 28.9 -> 56.7 fps).
  */
 export const WORKERS = 8;
-const MEMORY = "8G";
 const DESKTOP_RUN = join(homedir(), "nil/infra/bin/desktop-run");
 
 /** Between two tries of a remote step that failed (ssh dropped). */
@@ -133,6 +138,8 @@ const COPY_ATTEMPTS = 3;
 const WAIT_CHECKS = 240;
 
 const JOB_ID = /^[A-Za-z0-9_-]{8,80}$/;
+/** A desktop-run job's folder name: <UTC time>-<NAME>. */
+const DESKTOP_JOB_DIR = /^[0-9]{8}T[0-9]{6}Z-[a-z0-9-]{1,40}$/;
 /** A preview's window of plies, as the renderer's --plies takes it (edl.mjs). */
 const PLIES = /^(\d{1,4})\.\.(\d{1,4})$/;
 /** The renderer's rule for a game id, which names its cache folder. */
@@ -217,10 +224,6 @@ export const parseResult = (stdout) => {
   }
 };
 
-/** desktop-run's NAME allows a-z, 0-9 and -; game ids are mixed case. */
-export const desktopName = (jobId) =>
-  `wg-video-${createHash("sha256").update(jobId).digest("hex").slice(0, 12)}`;
-
 const fail = (message) => {
   console.error(message);
   process.exit(1);
@@ -257,11 +260,20 @@ const main = async () => {
   const out = arg("out");
   const plies = arg("plies");
   const hasCapture = arg("has-capture");
+  const threadsOf = arg("threads-of");
+  const workers = Number(arg("workers") ?? WORKERS);
   const host = process.env.WALLGAME_GPU_HOST;
-  if (hasCapture === undefined && (!edlPath || !jobId || !out)) {
+  if (
+    hasCapture === undefined &&
+    threadsOf === undefined &&
+    (!edlPath || !jobId || !out)
+  ) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO], or --has-capture <gameId>",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--workers N], or --has-capture <gameId>, or --threads-of <job id>,...",
     );
+  }
+  if (!Number.isInteger(workers) || workers < 1 || workers > BUDGET.perJob) {
+    fail(`--workers must be 1 to ${BUDGET.perJob}, got ${arg("workers")}`);
   }
   if (!host) {
     fail(
@@ -288,6 +300,28 @@ const main = async () => {
 
   if (hasCapture !== undefined) {
     console.log((await homeAndCapture(ssh, hasCapture)).capture);
+    return;
+  }
+  if (threadsOf !== undefined) {
+    const ids = threadsOf.split(",");
+    if (!ids.every((id) => DESKTOP_JOB_DIR.test(id))) {
+      fail(`not desktop-run job ids: ${threadsOf}`);
+    }
+    // One line per job: its threads, or "none" for a job with no meta.
+    const read = await ssh(
+      `for id in ${ids.join(" ")}; do t=$(sed -n 's/^started=.* threads=\\([0-9]*\\) .*/\\1/p' ~/jobs/$id/meta 2>/dev/null); echo "\${t:-none}"; done`,
+    );
+    const lines = read.stdout.trim().split("\n");
+    if (
+      read.code !== 0 ||
+      lines.length !== ids.length ||
+      !lines.every((l) => /^\d+$/.test(l))
+    ) {
+      fail(
+        `could not read the threads of ${threadsOf}: ${tail(read.stderr) || lines.join(" ")}`,
+      );
+    }
+    console.log(lines.reduce((sum, l) => sum + Number(l), 0));
     return;
   }
 
@@ -340,8 +374,8 @@ const main = async () => {
   console.log("[render] starting the render on the 4090");
   const desktop = await run(DESKTOP_RUN, [
     desktopName(jobId),
-    String(WORKERS),
-    MEMORY,
+    String(workers),
+    memoryFor(workers),
     "--",
     `${home}/${BUN}`,
     `${home}/${RENDER_KIT}/${RENDERER}`,
@@ -354,7 +388,7 @@ const main = async () => {
     "--encoder",
     "nvenc",
     "--workers",
-    String(WORKERS),
+    String(workers),
     "--cache",
     cache,
     ...(span ? ["--from-cache", "--plies", plies] : []),
@@ -398,22 +432,29 @@ const main = async () => {
   }
   step("render");
 
-  // The RESULT line and the render log, in one copy. The render log is
-  // small and is the only record of what the render did. The renderer
-  // writes the log (--log) before it exits, so with exit 0 both are there.
+  // The RESULT line and the render log, in one copy, into a folder of this
+  // job: jobs run side by side, and two with their --out in one folder
+  // must not take each other's RESULT. The render log is small and is the
+  // only record of what the render did; it stays as <out>-render.log. The
+  // renderer writes the log (--log) before it exits, so with exit 0 both
+  // are there.
   const outDir = dirname(out);
-  const resultLocal = join(outDir, "result.line");
+  const resultDir = join(outDir, `.result-${jobId}`);
+  mkdirSync(resultDir, { recursive: true });
+  const resultLocal = join(resultDir, "result.line");
+  const logLocal = join(resultDir, "render.log");
   let result = null;
   if (exit === 0) {
     const fetched = await scpBack(
       [`${dir}/result.line`, `${dir}/render.log`],
-      outDir,
+      resultDir,
     );
     if (fetched.code === 0 && existsSync(resultLocal)) {
       result = parseResult(readFileSync(resultLocal, "utf8"));
     }
   }
-  if (existsSync(resultLocal)) unlinkSync(resultLocal);
+  if (existsSync(logLocal)) renameSync(logLocal, `${out}-render.log`);
+  rmSync(resultDir, { recursive: true, force: true });
   if (exit !== 0 || !result) {
     const why = await ssh(`tail -n 5 ${dir}/render.log | cut -c1-180`);
     // Exit 4 also has other causes, so the renderer's line says which.
@@ -513,7 +554,7 @@ const main = async () => {
       // The adapter's steps, and the renderer's own when it gives them.
       timings: {
         ...timings,
-        workers: WORKERS,
+        workers,
         renderer: result.timings ?? null,
       },
     })}`,

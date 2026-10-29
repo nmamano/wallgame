@@ -29,7 +29,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
  * PLUMBING, for the tests rather than for a person: daily.test.ts points
- * --daily-renderer at a stub 4090 step and shortens its deadline.
+ * --daily-renderer at a stub 4090 step, --daily-desktop-status at a stub
+ * desktop-status, and shortens its deadline.
  */
 const plumbing = (name) => {
   const at = process.argv.indexOf(`--${name}`);
@@ -66,6 +67,16 @@ const daily = createDaily({
   }),
   ...(plumbing("daily-deadline-ms") && {
     deadlineMs: Number(plumbing("daily-deadline-ms")),
+  }),
+  // A test runs at any time of day: no backup window (desktop-budget.mjs).
+  ...(process.argv.includes("--daily-no-backup-window") && {
+    backupWindow: null,
+  }),
+  ...(plumbing("daily-desktop-status") && {
+    desktopStatus: [
+      process.execPath,
+      resolve(plumbing("daily-desktop-status")),
+    ],
   }),
 });
 

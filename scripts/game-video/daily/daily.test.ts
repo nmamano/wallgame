@@ -2105,6 +2105,26 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     sounds: [{ name: "pawn", role: "move", start: 10, event: null }] } }));
 `;
 
+/**
+ * desktop-status as the 4090 would print it: desktop-status.txt next to it
+ * when a test writes one, else a free 4090 with Nil's screen unlocked.
+ */
+const STUB_STATUS = `
+const { existsSync, readFileSync } = require("node:fs");
+const file = __dirname + "/desktop-status.txt";
+const text = existsSync(file) ? readFileSync(file, "utf8") : [
+  "win_cpu_pct=5", "win_locked=False", "wsl_free_ram_gb=20 of 24",
+  "gpu=0 %, 3270 MiB, 24564 MiB", "jobs:",
+  "budget=max 12 threads. Nil may use the PC (screen unlocked).", ""].join("\\n");
+process.stdout.write(text);
+process.exit(/^budget=WAIT/m.test(text) ? 2 : 0);
+`;
+const stubStatus = (dir: string) => {
+  const path = join(dir, "stub-status.cjs");
+  writeFileSync(path, STUB_STATUS);
+  return path;
+};
+
 /** Wait for the app at `base` to answer. */
 const answering = async (base: string) => {
   for (let i = 0; i < 50; i++) {
@@ -2120,15 +2140,26 @@ const answering = async (base: string) => {
 /** The app's server.mjs in a child process, with `renderer` as its 4090 step. */
 const serve = async (dir: string, renderer: string): Promise<string> => {
   const port = await freePort();
-  const child = Bun.spawn(["node", SERVER, "--daily-renderer", renderer], {
-    env: {
-      PATH: process.env.PATH!,
-      PORT: String(port),
-      ISOMUX_APP_DATA_DIR: dir,
+  const child = Bun.spawn(
+    [
+      "node",
+      SERVER,
+      "--daily-renderer",
+      renderer,
+      "--daily-desktop-status",
+      stubStatus(dir),
+      "--daily-no-backup-window",
+    ],
+    {
+      env: {
+        PATH: process.env.PATH!,
+        PORT: String(port),
+        ISOMUX_APP_DATA_DIR: dir,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
     },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  );
   stops.push(() => child.kill());
   const base = `http://127.0.0.1:${port}`;
   await answering(base);
@@ -2139,11 +2170,18 @@ const serve = async (dir: string, renderer: string): Promise<string> => {
  * The daily routes in this process, behind an HTTP server, so a test can
  * also call the poster's parts (postPlatform, logPost) of the same app.
  */
-const serveHere = async (dir: string, renderer: string) => {
+const serveHere = async (
+  dir: string,
+  renderer: string,
+  budgetEveryMs?: number,
+) => {
   const daily = createDaily({
     dataDir: dir,
     renderer,
     env: { PATH: process.env.PATH! },
+    desktopStatus: [process.execPath, stubStatus(dir)],
+    backupWindow: null,
+    ...(budgetEveryMs !== undefined && { budgetEveryMs }),
   });
   const server = createHttpServer((req, res) => {
     void daily
@@ -2423,7 +2461,13 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
 
   // What a restart would cut (crew.mjs ship refuses while any is busy).
   interface Busy {
-    renders: { itemId: string; jobId: string; state: string }[];
+    renders: {
+      itemId: string;
+      jobId: string;
+      gameId: string;
+      live: boolean;
+      state: string;
+    }[];
     posting: boolean;
   }
   const busy = async () => (await call<Busy>(base, "/api/daily/busy")).body;
@@ -2432,11 +2476,18 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     item: id,
   });
   expect(started.status).toBe(200);
-  // The queue takes the job before the POST answers.
-  expect(await busy()).toEqual({
-    renders: [{ itemId: id, jobId: started.body.jobId, state: "running" }],
-    posting: false,
+  // The queue takes the job before the POST answers. It starts once the
+  // app has read the 4090's budget (desktop-budget.mjs).
+  const taken = await busy();
+  expect(taken.posting).toBe(false);
+  expect(taken.renders).toHaveLength(1);
+  expect(taken.renders[0]).toMatchObject({
+    itemId: id,
+    jobId: started.body.jobId,
+    gameId: "TESTGAME1",
+    live: true,
   });
+  expect(["queued", "running"]).toContain(taken.renders[0].state);
   const it = await rendered(base, id);
   expect(stage(it)).toBe("rendered");
   expect((await busy()).renders).toEqual([]);
@@ -3136,11 +3187,26 @@ const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
+if (process.argv.includes("--threads-of")) {
+  // The other users' jobs: 8 workers each, as desktop-run's usual job.
+  console.log(at("threads-of").split(",").length * 8);
+  process.exit(0);
+}
 if (process.argv.includes("--has-capture")) {
   console.log(existsSync(__dirname + "/no-capture") ? "none" : "cached");
   process.exit(0);
 }
 const edl = JSON.parse(readFileSync(at("edl"), "utf8"));
+// A "slow" file holds every job that long (ms), so that jobs overlap; each
+// job's workers and time on the 4090 go to jobs.log.
+const started = Date.now();
+if (existsSync(__dirname + "/slow")) {
+  const ms = Number(readFileSync(__dirname + "/slow", "utf8"));
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+require("node:fs").appendFileSync(__dirname + "/jobs.log", JSON.stringify({
+  job: at("job-id"), workers: Number(at("workers")), start: started,
+  end: Date.now() }) + "\\n");
 writeFileSync(__dirname + "/last-plies", at("plies") + " " + edl.events.length);
 execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
   "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
@@ -3322,6 +3388,79 @@ test("a preview: a few plies from the capture, and the item does not change", as
   const lost = await finished({ plies: "20..23" });
   expect(lost.state).toBe("failed");
   expect(lost.error).toContain("the preview step failed: ENOENT");
+}, 30_000);
+
+test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  const { base } = await serveHere(dir, stub, 100);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  await directOver(base, id);
+  interface Preview {
+    state: string;
+    progress: string | null;
+  }
+  const preview = async (previewId: string) =>
+    (
+      await call<Preview>(
+        base,
+        `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
+      )
+    ).body;
+
+  // Windows is busy: three previews queue and say why; none starts.
+  writeFileSync(
+    join(dir, "desktop-status.txt"),
+    [
+      "win_cpu_pct=75",
+      "win_locked=False",
+      "budget=WAIT: Windows CPU 75%. Wait, or ask Infra & Security.",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(join(dir, "slow"), "600");
+  const ids: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const queued = await call<{ previewId: string }>(
+      base,
+      "/api/daily/preview",
+      { item: id, plies: "20..23" },
+    );
+    expect(queued.status).toBe(200);
+    ids.push(queued.body.previewId);
+  }
+  await Bun.sleep(400);
+  for (const previewId of ids) {
+    expect(await preview(previewId)).toMatchObject({
+      state: "queued",
+      progress:
+        "waiting for the 4090: desktop-status says WAIT: Windows CPU 75%. Wait, or ask Infra & Security.",
+    });
+  }
+  expect(existsSync(join(dir, "jobs.log"))).toBe(false);
+
+  // Free (unlocked, 12 workers): two run side by side with 6 each, and the
+  // third starts when one ends.
+  unlinkSync(join(dir, "desktop-status.txt"));
+  for (const previewId of ids) {
+    for (let i = 0; (await preview(previewId)).state !== "done"; i++) {
+      expect(i).toBeLessThan(100);
+      await Bun.sleep(100);
+    }
+  }
+  const jobs = readFileSync(join(dir, "jobs.log"), "utf8")
+    .trim()
+    .split("\n")
+    .map(
+      (l) => JSON.parse(l) as { workers: number; start: number; end: number },
+    )
+    .sort((a, b) => a.start - b.start);
+  expect(jobs.map((j) => j.workers)).toEqual([6, 6, 6]);
+  expect(jobs[1].start).toBeLessThan(jobs[0].end);
+  expect(jobs[2].start).toBeGreaterThanOrEqual(
+    Math.min(jobs[0].end, jobs[1].end),
+  );
 }, 30_000);
 
 test("a new app start removes the previews that the last one forgot", () => {

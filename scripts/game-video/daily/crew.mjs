@@ -651,6 +651,7 @@ const commands = {
       queued.push({ previewId: json.previewId, path });
     }
     for (const { previewId, path } of queued) {
+      let said = null;
       for (;;) {
         await new Promise((r) => setTimeout(r, 1000));
         const p = await app(
@@ -658,6 +659,11 @@ const commands = {
           `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
         );
         const name = path ? ` (${basename(path)})` : "";
+        // A queued preview that waits for the 4090 says why, once a reason.
+        if (p.state === "queued" && p.progress && p.progress !== said) {
+          console.log(`preview ${previewId}${name}: ${p.progress}`);
+          said = p.progress;
+        }
         if (p.state === "failed") {
           console.error(`preview ${previewId}${name} failed: ${p.error}`);
           failed += 1;

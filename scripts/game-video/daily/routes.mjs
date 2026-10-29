@@ -51,6 +51,7 @@ import {
   writeFileSync,
   createReadStream,
 } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream";
@@ -85,6 +86,12 @@ import {
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
+import {
+  BACKUP_WINDOW,
+  createBudgetReader,
+  desktopName,
+  planJob,
+} from "./desktop-budget.mjs";
 import {
   REVIEW_ACTION_PATH,
   REVIEW_PAGE,
@@ -196,6 +203,8 @@ export const RENDER_4090 = resolve(HERE, "render-4090.mjs");
  * stops a stuck ssh or a hung page load from holding up the render queue.
  */
 const DEFAULT_RENDER_DEADLINE_MS = 15 * 60 * 1000;
+/** The Warden's reading of the 4090 (desktop-budget.mjs). */
+const DESKTOP_STATUS = [join(homedir(), "nil/infra/bin/desktop-status")];
 
 /** How long the capture question may take: two ssh calls of 20 s at most. */
 const CAPTURE_PROBE_MS = 60 * 1000;
@@ -330,6 +339,15 @@ export const createDaily = ({
   dataDir,
   renderer = RENDER_4090,
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
+  // The command that prints desktop-status, and how often the app reads
+  // it while it has render work; a test gives a stub and a short time.
+  desktopStatus = DESKTOP_STATUS,
+  budgetEveryMs = /** @type {number | undefined} */ (undefined),
+  // The backup mirror's window (desktop-budget.mjs); a test runs at any
+  // time of day, so it gives null.
+  backupWindow = /** @type {{ from: number, to: number } | null} */ (
+    BACKUP_WINDOW
+  ),
   env: rawEnv = process.env,
   // The public ids (public-ids.mjs); a test gives its own.
   ids = PUBLIC_IDS,
@@ -462,9 +480,10 @@ export const createDaily = ({
   /* ------------------------------------------------------------ render -- */
 
   const queue = [];
-  let running = null;
-  /** The running render child, so a stopping app can stop it too. */
-  let currentChild = null;
+  /** The jobs on the 4090 now, each with its `workers`. */
+  const running = [];
+  /** The running render children, so a stopping app can stop them too. */
+  const children = new Set();
   /** jobId -> latest progress line, for the dashboard. */
   const progress = new Map();
 
@@ -483,17 +502,18 @@ export const createDaily = ({
    */
   const runAdapter = (jobId, args) =>
     new Promise((done) => {
+      let child = null;
       const end = (outcome) => {
         progress.delete(jobId);
-        currentChild = null;
+        children.delete(child);
         done(outcome);
       };
 
-      const child = spawn(process.execPath, [renderer, ...args], {
+      child = spawn(process.execPath, [renderer, ...args], {
         env: renderEnv,
         detached: true,
       });
-      currentChild = child;
+      children.add(child);
       let stdout = "";
       let stderr = "";
       let expired = false;
@@ -551,7 +571,7 @@ export const createDaily = ({
       });
     });
 
-  const runJob = async ({ itemId, jobId }) => {
+  const runJob = async ({ itemId, jobId, workers }) => {
     const item = store.item(itemId);
     const work = join(dirs.work, jobId);
     mkdirSync(work, { recursive: true });
@@ -578,6 +598,8 @@ export const createDaily = ({
       jobId,
       "--out",
       scratch,
+      "--workers",
+      String(workers),
       ...(fromCache ? ["--from-cache"] : []),
     ]);
     if (error) return finish({ error });
@@ -699,7 +721,7 @@ export const createDaily = ({
   const PREVIEWS_KEPT = 20;
 
   /** One preview on the 4090: {state: "done", video} or {state: "failed", error}. */
-  const previewOutcome = async (jobId, p) => {
+  const previewOutcome = async (jobId, p, workers) => {
     const work = join(dirs.work, jobId);
     mkdirSync(work, { recursive: true });
     const edlPath = join(work, "edl.json");
@@ -714,6 +736,8 @@ export const createDaily = ({
       scratch,
       "--plies",
       `${p.from}..${p.to}`,
+      "--workers",
+      String(workers),
     ]);
     const failed = (why) => ({ state: "failed", error: why });
     if (error) return failed(error);
@@ -740,12 +764,12 @@ export const createDaily = ({
     return { state: "done", video, timings: result.timings ?? null };
   };
 
-  const runPreview = async ({ jobId }) => {
+  const runPreview = async ({ jobId, workers }) => {
     const p = previews.get(jobId);
     p.state = "running";
     // A file step that throws ends the preview; it must not stay running.
     try {
-      Object.assign(p, await previewOutcome(jobId, p));
+      Object.assign(p, await previewOutcome(jobId, p, workers));
     } catch (err) {
       Object.assign(p, {
         state: "failed",
@@ -803,16 +827,97 @@ export const createDaily = ({
     }
   };
 
-  const pump = async () => {
-    if (running || queue.length === 0) return;
-    running = queue.shift();
-    try {
-      await (running.kind === "preview"
-        ? runPreview(running)
-        : runJob(running));
-    } finally {
-      running = null;
-      pump();
+  /**
+   * The threads of the other users' jobs on the 4090, from their desktop-run
+   * meta files (the adapter's --threads-of), or null when it cannot read.
+   */
+  const threadsOf = (ids) =>
+    new Promise((done) => {
+      const child = spawn(
+        process.execPath,
+        [renderer, "--threads-of", ids.join(",")],
+        { env: renderEnv },
+      );
+      let stdout = "";
+      const timer = setTimeout(() => child.kill("SIGKILL"), CAPTURE_PROBE_MS);
+      child.stdout.on("data", (c) => (stdout += c));
+      child.on("error", () => {
+        clearTimeout(timer);
+        done(null);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        done(code === 0 && /^\d+$/.test(stdout.trim()) ? Number(stdout) : null);
+      });
+    });
+
+  /*
+    The 4090's budget (Wall Game Director, 2026-10-29: the Warden's budget,
+    desktop-budget.mjs): jobs run side by side while the budget has room,
+    each with its share of workers; the head of the queue waits (it does not
+    fail) while the 4090 is busy, and every queued job shows why.
+  */
+  // The app reads the budget while it has render work and for WARM_MS
+  // after, so that a director's next preview in a session starts at once:
+  // the first job after a long pause waits for one reading (about 10 s).
+  const WARM_MS = 30 * 60 * 1000;
+  let lastWork = 0;
+  const budget = createBudgetReader({
+    statusCommand: desktopStatus,
+    threadsOf,
+    ownNames: () => running.map((job) => desktopName(job.jobId)),
+    wanted: () => {
+      if (queue.length > 0 || running.length > 0) lastWork = Date.now();
+      return Date.now() - lastWork < WARM_MS;
+    },
+    onReading: () => pump(),
+    ...(budgetEveryMs !== undefined && { everyMs: budgetEveryMs }),
+  });
+
+  /** Why the head of the queue waits, or null when it may start. */
+  const liveClash = (job) => {
+    // A live capture writes the game's cache, which every other job of
+    // that game reads: they do not run at one time.
+    const clash = running.find(
+      (r) => r.gameId === job.gameId && (r.live || job.live),
+    );
+    return clash
+      ? `a render of game ${job.gameId} with a live capture runs (${clash.jobId})`
+      : null;
+  };
+
+  const pump = () => {
+    while (queue.length > 0) {
+      const head = queue[0];
+      const plan = liveClash(head)
+        ? { wait: liveClash(head) }
+        : planJob({
+            reading: budget.latest(),
+            ownThreads: running.reduce((sum, r) => sum + r.workers, 0),
+            ownJobs: running.length,
+            behind: queue.length - 1,
+            now: Date.now(),
+            backupWindow,
+          });
+      if (plan.wait) {
+        for (const job of queue) {
+          progress.set(job.jobId, `waiting for the 4090: ${plan.wait}`);
+        }
+        budget.wake();
+        return;
+      }
+      const job = { ...queue.shift(), workers: plan.workers };
+      progress.delete(job.jobId);
+      running.push(job);
+      budget.wake();
+      void (async () => {
+        try {
+          await (job.kind === "preview" ? runPreview(job) : runJob(job));
+        } finally {
+          running.splice(running.indexOf(job), 1);
+          pump();
+        }
+      })();
     }
   };
 
@@ -1310,7 +1415,7 @@ export const createDaily = ({
     "GET /api/daily/busy": (req, res) =>
       json(res, 200, {
         renders: [
-          ...(running ? [{ ...running, state: "running" }] : []),
+          ...running.map((job) => ({ ...job, state: "running" })),
           ...queue.map((job) => ({ ...job, state: "queued" })),
         ],
         posting,
@@ -1577,7 +1682,12 @@ export const createDaily = ({
         force: body.force === true,
         fromCache,
       });
-      queue.push({ itemId: item.id, jobId });
+      queue.push({
+        itemId: item.id,
+        jobId,
+        gameId: item.gameId,
+        live: !fromCache,
+      });
       pump();
       json(res, 200, { itemId: item.id, jobId });
     },
@@ -1648,7 +1758,13 @@ export const createDaily = ({
         error: null,
       });
       prunePreviews();
-      queue.push({ itemId: item.id, jobId, kind: "preview" });
+      queue.push({
+        itemId: item.id,
+        jobId,
+        kind: "preview",
+        gameId: item.gameId,
+        live: false,
+      });
       pump();
       json(res, 200, { itemId: item.id, previewId: jobId });
     },
@@ -2026,11 +2142,13 @@ export const createDaily = ({
   const stop = () => {
     if (threadsTimer) clearInterval(threadsTimer);
     stopSchedule();
-    if (!currentChild) return;
-    try {
-      process.kill(-currentChild.pid, "SIGTERM");
-    } catch {
-      /* gone */
+    budget.stop();
+    for (const child of children) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        /* gone */
+      }
     }
   };
 
