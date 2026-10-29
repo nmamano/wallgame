@@ -1,0 +1,131 @@
+{
+  "note": "VX-IPenv (wallgame.io/game/VX-IPenv), stored moves and start position, and the evaluation bar engine's scores of 2026-10-29 (dw-transformer on the 4090), for semantics.test.ts.",
+  "game": {
+    "gameId": "VX-IPenv",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [4, 1],
+          "mouse": [5, 1]
+        },
+        "p2": {
+          "cat": [4, 6],
+          "mouse": [5, 6]
+        }
+      },
+      "walls": [
+        {
+          "cell": [1, 2],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [1, 3],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [1, 4],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [3, 0],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [3, 6],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [7, 3],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [7, 4],
+          "orientation": "horizontal"
+        }
+      ]
+    },
+    "moves": [
+      "Cd4",
+      "Cf4.>f3",
+      ">c3.>c1",
+      "Ce4.>f4",
+      ">c5.>c4",
+      "Cd3",
+      "Cf4",
+      ">c6.Cd2",
+      "Cf2",
+      "^g2.Cc2",
+      ">b2.^c2",
+      "Cb1",
+      "^a1.^b1",
+      "Cc2",
+      "Ch2",
+      "^g4.^h2",
+      "Cf2",
+      "Cd3",
+      "Cf4",
+      "Ce4",
+      "Cf6",
+      "Cd5",
+      "Ch6",
+      "Cd7",
+      "Ch4",
+      "Cc8",
+      "Cg3"
+    ],
+    "seats": [
+      {
+        "playerOrder": 1,
+        "kind": "official bot",
+        "name": "Normal Bot"
+      },
+      {
+        "playerOrder": 2,
+        "kind": "guest",
+        "name": "Guest Jackal"
+      }
+    ]
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.4228, 0.0626, 0.4723, 0.5803, 0.608, 0.6413, 0.646, 0.6654, 0.7024,
+      -0.6414, -0.7674, -0.6646, 0.4587, 0.6467, 0.7596, 0.6023, 0.565, 0.5952,
+      0.5731, 0.5948, 0.6933, 0.7278, 0.8292, 0.9208, 0.9484, 0.9859, 0.9976, 1
+    ],
+    "bestMoves": [
+      ">f4.^g3",
+      "Ce4",
+      ">c3.>c1",
+      ">d4.^d3",
+      ">c5.>c4",
+      ">e2.^f2",
+      ">c6.>c2",
+      ">f2.^f4",
+      ">c2.Cf3",
+      "Cc2.>f2",
+      "Mb5",
+      ">c8.^h2",
+      "^a1.^b1",
+      ">f5.^h2",
+      "^g3.^h3",
+      ">f5.^h2",
+      "Cf2",
+      "^e2.^f2",
+      ">d3.^d3",
+      ">e4.^f4",
+      "Cf6",
+      ">f6.^f6",
+      "Ch6",
+      "^h1.Ce5",
+      "Ch4",
+      "^b5.Cd6",
+      "Cg3",
+      "Mg4"
+    ],
+    "finalFromResult": false
+  }
+}

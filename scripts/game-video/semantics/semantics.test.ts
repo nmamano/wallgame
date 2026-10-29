@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
+import { readFileSync } from "node:fs";
+import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
 import { checkSentence, factsOf, writeSentences } from "./sentences";
 
@@ -18,6 +20,8 @@ interface PlySpec {
   bestWalls?: string[];
   bestWalks?: [number, number];
   mouseRan?: boolean;
+  /** The other side's mouse room before and after (default 40 -> 40). */
+  room?: [number, number];
   end?: boolean;
 }
 
@@ -78,6 +82,14 @@ const gameOf = (
       hunts: [
         hunt(1, s.w1, mover === 2 && s.mouseRan),
         hunt(2, s.w2, mover === 1 && s.mouseRan),
+      ],
+      rooms: [
+        {
+          target: { player: mover === 1 ? 2 : 1, type: "mouse" },
+          hunters: [{ player: mover, type: "cat" }],
+          before: (s.room ?? [40, 40])[0],
+          after: (s.room ?? [40, 40])[1],
+        },
       ],
       engine,
       end: s.end ? { winner: mover, reason: "capture" } : null,
@@ -142,7 +154,12 @@ describe("labelGame", () => {
     expect(l.plies[0].tags).toContain("missed-wall");
     expect(l.plies[1].label).toBe("punish");
     expect(l.plies[1].strength).toBe(1);
-    expect(l.links).toContainEqual({ kind: "blunder-punish", from: 0, to: 1 });
+    expect(l.links).toContainEqual({
+      kind: "blunder-punish",
+      from: 0,
+      to: 1,
+      costShown: false,
+    });
   });
 
   test("a reply that keeps the gain but shows nothing is no punish (VR1 B1)", () => {
@@ -227,7 +244,9 @@ describe("trap words", () => {
         facts,
         seats,
       ),
-    ).toEqual(['"traps" needs a cited fact that says trap-closes or seal']);
+    ).toEqual([
+      '"traps" needs a cited fact that says trap-closes or seal or box in',
+    ]);
     // "own" elsewhere in the sentence does not make the trap the mover's.
     expect(
       checkSentence(
@@ -236,7 +255,9 @@ describe("trap words", () => {
         facts,
         seats,
       ),
-    ).toEqual(['"traps" needs a cited fact that says trap-closes or seal']);
+    ).toEqual([
+      '"traps" needs a cited fact that says trap-closes or seal or box in',
+    ]);
   });
 });
 
@@ -281,6 +302,93 @@ describe("factsOf", () => {
     expect(best([6, 9])).toContain("Normal Bot's cat would need 9 steps");
     // The mover's own cat longer (a wall that guards its mouse): not told.
     expect(best([8, 4])).not.toContain("would need");
+  });
+});
+
+describe("box-in", () => {
+  test("walls that cut a mouse's room by 40% and to 25 or fewer box it in", () => {
+    const l = labels([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+    ]);
+    expect(l.plies[0].label).toBe("box-in");
+    // Not enough of a cut, or still too much room: no box-in.
+    const small = labels([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4"],
+        room: [30, 20],
+      },
+    ]);
+    expect(small.plies[0].tags).not.toContain("box-in");
+    const roomy = labels([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4"],
+        room: [60, 30],
+      },
+    ]);
+    expect(roomy.plies[0].tags).not.toContain("box-in");
+  });
+
+  test("under a blunder it is a tag, and the sentence may say boxes in", () => {
+    const game = gameOf([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.77, 0.36],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+    ]);
+    const l = labelGame(game);
+    expect(l.plies[0].label).toBe("blunder");
+    expect(l.plies[0].tags).toContain("box-in");
+    const facts = factsOf(game, l, 0);
+    expect(facts.find((f) => f.id === "0.box")!.text).toBe(
+      "The walls >f4 and ^g3 box in Normal Bot's mouse: the cells it reaches before Guest Ferret's cat fall from 42 to 20.",
+    );
+    const seats = ["Guest Ferret", "Normal Bot"];
+    expect(
+      checkSentence(
+        "Guest Ferret's walls >f4 and ^g3 box in Normal Bot's mouse, from 42 to 20 cells.",
+        ["0.box", "0.play"],
+        facts,
+        seats,
+      ),
+    ).toEqual([]);
+    expect(
+      checkSentence(
+        "Guest Ferret boxes in the board.",
+        ["0.play"],
+        facts,
+        seats,
+      ),
+    ).toEqual(['"boxes in" needs a cited fact that says box in']);
+  });
+});
+
+describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
+  test("a punish that a wall undoes next move shows no cost; 2 -> 16 does", () => {
+    const fixture = JSON.parse(
+      readFileSync(new URL("fixtures/VX-IPenv.json", import.meta.url), "utf8"),
+    ) as { game: SemanticGame; engine: EngineData };
+    const l = labelGame(gameFacts(fixture.game, fixture.engine));
+    const link = (from: number) =>
+      l.links.find((k) => k.kind === "blunder-punish" && k.from === from);
+    // Ply 9: Normal Bot's cat 2 -> 4, Guest Jackal's 3 -> 2; walled back at once.
+    expect(link(8)).toMatchObject({ to: 9, costShown: false });
+    // Ply 12: ^a1 ^b1, Guest Jackal's cat 2 -> 16.
+    expect(link(11)).toMatchObject({ to: 12, costShown: true });
   });
 });
 

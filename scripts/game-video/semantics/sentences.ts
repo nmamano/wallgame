@@ -188,6 +188,18 @@ export const factsOf = (
       add("best", what);
     }
   }
+  if (l.tags.includes("box-in")) {
+    const room = [...f.rooms].sort(
+      (a, b) => a.after / a.before - b.after / b.before,
+    )[0];
+    const cats = room.hunters
+      .map((h) => `${names[h.player]}'s ${h.type}`)
+      .join(" or ");
+    add(
+      "box",
+      `The ${f.walls.length === 1 ? "wall" : "walls"} ${f.walls.join(" and ")} box in ${names[room.target.player]}'s ${room.target.type}: the cells it reaches before ${cats} fall from ${room.before} to ${room.after}.`,
+    );
+  }
   const tagText = l.tags.filter((t) => t !== l.label);
   add(
     "label",
@@ -238,7 +250,8 @@ const JUDGMENTS: [RegExp, string][] = [
   [/\b(sav(e|es|ed|ing)|rescu\w*)\b/i, "save"],
   [/\b(escap\w*|flee\w*|flees|fled)\b/i, "escape"],
   [/\b(threat\w*|danger\w*)\b/i, "threat"],
-  [/\b(trap\w*|cage\w*|seal\w*|lock\w*|box(es|ed)? in)\b/i, "trap-closes|seal"],
+  [/\b(box(es|ed|ing)? in|boxed)\b/i, "box in"],
+  [/\b(trap\w*|cage\w*|seal\w*|lock\w*)\b/i, "trap-closes|seal|box in"],
   [/\b(win|wins|won|winner|victory)\b/i, "wins"],
   [/\b(catch\w*|caught|captur\w*)\b/i, "capture"],
   // The two engine facts use distinct words (VR1 B2): "top choice" only on
@@ -289,6 +302,7 @@ const citedPairs = (texts: string[]): Map<string, Set<string>> => {
     );
     add(/(\d+)% win chance before this move and (\d+)% after/g, 1, 2);
     add(/from (\d+)% to (\d+)%/g, 1, 2);
+    add(/ fall from (\d+) to (\d+)\./g, 1, 2);
     add(/would need (\d+) steps? to reach [^,.]*, not (\d+)/g, 2, 1);
   }
   return pairs;
@@ -433,7 +447,7 @@ export const checkSentence = (
       continue;
     if (!stems.split("|").some((s) => saysWord(citedLower, s))) {
       reasons.push(
-        `"${hit[0]}" needs a cited fact that says ${stems.replace("|", " or ")}`,
+        `"${hit[0]}" needs a cited fact that says ${stems.replaceAll("|", " or ")}`,
       );
     }
   }
@@ -645,7 +659,7 @@ export const renderTable = (s: GameSemantics): string => {
   if (s.labels.links.length) {
     lines.push(
       "",
-      `Links: ${s.labels.links.map((k) => `${k.kind} ${k.from + 1} -> ${k.to + 1}`).join("; ")}.`,
+      `Links: ${s.labels.links.map((k) => `${k.kind} ${k.from + 1} -> ${k.to + 1}${k.costShown === undefined ? "" : k.costShown ? " (cost shown)" : " (cost NOT shown)"}`).join("; ")}.`,
     );
   }
   return lines.join("\n") + "\n";

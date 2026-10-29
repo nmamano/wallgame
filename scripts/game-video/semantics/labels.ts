@@ -31,6 +31,7 @@ export const LABELS = [
   "trap-closes",
   "save",
   "escape",
+  "box-in",
   "threat",
   "self-trap",
   "detour",
@@ -62,13 +63,41 @@ export const SEALED_CHANCE = 0.9;
 export const RISE_WALK = 3;
 /** An escape ends at least this far from the cat. */
 export const ESCAPE_WALK = 4;
+/**
+ * A box-in (Wall Game PM, 2026-10-29): the move's walls cut a mouse's room
+ * (facts.ts MouseRoom) by this share or more...
+ */
+export const BOX_CUT = 0.4;
+/** ...and to this many cells or fewer (8x8 has 64). */
+export const BOX_ROOM = 25;
 
 export interface Link {
   kind: "blunder-punish" | "threat-save" | "threat-escape" | "sealed-capture";
   /** Plies, 0-based. */
   from: number;
   to: number;
+  /**
+   * Set on blunder-punish only (Nil, 2026-10-29, on VX-IPenv: "it doesn't
+   * get punished"): the punish changes a walk by COST_WALK or more, and the
+   * next move does not bring that walk back within UNDO_WALK of its old
+   * value. False means the board does not show the blunder's cost.
+   */
+  costShown?: boolean;
 }
+
+/** A punish shows its cost when it changes a walk by this much... */
+export const COST_WALK = 5;
+/** ...and the next move leaves that walk more than this from where it was. */
+export const UNDO_WALK = 2;
+
+/** costShown of the punish at `ply` (see Link). */
+const costShownAt = (plies: PlyFacts[], ply: number): boolean =>
+  plies[ply].hunts.some((h, i) => {
+    if (Math.abs(h.after - h.before) < COST_WALK) return false;
+    const next = plies[ply + 1];
+    if (!next) return true;
+    return Math.abs(next.hunts[i].after - h.before) > UNDO_WALK;
+  });
 
 /** The hunt a move's story is about, as the renderer's explain event wants it. */
 export interface Focus {
@@ -222,7 +251,12 @@ export const labelGame = (facts: GameFacts): GameLabels => {
                 ? theirRise
                 : reach!,
             );
-            links.push({ kind: "blunder-punish", from: ply - 1, to: ply });
+            links.push({
+              kind: "blunder-punish",
+              from: ply - 1,
+              to: ply,
+              costShown: costShownAt(plies, ply),
+            });
           } else {
             tags[ply].push("kept-gain");
           }
@@ -266,6 +300,22 @@ export const labelGame = (facts: GameFacts): GameLabels => {
         if (h.before !== 1 || h.after < ESCAPE_WALK) continue;
         if (h.targetFrom === h.targetTo) continue;
         fit(ply, "escape", rise(h) / 8, h);
+      }
+    }
+
+    // A mouse boxed in by the move's walls. Under a higher label (a
+    // blunder, a save) it stays a tag, so the engine's verdict stays seen.
+    if (f.walls.length > 0) {
+      for (const room of f.rooms) {
+        const cut = room.before === 0 ? 0 : 1 - room.after / room.before;
+        if (cut < BOX_CUT || room.after > BOX_ROOM) continue;
+        const h =
+          mine.find(
+            (x) =>
+              x.target.player === room.target.player &&
+              x.target.type === room.target.type,
+          ) ?? moved;
+        fit(ply, "box-in", cut / 0.8, h);
       }
     }
 

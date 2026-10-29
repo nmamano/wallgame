@@ -14,7 +14,10 @@
  * computed here, never guessed.
  */
 import type { GameState } from "../../../shared/domain/game-state";
+import type { Grid } from "../../../shared/domain/grid";
 import type {
+  Cell,
+  GamePawns,
   GameInitialState,
   GamePawnType,
   PlayerId,
@@ -33,6 +36,7 @@ import {
   huntWalks,
   replayDistances,
   type Hunt,
+  type PawnRef,
   type ReplayedGame,
 } from "../race-replay";
 
@@ -98,6 +102,21 @@ export interface EngineFacts {
   bestWalks: number[] | null;
 }
 
+/**
+ * A mouse's ROOM across one move (Nil, 2026-10-29, on v-lQeZ8T: "red blocks
+ * the blue mouse, putting it in a dire situation"): the cells the mouse
+ * reaches in fewer steps than every cat that hunts it. Both counts use the
+ * pawns after the move; `before` the walls before it, `after` the walls
+ * after it, so only the move's walls change it, not a cat's step.
+ */
+export interface MouseRoom {
+  /** An animal the mover's pawns hunt. */
+  target: PawnRef;
+  hunters: PawnRef[];
+  before: number;
+  after: number;
+}
+
 export interface PlyFacts {
   /** 0-based index into the stored move list (edl.mjs convention). */
   ply: number;
@@ -110,6 +129,8 @@ export interface PlyFacts {
   walls: string[];
   /** Every hunt of the variant, in huntsFor order. */
   hunts: HuntChange[];
+  /** The room of each animal the mover hunts. */
+  rooms: MouseRoom[];
   engine: EngineFacts | null;
   /** Set on the move that ends the game on the board. */
   end: { winner: PlayerId | null; reason: string } | null;
@@ -151,6 +172,76 @@ const walksAfter = (state: GameState, notation: string): number[] | null => {
   } catch {
     return null;
   }
+};
+
+/** Steps from `start` to every cell it reaches through `grid`. */
+const stepsFrom = (grid: Grid, start: Cell): Map<string, number> => {
+  const key = (c: Cell) => `${c[0]},${c[1]}`;
+  const steps = new Map([[key(start), 0]]);
+  const queue: Cell[] = [start];
+  for (const at of queue) {
+    for (const next of grid.accessibleNeighbors(at)) {
+      if (steps.has(key(next))) continue;
+      steps.set(key(next), steps.get(key(at))! + 1);
+      queue.push(next);
+    }
+  }
+  return steps;
+};
+
+/** Cells `target` reaches in fewer steps than every one of `hunters`. */
+const roomOf = (
+  grid: Grid,
+  pawns: GamePawns,
+  target: PawnRef,
+  hunters: PawnRef[],
+): number => {
+  const cell = (p: PawnRef) => {
+    const c = pawnCell(pawns, p.player, p.type);
+    if (!c) throw new Error(`no ${p.type} of player ${p.player} on the board`);
+    return c;
+  };
+  const own = stepsFrom(grid, cell(target));
+  const theirs = hunters.map((h) => stepsFrom(grid, cell(h)));
+  let room = 0;
+  for (const [key, steps] of own) {
+    if (theirs.every((t) => steps < (t.get(key) ?? Infinity))) room++;
+  }
+  return room;
+};
+
+/** The room of each animal the mover hunts, across one move. */
+const roomsOf = (
+  hunts: Hunt[],
+  before: GameState,
+  after: GameState,
+  mover: PlayerId,
+): MouseRoom[] => {
+  const targets = new Map<string, MouseRoom>();
+  for (const hunt of hunts) {
+    if (hunt.target.type === "home" || hunt.target.player === mover) continue;
+    const key = `${hunt.target.player}:${hunt.target.type}`;
+    if (!targets.has(key)) {
+      targets.set(key, {
+        target: hunt.target,
+        hunters: [],
+        before: 0,
+        after: 0,
+      });
+    }
+  }
+  for (const room of targets.values()) {
+    room.hunters = hunts
+      .filter(
+        (h) =>
+          h.target.player === room.target.player &&
+          h.target.type === room.target.type,
+      )
+      .map((h) => h.hunter);
+    room.before = roomOf(before.grid, after.pawns, room.target, room.hunters);
+    room.after = roomOf(after.grid, after.pawns, room.target, room.hunters);
+  }
+  return [...targets.values()];
 };
 
 const stepsOf = (
@@ -231,6 +322,7 @@ export const gameFacts = (
         targetFrom: replay.tracks[i].targetCells[ply],
         targetTo: replay.tracks[i].targetCells[ply + 1],
       })),
+      rooms: roomsOf(hunts, before, after, mover),
       engine: engineFacts,
       end: ended
         ? {
