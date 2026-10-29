@@ -4424,6 +4424,20 @@ const renderStyle = async (styleName) => {
     cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
       at: vsHitAt,
     });
+    /*
+      The same whoosh under the banners' slide-in, so the video has sound
+      from its first frame (Wall Game Director, 2026-10-29: the first 0.8 s
+      were silent). It starts with the slide and is played faster, so its
+      peak meets the VS hit; the rest of it goes under the hit.
+    */
+    cue(
+      {
+        ...VS_WHOOSH,
+        rate: stingManifest.whooshPeakSeconds / (vsHitAt - overlayStart),
+      },
+      "vs",
+      { at: overlayStart },
+    );
     cue(VS_WHOOSH, "vs", {
       at:
         overlayStart +
