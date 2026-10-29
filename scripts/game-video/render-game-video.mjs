@@ -3377,7 +3377,7 @@ const renderStyle = async (styleName) => {
       const showsFor = w.end - w.start;
       if (showsFor + 0.5 / FPS < read) {
         throw new Error(
-          `${where} shows ${showsFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending shows it that long; use fewer words" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
+          `${where} shows ${showsFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending holds for its bar, so this is a bug" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
         );
       }
       /*
@@ -4170,6 +4170,25 @@ const renderStyle = async (styleName) => {
       const bar = eventsAt(plyIndex).find(
         (e) => e.kind === "overlay" && e.form === "bar",
       );
+      /*
+        The ending holds as long as its bar's line needs to be read (Wall
+        Game Director, 2026-10-29: Nil's "you can run but you can't hide"
+        is 7 words, 3.3 s, and the gg ending shows the bar 2.6 s).
+        validateEdl caps a line at the 4 s maximum; a short line keeps the
+        ending's own length. `shows` is how long the ending shows the bar
+        as it is; the hold grows by what is missing, to a whole frame.
+      */
+      const barRead = bar
+        ? readingSeconds(
+            OVERLAYS[bar.asset],
+            bar.text ?? OVERLAYS[bar.asset].line,
+          )
+        : 0;
+      const holdFor = (shows) => {
+        const more = Math.ceil(Math.max(0, barRead - shows) * FPS) / FPS;
+        if (more > 0) log(`ending held +${more.toFixed(1)} s for the bar`);
+        return more;
+      };
       if (winnerId) {
         const timing = endingTimings[style.ending];
         const impactFrame = Math.round(timing.impact * FPS);
@@ -4207,12 +4226,13 @@ const renderStyle = async (styleName) => {
             liveOverlay().avoid.push(...(await endingBoxes()));
           }
         }
+        const barShows = (endingFrames - impactFrame) / FPS + timing.hold;
         await emit(
           playState(ply, {
             ending: ending(timing.seconds),
             credit: creditAt(timing.seconds),
           }),
-          timing.hold,
+          timing.hold + (bar ? holdFor(barShows) : 0),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else if (creditText) {
@@ -4231,15 +4251,18 @@ const renderStyle = async (styleName) => {
         }
         await emit(
           playState(ply, { credit: creditAt(CREDIT_FADE_SECONDS) }),
-          DRAW_HOLD_SECONDS - fade / FPS,
+          DRAW_HOLD_SECONDS -
+            fade / FPS +
+            (bar ? holdFor(DRAW_HOLD_SECONDS) : 0),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else {
         if (bar) openOverlay(bar);
-        await emit(playState(ply), DRAW_HOLD_SECONDS, {
-          kind: "move",
-          ply: plyIndex,
-        });
+        await emit(
+          playState(ply),
+          DRAW_HOLD_SECONDS + (bar ? holdFor(DRAW_HOLD_SECONDS) : 0),
+          { kind: "move", ply: plyIndex },
+        );
       }
       closeOverlay();
       /*

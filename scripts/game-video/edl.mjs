@@ -139,7 +139,8 @@
  *             first ply, with no seconds: it lasts the range, which must
  *             be on screen for EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
  *             caption) is on the last move only and shows from the ending's
- *             impact to its end, so it takes no seconds.
+ *             impact to its end, so it takes no seconds; the ending holds
+ *             longer when its line needs more reading time.
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.

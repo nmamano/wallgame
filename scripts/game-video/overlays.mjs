@@ -9,7 +9,8 @@
  *   panel  a band across the board, as tall as its content (the loading
  *          bar), at the top, the bottom, or any height between.
  *   bar    the ending's white caption bar (the model video's last beat):
- *          on the last move only, from the ending's impact to its end, in
+ *          on the last move only, from the ending's impact to its end (the
+ *          ending holds longer when its line needs the reading time), in
  *          the top or bottom strip of the board, or else the highest band,
  *          that the ending's own card, banner, pawn and badge leave free
  *          (measured).
