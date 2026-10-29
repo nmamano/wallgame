@@ -59,7 +59,7 @@
  *                                  game the same UTC day needs --force. Use
  *                                  --live when the renderer cannot use the
  *                                  capture (its line says so).
- *   preview --item ID --plies FROM..TO [--edl F]
+ *   preview --item ID --plies FROM..TO [--edl F]...
  *                                  a few seconds of the video: those plies of
  *                                  the item's edit list (or of F, a list for
  *                                  its game), rendered on the 4090 from the
@@ -69,7 +69,9 @@
  *                                  changes nothing in the item and can never
  *                                  be checked, reviewed or posted. For the
  *                                  PICTURE only: its music starts at its first
- *                                  frame
+ *                                  frame. With several --edl (variants of
+ *                                  the game's list), all are queued first,
+ *                                  then each prints when it is done
  *   sheet --item ID                the contact sheet's path and its stills, in
  *                                  order: look at the PNG before `check`.
  *                                  Also the event strips (strips.mjs): each
@@ -176,6 +178,9 @@ const flag = (name) => {
   return at === -1 ? undefined : argv[at + 1];
 };
 const has = (name) => argv.includes(`--${name}`);
+/** Every value of a flag that may repeat, in order. */
+const flagsAll = (name) =>
+  argv.flatMap((a, i) => (a === `--${name}` ? [argv[i + 1]] : []));
 
 const die = (message) => {
   console.error(message);
@@ -611,31 +616,65 @@ const commands = {
     }
   },
 
+  /**
+   * One preview, or one for each --edl (variants of one game, Wall Game
+   * Director, 2026-10-29: try 3-5 ideas at once and pick). All are queued
+   * first, so the 4090 never waits for the director between them; then
+   * each prints as it is done, in the order given. A list that the app
+   * refuses (a typo in a variant) prints why and the others go on.
+   */
   async preview() {
     const plies = flag("plies") ?? die("preview needs --plies FROM..TO");
-    const path = flag("edl");
-    const { previewId } = await app("POST", "/api/daily/preview", {
-      item: itemFlag(),
-      plies,
-      ...(path && { edl: JSON.parse(readFileSync(path, "utf8")) }),
-    });
-    console.log(`preview ${previewId} queued`);
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 1000));
-      const p = await app(
-        "GET",
-        `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
-      );
-      if (p.state === "failed") die(`preview failed: ${p.error}`);
-      if (p.state === "done") {
-        return console.log(
-          [
-            `preview of plies ${p.plies}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the item's video: the item did not change.`,
-            ...timingLines(p.timings),
-          ].join("\n"),
+    const item = itemFlag();
+    const paths = flagsAll("edl");
+    const lists = paths.length
+      ? paths.map((path) => ({
+          path,
+          edl: JSON.parse(readFileSync(path, "utf8")),
+        }))
+      : [{ path: null, edl: null }];
+    const queued = [];
+    let failed = 0;
+    for (const { path, edl } of lists) {
+      const name = path ? ` (${basename(path)})` : "";
+      const { ok, status, json } = await appTry("POST", "/api/daily/preview", {
+        item,
+        plies,
+        ...(edl && { edl }),
+      });
+      if (!ok) {
+        console.error(`preview${name} refused: ${json.error ?? status}`);
+        failed += 1;
+        continue;
+      }
+      console.log(`preview ${json.previewId} queued${name}`);
+      queued.push({ previewId: json.previewId, path });
+    }
+    for (const { previewId, path } of queued) {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const p = await app(
+          "GET",
+          `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
         );
+        const name = path ? ` (${basename(path)})` : "";
+        if (p.state === "failed") {
+          console.error(`preview ${previewId}${name} failed: ${p.error}`);
+          failed += 1;
+          break;
+        }
+        if (p.state === "done") {
+          console.log(
+            [
+              `preview of plies ${p.plies}${name}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the item's video: the item did not change.`,
+              ...timingLines(p.timings),
+            ].join("\n"),
+          );
+          break;
+        }
       }
     }
+    if (failed) die(`${failed} of ${lists.length} previews failed`);
   },
 
   async direct() {

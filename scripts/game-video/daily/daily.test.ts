@@ -3244,6 +3244,76 @@ test("a preview: a few plies from the capture, and the item does not change", as
   expect(printed.out).toMatch(
     /preview of plies 21\.\.22: .*\/previews\/.*\.mp4 \(1 s, 0\.0 MB\)\. Not the item's video: the item did not change\./,
   );
+  // Several lists (variants of the game) are all queued first, then each
+  // prints when it is done, in the order given.
+  const variants = ["a.json", "b.json"].map((name, i) => {
+    const path = join(dir, name);
+    writeFileSync(
+      path,
+      JSON.stringify({ ...EDL, caption: `variant ${i + 1}` }),
+    );
+    return path;
+  });
+  const batch = crew(
+    base,
+    "preview",
+    "--item",
+    id,
+    "--plies",
+    "21..22",
+    "--edl",
+    variants[0],
+    "--edl",
+    variants[1],
+  );
+  expect(batch.code).toBe(0);
+  const lines = batch.out.trim().split("\n");
+  expect(lines[0]).toMatch(/^preview \S+ queued \(a\.json\)$/);
+  expect(lines[1]).toMatch(/^preview \S+ queued \(b\.json\)$/);
+  expect(
+    lines
+      .filter((l) => l.startsWith("preview of plies"))
+      .map((l) => l.replace(/: .*/, "")),
+  ).toEqual([
+    "preview of plies 21..22 (a.json)",
+    "preview of plies 21..22 (b.json)",
+  ]);
+  // A variant that the app refuses prints why; the others still render
+  // and print, and the run fails.
+  const typo = join(dir, "typo.json");
+  writeFileSync(typo, JSON.stringify({ ...EDL, gameId: "OTHERGAME" }));
+  const mixed = crew(
+    base,
+    "preview",
+    "--item",
+    id,
+    "--plies",
+    "21..22",
+    "--edl",
+    variants[0],
+    "--edl",
+    typo,
+    "--edl",
+    variants[1],
+  );
+  expect(mixed.code).toBe(1);
+  expect(mixed.err).toContain(
+    `preview (typo.json) refused: the list is for OTHERGAME, but ${id}'s game is TESTGAME1`,
+  );
+  expect(mixed.err).toContain("1 of 3 previews failed");
+  expect(
+    mixed.out
+      .trim()
+      .split("\n")
+      .map((l) =>
+        l.replace(/^preview \S+ queued/, "queued").replace(/: .*/, ""),
+      ),
+  ).toEqual([
+    "queued (a.json)",
+    "queued (b.json)",
+    "preview of plies 21..22 (a.json)",
+    "preview of plies 21..22 (b.json)",
+  ]);
   // Nothing in the item moved: a preview is not the item's video.
   expect(await fetchItem(base, id)).toEqual(before);
   expect((await call(base, "/api/daily/preview?id=nope")).status).toBe(404);
