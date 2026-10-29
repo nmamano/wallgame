@@ -141,15 +141,13 @@ import {
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import {
-  MASTER_LIMIT_DBTP,
-  MASTER_MAX_TRUE_PEAK,
   masterFault,
   masterFilters,
-  masterRetryLimit,
   measureMaster,
   memeLoudness,
   mixGraph,
   mixIntegrated,
+  runMaster,
 } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import {
@@ -314,24 +312,6 @@ const EDL = (() => {
   }
   return checked.edl;
 })();
-/*
-  Every meme sound the list plays must have its file here, checked before a
-  live capture spends a view. The files are gitignored and reach the 4090
-  only with the kit sync, and the mix leaves a missing file out (Video
-  Reviewer 1, review 38; Wall Game Director, 2026-10-28: a sound missing
-  with no error could reach Nil unseen).
-*/
-if (EDL) {
-  const missing = edlSoundUses(EDL)
-    .map(([where, key]) => [where, join(MEME_DIR, `${key}.mp3`)])
-    .filter(([, file]) => !existsSync(file));
-  if (missing.length > 0) {
-    console.error(
-      `--edl ${EDL_PATH} plays meme sounds whose files are not here (sync the render kit):\n  ${missing.map(([where, file]) => `${where}: ${file}`).join("\n  ")}`,
-    );
-    process.exit(2);
-  }
-}
 const EDL_SHA256 = EDL_BYTES
   ? createHash("sha256").update(EDL_BYTES).digest("hex")
   : null;
@@ -442,6 +422,25 @@ if (EDL?.events.some((e) => e.kind === "explain") && notDaily.length > 0) {
 if (STYLE_NAMES.includes("daily") && !EDL) {
   console.error("the daily look plays an EDL: give --edl FILE (see edl.mjs)");
   process.exit(2);
+}
+/*
+  Every meme sound the list plays must have its file here, checked before a
+  live capture spends a view. The files are gitignored and reach the 4090
+  only with the kit sync, and the mix leaves a missing file out (Video
+  Reviewer 1, review 38; Wall Game Director, 2026-10-28: a sound missing
+  with no error could reach Nil unseen). It runs after the checks that
+  need only the list and the flags, so those answer with no kit here.
+*/
+if (EDL) {
+  const missing = edlSoundUses(EDL)
+    .map(([where, key]) => [where, join(MEME_DIR, `${key}.mp3`)])
+    .filter(([, file]) => !existsSync(file));
+  if (missing.length > 0) {
+    console.error(
+      `--edl ${EDL_PATH} plays meme sounds whose files are not here (sync the render kit):\n  ${missing.map(([where, file]) => `${where}: ${file}`).join("\n  ")}`,
+    );
+    process.exit(2);
+  }
 }
 for (const [flagName, field] of [
   ["seconds-per-move", "pace"],
@@ -2485,8 +2484,8 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
     ),
   );
   const audioPath = join(work, "track.m4a");
-  const encode = (limitDbtp) => {
-    const { gainDb, filters } = masterFilters(mixLufs, limitDbtp);
+  const encode = ({ limitDbtp, makeupDb }) => {
+    const { gainDb, filters } = masterFilters(mixLufs, limitDbtp, makeupDb);
     ff([
       ...inputs,
       "-filter_complex",
@@ -2501,14 +2500,7 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
     ]);
     return measureMaster(FFMPEG, audioPath, gainDb);
   };
-  let master = encode(MASTER_LIMIT_DBTP);
-  if (master.truePeakDbtp > MASTER_MAX_TRUE_PEAK) {
-    const limit = masterRetryLimit(MASTER_LIMIT_DBTP, master.truePeakDbtp);
-    log(
-      `the encode lifted the master's true peak to ${master.truePeakDbtp} dBTP; encoding again with the limit at ${limit} dBTP`,
-    );
-    master = encode(limit);
-  }
+  const master = runMaster(encode, log);
   const masterProblem = masterFault(master);
   if (masterProblem) throw new Error(masterProblem);
   // A measure that cannot run is reported, not fatal: the gate fails it.
@@ -5298,12 +5290,19 @@ const renderStyle = async (styleName) => {
     // 3. The new walk draws over the ghost of the old one, and holds.
     const drawAfter = drawSeconds(f.after.points);
     cueWalkTicks(f.after.points, elapsed);
+    // The explain's sound is the reaction to the new number: it plays as
+    // the new walk is fully drawn and the counter shows its steps.
+    if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawAfter);
     const afterSeconds = drawAfter + EXPLAIN_AFTER_HOLD_SECONDS;
     const afterFrames = Math.round(afterSeconds * FPS);
     for (let i = 0; i < afterFrames; i += 1) {
       const t = i / FPS;
       if (i === Math.round((drawAfter + 0.2) * FPS)) {
-        stillNext = { ply: plyIndex, kind: "explain-after", sound: null };
+        stillNext = {
+          ply: plyIndex,
+          kind: "explain-after",
+          sound: ev.sound ?? null,
+        };
       }
       const fade =
         1 -

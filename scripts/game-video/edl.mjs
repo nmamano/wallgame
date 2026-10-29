@@ -138,7 +138,9 @@
  *             the move lands slowly, each wall it placed glowing and each
  *             pawn it moved drawn as a glowing line from its old cell;
  *             then the old walk stays as a ghost and the new walk draws
- *             (2, then 16). The whole board stays in view. `hunter`
+ *             (2, then 16). Its `sound` plays as the new walk is fully
+ *             drawn: the reaction to the new number. The whole board
+ *             stays in view. `hunter`
  *             ("red" or "blue") names the cat whose walk is the story;
  *             absent, the one whose steps change most (on a tie, red). The renderer
  *             computes the walls and both walks from the game record, as

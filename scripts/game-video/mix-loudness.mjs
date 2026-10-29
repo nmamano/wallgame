@@ -235,28 +235,41 @@ export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
   MASTER_LIMIT_DBTP, under the gate, because the AAC encode lifts the peaks:
   measured 2026-10-29 on VX, a limit at -1.5 dBTP came out at -0.7 dBTP,
   one at -2.0 at -1.4 dBTP (masterRetryLimit when a mix overshoots more).
+  The limiter also takes loudness away: a mix with no music and loud
+  peaks (screams, yells) came out at -15.1 LUFS, under the gate (2026-10-29,
+  VX-IPenv with "music": []). So an encode under the target by more than
+  MASTER_MAKEUP_BELOW gets the shortfall as more gain (masterRetry), and the
+  limiter keeps the peaks: at most MASTER_ENCODES encodes in all.
 */
 export const MASTER_LUFS = -14;
 /** A master outside these LUFS, or over this true peak, fails the render. */
 export const MASTER_LUFS_RANGE = [-15, -13];
 export const MASTER_MAX_TRUE_PEAK = -1;
 export const MASTER_LIMIT_DBTP = -2;
+export const MASTER_MAKEUP_BELOW = 0.5;
+export const MASTER_ENCODES = 3;
 const OVERSAMPLE = 4;
 
 /**
  * The master's filters for a mix that measures `mixLufs` integrated: the
- * gain to MASTER_LUFS, then the true-peak limiter. No auto level (alimiter
+ * gain to MASTER_LUFS (plus `makeupDb`, what an earlier encode's limiter
+ * took away), then the true-peak limiter. No auto level (alimiter
  * `level`), which would lift the limited peaks back to 0 dBFS.
  * @param {number} mixLufs
  * @param {number} limitDbtp
+ * @param {number} makeupDb
  */
-export const masterFilters = (mixLufs, limitDbtp = MASTER_LIMIT_DBTP) => {
+export const masterFilters = (
+  mixLufs,
+  limitDbtp = MASTER_LIMIT_DBTP,
+  makeupDb = 0,
+) => {
   if (!(mixLufs > SILENT_LUFS)) {
     throw new Error(
       `the mix is silent (${mixLufs} LUFS), so it has no master gain`,
     );
   }
-  const gainDb = tenth(MASTER_LUFS - mixLufs);
+  const gainDb = tenth(MASTER_LUFS - mixLufs + makeupDb);
   const limit = 10 ** (limitDbtp / 20);
   return {
     gainDb,
@@ -302,6 +315,60 @@ export const measureMaster = (ffmpeg, file, gainDb) => {
  */
 export const masterRetryLimit = (limitDbtp, truePeakDbtp) =>
   tenth(limitDbtp - (truePeakDbtp - MASTER_MAX_TRUE_PEAK) - 0.2);
+
+/**
+ * The settings of one more encode of a master, or null when this one is
+ * done: a true peak over the gate lowers the limit (masterRetryLimit); else
+ * a loudness under MASTER_LUFS by more than MASTER_MAKEUP_BELOW adds the
+ * shortfall to the gain. The caller stops after MASTER_ENCODES encodes and
+ * leaves the rest to masterFault.
+ * @param {{ limitDbtp: number, makeupDb: number }} settings  of the encode
+ * @param {{ lufs: number, truePeakDbtp: number }} master  its measure
+ * @returns {{ limitDbtp: number, makeupDb: number, why: string } | null}
+ */
+export const masterRetry = (
+  { limitDbtp, makeupDb },
+  { lufs, truePeakDbtp },
+) => {
+  if (truePeakDbtp > MASTER_MAX_TRUE_PEAK) {
+    const limit = masterRetryLimit(limitDbtp, truePeakDbtp);
+    return {
+      limitDbtp: limit,
+      makeupDb,
+      why: `the encode lifted the master's true peak to ${truePeakDbtp} dBTP; encoding again with the limit at ${limit} dBTP`,
+    };
+  }
+  if (lufs < MASTER_LUFS - MASTER_MAKEUP_BELOW) {
+    const makeup = tenth(makeupDb + MASTER_LUFS - lufs);
+    return {
+      limitDbtp,
+      makeupDb: makeup,
+      why: `the limiter took the master to ${lufs} LUFS; encoding again with ${makeup} dB more gain`,
+    };
+  }
+  return null;
+};
+
+/**
+ * Encode the master until masterRetry is done, at most MASTER_ENCODES
+ * times, and return the last encode's measure.
+ * @template {{ lufs: number, truePeakDbtp: number }} M
+ * @param {(settings: { limitDbtp: number, makeupDb: number }) => M} encode
+ * @param {(line: string) => void} log
+ * @returns {M}
+ */
+export const runMaster = (encode, log) => {
+  let settings = { limitDbtp: MASTER_LIMIT_DBTP, makeupDb: 0 };
+  let master = encode(settings);
+  for (let n = 1; n < MASTER_ENCODES; n += 1) {
+    const next = masterRetry(settings, master);
+    if (!next) break;
+    log(next.why);
+    settings = { limitDbtp: next.limitDbtp, makeupDb: next.makeupDb };
+    master = encode(settings);
+  }
+  return master;
+};
 
 /**
  * Why a master fails the gate, or null when it passes.

@@ -7,7 +7,10 @@ import {
   MASTER_LUFS,
   masterFault,
   masterFilters,
+  masterRetry,
   masterRetryLimit,
+  MASTER_ENCODES,
+  runMaster,
   measureMaster,
   memeLoudness,
   memeOverBed,
@@ -236,6 +239,62 @@ describe("the master", () => {
   test("an encode that overshoots the peak gets one more with the limit lowered by the overshoot", () => {
     expect(masterRetryLimit(-2, -0.7)).toBe(-2.5);
     expect(masterFilters(-25.8, -2.5).filters).toContain("limit=0.7499:");
+  });
+
+  test("masterRetry: a peak overshoot lowers the limit; a loudness under the target adds the shortfall; else done", () => {
+    const start = { limitDbtp: -2, makeupDb: 0 };
+    expect(masterRetry(start, { lufs: -14, truePeakDbtp: -0.7 })).toMatchObject(
+      { limitDbtp: -2.5, makeupDb: 0 },
+    );
+    // VX-IPenv with no music, 2026-10-29: the limiter left -15.1 LUFS.
+    expect(
+      masterRetry(start, { lufs: -15.1, truePeakDbtp: -1.4 }),
+    ).toMatchObject({ limitDbtp: -2, makeupDb: 1.1 });
+    expect(
+      masterRetry(
+        { limitDbtp: -2, makeupDb: 1.1 },
+        { lufs: -14.6, truePeakDbtp: -1.4 },
+      ),
+    ).toMatchObject({ limitDbtp: -2, makeupDb: 1.7 });
+    expect(masterRetry(start, { lufs: -14.4, truePeakDbtp: -1.4 })).toBeNull();
+    expect(masterRetry(start, { lufs: -13.2, truePeakDbtp: -1.4 })).toBeNull();
+    expect(masterFilters(-25.8, -2, 1.1).gainDb).toBe(12.9);
+  });
+
+  test("runMaster encodes again until the master is done, at most MASTER_ENCODES times", () => {
+    // A limiter that keeps only 40% of each dB of make-up gain.
+    interface Settings {
+      limitDbtp: number;
+      makeupDb: number;
+    }
+    const tenthOf = (x: number) => Math.round(x * 10) / 10;
+    const seen: Settings[] = [];
+    const lines: string[] = [];
+    const fake = ({ limitDbtp, makeupDb }: Settings) => {
+      seen.push({ limitDbtp, makeupDb });
+      return { lufs: tenthOf(-15.1 + 0.4 * makeupDb), truePeakDbtp: -1.4 };
+    };
+    expect(runMaster(fake, (l) => lines.push(l))).toEqual({
+      lufs: -14.4,
+      truePeakDbtp: -1.4,
+    });
+    expect(seen).toEqual([
+      { limitDbtp: -2, makeupDb: 0 },
+      { limitDbtp: -2, makeupDb: 1.1 },
+      { limitDbtp: -2, makeupDb: 1.8 },
+    ]);
+    expect(seen.length).toBe(MASTER_ENCODES);
+    expect(lines[0]).toContain("-15.1 LUFS");
+    // A master that is done at once is encoded once.
+    let n = 0;
+    runMaster(
+      () => {
+        n += 1;
+        return { lufs: -14, truePeakDbtp: -1.4 };
+      },
+      (line) => lines.push(line),
+    );
+    expect(n).toBe(1);
   });
 
   test("the gate: -15 to -13 LUFS, true peak at most -1 dBTP", () => {
