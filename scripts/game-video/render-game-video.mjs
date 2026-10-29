@@ -139,6 +139,10 @@ import {
   writeCaptureCache,
 } from "./capture-cache.mjs";
 
+/** When the run started, for RESULT.timings. */
+const RUN_STARTED = Date.now();
+/** Seconds since `from` (a Date.now()), to a tenth, for RESULT.timings. */
+const secondsSince = (from) => Number(((Date.now() - from) / 1000).toFixed(1));
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 /** The meme sounds' files, by key (meme-sounds.mjs). */
@@ -1908,6 +1912,9 @@ const pawnSpots = new Map(cached?.pawnSpots);
  * one of them (litWallLine).
  */
 const wallSpots = new Map(cached?.wallSpots);
+/** Up to here: the browser, the replay page and the game record. */
+const LOAD_SECONDS = secondsSince(RUN_STARTED);
+const captureStarted = Date.now();
 const captureResult = cached
   ? cached.capture
   : await captureReplayFrames({
@@ -2022,6 +2029,7 @@ const captureResult = cached
       },
     });
 assertCompleteCapture(captureResult);
+const CAPTURE_SECONDS = secondsSince(captureStarted);
 const boardFrames = captureResult.records.map((record) => record.file);
 writeFileSync(
   join(WORK, "capture-manifest.json"),
@@ -2994,6 +3002,7 @@ const writeContactSheet = async (stills, out) => {
  * Returns what the RESULT line reports.
  */
 const renderStyle = async (styleName) => {
+  const composeStarted = Date.now();
   const wallz = STYLES[styleName].look === "wallz";
   const style = wallz
     ? { ...STYLES[styleName], ending: EDL.ending }
@@ -4970,6 +4979,7 @@ const renderStyle = async (styleName) => {
     );
   }
   const shotStart = Date.now();
+  const composeSeconds = secondsSince(composeStarted);
   // A part starts at a plain position, never inside an effect.
   const parts = partsOf(shots.length, WORKERS, (i) => shots[i].rest);
   await Promise.all(
@@ -5009,8 +5019,10 @@ const renderStyle = async (styleName) => {
       }
     }),
   );
+  const shootSeconds = secondsSince(shotStart);
+  const encodeStarted = Date.now();
   log(
-    `${shots.length} images shot by ${parts.length} workers in ${((Date.now() - shotStart) / 1000).toFixed(1)}s`,
+    `${shots.length} images shot by ${parts.length} workers in ${shootSeconds}s`,
   );
   // Each image's hash, so two renders can be compared frame by frame.
   writeFileSync(
@@ -5172,6 +5184,19 @@ const renderStyle = async (styleName) => {
     `${layout.width}x${layout.height}, ${totalSeconds.toFixed(1)}s, ${(bytes / 1e6).toFixed(1)} MB, ${pace}s per move`,
   );
   return {
+    /*
+      Seconds per step (crew.mjs prints them): load and capture are the
+      run's, once for every style; compose (until the shoot pass), shoot and
+      encode (with its checks) are this style's. The total is added as the
+      run ends.
+    */
+    timings: {
+      load: LOAD_SECONDS,
+      capture: CAPTURE_SECONDS,
+      compose: composeSeconds,
+      shoot: shootSeconds,
+      encode: secondsSince(encodeStarted),
+    },
     mp4: out,
     bytes,
     sha256: sha256Of(out),
@@ -5264,4 +5289,8 @@ for (const f of readdirSync(WORK)) {
   the dashboard parses these. Written past console.log on purpose, because
   --log sends console.log to the file.
 */
-for (const r of results) process.stdout.write(`RESULT ${JSON.stringify(r)}\n`);
+const runSeconds = secondsSince(RUN_STARTED);
+for (const r of results) {
+  r.timings.total = runSeconds;
+  process.stdout.write(`RESULT ${JSON.stringify(r)}\n`);
+}
