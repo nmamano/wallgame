@@ -130,9 +130,9 @@
         text-align: right;
       }
       /*
-        The daily overlay names no player: it says which side is the AI and
-        which the human, each word IN its side's colour (Nil, 2026-10-26: "AI
-        (in Red) vs Human (in Blue)"), so the viewer links each word to its
+        The daily overlay names no player: it says which side is the bot and
+        which the human (dailySeatNames), each word IN its side's colour (Nil,
+        2026-10-26: "AI (in Red) vs Human (in Blue)"; 2026-10-29: Bot), so the viewer links each word to its
         pieces. A light banner keeps both colours readable.
       */
       #vs .beam.word {
@@ -2709,7 +2709,8 @@
           [$("beamTop"), $("vsNameA"), $("vsSubA"), a],
           [$("beamBottom"), $("vsNameB"), $("vsSubB"), b],
         ]) {
-          // `word` (the daily overlay) replaces the name with AI or Human.
+          // `word` (the daily overlay) replaces the name with the daily name
+          // (Bot or Human).
           beam.classList.toggle("word", !!p.word);
           beam.style.boxShadow = p.word
             ? "inset 0 14px 0 " + p.hex + ", inset 0 -14px 0 " + p.hex

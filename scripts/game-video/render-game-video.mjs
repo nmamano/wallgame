@@ -376,7 +376,7 @@ const ORIGIN = "https://wallgame.io";
  *            frame with every key element inside the Reels safe area
  *            (SAFE_AREA in edl.mjs), one meme caption, the race counter, the
  *            punch-ins, mouse beats, stamps and meme sounds the director's
- *            EDL places, "AI" in red vs "Human" in blue as an OVERLAY over
+ *            EDL places, "Bot" vs "Human" in their colours as an OVERLAY over
  *            the first seconds of play (an intro screen loses viewers), and
  *            one of our own endings. No plates, no winner card.
  *
@@ -2677,16 +2677,6 @@ const side = (playerId) => {
 };
 
 /**
- * A side as the daily VS overlay shows it: no name, only whether the side is
- * the AI or a human (Nil, 2026-10-26), drawn in the side's colour. No
- * emoji: Nil found the first version "too crowded".
- */
-const overlaySide = (playerId) => ({
-  ...side(playerId),
-  word: seatLabel(playerId) === "bot" ? "AI" : "Human",
-});
-
-/**
  * Where a cell sits on the captured board image, as fractions of its width
  * and height: GRID.x(u) and GRID.y(v) map a coordinate in cells (an integer
  * is the line between two cells) to the image, as the page drew the cells
@@ -3654,6 +3644,16 @@ const renderStyle = async (styleName) => {
     blue: seatOf(blueSeat),
   });
   const dailyName = (id) => (id === redSeat ? dailyNames.red : dailyNames.blue);
+  /**
+   * A side as the daily VS overlay shows it: its daily name, never a
+   * player's (Nil, 2026-10-26: "AI (in Red) vs Human (in Blue)"; 2026-10-29:
+   * Bot and Human, as everywhere else), drawn in the side's colour. No
+   * emoji: Nil found the first version "too crowded".
+   */
+  const overlaySide = (playerId) => ({
+    ...side(playerId),
+    word: dailyName(playerId),
+  });
   /**
    * The players strip under the daily board (stage.html #strip): each side's
    * portrait and its daily name in its colour.
