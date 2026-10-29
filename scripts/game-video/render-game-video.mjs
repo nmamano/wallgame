@@ -249,7 +249,8 @@ const cliArg = (name) => {
 const flag = (name) => argv.includes(`--${listed(name)}`);
 /**
  * Compose only, and report the list's faults (R1): no image, no MP4. The
- * RESULT line is {lint: {faults, notes, counts, loudness}, timings}.
+ * RESULT line is {lint: {faults, notes, counts, loudness, timeline},
+ * timings}.
  */
 const LINT = flag("lint");
 /**
@@ -5782,12 +5783,13 @@ const renderStyle = async (styleName) => {
       );
     }
   }
-  for (const m of musicParts({
+  const composedMusic = musicParts({
     beatStartAt,
     musicStart,
     musicEndAt: musicEndAt ?? videoSeconds,
     bed: wallz ? MUSIC_BED : 0,
-  })) {
+  });
+  for (const m of composedMusic) {
     heard.push([m.start, m.bed > 0 ? videoSeconds : m.endAt]);
   }
   heard.sort((a, b) => a[0] - b[0]);
@@ -5838,12 +5840,7 @@ const renderStyle = async (styleName) => {
         ffmpeg: FFMPEG,
         cues: cues.filter((c) => existsSync(c.file)),
         totalSeconds: videoSeconds,
-        music: musicParts({
-          beatStartAt,
-          musicStart,
-          musicEndAt: musicEndAt ?? videoSeconds,
-          bed: wallz ? MUSIC_BED : 0,
-        }),
+        music: composedMusic,
       });
     } catch (err) {
       const message = String(err.message ?? err).slice(0, 300);
@@ -5857,6 +5854,26 @@ const renderStyle = async (styleName) => {
     }
   }
   faults.sort((a, b) => a.at - b.at);
+  const videoFps = DRAFT ? DRAFT_FPS : FPS;
+  /**
+   * RESULT.timeline (timeline-frames.mjs videoTimeline) from the composed
+   * moves and events, `played` cues and `music` parts (one per CUES).
+   */
+  const timelineOf = (played, music) =>
+    videoTimeline({
+      fps: videoFps,
+      moves: moveTimes,
+      events: eventSpans,
+      sounds: [
+        ...played.map((c) => ({ ...c, start: c.at })),
+        ...music.map((m, k) => ({
+          name: CUES[k].track.slug,
+          role: "music",
+          start: m.start,
+          event: null,
+        })),
+      ],
+    });
   if (LINT) {
     const tally = (keys) => {
       const n = {};
@@ -5879,6 +5896,12 @@ const renderStyle = async (styleName) => {
         },
         // As a render's RESULT.loudness.
         loudness: lintLoudness,
+        /*
+          The composed timeline, as a render's RESULT.timeline: every cue
+          the list asks for and the music, so the director can time beats
+          without a render (Video Editor (daily app), 2026-10-29).
+        */
+        timeline: timelineOf(cues, composedMusic),
       },
       timings: {
         load: LOAD_SECONDS,
@@ -5924,7 +5947,6 @@ const renderStyle = async (styleName) => {
     an effect); those are not shot. The stills of the contact sheet are shot
     all the same.
   */
-  const videoFps = DRAFT ? DRAFT_FPS : FPS;
   const encodedRanges = allocateFrameRanges(timeline, videoFps, {
     sample: DRAFT,
   });
@@ -6195,22 +6217,7 @@ const renderStyle = async (styleName) => {
     fromCache: Boolean(cached),
     /** The plies a --plies preview played, or null for a full render. */
     preview: PLY_WINDOW,
-    timeline: videoTimeline({
-      fps: videoFps,
-      moves: moveTimes,
-      events: eventSpans,
-      sounds: [
-        ...mixed.map((c) => ({ ...c, start: c.at })),
-        ...(audioPath
-          ? CUES.map((c, k) => ({
-              name: c.track.slug,
-              role: "music",
-              start: music[k].start,
-              event: null,
-            }))
-          : []),
-      ],
-    }),
+    timeline: timelineOf(mixed, audioPath ? music : []),
     sound: wallz
       ? `vs=${sounds[style.vsSound].name},finish=${sounds.finish.name}`
       : `shake=${sounds.shake.name},win=${sounds.win.name}`,
