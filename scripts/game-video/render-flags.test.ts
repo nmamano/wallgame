@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { LINT_KINDS } from "./edl.mjs";
 import { REPO, renderKitFiles } from "./render-kit.mjs";
 
 const RENDERER = join(import.meta.dir, "render-game-video.mjs");
@@ -75,6 +76,28 @@ describe("the renderer's flags", () => {
     expect([...read].filter((n) => !flags.has(n))).toEqual([]);
     // And no listed flag is dead.
     expect([...flags].filter((n) => !read.has(n))).toEqual([]);
+  });
+});
+
+describe("the lint (--lint)", () => {
+  test("it never captures: without --from-cache it stops before the browser", () => {
+    const r = run("--edl", "x.json", "--lint");
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("--lint reads the capture cache");
+  });
+
+  test("every kind the renderer reports is in edl.mjs LINT_KINDS, and none is dead", () => {
+    // fault("kind", ...) and frameZoom's report("kind", ...) on every path,
+    // so read the source, not a run.
+    const source = readFileSync(RENDERER, "utf8");
+    const used = new Set(
+      [...source.matchAll(/\b(?:fault|report)\(\s*"([a-z-]+)"/g)].map(
+        (m) => m[1],
+      ),
+    );
+    expect(used.size).toBeGreaterThan(5);
+    expect([...used].filter((k) => !(k in LINT_KINDS))).toEqual([]);
+    expect(Object.keys(LINT_KINDS).filter((k) => !used.has(k))).toEqual([]);
   });
 });
 

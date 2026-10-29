@@ -89,6 +89,7 @@ import {
   DEFAULT_SLOT_SOUNDS,
   edlSoundUses,
   EDL_LIMITS,
+  LINT_KINDS,
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
@@ -164,7 +165,7 @@ const USAGE =
   "  plumbing, for the app rather than for a person:\n" +
   "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
   "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-  "       [--from-cache] [--cache DIR] [--plies FROM..TO]";
+  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint]";
 
 /**
  * Every flag the renderer takes: "value" (--name VALUE) or "switch". The
@@ -185,6 +186,7 @@ const FLAGS = {
   ffmpeg: "value",
   "from-cache": "switch",
   game: "value",
+  lint: "switch",
   log: "value",
   music: "value",
   "no-music": "switch",
@@ -232,6 +234,17 @@ const cliArg = (name) => {
   return i === -1 ? undefined : argv[i + 1];
 };
 const flag = (name) => argv.includes(`--${listed(name)}`);
+/**
+ * Compose only, and report the list's faults (R1): no image, no MP4. The
+ * RESULT line is {lint: {faults, counts}, timings}.
+ */
+const LINT = flag("lint");
+// A lint reads the capture, so it never costs a view (Video Editor (daily
+// app), 2026-10-29).
+if (LINT && !flag("from-cache")) {
+  console.error("--lint reads the capture cache: add --from-cache");
+  process.exit(2);
+}
 if (flag("help")) {
   console.log(USAGE);
   process.exit(0);
@@ -898,6 +911,17 @@ const LOOP_SECONDS = 0.5;
  * end, which on a phone sounds like the video stopped).
  */
 const MUSIC_BED = 0.35;
+/**
+ * The list's faults that a render finds before its shoot pass (R1, Wall
+ * Game Director, 2026-10-29): no sound at all for more than SILENCE_SECONDS,
+ * and a still board held STILL_BEFORE_ENDING_SECONDS or more right before
+ * the ending (a still, silent board after the climax, 2026-10-29). A sound
+ * is heard from its first to its last sample above SOUND_FLOOR_DB, at its
+ * gain. Both only warn (edl.mjs LINT_KINDS).
+ */
+const SILENCE_SECONDS = 1.5;
+const STILL_BEFORE_ENDING_SECONDS = 0.5;
+const SOUND_FLOOR_DB = -50;
 /**
  * How far a shake may scale the composition: it must not, so this only
  * absorbs float noise in the matrix read. See the winning shake below.
@@ -2627,12 +2651,18 @@ const ZOOM_MARGIN = 0.75;
  * largest. A pawn left out still crosses the edge during the push and the
  * pull-out, as the camera moves. The 1.05 floor is for the frame asked; a grown window may go
  * down to 1.0, the whole board, which cuts nothing (only a drift above 1.0
- * can, and then a WARNING says so).
+ * can, and then a WARNING says so). Each change and each pawn still cut
+ * also goes to `report(kind, message)` for the lint (edl.mjs LINT_KINDS
+ * "zoom-scale", "zoom-cuts-pawn").
  */
 const PAWN_AIR = 0.1;
 const CLOSE_MARGIN = 0.3;
 const CLOSE_MOST = 1.1;
-const frameZoom = (terms, maxScale, { boards, drift = 0, label }) => {
+const frameZoom = (
+  terms,
+  maxScale,
+  { boards, drift = 0, label, report = () => {} },
+) => {
   const boxes = terms.map(termBox);
   /** The terms' box plus `margin` cells, in cells. */
   const spanOf = (margin) => ({
@@ -2770,16 +2800,17 @@ const frameZoom = (terms, maxScale, { boards, drift = 0, label }) => {
     closer && closer.scale - asked.scale < asked.scale - grown.scale
       ? closer
       : grown;
-  log(
+  const change =
     z === closer
       ? `${label}: ${asked.scale.toFixed(2)} -> ${z.scale.toFixed(2)}, the window closes in and leaves the pawn on ${cells(cut)} out (to show it whole: ${grown.scale.toFixed(2)})`
-      : `${label}: ${asked.scale.toFixed(2)} -> ${z.scale.toFixed(2)}, the window grows and shows the pawn on ${cells(grownFor)} whole${closer ? "" : noCloser}`,
-  );
+      : `${label}: ${asked.scale.toFixed(2)} -> ${z.scale.toFixed(2)}, the window grows and shows the pawn on ${cells(grownFor)} whole${closer ? "" : noCloser}`;
+  log(change);
+  report("zoom-scale", change);
   const still = cutBy(z);
   if (still.length > 0) {
-    log(
-      `WARNING: ${label} still cuts the pawn on ${cells(still)} at the frame's edge`,
-    );
+    const message = `${label} still cuts the pawn on ${cells(still)} at the frame's edge`;
+    log(`WARNING: ${message}`);
+    report("zoom-cuts-pawn", message);
   }
   return z;
 };
@@ -3317,6 +3348,30 @@ const renderStyle = async (styleName) => {
   const timeline = [];
   const cues = [];
   let elapsed = 0;
+  /**
+   * The list's faults that composing finds (R1, Wall Game Director,
+   * 2026-10-29: "report EVERY fault at once, with ply and second"): its
+   * kind (edl.mjs LINT_KINDS), the 0-based ply (null for the whole video),
+   * the video second, whether it stops a render, and a one-line message.
+   * Composing goes on past each one; before the shoot pass a render stops
+   * on those that stop it and names them all, and --lint reports them all.
+   * A kind that is a note (the renderer changed something on its own) goes
+   * to `notes` instead.
+   */
+  const faults = [];
+  const notes = [];
+  const fault = (kind, ply, message, at = elapsed) => {
+    const how = LINT_KINDS[kind];
+    if (!how) throw new Error(`${kind} is not in edl.mjs LINT_KINDS`);
+    const item = {
+      kind,
+      ply: ply ?? null,
+      at: Number(at.toFixed(2)),
+      message: message.replace(/\s*\n\s*/g, "; "),
+    };
+    if (how === "note") notes.push(item);
+    else faults.push({ ...item, stops: how === "stops" });
+  };
   const cue = (sound, role, { at = elapsed, event = null } = {}) => {
     // A time built from a missing value is NaN, and ffmpeg's mix refuses it
     // with no word on which sound (2026-10-29): stop here and name it.
@@ -3539,9 +3594,12 @@ const renderStyle = async (styleName) => {
   const openOverlay = (ev) => {
     const live = liveOverlay();
     if (live) {
-      throw new Error(
+      fault(
+        "overlay-overlap",
+        ev.ply,
         `the ${ev.asset} overlay on ply ${ev.ply} opens while the ${live.ev.asset} overlay of ply ${live.ev.ply} still shows; one overlay at a time`,
       );
+      closeOverlay();
     }
     const fast = fastRangeOf(ev.ply);
     overlayWindows.push({
@@ -3649,10 +3707,12 @@ const renderStyle = async (styleName) => {
    * with no free place. Each box is the pawn the page drew (pawnSpots), not
    * its cell's pitch: the pitch holds the wall grooves, half again as wide
    * as the pawn, and a bar refused for a groove has no place on a board
-   * with pawns near both edges (2026-10-29).
+   * with pawns near both edges (2026-10-29). A frame with the capture
+   * picture adds its catcher and caught pawn, bigger than the page's
+   * (Video Reviewer 1, review 57).
    */
-  const pawnBoxes = (state) =>
-    (pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
+  const pawnBoxes = (state) => [
+    ...(pawnSpots.get(boardIndexOf.get(state.board)) ?? []).flatMap((p) => {
       const drawn = {
         x0: p.x - p.w / 2,
         y0: p.y - p.h / 2,
@@ -3661,7 +3721,17 @@ const renderStyle = async (styleName) => {
       };
       const box = boxOnScreen(drawn, state.zoom);
       return box ? [{ ...box, what: `pawn on ${drawnPawnCell(p)}` }] : [];
-    });
+    }),
+    ...(state.capture
+      ? [state.capture.mouse, state.capture.cat].flatMap((b) => {
+          const box = boxOnScreen(
+            { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h },
+            state.zoom,
+          );
+          return box ? [{ ...box, what: "the capture picture" }] : [];
+        })
+      : []),
+  ];
   /**
    * What a frame shows in play, as boxes in the board as the camera shows
    * it: the cells the last move's pawns left and reached, its walls, the
@@ -3757,8 +3827,11 @@ const renderStyle = async (styleName) => {
           : TEXT_TIMING.overlayPop;
       const fullFor = showsFor - comesIn - TEXT_TIMING.overlayFade;
       if (fullFor + 0.5 / FPS < read) {
-        throw new Error(
+        fault(
+          "reading-time",
+          w.ev.ply,
           `${where} is fully shown ${fullFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending holds for its bar, so this is a bug" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
+          w.start,
         );
       }
       /*
@@ -3795,9 +3868,13 @@ const renderStyle = async (styleName) => {
           (p) =>
             `${placeName(p)}: ${[...new Set(coveredBy(p, busy).map((b) => b.what))].join(", ")}`,
         );
-        throw new Error(
+        fault(
+          "overlay-place",
+          w.ev.ply,
           `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s); under each place:\n  ${under.join("\n  ")}`,
+          w.start,
         );
+        continue;
       }
       Object.assign(w.place, place);
       log(`${where}: ${placeName(place)}`);
@@ -3844,9 +3921,13 @@ const renderStyle = async (styleName) => {
           { ...f.state, overlay: f.o },
         );
         if (!fit.fits) {
-          throw new Error(
+          fault(
+            "text-fit",
+            w.ev.ply,
             `${where}: its text does not fit its box even at ${fit.floor.toFixed(0)} px (it needs ${fit.needs.join("x")} px, the box has ${fit.has.join("x")}); shorten it`,
+            w.start,
           );
+          break;
         }
       }
       const mid = w.frames[Math.floor(w.frames.length / 2)];
@@ -4177,7 +4258,11 @@ const renderStyle = async (styleName) => {
     const z = frameZoom(
       walls.length > 0 ? walls : at ? [termOfCell(at)] : ["a1"],
       COLD_OPEN_SCALE,
-      { boards: [coldPly + 1], label: `cold open on ply ${coldPly}` },
+      {
+        boards: [coldPly + 1],
+        label: `cold open on ply ${coldPly}`,
+        report: (kind, m) => fault(kind, coldPly, m),
+      },
     );
     cue(moveClick(coldPly), "cold-open");
     const coldLines = walls.map((w) => litWallLine(w, coldPly + 1));
@@ -4306,7 +4391,9 @@ const renderStyle = async (styleName) => {
   if (GOAL_LINE) {
     const fit = await stage.evaluate(() => window.__goalFit());
     if (!fit.fits) {
-      throw new Error(
+      fault(
+        "text-fit",
+        null,
         `the goal line does not fit one line at its smallest size: ${GOAL_LINE}`,
       );
     }
@@ -4315,7 +4402,9 @@ const renderStyle = async (styleName) => {
   if (strip) {
     const fit = await stage.evaluate(() => window.__stripFit());
     if (!fit.fits) {
-      throw new Error(
+      fault(
+        "text-fit",
+        null,
         `the players strip does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}`,
       );
     }
@@ -4349,12 +4438,15 @@ const renderStyle = async (styleName) => {
       ? await stage.evaluate(() => window.__creditText())
       : null;
   if (creditText && creditText.lines !== CREDIT_LINES.length) {
-    throw new Error(
+    fault(
+      "text-fit",
+      null,
       `the credit takes ${creditText.lines} lines at its smallest size, not ${CREDIT_LINES.length}: ${CREDIT}`,
     );
-  }
-  if (creditText && !creditText.fits) {
-    throw new Error(
+  } else if (creditText && !creditText.fits) {
+    fault(
+      "text-fit",
+      null,
       `the credit does not fit its row at its smallest size: ${CREDIT}`,
     );
   }
@@ -4519,6 +4611,7 @@ const renderStyle = async (styleName) => {
     const z = frameZoom([termOfCell(at)], FREEZE_SCALE, {
       boards: [ply - 1],
       label: `freeze on ply ${plyIndex}`,
+      report: (kind, m) => fault(kind, plyIndex, m),
     });
     const frames = Math.round((FREEZE_PUSH + ev.holdSeconds) * FPS);
     const mid = Math.round((FREEZE_PUSH + ev.holdSeconds / 2) * FPS);
@@ -4562,6 +4655,7 @@ const renderStyle = async (styleName) => {
       boards: [ply - 1, ply],
       drift: ZOOM_DRIFT,
       label: `lead zoom on ply ${plyIndex}`,
+      report: (kind, m) => fault(kind, plyIndex, m),
     });
     const push = Math.round(LEAD_PUSH * FPS);
     // The position before the move can close a fastForward range; the zoom
@@ -4659,6 +4753,7 @@ const renderStyle = async (styleName) => {
           boards: [ply],
           drift: ZOOM_DRIFT,
           label: `zoom on ply ${plyIndex}`,
+          report: (kind, m) => fault(kind, plyIndex, m),
         });
         const out = endsInZoom && ev === landing.at(-1) ? 0 : ZOOM_OUT;
         const frames = Math.round((ZOOM_IN + ev.holdSeconds + out) * FPS);
@@ -5163,6 +5258,143 @@ const renderStyle = async (styleName) => {
     );
   }
   await stage.close();
+
+  /* -------------------------------------------------- the list's faults -- */
+
+  // Each image's first second; the video's length; the ply a second shows.
+  const starts = [];
+  let videoSeconds = 0;
+  for (const f of timeline) {
+    starts.push(videoSeconds);
+    videoSeconds += f.seconds;
+  }
+  const plyAt = (second) =>
+    timeline[starts.findLastIndex((t) => t <= second + 1e-9)]?.ply ?? null;
+  /*
+    A still board right before the ending: the plain position held as the
+    last thing before it (Wall Game Director, 2026-10-29: a still, silent
+    board after the climax).
+  */
+  const endingIndex = timeline.findIndex((f) => f.kind === "ending");
+  if (endingIndex > 0) {
+    let from = endingIndex;
+    while (from > 0 && timeline[from - 1].kind === "move") from -= 1;
+    const still = starts[endingIndex] - starts[from];
+    if (still >= STILL_BEFORE_ENDING_SECONDS - 1e-9) {
+      fault(
+        "still-before-ending",
+        timeline[endingIndex - 1].ply,
+        `the board holds still ${still.toFixed(1)} s right before the ending: a zoom on the last ply runs straight into it`,
+        starts[from],
+      );
+    }
+  }
+  /*
+    No sound at all: a stretch where no cue is heard and no music plays. A
+    cue is heard from its first to its last sample above SOUND_FLOOR_DB at
+    its gain and rate (decoded at 8 kHz, once a file); the music from its
+    start to its end, or to the video's end when it holds a bed.
+  */
+  const pcmOf = new Map();
+  const pcm = (file) => {
+    if (!pcmOf.has(file)) {
+      const raw = existsSync(file)
+        ? ff(["-i", file, "-ac", "1", "-ar", "8000", "-f", "s16le", "pipe:1"])
+        : null;
+      pcmOf.set(file, raw && new Int16Array(Uint8Array.from(raw).buffer));
+    }
+    return pcmOf.get(file);
+  };
+  const floor = 32768 * 10 ** (SOUND_FLOOR_DB / 20);
+  const heard = [];
+  for (const c of cues) {
+    const x = pcm(c.file);
+    if (!x) {
+      fault("sound-file", plyAt(c.at), `the sound ${c.file} is not here`, c.at);
+      continue;
+    }
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < x.length; i += 1) {
+      if (Math.abs(x[i]) * c.gain > floor) {
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    if (first >= 0) {
+      heard.push([
+        c.at + first / 8000 / c.rate,
+        c.at + (last + 1) / 8000 / c.rate,
+      ]);
+    }
+  }
+  for (const m of musicParts({
+    beatStartAt,
+    musicStart,
+    musicEndAt: musicEndAt ?? videoSeconds,
+    bed: wallz ? MUSIC_BED : 0,
+  })) {
+    heard.push([m.start, m.bed > 0 ? videoSeconds : m.endAt]);
+  }
+  heard.sort((a, b) => a[0] - b[0]);
+  let reach = 0;
+  for (const [a, b] of [...heard, [videoSeconds, videoSeconds]]) {
+    if (a - reach > SILENCE_SECONDS) {
+      fault(
+        "silence",
+        plyAt(reach),
+        `no sound for ${(a - reach).toFixed(1)} s, from ${reach.toFixed(1)} s to ${a.toFixed(1)} s`,
+        reach,
+      );
+    }
+    reach = Math.max(reach, b);
+  }
+
+  /*
+    --lint stops here, before any image is taken, and reports every fault
+    with what the list holds. A render with faults stops here too, naming
+    them all. In the video's order: placeOverlays finds its faults last.
+  */
+  faults.sort((a, b) => a.at - b.at);
+  if (LINT) {
+    const tally = (keys) => {
+      const n = {};
+      for (const k of keys) n[k] = (n[k] ?? 0) + 1;
+      return n;
+    };
+    const events = EDL?.events ?? [];
+    log(`lint: ${faults.length} fault(s), ${videoSeconds.toFixed(1)} s`);
+    return {
+      lint: {
+        faults,
+        notes,
+        counts: {
+          seconds: Number(videoSeconds.toFixed(2)),
+          events: tally(events.map((e) => e.kind)),
+          overlays: tally(
+            events.filter((e) => e.kind === "overlay").map((e) => e.asset),
+          ),
+          sounds: EDL ? tally(edlSoundUses(EDL).map(([, key]) => key)) : {},
+        },
+      },
+      timings: {
+        load: LOAD_SECONDS,
+        capture: CAPTURE_SECONDS,
+        compose: secondsSince(composeStarted),
+      },
+    };
+  }
+  const faultLine = (f) =>
+    `ply ${f.ply ?? "-"}, ${f.at} s, ${f.kind}: ${f.message}`;
+  for (const f of faults.filter((f) => !f.stops)) {
+    log(`WARNING ${faultLine(f)}`);
+  }
+  const stopping = faults.filter((f) => f.stops);
+  if (stopping.length > 0) {
+    throw new Error(
+      `the list has ${stopping.length} fault(s), so nothing was shot:\n  ${stopping.map(faultLine).join("\n  ")}`,
+    );
+  }
 
   /*
     The shoot pass: WORKERS Chromium processes, each with its own stage,

@@ -287,6 +287,24 @@ export const edlSoundUses = (edl) => [
       : [],
   ),
 ];
+/**
+ * What a render's lint (render-game-video.mjs --lint, R1) can report, by
+ * kind: "stops" a render before its shoot pass, "warns" (a weakness of the
+ * edit; a render logs it and goes on), or "note" (what the renderer changed
+ * on its own, for the director to see). crew.mjs and the tests import this
+ * list.
+ */
+export const LINT_KINDS = {
+  "overlay-overlap": "stops",
+  "overlay-place": "stops",
+  "reading-time": "stops",
+  "text-fit": "stops",
+  "sound-file": "stops",
+  silence: "warns",
+  "still-before-ending": "warns",
+  "zoom-cuts-pawn": "warns",
+  "zoom-scale": "note",
+};
 export const EVENT_KINDS = [
   "zoom",
   "scared",
