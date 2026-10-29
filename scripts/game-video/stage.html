@@ -1613,6 +1613,13 @@
         }
         paint(null);
         cam.style.transform = zoom;
+        // A wrong length or a new fade must not pass as "covers nothing"
+        // (Video Reviewer 1, review 66).
+        if (x0 === Infinity) {
+          throw new Error(
+            "the " + el.id + " never shows over its " + ts.length + " frames",
+          );
+        }
         return {
           x: (x0 - b.left) / b.width,
           y: (y0 - b.top) / b.height,

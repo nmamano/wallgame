@@ -969,6 +969,13 @@ const ENDING_TOUCH_CELLS = 0.1;
  * nothing.
  */
 const STAMP_FLAT_POP = 1.15;
+/**
+ * A stamp with less room than this to slam shrinks, down to
+ * STAMP_MIN_SHRINK of its size, until it has it (Wall Game Director,
+ * 2026-10-29).
+ */
+const STAMP_TARGET_POP = 1.5;
+const STAMP_MIN_SHRINK = 0.85;
 /** How many plies before and after a flat stamp the lint looks for a better one. */
 const STAMP_NEARBY_PLIES = 3;
 
@@ -4722,15 +4729,34 @@ const renderStyle = async (styleName) => {
         ev.text,
       );
       const fit = Math.min(1, STAMP_MAX_WIDTH / measured.w);
-      const spotOn = (ply) =>
+      const spotOn = (ply, shrink) =>
         placeStamp(
           ply + 1,
           ply,
-          { w: measured.w * fit, h: measured.h * fit },
+          { w: measured.w * fit * shrink, h: measured.h * fit * shrink },
           ev.kind === "trap" ? ev.walls : [],
           punchFrom,
         );
-      const spot = spotOn(ev.ply);
+      /*
+        A word with little room to slam shrinks, by whole percents down to
+        STAMP_MIN_SHRINK, until it slams in from STAMP_TARGET_POP, and never
+        to a place that hides more of the move (Wall Game Director,
+        2026-10-29: "WALLED" on 8Fro ply 12 slammed from 1.06x; choice B,
+        so every stamp keeps the same centre zoom). At the floor it keeps
+        what it reached; under STAMP_FLAT_POP the lint still notes it.
+      */
+      const full = spotOn(ev.ply, 1);
+      let shrink = 1;
+      let spot = full;
+      if (full.pop < STAMP_TARGET_POP) {
+        for (let k = 99; k >= STAMP_MIN_SHRINK * 100 - 1e-9; k -= 1) {
+          const s = spotOn(ev.ply, k / 100);
+          if (s.covered > full.covered + 1e-9 || s.pop <= spot.pop) continue;
+          shrink = k / 100;
+          spot = s;
+          if (s.pop >= STAMP_TARGET_POP) break;
+        }
+      }
       /*
         For a flat slam, the nearest ply within STAMP_NEARBY_PLIES where the
         same word hides none of its move and slams in fully, so the beat can
@@ -4749,7 +4775,7 @@ const renderStyle = async (styleName) => {
         for (let d = 1; d <= STAMP_NEARBY_PLIES; d += 1) {
           for (const ply of [ev.ply - d, ev.ply + d]) {
             if (ply < 0 || !pawnSpots.has(ply + 1) || !placed(ply)) continue;
-            const s = spotOn(ply);
+            const s = spotOn(ply, 1);
             if (s.covered <= 0.01 && s.pop >= STAMP_FLAT_POP) {
               return { ply, ...s };
             }
@@ -4758,7 +4784,7 @@ const renderStyle = async (styleName) => {
         return null;
       };
       const better = spot.pop < STAMP_FLAT_POP ? nearby() : null;
-      stampSpots.set(ev, { at: spot.at, fit, pop: spot.pop });
+      stampSpots.set(ev, { at: spot.at, fit: fit * shrink, pop: spot.pop });
       stampLints.set(ev, {
         covers:
           spot.covered > 0.01
@@ -4772,7 +4798,7 @@ const renderStyle = async (styleName) => {
             : null,
       });
       log(
-        `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move, slams in from ${spot.pop.toFixed(2)}`,
+        `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${(fit * shrink).toFixed(2)} size${shrink < 1 ? ` (shrunk to ${Math.round(shrink * 100)}% to slam, from ${full.pop.toFixed(2)}x at full size)` : ""}, over ${spot.covered.toFixed(2)} cells of the move, slams in from ${spot.pop.toFixed(2)}`,
       );
     }
   }
