@@ -223,9 +223,10 @@ export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
 };
 
 /*
-  The master (Nil, ask 99dbae48, answer B "feed level"; Wall Game Director,
-  2026-10-29): the whole mix goes to about MASTER_LUFS integrated with a true
-  peak at most MASTER_MAX_TRUE_PEAK, the level of the feed it plays in.
+  The master ("feed level", option B of an A/B that Nil did not answer; the
+  Wall Game Director chose it, 2026-10-29): the whole mix goes to about
+  MASTER_LUFS integrated with a true peak at most MASTER_MAX_TRUE_PEAK, the
+  level of the feed it plays in.
   Two passes: measure the mix, then one linear gain to the target and a
   true-peak limiter. A linear gain keeps every relative level of the mix
   (each meme over its bed, the stings, the capture hits); one-pass dynamic

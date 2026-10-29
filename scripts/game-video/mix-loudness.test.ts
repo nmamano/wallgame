@@ -19,6 +19,7 @@ import {
 const parts = (series: [number, number][]) => ({
   windows: series.map(([t, m]) => ({ t, m })),
   truePeakDbtp: -12,
+  integratedLufs: -20,
 });
 
 describe("memeOverBed", () => {
