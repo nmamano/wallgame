@@ -2549,7 +2549,7 @@ const PLAYED_TRACKS = [
 ];
 const CREDIT_LINES = EDL ? creditLines(PLAYED_TRACKS) : null;
 const CREDIT = CREDIT_LINES ? creditLine(PLAYED_TRACKS) : null;
-/** How long the credit takes to fade in over the race counter. */
+/** How long the race counter takes to give its place to the credit. */
 const CREDIT_FADE_SECONDS = 0.3;
 
 /**

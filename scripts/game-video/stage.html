@@ -1864,16 +1864,21 @@
        */
       /**
        * The head row: the race counter `r`, or the goal line `goal`, or the
-       * credit c = { a: 0..1 }, which fades in over the race counter as it
-       * fades out. The credit's text is set once, by __fitWallz.
+       * credit c = { a: 0..1 }, which takes the race counter's place: the
+       * counter fades out over the first half and the credit fades in over
+       * the second, so the two never show at once. The credit's text is set
+       * once, by __fitWallz.
        */
       const paintHud = (r, goal, c) => {
         const a = c ? c.a : 0;
-        $("race").style.visibility = r && !goal && a < 1 ? "visible" : "hidden";
-        $("race").style.opacity = a > 0 ? String(1 - a) : "";
+        const out = Math.min(1, 2 * a);
+        const inn = Math.max(0, 2 * a - 1);
+        $("race").style.visibility =
+          r && !goal && out < 1 ? "visible" : "hidden";
+        $("race").style.opacity = a > 0 ? String(1 - out) : "";
         $("goal").style.visibility = goal ? "visible" : "hidden";
-        $("credit").style.visibility = a > 0 ? "visible" : "hidden";
-        $("credit").style.opacity = a > 0 ? String(a) : "";
+        $("credit").style.visibility = inn > 0 ? "visible" : "hidden";
+        $("credit").style.opacity = inn > 0 ? String(inn) : "";
         if (goal) $("goal").textContent = goal;
         if (!r) return;
         // The flash: the counter swells and glows, twice, over 0.8 s.
