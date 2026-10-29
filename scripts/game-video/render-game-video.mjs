@@ -720,6 +720,13 @@ const MOVE_CLICK_VARIANTS = [
  * are one step quieter, -6 dB (Wall Game PM, 2026-10-26).
  */
 const FAST_FORWARD_CLICK_STEP = 10 ** (-6 / 20);
+/**
+ * A walk's tick a step (cueWalkTicks): the pawn click a fifth up and
+ * -14 dB, so ten of them in under a second count the steps under the
+ * moves and memes rather than over them.
+ */
+const TICK_RATE = 1.5;
+const TICK_STEP = 10 ** (-14 / 20);
 
 /** Seconds the music takes to arrive, and to leave before the end card. */
 const MUSIC_FADE_IN = 1.6;
@@ -798,25 +805,33 @@ const REACT_SECONDS = 1.2;
 const TRAP_SECONDS = 1.6;
 /**
  * A path event (edl.mjs "path"): each walk draws itself from the hunter in
- * PATH_DRAW_SECONDS; with `compare` the walk before the move then holds for
- * PATH_BEFORE_SECONDS and fades as the walk after it draws; the last walk
- * holds for the event's holdSeconds and fades in PATH_FADE_SECONDS.
+ * drawSeconds, PATH_STEP_SECONDS a step (at least PATH_DRAW_MIN_SECONDS,
+ * at most PATH_DRAW_MAX_SECONDS), with a tick a step, so the steps can be
+ * counted by ear (Wall Game Director, 2026-10-29); with `compare` the walk
+ * before the move then holds for PATH_BEFORE_SECONDS and fades as the walk
+ * after it draws; the last walk holds for the event's holdSeconds and
+ * fades in PATH_FADE_SECONDS.
  */
-const PATH_DRAW_SECONDS = 0.45;
+const PATH_STEP_SECONDS = 0.06;
+const PATH_DRAW_MIN_SECONDS = 0.45;
+const PATH_DRAW_MAX_SECONDS = 0.9;
 const PATH_BEFORE_SECONDS = 0.45;
 const PATH_FADE_SECONDS = 0.3;
+/** How long a walk (its cells, the hunter's first) takes to draw. */
+const drawSeconds = (points) =>
+  Math.min(
+    PATH_DRAW_MAX_SECONDS,
+    Math.max(PATH_DRAW_MIN_SECONDS, (points.length - 1) * PATH_STEP_SECONDS),
+  );
 /**
  * The opening walks (edl.mjs introPaths): each draws as a path event's
- * walk does, holds INTRO_PATH_HOLD_SECONDS with its steps, and fades.
+ * walk does, holds INTRO_PATH_HOLD_SECONDS with its steps, and fades. The
+ * hold was 0.6 s, too short to take the number in (Wall Game Director,
+ * 2026-10-29).
  */
-const INTRO_PATH_HOLD_SECONDS = 0.6;
-const INTRO_PATH_SECONDS =
-  PATH_DRAW_SECONDS + INTRO_PATH_HOLD_SECONDS + PATH_FADE_SECONDS;
-const pathSeconds = (ev) =>
-  (ev.compare ? PATH_DRAW_SECONDS + PATH_BEFORE_SECONDS : 0) +
-  PATH_DRAW_SECONDS +
-  ev.holdSeconds +
-  PATH_FADE_SECONDS;
+const INTRO_PATH_HOLD_SECONDS = 1;
+const introPathSeconds = (points) =>
+  drawSeconds(points) + INTRO_PATH_HOLD_SECONDS + PATH_FADE_SECONDS;
 /**
  * An overlay (edl.mjs "overlay") fades out over its last
  * OVERLAY_FADE_SECONDS; the capture loading bar holds its ERROR for
@@ -2631,6 +2646,14 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
     ],
   });
 }
+/** When a path event's last walk starts to draw: after the compared one. */
+const lastWalkFrom = (ev) =>
+  ev.compare ? drawSeconds(PATHS.get(ev).walks[0]) + PATH_BEFORE_SECONDS : 0;
+const pathSeconds = (ev) =>
+  lastWalkFrom(ev) +
+  drawSeconds(PATHS.get(ev).walks.at(-1)) +
+  ev.holdSeconds +
+  PATH_FADE_SECONDS;
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
   console.error(
     `the EDL flashes the race counter, but ${replay.state.config.variant} gives a side nothing to hunt, so the video shows no counter`,
@@ -3620,6 +3643,27 @@ const renderStyle = async (styleName) => {
         (fastRangeOf(plyIndex) ? FAST_FORWARD_CLICK_STEP : 1),
     };
   };
+  /**
+   * The ticks of a walk that starts to draw at `from`: one a step, as the
+   * walk reaches it, so the steps can be counted by ear. The site's pawn
+   * click, pitched up and TICK_STEP quieter: short and dry, never a ding
+   * (Wall Game Director, 2026-10-29: Nil disliked the three dings).
+   */
+  const cueWalkTicks = (points, from) => {
+    const steps = points.length - 1;
+    for (let k = 1; k <= steps; k += 1) {
+      cue(
+        {
+          name: "tick",
+          file: join(AUDIO_DIR, "pawn.wav"),
+          rate: TICK_RATE,
+          gain: SITE_VOLUMES.pawn * MOVE_GAIN * TICK_STEP,
+        },
+        "tick",
+        { at: from + (k / steps) * drawSeconds(points) },
+      );
+    }
+  };
   /** The move of `plyIndex` lands on the next frame: its click and its time. */
   const land = (plyIndex) => {
     cue(moveClick(plyIndex), "move");
@@ -3891,7 +3935,7 @@ const renderStyle = async (styleName) => {
     if (ev.kind === "race") return { race: { ...raceHud(ply), flash: t } };
     if (ev.kind === "path") {
       const { player, walks } = PATHS.get(ev);
-      const lastFrom = ev.compare ? PATH_DRAW_SECONDS + PATH_BEFORE_SECONDS : 0;
+      const lastFrom = lastWalkFrom(ev);
       const span01 = (x) => Math.max(0, Math.min(1, x));
       return {
         path: {
@@ -3904,7 +3948,7 @@ const renderStyle = async (styleName) => {
             return {
               points,
               steps: points.length - 1,
-              drawn: span01((t - from) / PATH_DRAW_SECONDS),
+              drawn: span01((t - from) / drawSeconds(points)),
               alpha: 1 - span01((t - fadeAt) / PATH_FADE_SECONDS),
             };
           }),
@@ -4120,6 +4164,15 @@ const renderStyle = async (styleName) => {
         path: ev.kind === "path" ? pathSeconds(ev) : 0,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
+      if (ev.kind === "path") {
+        const { walks } = PATHS.get(ev);
+        walks.forEach((w, k) =>
+          cueWalkTicks(
+            w,
+            start + (k === walks.length - 1 ? lastWalkFrom(ev) : 0),
+          ),
+        );
+      }
       // A stamp's or trap's still shows its word; a race flash's shows the
       // counter at its second swell (stage.html swells it as sin^2 over
       // RACE_FLASH_SECONDS, so the middle frame falls between the two swells,
@@ -4186,7 +4239,10 @@ const renderStyle = async (styleName) => {
     rest.
   */
   const goalRead = goalOn ? readingSeconds({}, GOAL_LINE) : 0;
-  const introSeconds = INTRO_WALKS.length * INTRO_PATH_SECONDS;
+  const introSeconds = INTRO_WALKS.reduce(
+    (sum, w) => sum + introPathSeconds(w.points),
+    0,
+  );
   const firstMoveAt = overlay
     ? overlayStart + Math.max(overlay.seconds, goalRead - introSeconds)
     : 0;
@@ -4208,8 +4264,10 @@ const renderStyle = async (styleName) => {
     once it is drawn.
   */
   for (const { player, points } of INTRO_WALKS) {
-    const frames = Math.round(INTRO_PATH_SECONDS * FPS);
-    const stillAt = Math.round((PATH_DRAW_SECONDS + 0.2) * FPS);
+    const seconds = introPathSeconds(points);
+    const frames = Math.round(seconds * FPS);
+    const stillAt = Math.round((drawSeconds(points) + 0.2) * FPS);
+    cueWalkTicks(points, elapsed);
     for (let i = 0; i < frames; i += 1) {
       const t = i / FPS;
       const span01 = (x) => Math.max(0, Math.min(1, x));
@@ -4225,12 +4283,11 @@ const renderStyle = async (styleName) => {
               {
                 points,
                 steps: points.length - 1,
-                drawn: span01(t / PATH_DRAW_SECONDS),
+                drawn: span01(t / drawSeconds(points)),
                 alpha:
                   1 -
                   span01(
-                    (t - (INTRO_PATH_SECONDS - PATH_FADE_SECONDS)) /
-                      PATH_FADE_SECONDS,
+                    (t - (seconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS,
                   ),
               },
             ],
