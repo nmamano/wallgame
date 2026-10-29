@@ -300,6 +300,7 @@ export const LINT_KINDS = {
   "reading-time": "stops",
   "text-fit": "stops",
   "sound-file": "stops",
+  loudness: "stops",
   silence: "warns",
   "still-before-ending": "warns",
   "zoom-cuts-pawn": "warns",

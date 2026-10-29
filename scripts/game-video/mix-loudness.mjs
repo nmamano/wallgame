@@ -99,17 +99,21 @@ export const mixGraph = ({ cues, totalSeconds, music }) => {
 
 /**
  * ffmpeg's ebur128 log as its momentary windows (one per 100 ms; the window
- * is the 400 ms that ends at t) and the true peak of the summary.
+ * is the 400 ms that ends at t) and the true peak of the summary. A window
+ * of digital silence reads "M: nan" (or -inf): it is silence, -Infinity,
+ * not a missing window (2026-10-29: VX with its music off, a bed of pure
+ * silence under the finish sound, failed every render: "the bed has no
+ * window at 37.2 s").
  * @param {string} log
  */
 export const parseMomentary = (log) => {
   const windows = [
     ...log.matchAll(
-      /\bt:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-inf)/g,
+      /\bt:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-inf|nan)/g,
     ),
   ].map((m) => ({
     t: Number(m[1]),
-    m: m[2] === "-inf" ? -Infinity : Number(m[2]),
+    m: m[2] === "-inf" || m[2] === "nan" ? -Infinity : Number(m[2]),
   }));
   const at = log.lastIndexOf("Summary:");
   const peak =

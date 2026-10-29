@@ -238,7 +238,7 @@ const cliArg = (name) => {
 const flag = (name) => argv.includes(`--${listed(name)}`);
 /**
  * Compose only, and report the list's faults (R1): no image, no MP4. The
- * RESULT line is {lint: {faults, counts}, timings}.
+ * RESULT line is {lint: {faults, notes, counts, loudness}, timings}.
  */
 const LINT = flag("lint");
 /**
@@ -5710,6 +5710,38 @@ const renderStyle = async (styleName) => {
     with what the list holds. A render with faults stops here too, naming
     them all. In the video's order: placeOverlays finds its faults last.
   */
+  /*
+    --lint measures the meme sounds as a render's buildAudio does (the same
+    cues and music, mix-loudness.mjs memeLoudness), so a list the render
+    could not measure is named before a render, and the app can judge the
+    levels from a lint (Wall Game Director, 2026-10-29). About 0.4 s a meme
+    sound, so a lint only: a render measures its own mix.
+  */
+  let lintLoudness = null;
+  if (LINT) {
+    try {
+      lintLoudness = memeLoudness({
+        ffmpeg: FFMPEG,
+        cues: cues.filter((c) => existsSync(c.file)),
+        totalSeconds: videoSeconds,
+        music: musicParts({
+          beatStartAt,
+          musicStart,
+          musicEndAt: musicEndAt ?? videoSeconds,
+          bed: wallz ? MUSIC_BED : 0,
+        }),
+      });
+    } catch (err) {
+      const message = String(err.message ?? err).slice(0, 300);
+      lintLoudness = { error: message };
+      fault(
+        "loudness",
+        null,
+        `the meme sounds cannot be measured, so a render's check fails: ${message}`,
+        0,
+      );
+    }
+  }
   faults.sort((a, b) => a.at - b.at);
   if (LINT) {
     const tally = (keys) => {
@@ -5731,6 +5763,8 @@ const renderStyle = async (styleName) => {
           ),
           sounds: EDL ? tally(edlSoundUses(EDL).map(([, key]) => key)) : {},
         },
+        // As a render's RESULT.loudness.
+        loudness: lintLoudness,
       },
       timings: {
         load: LOAD_SECONDS,

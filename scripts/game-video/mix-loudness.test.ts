@@ -74,6 +74,30 @@ test("parseMomentary reads the windows and the true peak of ffmpeg's log", () =>
   expect(() => parseMomentary("no audio")).toThrow(/no loudness windows/);
 });
 
+test("a window of digital silence (M: nan) is silence, not a missing window", () => {
+  // ffmpeg's log under a bed of pure silence: a list with its music off,
+  // the finish sound over nothing (VX, 2026-10-29).
+  const log = [
+    "[Parsed_ebur128_357 @ 0x1] t: 37.1       TARGET:-23 LUFS    M:   nan S: -44.4     I: -34.2 LUFS       LRA:  10.9 LU  FTPK:  -inf  -inf dBFS  TPK: -15.2 -15.2 dBFS",
+    "[Parsed_ebur128_357 @ 0x1] t: 37.2       TARGET:-23 LUFS    M:   nan S: -44.4     I: -34.2 LUFS       LRA:  11.2 LU  FTPK:  -inf  -inf dBFS  TPK: -15.2 -15.2 dBFS",
+    "[Parsed_ebur128_357 @ 0x1] Summary:",
+    "  True peak:",
+    "    Peak:      -15.2 dBFS",
+  ].join("\n");
+  const bed = parseMomentary(log);
+  expect(bed.windows).toEqual([
+    { t: 37.1, m: -Infinity },
+    { t: 37.2, m: -Infinity },
+  ]);
+  // A meme over it stands over nothing: no overLU, no error.
+  const r = memeOverBed(
+    { key: "trombone-2", at: 35.8 },
+    parts([[37.2, -18]]),
+    bed,
+  );
+  expect([r.bedLufs, r.overLU]).toEqual([null, null]);
+});
+
 test("memeLoudness rebuilds the meme alone and the bed, and measures each", () => {
   // Two 1 kHz tones, so the K-weighting is the same for both: the meme is
   // 12 dB over the music bed, and a click elsewhere is part of the bed.
