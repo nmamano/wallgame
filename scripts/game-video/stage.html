@@ -279,10 +279,23 @@
       #pawnFx {
         position: absolute;
       }
+      /*
+        The crop moves only inside its cell: the walls in the grooves around
+        it stay the real board's, still and whole (Wall Game Director,
+        2026-10-29: the shaking mouse hid the cage's walls next to it).
+      */
+      /*
+        Square, as the page's cells are (measured on the VX-IPenv capture,
+        2026-10-29: the corner radius is under 3% of a cell). What it holds
+        is the real cell, corners included, so it matches any theme.
+      */
+      #pawnWin {
+        position: absolute;
+        overflow: hidden;
+      }
       #pawnCrop {
         position: absolute;
         inset: 0;
-        border-radius: 22%;
         background-repeat: no-repeat;
       }
       #pawnSweat {
@@ -1056,7 +1069,7 @@
             <img id="boardImg" />
             <img id="boardPrev" class="hidden" />
             <div id="pawnFx" class="hidden">
-              <div id="pawnCrop"></div>
+              <div id="pawnWin"><div id="pawnCrop"></div></div>
               <div id="pawnSweat">💦</div>
               <div id="pawnBubble"></div>
             </div>
@@ -1275,7 +1288,12 @@
        *
        * b = { kind, t: seconds into the beat, board: the screenshot under it,
        *       cell: {x, y} the mouse's cell centre in the board image (0..1),
-       *       size: one cell's width (0..1),
+       *       size: one cell's pitch, its gap included (0..1), the box
+       *       the bubble and the drop sit around,
+       *       cellSize: one cell's width without its gap (0..1), the window
+       *       the crop moves in,
+       *       under: the cell's own colour, under the crop: the strip its
+       *       motion uncovers shows the cell, not the still pawn,
        *       side: where the bubble goes, up | right | left | down, chosen
        *       by the renderer away from the other pawns }
        */
@@ -1291,10 +1309,14 @@
         fx.style.top = top + "px";
         fx.style.width = px + "px";
         fx.style.height = px + "px";
+        const inset = ((b.size - b.cellSize) / 2) * W;
+        $("pawnWin").style.inset = inset + "px";
+        $("pawnWin").style.background = b.under;
         const crop = $("pawnCrop");
         crop.style.backgroundImage = "url('" + b.board + "')";
         crop.style.backgroundSize = W + "px " + W + "px";
-        crop.style.backgroundPosition = -left + "px " + -top + "px";
+        crop.style.backgroundPosition =
+          -(left + inset) + "px " + -(top + inset) + "px";
 
         const phase = b.t * 30;
         const bubble = $("pawnBubble");
@@ -1316,12 +1338,18 @@
         const sweat = $("pawnSweat");
 
         if (b.kind === "scared") {
+          /*
+            Its own size, never enlarged: the window would cut the art. The
+            strip its shake uncovers shows the cell's own colour (b.under):
+            some skins' art reaches within 1% of the cell's edge
+            (2026-10-29, the 85 mouse skins measured).
+          */
           crop.style.transform =
             "translate(" +
-            Math.sin(phase * 2.7) * px * 0.05 +
+            Math.sin(phase * 2.7) * px * 0.04 +
             "px," +
-            Math.cos(phase * 3.3) * px * 0.035 +
-            "px) scale(1.06)";
+            Math.cos(phase * 3.3) * px * 0.03 +
+            "px)";
           bubble.textContent = "!";
           show(sweat, true);
           // A drop that slides down the face and starts again, twice a second.
@@ -1338,19 +1366,18 @@
           sweat.style.opacity = 1 - cycle * 0.8;
         } else {
           /*
-            Small hops with a wobble, and always a little enlarged. The crop
-            sits on the real pawn, so a hop higher than the enlargement would
-            show the pawn twice (seen 2026-10-26 at 22% of a cell).
+            Small hops with a wobble, at its own size, as the scared shake:
+            an enlarged hop is cut by the window (2026-10-29). What the hop
+            uncovers is the cell's own colour, never the still pawn (seen
+            twice on 2026-10-26, at 22% of a cell).
           */
           const hop = Math.abs(Math.sin(b.t * Math.PI * 3.2));
           crop.style.transform =
             "translateY(" +
-            -hop * px * 0.07 +
+            -hop * px * 0.05 +
             "px) rotate(" +
-            Math.sin(phase * 0.9) * 8 +
-            "deg) scale(" +
-            (1.14 + 0.05 * hop) +
-            ")";
+            Math.sin(phase * 0.9) * 6 +
+            "deg)";
           bubble.textContent = "😂";
           show(sweat, false);
         }
@@ -1376,6 +1403,42 @@
           "translate(-50%,-50%) rotate(-8deg) scale(" +
           punch(span(m.t, 0, 0.25)) * m.fit +
           ")";
+      };
+
+      /**
+       * The colour of a cell where no pawn is drawn, read from the board
+       * image (a data: URL, so the canvas may read it): the median of a ring
+       * of pixels one pixel inside the cell's edge, its round corners left
+       * out. A pawn's art can reach that ring at a few points only, so the
+       * median is the cell's own colour, its highlight included.
+       *   box = { x0, y0, x1, y1 } the cell in the image (0..1)
+       */
+      window.__cellColour = async (url, box) => {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const W = img.naturalWidth;
+        const H = img.naturalHeight;
+        const x0 = Math.round(box.x0 * W) + 1;
+        const y0 = Math.round(box.y0 * H) + 1;
+        const x1 = Math.round(box.x1 * W) - 2;
+        const y1 = Math.round(box.y1 * H) - 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const g = canvas.getContext("2d");
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, W, H).data;
+        const cut = Math.ceil((x1 - x0) * 0.25);
+        const ring = [];
+        const at = (x, y) => ring.push((y * W + x) * 4);
+        for (let x = x0 + cut; x <= x1 - cut; x += 1) (at(x, y0), at(x, y1));
+        for (let y = y0 + cut; y <= y1 - cut; y += 1) (at(x0, y), at(x1, y));
+        const median = (k) => {
+          const v = ring.map((i) => d[i + k]).sort((a, b) => a - b);
+          return v[Math.floor(v.length / 2)];
+        };
+        return "rgb(" + median(0) + "," + median(1) + "," + median(2) + ")";
       };
 
       /**

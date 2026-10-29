@@ -45,6 +45,8 @@ export const boardGrid = ({ clip, first, last, cols, rows }) => {
     /** One cell plus one gap, as fractions of the image. */
     pitchX: pitchX / clip.width,
     pitchY: pitchY / clip.height,
+    /** One cell without its gap, as a fraction of the image width. */
+    cellX: first.width / clip.width,
   };
 };
 

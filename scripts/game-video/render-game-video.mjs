@@ -3817,6 +3817,32 @@ const renderStyle = async (styleName) => {
    * to fit (STAMP_MAX_WIDTH), keyed by its event.
    */
   const stampSpots = new Map();
+  /**
+   * The colour of each scared or laughing mouse's cell with no pawn, read
+   * from the board it shows (stage.html __cellColour), for the window its
+   * crop moves in.
+   */
+  const cellColours = new Map();
+  for (const ev of EVENTS) {
+    if (ev.kind !== "scared" && ev.kind !== "laugh") continue;
+    const at = cellAtTerm(ev.cell);
+    cellColours.set(
+      ev,
+      await stage.evaluate(
+        ([url, box]) => window.__cellColour(url, box),
+        [
+          `data:image/png;base64,${readFileSync(boardFrames[ev.ply + 1]).toString("base64")}`,
+          {
+            x0: at.x - GRID.cellX / 2,
+            y0: at.y - GRID.cellX / 2,
+            x1: at.x + GRID.cellX / 2,
+            y1: at.y + GRID.cellX / 2,
+          },
+        ],
+      ),
+    );
+    log(`${ev.kind} on ${ev.cell}, ply ${ev.ply}: cell ${cellColours.get(ev)}`);
+  }
   if (wallz) {
     for (const ev of EVENTS) {
       if (ev.kind !== "stamp" && ev.kind !== "trap") continue;
@@ -3902,6 +3928,8 @@ const renderStyle = async (styleName) => {
           board: fileUrl(boardFrames[ply]),
           cell: at,
           size,
+          cellSize: GRID.cellX,
+          under: cellColours.get(ev),
           side: bubbleSide(ply, at),
         },
       };
