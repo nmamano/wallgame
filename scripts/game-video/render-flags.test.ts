@@ -116,6 +116,38 @@ describe("the stage", () => {
   });
 });
 
+describe("make-stings.mjs --check", () => {
+  test("a stings.json without a time the renderer reads is out of date", () => {
+    // The state of 2026-10-29: both wavs there, stings.json from before the
+    // whoosh, so the whoosh's cue time was NaN.
+    const kit = mkdtempSync(join(tmpdir(), "render-stings-"));
+    mkdirSync(join(kit, "scripts/game-video"), { recursive: true });
+    cpSync(
+      join(import.meta.dir, "make-stings.mjs"),
+      join(kit, "scripts/game-video/make-stings.mjs"),
+    );
+    const stings = join(kit, "assets/stings");
+    mkdirSync(stings, { recursive: true });
+    writeFileSync(join(stings, "vs-b-riser.wav"), "");
+    writeFileSync(join(stings, "vs-whoosh.wav"), "");
+    const check = () =>
+      spawnSync(
+        "bun",
+        [join(kit, "scripts/game-video/make-stings.mjs"), "--check"],
+        { encoding: "utf8", timeout: 30_000 },
+      );
+    writeFileSync(join(stings, "stings.json"), '{"vsHitSeconds": 1.6}');
+    const stale = check();
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toContain("stings.json whooshPeakSeconds");
+    writeFileSync(
+      join(stings, "stings.json"),
+      '{"vsHitSeconds": 1.6, "whooshPeakSeconds": 1}',
+    );
+    expect(check().status).toBe(0);
+  });
+});
+
 describe("an EDL's meme sounds", () => {
   test("a sound with no file here stops it before the capture, by name", () => {
     // A kit with the renderer's code and no meme sound files: the state of

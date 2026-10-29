@@ -10,6 +10,13 @@
  * left lying around to be picked up again by mistake.
  *
  *   node scripts/game-video/make-stings.mjs
+ *   node scripts/game-video/make-stings.mjs --check
+ *
+ * --check builds nothing: it exits 0 when every sting and every time in
+ * stings.json that this script writes is there, else 1. The renderer and
+ * sync-render-kit.sh ask it, so the list of what must be there is this
+ * file's alone (Video Reviewer 1, review 59: a stale stings.json with no
+ * whooshPeakSeconds failed every render, 2026-10-29).
  *
  * Writes assets/stings/vs-b-riser.wav and stings.json. The output is NOT
  * committed: this script is deterministic, so the renderer rebuilds the wav on
@@ -19,7 +26,7 @@
  * DOWNLOADED, so there is no licence attached to any of it.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +34,25 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 const AUDIO = join(REPO, "frontend/public/audio");
 const OUT = join(REPO, "assets/stings");
+/** The stings this script builds, and the times stings.json gives. */
+const STINGS = ["vs-b-riser.wav", "vs-whoosh.wav"];
+const TIMES = ["vsHitSeconds", "whooshPeakSeconds"];
+
+if (process.argv.includes("--check")) {
+  const manifest = join(OUT, "stings.json");
+  const times = existsSync(manifest)
+    ? JSON.parse(readFileSync(manifest, "utf8"))
+    : {};
+  const missing = [
+    ...STINGS.filter((f) => !existsSync(join(OUT, f))),
+    ...TIMES.filter((k) => !Number.isFinite(times[k])).map(
+      (k) => `stings.json ${k}`,
+    ),
+  ];
+  if (missing.length > 0)
+    console.error(`stings out of date: ${missing.join(", ")}`);
+  process.exit(missing.length > 0 ? 1 : 0);
+}
 mkdirSync(OUT, { recursive: true });
 
 const FFMPEG = (() => {
@@ -173,12 +199,19 @@ build("vs-whoosh", WHOOSH_SWELL + WHOOSH_FADE, [
   Publish where the impact sits inside a VS sting, so the renderer can line the
   sound up with the visual punch instead of keeping its own copy of the number.
 */
+const times = { vsHitSeconds: HIT, whooshPeakSeconds: WHOOSH_SWELL };
+// --check reads TIMES: a time written here and not listed there would not
+// be checked.
+if (Object.keys(times).join() !== TIMES.join()) {
+  throw new Error(
+    `TIMES lists ${TIMES.join()}, the script writes ${Object.keys(times).join()}`,
+  );
+}
 writeFileSync(
   join(OUT, "stings.json"),
   JSON.stringify(
     {
-      vsHitSeconds: HIT,
-      whooshPeakSeconds: WHOOSH_SWELL,
+      ...times,
       builtFrom: "our own audio plus ffmpeg synthesis; nothing downloaded",
     },
     null,

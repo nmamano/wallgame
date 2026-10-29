@@ -70,7 +70,7 @@ import {
   rmSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
@@ -2264,42 +2264,28 @@ const soundsFor = (styleName) => {
   repository free of generated audio without making a fresh checkout render
   a silent VS screen.
 */
-const STING_MANIFEST = join(STING_DIR, "stings.json");
 /**
- * stings.json, or null when it is missing or does not give every time the
- * renderer reads as a number. A copy from before the whoosh has no
+ * Whether every sting and every time in stings.json is there (make-stings.mjs
+ * --check, which owns that list). A copy from before the whoosh had no
  * whooshPeakSeconds, and with both wavs present it was never rebuilt: the
  * whoosh's cue went to NaN and every render failed in the mix (Wall Game
  * Director, 2026-10-29, main 10f2b1ca).
  */
-const readStings = () => {
-  if (!existsSync(STING_MANIFEST)) return null;
-  const m = JSON.parse(readFileSync(STING_MANIFEST, "utf8"));
-  return [m.vsHitSeconds, m.whooshPeakSeconds].every(Number.isFinite)
-    ? m
-    : null;
-};
-if (
-  AUDIO &&
-  (!existsSync(SOUNDS.vsStamp.file) ||
-    !existsSync(VS_WHOOSH.file) ||
-    !readStings())
-) {
+const MAKE_STINGS = join(HERE, "make-stings.mjs");
+const stingsReady = () =>
+  spawnSync(process.execPath, [MAKE_STINGS, "--check"], { stdio: "ignore" })
+    .status === 0;
+if (AUDIO && !stingsReady()) {
   log("stings missing or out of date; running make-stings.mjs");
-  execFileSync(process.execPath, [join(HERE, "make-stings.mjs")], {
-    stdio: "inherit",
-  });
-  if (!readStings()) {
-    throw new Error(
-      `make-stings.mjs ran, and ${STING_MANIFEST} still lacks vsHitSeconds or whooshPeakSeconds`,
-    );
+  execFileSync(process.execPath, [MAKE_STINGS], { stdio: "inherit" });
+  if (!stingsReady()) {
+    throw new Error("make-stings.mjs ran, and its --check still fails");
   }
 }
 
-const stingManifest = readStings() ?? {
-  vsHitSeconds: 0,
-  whooshPeakSeconds: 0,
-};
+const stingManifest = AUDIO
+  ? JSON.parse(readFileSync(join(STING_DIR, "stings.json"), "utf8"))
+  : { vsHitSeconds: 0, whooshPeakSeconds: 0 };
 
 /**
  * The music as mix parts (mix-loudness.mjs Music), one per played cue
