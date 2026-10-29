@@ -1586,6 +1586,30 @@
       };
 
       /**
+       * The box a react, blunder or brilliant mark (paintCellFx's `c`)
+       * covers, as {x, y, w, h} shares of the board, the camera's zoom left
+       * out, so the renderer can put it on a side where it covers no wall.
+       */
+      window.__cellFxBox = (c) => {
+        const cam = $("boardCam");
+        const zoom = cam.style.transform;
+        cam.style.transform = "none";
+        paintCellFx(c);
+        const r = $(
+          c.kind === "react" ? "cellEmoji" : "cellBadge",
+        ).getBoundingClientRect();
+        const b = $("boardWrap").getBoundingClientRect();
+        paintCellFx(null);
+        cam.style.transform = zoom;
+        return {
+          x: (r.left - b.left) / b.width,
+          y: (r.top - b.top) / b.height,
+          w: r.width / b.width,
+          h: r.height / b.height,
+        };
+      };
+
+      /**
        * Place a bubble next to a cell-sized box, on the side the renderer
        * measured to be clear (as the mouse beat's bubble), popped by `pop`.
        */

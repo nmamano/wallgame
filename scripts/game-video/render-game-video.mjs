@@ -935,6 +935,11 @@ const MUSIC_BED = 0.35;
  * gain. Both only warn (edl.mjs LINT_KINDS).
  */
 const SILENCE_SECONDS = 1.5;
+/**
+ * From the VS hit to the first move the limit is OPENING_SILENCE_SECONDS
+ * (Wall Game Director, 2026-10-29, the T5b rule).
+ */
+const OPENING_SILENCE_SECONDS = 0.6;
 const STILL_BEFORE_ENDING_SECONDS = 0.5;
 const SOUND_FLOOR_DB = -50;
 /**
@@ -949,6 +954,12 @@ const DRAW_HOLD_SECONDS = 1.3;
  * ending's frames (endingTouch). Nothing else may touch anything.
  */
 const ENDING_TOUCH_CELLS = 0.1;
+/**
+ * A stamp that slams in from less than this times its size looks flat: the
+ * lint notes it (stamp-flat). placeStamp caps the slam so that it covers
+ * nothing.
+ */
+const STAMP_FLAT_POP = 1.15;
 
 /* ------------------------------------------------------------- geometry -- */
 
@@ -2517,7 +2528,9 @@ const termBox = (term) => {
  * whichever leaves the bubble farthest from every other pawn the page drew at
  * that position (Wall Game PM, 2026-10-26: the relief beat is "the cat
  * missed", so the bubble must never hide the cat). A side that would leave
- * the board is not a choice; on a tie the earlier side wins.
+ * the board is not a choice; on a tie the earlier side wins. A side in
+ * `covered` (its mark covers a wall) is taken only when every side is
+ * (Wall Game Director, 2026-10-29).
  */
 const BUBBLE_SIDES = {
   up: [0, -1],
@@ -2525,7 +2538,7 @@ const BUBBLE_SIDES = {
   left: [-1, 0],
   down: [0, 1],
 };
-const bubbleSide = (boardIndex, at) => {
+const bubbleSide = (boardIndex, at, covered = new Set()) => {
   // One cell in each axis, so a board with rows != cols measures true cells.
   const cellX = GRID.pitchX;
   const cellY = GRID.pitchY;
@@ -2535,15 +2548,18 @@ const bubbleSide = (boardIndex, at) => {
   );
   let best = "up";
   let bestRoom = -1;
+  let bestFree = false;
   for (const [side, [dx, dy]] of Object.entries(BUBBLE_SIDES)) {
     const x = at.x + dx * cellX;
     const y = at.y + dy * cellY;
     if (x < GRID.pad || x > 1 - GRID.pad || y < GRID.pad || y > 1 - GRID.pad)
       continue;
     const room = Math.min(Infinity, ...others.map((p) => away(p, x, y)));
-    if (room > bestRoom + 1e-9) {
+    const free = !covered.has(side);
+    if ((free && !bestFree) || (free === bestFree && room > bestRoom + 1e-9)) {
       best = side;
       bestRoom = room;
+      bestFree = free;
     }
   }
   return best;
@@ -2618,6 +2634,41 @@ const drawnPawnCell = (p) =>
     Math.round((p.y - GRID.y(0)) / GRID.pitchY - 0.5),
     Math.round((p.x - GRID.x(0)) / GRID.pitchX - 0.5),
   ]);
+/** The cell under a point of the board image (0..1). */
+const cellUnder = (x, y) =>
+  termOfCell([
+    Math.floor((y - GRID.y(0)) / GRID.pitchY),
+    Math.floor((x - GRID.x(0)) / GRID.pitchX),
+  ]);
+/**
+ * The walls the page drew on a board (wallSpots), each as the groove it
+ * fills: the gap between two cells wide, a pitch long, named in notation.
+ */
+const wallBoxes = (boardIndex) =>
+  (wallSpots.get(boardIndex) ?? []).map((w) => {
+    const bw = w.vertical ? GRID.pitchX - GRID.cellX : GRID.pitchX;
+    const bh = w.vertical ? GRID.pitchY : GRID.pitchY - GRID.cellX;
+    return {
+      x0: w.x - bw / 2,
+      y0: w.y - bh / 2,
+      x1: w.x + bw / 2,
+      y1: w.y + bh / 2,
+      what: w.vertical
+        ? `wall >${cellUnder(w.x - GRID.pitchX / 2, w.y)}`
+        : `wall ^${cellUnder(w.x, w.y + GRID.pitchY / 2)}`,
+    };
+  });
+/**
+ * How far box `b` ({x, y, w, h}) goes into box `k` ({x0, y0, x1, y1}), in
+ * cells: the lesser of its two overlaps, 0 or less when they are apart. A
+ * box under a hundredth of a cell into another only touches it.
+ */
+const depthInto = (b, k) =>
+  Math.min(
+    (Math.min(b.x + b.w, k.x1) - Math.max(b.x, k.x0)) / GRID.pitchX,
+    (Math.min(b.y + b.h, k.y1) - Math.max(b.y, k.y0)) / GRID.pitchY,
+  );
+const TOUCH_CELLS = 0.01;
 
 /**
  * An EDL wall as the line it draws on the board image, [x1, y1, x2, y2] in
@@ -4121,28 +4172,11 @@ const renderStyle = async (styleName) => {
           },
         ]),
       );
-    const cellName = (x, y) =>
-      termOfCell([
-        Math.floor((y - GRID.y(0)) / GRID.pitchY),
-        Math.floor((x - GRID.x(0)) / GRID.pitchX),
-      ]);
     // What a layout would cover outside the capture cell, by name: the
-    // walls of the last board (their grooves), the other pawns as the page
-    // drew them, and the board's edge.
+    // walls of the last board, the other pawns as the page drew them, and
+    // the board's edge.
     const blockers = [
-      ...(wallSpots.get(L) ?? []).map((w) => {
-        const bw = w.vertical ? GRID.pitchX - GRID.cellX : GRID.pitchX;
-        const bh = w.vertical ? GRID.pitchY : GRID.pitchY - GRID.cellX;
-        return {
-          x0: w.x - bw / 2,
-          y0: w.y - bh / 2,
-          x1: w.x + bw / 2,
-          y1: w.y + bh / 2,
-          what: w.vertical
-            ? `wall >${cellName(w.x - GRID.pitchX / 2, w.y)}`
-            : `wall ^${cellName(w.x, w.y + GRID.pitchY / 2)}`,
-        };
-      }),
+      ...wallBoxes(L),
       ...after
         .filter((p) => !near(p))
         .map((p) => ({
@@ -4150,7 +4184,7 @@ const renderStyle = async (styleName) => {
           y0: p.y - p.h / 2,
           x1: p.x + p.w / 2,
           y1: p.y + p.h / 2,
-          what: `pawn on ${cellName(p.x, p.y)}`,
+          what: `pawn on ${cellUnder(p.x, p.y)}`,
         })),
     ];
     const refusal = (layout) => {
@@ -4166,17 +4200,9 @@ const renderStyle = async (styleName) => {
         y1 > GRID.y(GRID.rows)
       )
         return "the board's edge";
-      // How far a box goes into a blocker, in cells: the lesser of its two
-      // overlaps. A box that only touches one (under a hundredth of a cell)
-      // covers nothing of it.
-      const into = (b, k) =>
-        Math.min(
-          (Math.min(b.x + b.w, k.x1) - Math.max(b.x, k.x0)) / GRID.pitchX,
-          (Math.min(b.y + b.h, k.y1) - Math.max(b.y, k.y0)) / GRID.pitchY,
-        );
       for (const k of blockers) {
-        const depth = Math.max(...boxes.map((b) => into(b, k)));
-        if (depth > 0.01) return `${k.what} (${depth.toFixed(2)} cell)`;
+        const depth = Math.max(...boxes.map((b) => depthInto(b, k)));
+        if (depth > TOUCH_CELLS) return `${k.what} (${depth.toFixed(2)} cell)`;
       }
       return null;
     };
@@ -4387,10 +4413,13 @@ const renderStyle = async (styleName) => {
 
   goalOn = Boolean(overlay);
   // The overlay's punch gets the VS sound, at the second the mark lands.
+  const vsHitAt = overlay
+    ? overlayStart + overlay.entry * vsPunchFraction
+    : null;
   if (overlay) {
     const vsSound = sounds[style.vsSound];
     cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
-      at: overlayStart + overlay.entry * vsPunchFraction,
+      at: vsHitAt,
     });
     cue(VS_WHOOSH, "vs", {
       at:
@@ -4559,8 +4588,12 @@ const renderStyle = async (styleName) => {
    * to fit (STAMP_MAX_WIDTH), keyed by its event.
    */
   const stampSpots = new Map();
-  /** A stamp or trap word that covers some of its move: the lint warns. */
-  const stampCovers = new Map();
+  /**
+   * What the lint says of a stamp or trap word when it plays, as [kind,
+   * message] pairs: it covers some of its move (it warns), or something at
+   * its edge leaves it almost no slam (a note).
+   */
+  const stampLints = new Map();
   /** How big a stamp starts its slam (stage.html punch at its start). */
   const punchFrom = await stage.evaluate(() => window.__PUNCH_FROM);
   /**
@@ -4589,6 +4622,45 @@ const renderStyle = async (styleName) => {
     );
     log(`${ev.kind} on ${ev.cell}, ply ${ev.ply}: cell ${cellColours.get(ev)}`);
   }
+  /**
+   * The side of each react, blunder and brilliant mark: one where the mark,
+   * measured on the stage (__cellFxBox, at rest), covers no wall of its
+   * board, when there is one (Wall Game Director, 2026-10-29: the eyes on
+   * VX ply 8 covered half of a cage wall's end for 1.2 s); else
+   * bubbleSide's, and the lint warns (fxCovers, as the event plays).
+   */
+  const fxSides = new Map();
+  const fxCovers = new Map();
+  for (const ev of EVENTS) {
+    if (!["react", "blunder", "brilliant"].includes(ev.kind)) continue;
+    const board = ev.ply + 1;
+    const at = cellAtTerm(ev.cell);
+    const walls = wallBoxes(board);
+    const covers = new Map();
+    for (const side of Object.keys(BUBBLE_SIDES)) {
+      const box = await stage.evaluate((c) => window.__cellFxBox(c), {
+        kind: ev.kind,
+        t: 0.5,
+        cell: at,
+        size: GRID.pitchX,
+        side,
+        emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
+      });
+      const hit = walls.find((k) => depthInto(box, k) > TOUCH_CELLS);
+      if (hit) covers.set(side, hit.what);
+    }
+    const side = bubbleSide(board, at, new Set(covers.keys()));
+    fxSides.set(ev, side);
+    if (covers.has(side)) {
+      fxCovers.set(
+        ev,
+        `the ${ev.kind} mark on ${ev.cell} covers the ${covers.get(side)}: every side it can take covers a wall`,
+      );
+    }
+    log(
+      `${ev.kind} on ${ev.cell}, ply ${ev.ply}: ${side}${covers.size > 0 ? ` (covers a wall: ${[...covers].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}`,
+    );
+  }
   if (wallz) {
     for (const ev of EVENTS) {
       if (ev.kind !== "stamp" && ev.kind !== "trap") continue;
@@ -4605,12 +4677,26 @@ const renderStyle = async (styleName) => {
         punchFrom,
       );
       stampSpots.set(ev, { at: spot.at, fit, pop: spot.pop });
-      if (spot.covered > 0.01) {
-        stampCovers.set(
-          ev,
-          `the ${ev.kind} word "${ev.text}" covers ${spot.covered.toFixed(2)} cells of the move: no band of the board is free of it`,
-        );
-      }
+      stampLints.set(ev, [
+        ...(spot.covered > 0.01
+          ? [
+              [
+                "stamp-covers",
+                `the ${ev.kind} word "${ev.text}" covers ${spot.covered.toFixed(2)} cells of the move: no band of the board is free of it`,
+              ],
+            ]
+          : []),
+        // Wall Game Director, 2026-10-29: so a flat slam is seen without
+        // watching, and the beat can move to another ply.
+        ...(spot.pop < STAMP_FLAT_POP
+          ? [
+              [
+                "stamp-flat",
+                `the ${ev.kind} word "${ev.text}" slams in from only ${spot.pop.toFixed(2)}x, so it looks flat: a pawn or wall is at its edge`,
+              ],
+            ]
+          : []),
+      ]);
       log(
         `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move, slams in from ${spot.pop.toFixed(2)}`,
       );
@@ -4692,7 +4778,7 @@ const renderStyle = async (styleName) => {
       t,
       cell: at,
       size,
-      side: bubbleSide(ply, at),
+      side: fxSides.get(ev) ?? bubbleSide(ply, at),
       emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
     };
     if (ev.kind !== "blunder") return { cellFx };
@@ -4842,9 +4928,11 @@ const renderStyle = async (styleName) => {
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
-      if (stampCovers.has(ev)) {
-        fault("stamp-covers", plyIndex, stampCovers.get(ev));
+      for (const [kind, message] of stampLints.get(ev) ?? []) {
+        fault(kind, plyIndex, message);
       }
+      if (fxCovers.has(ev))
+        fault("mark-covers-wall", plyIndex, fxCovers.get(ev));
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's sound lands with its word.
@@ -5451,14 +5539,29 @@ const renderStyle = async (styleName) => {
     heard.push([m.start, m.bed > 0 ? videoSeconds : m.endAt]);
   }
   heard.sort((a, b) => a[0] - b[0]);
+  // The opening: from the VS hit to the first move, when the video has both.
+  const opening =
+    vsHitAt !== null && moveTimes.length > 0
+      ? [vsHitAt, moveTimes[0].at]
+      : null;
   let reach = 0;
   for (const [a, b] of [...heard, [videoSeconds, videoSeconds]]) {
+    const inOpening = opening
+      ? Math.min(a, opening[1]) - Math.max(reach, opening[0])
+      : 0;
     if (a - reach > SILENCE_SECONDS) {
       fault(
         "silence",
         plyAt(reach),
         `no sound for ${(a - reach).toFixed(1)} s, from ${reach.toFixed(1)} s to ${a.toFixed(1)} s`,
         reach,
+      );
+    } else if (inOpening > OPENING_SILENCE_SECONDS) {
+      fault(
+        "silence",
+        plyAt(reach),
+        `no sound for ${inOpening.toFixed(1)} s between the VS hit and the first move (${OPENING_SILENCE_SECONDS} s at most), from ${Math.max(reach, opening[0]).toFixed(1)} s`,
+        Math.max(reach, opening[0]),
       );
     }
     reach = Math.max(reach, b);

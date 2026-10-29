@@ -304,7 +304,9 @@ export const LINT_KINDS = {
   "still-before-ending": "warns",
   "zoom-cuts-pawn": "warns",
   "stamp-covers": "warns",
+  "mark-covers-wall": "warns",
   "zoom-scale": "note",
+  "stamp-flat": "note",
 };
 export const EVENT_KINDS = [
   "zoom",
