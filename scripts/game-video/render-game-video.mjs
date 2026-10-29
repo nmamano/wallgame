@@ -4601,6 +4601,43 @@ const renderStyle = async (styleName) => {
         strip: Boolean(strip),
       })
     : null;
+  /*
+    The board's cells in the video's frame, at rest with no zoom, in
+    board-grid.mjs boardGrid's own shape ({clip, first, last, cols, rows},
+    css px of the frame): boardGrid(layout.grid) maps a cell to the frame,
+    so the daily app can crop around a cell (Video Editor (daily app),
+    2026-10-29). A zoom moves the board: then it does not hold.
+  */
+  const layoutGrid = wallz
+    ? await stage.evaluate(
+        ({ c, first, last, cols, rows }) => {
+          const w = document
+            .getElementById("boardWrap")
+            .getBoundingClientRect();
+          const box = { x: w.x, y: w.y, width: w.width, height: w.height };
+          const inFrame = (r) => ({
+            x: box.x + ((r.x - c.x) / c.width) * box.width,
+            y: box.y + ((r.y - c.y) / c.height) * box.height,
+            width: (r.width / c.width) * box.width,
+            height: (r.height / c.height) * box.height,
+          });
+          return {
+            clip: box,
+            first: inFrame(first),
+            last: inFrame(last),
+            cols,
+            rows,
+          };
+        },
+        {
+          c: clip,
+          first: cellRects.first,
+          last: cellRects.last,
+          cols: GRID.cols,
+          rows: GRID.rows,
+        },
+      )
+    : null;
   for (const [name, b] of Object.entries(layoutBoxes ?? {})) {
     const area = areaOf(name);
     if (
@@ -6186,7 +6223,12 @@ const renderStyle = async (styleName) => {
       // No hash on a preview: the daily app accepts only its EDL's hash.
       edlSha256: PLY_WINDOW ? null : EDL_SHA256,
       sheet,
-      layout: { frame: DAILY_FRAME, boxes: layoutBoxes, captionText },
+      layout: {
+        frame: DAILY_FRAME,
+        boxes: layoutBoxes,
+        captionText,
+        grid: layoutGrid,
+      },
       /*
         The credit line on the video's ending (the box is layout.boxes.credit):
         the words a COPY REQUEST names. Null in a render with no EDL.
