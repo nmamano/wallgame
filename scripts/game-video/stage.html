@@ -505,13 +505,7 @@
         top: 50%;
         font-size: calc(var(--board) * 0.14);
       }
-      /*
-        The fast-forward tag (edl.mjs fastForward, audit item 5): the replay
-        badge's pill in the other top corner, small, so a quiet stretch reads
-        as sped up and not as the game's real pace.
-      */
-      #replayBadge,
-      #ffBadge {
+      #replayBadge {
         position: absolute;
         left: 4%;
         top: 4%;
@@ -525,11 +519,6 @@
         font-size: calc(var(--board) * 0.04);
         font-weight: 800;
         letter-spacing: 0.18em;
-      }
-      #ffBadge {
-        left: auto;
-        right: 4%;
-        color: #e2e8f0;
       }
       #replayBadge .dot {
         width: 0.7em;
@@ -1046,7 +1035,9 @@
               <span class="w" id="raceWa"></span
               ><span class="n" id="raceNa"></span>
             </div>
-            <div class="vs">VS<small>STEPS</small></div>
+            <div class="vs">
+              <span id="raceTag">VS</span><small>STEPS</small>
+            </div>
             <div class="side">
               <span class="n" id="raceNb"></span
               ><span class="w" id="raceWb"></span>
@@ -1095,7 +1086,6 @@
           </div>
           <div id="overlay" class="hidden"></div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
-          <div id="ffBadge" class="hidden"></div>
           <div id="replayBadge" class="hidden">
             <div class="dot"></div>
             REPLAY
@@ -1867,9 +1857,14 @@
        * credit c = { a: 0..1 }, which takes the race counter's place: the
        * counter fades out over the first half and the credit fades in over
        * the second, so the two never show at once. The credit's text is set
-       * once, by __fitWallz.
+       * once, by __fitWallz. In a fast-forward (edl.mjs fastForward, audit
+       * item 5) the counter's middle shows the tag, "▶▶ x3", in place of
+       * "VS", so a quiet stretch reads as sped up and not as the game's real
+       * pace; off the board, it covers no pawn (Wall Game Director,
+       * 2026-10-29).
        */
-      const paintHud = (r, goal, c) => {
+      const paintHud = (r, goal, c, ff) => {
+        $("raceTag").textContent = ff ? "▶\uFE0E▶\uFE0E " + ff : "VS";
         const a = c ? c.a : 0;
         const out = Math.min(1, 2 * a);
         const inn = Math.max(0, 2 * a - 1);
@@ -2407,7 +2402,7 @@
             down until the top banner's box starts below both.
           */
           $("caption").textContent = s.caption ?? "";
-          paintHud(s.race, goalNow, s.credit);
+          paintHud(s.race, goalNow, s.credit, s.fastForward);
           const above = [$("caption"), $("hud")]
             .filter((el) => el.offsetHeight > 0)
             .map((el) => el.getBoundingClientRect().bottom);
@@ -2442,11 +2437,8 @@
           paintTrap(s.trap);
           paintPath(s.path);
           paintOverlay(s.overlay);
-          paintHud(s.race, goalNow, s.credit);
+          paintHud(s.race, goalNow, s.credit, s.fastForward);
           paintFreeze(s.freeze);
-          show($("ffBadge"), !!s.fastForward);
-          if (s.fastForward)
-            $("ffBadge").textContent = "▶\uFE0E▶\uFE0E " + s.fastForward;
           // The loop tail: a white flash fading into the first frame.
           if (s.rewind) {
             show($("flash"), true);
