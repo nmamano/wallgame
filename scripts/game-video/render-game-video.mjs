@@ -937,7 +937,10 @@ const MUSIC_BED = 0.35;
 const SILENCE_SECONDS = 1.5;
 /**
  * From the VS hit to the first move the limit is OPENING_SILENCE_SECONDS
- * (Wall Game Director, 2026-10-29, the T5b rule).
+ * (Wall Game Director, 2026-10-29, the T5b rule). It applies only when the
+ * VS overlay plays: a video without it (no VS in the style, or a --plies
+ * window without the opening) has only the SILENCE_SECONDS rule, so a
+ * silent cold open alone does not trip it (Video Reviewer 1, review 64).
  */
 const OPENING_SILENCE_SECONDS = 0.6;
 const STILL_BEFORE_ENDING_SECONDS = 0.5;
