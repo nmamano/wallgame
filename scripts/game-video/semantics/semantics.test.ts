@@ -136,13 +136,32 @@ describe("labelGame", () => {
         best: ">c4.^c3",
         bestWalls: [">c4", "^c3"],
       },
-      { w1: [6, 6], w2: [4, 4], wc: [0.8, 0.82] },
+      { w1: [6, 9], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
     ]);
     expect(l.plies[0].label).toBe("turn");
     expect(l.plies[0].tags).toContain("missed-wall");
     expect(l.plies[1].label).toBe("punish");
     expect(l.plies[1].strength).toBe(1);
     expect(l.links).toContainEqual({ kind: "blunder-punish", from: 0, to: 1 });
+  });
+
+  test("a reply that keeps the gain but shows nothing is no punish (VR1 B1)", () => {
+    const l = labels([
+      { w1: [12, 12], w2: [12, 12], wc: [0.75, 0.28] },
+      // Both walks stay at 12: the gain is kept, nothing is seen.
+      { w1: [12, 12], w2: [12, 12], wc: [0.72, 0.76], walls: ["^a3", "^b3"] },
+      { w1: [12, 12], w2: [12, 12], wc: [0.25, 0.25] },
+    ]);
+    expect(l.plies[1].label).toBe("quiet");
+    expect(l.plies[1].tags).toContain("kept-gain");
+    expect(l.links).toEqual([]);
+    // The mover's own cat coming within reach is seen.
+    const reach = labels([
+      { w1: [6, 6], w2: [6, 6], wc: [0.75, 0.28] },
+      { w1: [6, 6], w2: [4, 2], wc: [0.72, 0.76] },
+    ]);
+    expect(reach.plies[1].label).toBe("punish");
+    expect(reach.plies[1].focus).toMatchObject({ before: 4, after: 2 });
   });
 
   test("a flip given back at once is a blunder, the reply a missed punish", () => {
@@ -202,7 +221,7 @@ describe("checkSentence", () => {
       best: ">c4.^c3",
       bestWalls: [">c4", "^c3"],
     },
-    { w1: [6, 6], w2: [4, 4], wc: [0.8, 0.82] },
+    { w1: [6, 9], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
   ]);
   const l = labelGame(game);
   const facts = [...factsOf(game, l, 0), ...factsOf(game, l, 1)];

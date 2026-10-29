@@ -34,7 +34,7 @@ export const LABELS = [
 /** In priority order: when several fit a move, the first is its label. */
 export type Label = (typeof LABELS)[number];
 
-export type Tag = Label | "missed-wall" | "missed-punish";
+export type Tag = Label | "missed-wall" | "missed-punish" | "kept-gain";
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -182,14 +182,36 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       const prev = plies[ply - 1];
       if (prev && blunders.has(ply - 1) && prev.mover !== f.mover) {
         if (e.delta > -KEEP_DROP) {
-          const drop = prev.engine ? -prev.engine.delta : 0;
-          fit(
-            ply,
-            "punish",
-            drop / 0.5,
-            largest(mine, (h) => -h.after) ?? moved,
+          // A punish is a reply that keeps the gain AND that a viewer can
+          // see (VR1, 2026-10-29: "both walks stay at 12" is no punish):
+          // the other side's cat sent around a wall (minJump or more), or
+          // the mover's own cat within reach. A reply that only keeps the
+          // gain is tagged kept-gain and keeps its own label.
+          const theirRise = largest(yours, rise);
+          const reach = mine.find(
+            (h) =>
+              isAnimal(h) &&
+              h.after > 0 &&
+              h.after <= THREAT_WALK &&
+              h.after < h.before,
           );
-          links.push({ kind: "blunder-punish", from: ply - 1, to: ply });
+          const seen =
+            (theirRise !== null && rise(theirRise) >= minJump) ||
+            reach !== undefined;
+          if (seen) {
+            const drop = prev.engine ? -prev.engine.delta : 0;
+            fit(
+              ply,
+              "punish",
+              drop / 0.5,
+              theirRise !== null && rise(theirRise) >= minJump
+                ? theirRise
+                : reach!,
+            );
+            links.push({ kind: "blunder-punish", from: ply - 1, to: ply });
+          } else {
+            tags[ply].push("kept-gain");
+          }
         } else if (blunders.has(ply)) {
           tags[ply].push("missed-punish");
         }
