@@ -858,6 +858,26 @@ const LEAD_STILL_AT = 0.2;
 const RACE_TICK_SECONDS = 0.3;
 const RACE_FLASH_SECONDS = 0.8;
 /**
+ * The capture picture (Wall Game Director, 2026-10-29, "B+A"): on the last
+ * board of a CAUGHT game, the catcher on the caught pawn, both bigger than
+ * the page's two small pawns, as boxes {x, y, w, h} in cells of the caught
+ * pawn's cell. INSIDE stays in the cell, so it covers no wall: at the
+ * capture the walls are the story. POUNCE leaves the cell, so it is used
+ * only where it covers no wall, no other pawn and no edge. Both are drawn
+ * for a catcher from the right; one from the left mirrors them. The catcher
+ * lands over CAPTURE_POUNCE_SECONDS as the move lands, with its click: it
+ * grows from its feet to its box, so it never covers more than the box.
+ */
+const CAPTURE_INSIDE = {
+  mouse: { x: 0, y: 0.38, w: 0.62, h: 0.62 },
+  cat: { x: 0.2, y: 0, w: 0.8, h: 0.8 },
+};
+const CAPTURE_POUNCE = {
+  mouse: { x: 0, y: 0.1, w: 0.9, h: 0.9 },
+  cat: { x: 0.2, y: -0.25, w: 1.15, h: 1.15 },
+};
+const CAPTURE_POUNCE_SECONDS = 0.15;
+/**
  * The cold open (edl.mjs coldOpenPly): the key position for COLD_OPEN_SECONDS,
  * the camera pushing in to COLD_OPEN_SCALE at most. The loop tail: the last
  * LOOP_SECONDS fade from a white flash into the video's own first frame, so
@@ -1291,6 +1311,29 @@ const FINISH_WORD = (() => {
     cells.some((b) => a.player !== b.player && same(a.cell, b.cell)),
   );
   return caught ? "CAUGHT" : null;
+})();
+/**
+ * Whether the winner's own move made the catch: false when the loser's pawn
+ * walked onto the winner's (a mouse into a cat). The last move names the
+ * pawn it moved (standard notation "Me8"); the final position names the
+ * winner's pawn that shares a cell with the loser's. True when either is
+ * not known.
+ */
+const WINNER_MOVED_LAST = (() => {
+  const live = replay.state.pawns;
+  const letter = String(history.at(-1)?.notation ?? "")
+    .split(".")
+    .find((t) => /^[A-Z]/.test(t))?.[0];
+  const moved = { C: "cat", M: "mouse", D: "dog", E: "elephant" }[letter];
+  if (!moved || !live) return true;
+  if (live.kind === "survival") return moved === "cat";
+  const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
+  const mine = Object.entries(live.pawns?.[outcome?.winnerId] ?? {});
+  const theirs = Object.entries(live.pawns ?? {})
+    .filter(([player]) => Number(player) !== outcome?.winnerId)
+    .flatMap(([, pawns]) => Object.values(pawns));
+  const catcher = mine.find(([, cell]) => theirs.some((c) => same(c, cell)));
+  return catcher ? catcher[0] === moved : true;
 })();
 const capturePlan = captureFeedbackPlan({
   isFinalPly: true,
@@ -3622,18 +3665,34 @@ const renderStyle = async (styleName) => {
     stills.sort((a, b) => a.at - b.at);
   };
 
+  /** When the last move landed (land), for the capture picture's pounce. */
+  let captureLandAt = null;
   const emit = async (state, seconds, meta = {}) => {
     const vs = () => overlay && state.segment === "play" && inOverlay();
     const overlaid = () => state.segment === "play" && liveOverlay() !== null;
-    if (!vs() && !overlaid()) {
+    const pouncing = () =>
+      !!state.capture &&
+      captureLandAt !== null &&
+      elapsed - captureLandAt < CAPTURE_POUNCE_SECONDS;
+    if (!vs() && !overlaid() && !pouncing()) {
       await shoot(state, seconds, meta);
       return;
     }
     const frames = Math.round(seconds * FPS);
     let used = 0;
-    for (; used < frames && (vs() || overlaid()); used += 1) {
+    for (; used < frames && (vs() || overlaid() || pouncing()); used += 1) {
       let s = state;
       let kind = meta.kind;
+      if (pouncing()) {
+        s = {
+          ...s,
+          capture: {
+            ...s.capture,
+            pounce: (elapsed - captureLandAt) / CAPTURE_POUNCE_SECONDS,
+          },
+        };
+        if (kind === "move") kind = "capture";
+      }
       if (vs()) {
         s = {
           ...s,
@@ -3654,6 +3713,165 @@ const renderStyle = async (styleName) => {
     }
     if (used < frames) await shoot(state, (frames - used) / FPS, meta);
   };
+
+  /**
+   * The capture picture of the last board (CAPTURE_INSIDE, CAPTURE_POUNCE),
+   * or null. The two pawns are the one on the capture cell before the last
+   * move and the one that came onto it; the catcher is the winner's
+   * (WINNER_MOVED_LAST). Each is cut from that board, where it stands alone
+   * at full size, with its own cell's colour made clear (stage.html
+   * __pawnSprite). A square of the capture cell's colour covers the page's
+   * two small pawns.
+   */
+  const capturePicture = await (async () => {
+    const L = LAST_BOARD;
+    if (!wallz || FINISH_WORD !== "CAUGHT" || L !== history.length) return null;
+    const cell = cellOfPly(L - 1);
+    if (!cell) return null;
+    const at = cellAt(cell);
+    const near = (p) =>
+      Math.hypot((p.x - at.x) / GRID.pitchX, (p.y - at.y) / GRID.pitchY) < 0.3;
+    const same = (p, q) =>
+      Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
+    const before = pawnSpots.get(L - 1) ?? [];
+    const after = pawnSpots.get(L) ?? [];
+    const waiting = before.filter(near);
+    const moved = before.filter(
+      (p) => !near(p) && !after.some((q) => same(p, q)),
+    );
+    const name = termOfCell(cell);
+    if (waiting.length !== 1 || moved.length !== 1) {
+      log(
+        `capture picture: none, ${waiting.length} pawn(s) on ${name} and ${moved.length} moved onto it`,
+      );
+      return null;
+    }
+    const [catcher, caught] = WINNER_MOVED_LAST
+      ? [moved, waiting]
+      : [waiting, moved];
+    const s = GRID.cellX;
+    const cellBox = { x: at.x - s / 2, y: at.y - s / 2, w: s, h: s };
+    // The side the last move came from, the catcher's or the caught's.
+    const fromLeft = moved[0].x < at.x - GRID.pitchX * 0.3;
+    // A layout in the board image, mirrored on x for a catcher from the left.
+    const layoutOn = (layout, mirrored) =>
+      Object.fromEntries(
+        Object.entries(layout).map(([k, b]) => [
+          k,
+          {
+            x: cellBox.x + (mirrored ? 1 - b.x - b.w : b.x) * s,
+            y: cellBox.y + b.y * s,
+            w: b.w * s,
+            h: b.h * s,
+          },
+        ]),
+      );
+    const cellName = (x, y) =>
+      termOfCell([
+        Math.floor((y - GRID.y(0)) / GRID.pitchY),
+        Math.floor((x - GRID.x(0)) / GRID.pitchX),
+      ]);
+    // What a layout would cover outside the capture cell, by name: the
+    // walls of the last board (their grooves), the other pawns as the page
+    // drew them, and the board's edge.
+    const blockers = [
+      ...(wallSpots.get(L) ?? []).map((w) => {
+        const bw = w.vertical ? GRID.pitchX - GRID.cellX : GRID.pitchX;
+        const bh = w.vertical ? GRID.pitchY : GRID.pitchY - GRID.cellX;
+        return {
+          x0: w.x - bw / 2,
+          y0: w.y - bh / 2,
+          x1: w.x + bw / 2,
+          y1: w.y + bh / 2,
+          what: w.vertical
+            ? `wall >${cellName(w.x - GRID.pitchX / 2, w.y)}`
+            : `wall ^${cellName(w.x, w.y + GRID.pitchY / 2)}`,
+        };
+      }),
+      ...after
+        .filter((p) => !near(p))
+        .map((p) => ({
+          x0: p.x - p.w / 2,
+          y0: p.y - p.h / 2,
+          x1: p.x + p.w / 2,
+          y1: p.y + p.h / 2,
+          what: `pawn on ${cellName(p.x, p.y)}`,
+        })),
+    ];
+    const refusal = (layout) => {
+      const boxes = Object.values(layout);
+      const x0 = Math.min(...boxes.map((b) => b.x));
+      const y0 = Math.min(...boxes.map((b) => b.y));
+      const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+      const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+      if (
+        x0 < GRID.x(0) ||
+        y0 < GRID.y(0) ||
+        x1 > GRID.x(GRID.cols) ||
+        y1 > GRID.y(GRID.rows)
+      )
+        return "the board's edge";
+      // How far a box goes into a blocker, in cells: the lesser of its two
+      // overlaps. A box that only touches one (under a hundredth of a cell)
+      // covers nothing of it.
+      const into = (b, k) =>
+        Math.min(
+          (Math.min(b.x + b.w, k.x1) - Math.max(b.x, k.x0)) / GRID.pitchX,
+          (Math.min(b.y + b.h, k.y1) - Math.max(b.y, k.y0)) / GRID.pitchY,
+        );
+      for (const k of blockers) {
+        const depth = Math.max(...boxes.map((b) => into(b, k)));
+        if (depth > 0.01) return `${k.what} (${depth.toFixed(2)} cell)`;
+      }
+      return null;
+    };
+    const sides = [fromLeft, !fromLeft];
+    const tried = sides.map((m) => ({
+      mirrored: m,
+      why: refusal(layoutOn(CAPTURE_POUNCE, m)),
+    }));
+    const pounce = tried.find((t) => t.why === null);
+    const mirrored = pounce ? pounce.mirrored : fromLeft;
+    const side = (m) => (m ? "left" : "right");
+    log(
+      pounce
+        ? `capture picture on ${name}: pounce, to the ${side(mirrored)} (the move came from the ${side(fromLeft)})`
+        : `capture picture on ${name}: inside the cell, the pounce covers ${tried.map((t) => `${t.why} to the ${side(t.mirrored)}`).join(", ")}`,
+    );
+    const boardUrl = (i) =>
+      `data:image/png;base64,${readFileSync(boardFrames[i]).toString("base64")}`;
+    const colourAt = (url, x, y) =>
+      stage.evaluate(
+        ([u, b]) => window.__cellColour(u, b),
+        [url, { x0: x - s / 2, y0: y - s / 2, x1: x + s / 2, y1: y + s / 2 }],
+      );
+    const sprite = async (p, file) => {
+      const url = boardUrl(L - 1);
+      const png = await stage.evaluate(
+        ([u, b, key]) => window.__pawnSprite(u, b, key),
+        [
+          url,
+          {
+            x0: p.x - p.w / 2,
+            y0: p.y - p.h / 2,
+            x1: p.x + p.w / 2,
+            y1: p.y + p.h / 2,
+          },
+          await colourAt(url, p.x, p.y),
+        ],
+      );
+      const path = join(WORK, file);
+      writeFileSync(path, Buffer.from(png.split(",")[1], "base64"));
+      return fileUrl(path);
+    };
+    return {
+      cell: cellBox,
+      under: await colourAt(boardUrl(L), at.x, at.y),
+      ...layoutOn(pounce ? CAPTURE_POUNCE : CAPTURE_INSIDE, mirrored),
+      mouseSrc: await sprite(caught[0], "capture-mouse.png"),
+      catSrc: await sprite(catcher[0], "capture-cat.png"),
+    };
+  })();
 
   /**
    * The playing state of a position: the board, the caption, the race
@@ -3688,6 +3906,11 @@ const renderStyle = async (styleName) => {
     race: raceHud(boardIndex),
     goal: wallz && goalOn ? GOAL_LINE : null,
     fastForward: fastForwardAt(boardIndex),
+    // Settled; emit plays its pounce frame by frame.
+    capture:
+      capturePicture && boardIndex === LAST_BOARD && !extra.ending
+        ? { ...capturePicture, pounce: 1 }
+        : null,
     ...extra,
   });
 
@@ -3736,6 +3959,7 @@ const renderStyle = async (styleName) => {
   const land = (plyIndex) => {
     cue(moveClick(plyIndex), "move");
     moveTimes.push({ ply: plyIndex, at: elapsed });
+    if (plyIndex === LAST_BOARD - 1) captureLandAt = elapsed;
   };
 
   /*

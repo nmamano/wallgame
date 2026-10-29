@@ -298,6 +298,19 @@
         inset: 0;
         background-repeat: no-repeat;
       }
+      /*
+        The capture picture: the catcher landing on the caught pawn, both
+        bigger than the page's two small pawns on one cell, which a square
+        of the cell's own colour covers. It rides on the camera.
+      */
+      #captureFx,
+      #captureFx > * {
+        position: absolute;
+      }
+      #captureFx {
+        inset: 0;
+        pointer-events: none;
+      }
       #pawnSweat {
         position: absolute;
         font-family: "Noto Color Emoji", sans-serif;
@@ -1068,6 +1081,11 @@
           <div id="boardCam">
             <img id="boardImg" />
             <img id="boardPrev" class="hidden" />
+            <div id="captureFx" class="hidden">
+              <div id="capUnder"></div>
+              <img id="capMouse" />
+              <img id="capCat" />
+            </div>
             <div id="pawnFx" class="hidden">
               <div id="pawnWin"><div id="pawnCrop"></div></div>
               <div id="pawnSweat">💦</div>
@@ -1444,6 +1462,75 @@
           return v[Math.floor(v.length / 2)];
         };
         return "rgb(" + median(0) + "," + median(1) + "," + median(2) + ")";
+      };
+
+      /**
+       * A pawn as a picture with a clear background: the board image's
+       * `box` (0..1) with the colour `key` ("rgb(r,g,b)", its cell's colour
+       * as __cellColour reads it) made clear, with a soft edge so the art
+       * keeps its outline. A PNG data: URL.
+       */
+      window.__pawnSprite = async (url, box, key) => {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const W = img.naturalWidth;
+        const H = img.naturalHeight;
+        const x0 = Math.round(box.x0 * W);
+        const y0 = Math.round(box.y0 * H);
+        const w = Math.round((box.x1 - box.x0) * W);
+        const h = Math.round((box.y1 - box.y0) * H);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const g = canvas.getContext("2d");
+        g.drawImage(img, x0, y0, w, h, 0, 0, w, h);
+        const data = g.getImageData(0, 0, w, h);
+        const d = data.data;
+        const bg = key.match(/\d+/g).map(Number);
+        const SOFT = 24;
+        for (let i = 0; i < d.length; i += 4) {
+          const far =
+            Math.abs(d[i] - bg[0]) +
+            Math.abs(d[i + 1] - bg[1]) +
+            Math.abs(d[i + 2] - bg[2]);
+          d[i + 3] = Math.round(
+            d[i + 3] * Math.max(0, Math.min(1, (far - SOFT) / SOFT)),
+          );
+        }
+        g.putImageData(data, 0, 0);
+        return canvas.toDataURL("image/png");
+      };
+
+      /**
+       * The capture picture (render-game-video.mjs CAPTURE_INSIDE,
+       * CAPTURE_POUNCE): c = { cell, mouse, cat: boxes {x, y, w, h} in the
+       * board image (0..1); under: the capture cell's colour; mouseSrc,
+       * catSrc: the two pawns' pictures; pounce: 0..1, how far the catcher
+       * has landed }.
+       */
+      const paintCapture = (c) => {
+        const fx = $("captureFx");
+        show(fx, !!c);
+        if (!c) return;
+        const W = $("boardWrap").clientWidth;
+        const place = (el, b) => {
+          el.style.left = b.x * W + "px";
+          el.style.top = b.y * W + "px";
+          el.style.width = b.w * W + "px";
+          el.style.height = b.h * W + "px";
+        };
+        place($("capUnder"), c.cell);
+        $("capUnder").style.background = c.under;
+        place($("capMouse"), c.mouse);
+        $("capMouse").src = c.mouseSrc;
+        place($("capCat"), c.cat);
+        $("capCat").src = c.catSrc;
+        // It grows from its feet to its box, never past it, so the pounce
+        // covers only what the renderer measured.
+        const p = easeOut3(clamp01(c.pounce));
+        $("capCat").style.transformOrigin = "50% 100%";
+        $("capCat").style.transform = "scale(" + (0.55 + 0.45 * p) + ")";
       };
 
       /**
@@ -2499,6 +2586,7 @@
             : "50% 50%";
           $("boardCam").style.transform = z ? "scale(" + z.scale + ")" : "none";
           paintBeat(s.beat);
+          paintCapture(s.capture);
           paintMidStamp(s.midStamp);
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
