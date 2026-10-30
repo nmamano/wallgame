@@ -937,12 +937,22 @@
         letter-spacing: 0.08em;
         color: #94a3b8;
       }
+      /*
+        The site as a badge: dark on white, so a phone reads it at a glance
+        for the whole video (Nil, 2026-10-30: "url needs to be more
+        visible"; it was small light grey). __fitWallz holds the strip,
+        badge included, to STRIP_AREA.
+      */
       #strip .site {
-        margin-top: 0.2em;
-        font-size: 0.62em;
-        font-weight: 700;
-        letter-spacing: 0.18em;
-        color: rgba(226, 232, 240, 0.72);
+        margin-top: 0.3em;
+        padding: 0.12em 0.7em;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #0b0f1c;
+        font-size: 0.86em;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        box-shadow: 0 0.15em 0.6em rgba(0, 0, 0, 0.45);
       }
 
       /* ---------- persistent branding ---------- */
