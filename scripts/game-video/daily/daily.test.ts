@@ -2901,7 +2901,11 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   );
   // A MEDIUM picture is refused until Nil OKs it; a LOW one is not.
   const picture = (asset: string) =>
-    told({ events: [{ ply: 22, kind: "overlay", form: "clip", asset }] });
+    told({
+      events: [
+        { ply: 22, kind: "overlay", form: "clip", asset, pawn: "red mouse" },
+      ],
+    });
   const medium = await picture("smudge-cat");
   expect(medium.status).toBe(409);
   expect(medium.body.error).toContain(

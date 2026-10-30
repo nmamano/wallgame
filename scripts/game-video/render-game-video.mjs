@@ -119,6 +119,11 @@ import {
   overlayPlaces,
   placeName,
   placeOverlay,
+  placeNear,
+  parsePawn,
+  tailHits,
+  tailOf,
+  takesPawn,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
   TEXT_TIMING,
@@ -2284,7 +2289,8 @@ const fileUrl = (p) => `file://${resolve(p)}`;
 
 /**
  * The art of each reactor overlay of the EDL, by its role (overlays.mjs
- * reactorRole): a "hunter" shows the seat's card (its cat); a "prey" shows
+ * reactorRole), and of each redraw (its `pawn`, composed as a prey is):
+ * a "hunter" shows the seat's card (its cat); a "prey" shows
  * the seat's one hunted pawn (race-replay.ts preyTypeOf), composed from the
  * board's own art for it (pawnArt): the pawn of that type whose colour
  * filter is the seat card's. {url}, or {stop}: why it cannot, which stops
@@ -2324,8 +2330,27 @@ if (EDL) {
     return { url: fileUrl(file) };
   };
   for (const ev of EDL.events) {
-    if (ev.kind !== "overlay" || OVERLAYS[ev.asset].draw !== "reactor")
+    if (ev.kind !== "overlay") continue;
+    /*
+      A redraw shows the pawn that emotes it (overlays.mjs `pawn`): the
+      board's own art for that seat's piece, as a reactor's prey.
+    */
+    if (OVERLAYS[ev.asset].draw === "redraw") {
+      const pawn = parsePawn(ev.pawn);
+      const player = playerOf(pawn.seat);
+      const key = `${player}:${pawn.piece}`;
+      if (!prey.has(key))
+        prey.set(key, await preyArt(player, pawn.seat, pawn.piece));
+      const art = prey.get(key);
+      REACTOR_ART.set(
+        ev,
+        "stop" in art
+          ? { stop: `the ${ev.asset} on ply ${ev.ply}: ${art.stop}` }
+          : art,
+      );
       continue;
+    }
+    if (OVERLAYS[ev.asset].draw !== "reactor") continue;
     const player = playerOf(ev.seat);
     if (reactorRole(OVERLAYS[ev.asset]) === "hunter") {
       REACTOR_ART.set(ev, { url: fileUrl(portraits[player]) });
@@ -3374,10 +3399,30 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *   image    the picture as a file URL, checked against the hash the
  *            registry pins.
  *   card     the player whose colour it takes, for a card with a seat.
+ *   pawn     for an asset a pawn emotes (overlays.mjs `pawn`): that pawn's
+ *            player, and its cell once the ply's move has landed (its ply
+ *            holds while it shows, so the pawn stays there).
  */
 const OVERLAY_FACTS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
   const draw = OVERLAYS[ev.asset].draw;
+  if (takesPawn(OVERLAYS[ev.asset])) {
+    const pawn = parsePawn(ev.pawn);
+    const player = SEAT_COLORS(replay)[1] === pawn.seat ? 1 : 2;
+    const cell = pawnCell(
+      REPLAYED.states[ev.ply + 1].pawns,
+      player,
+      pawn.piece,
+    );
+    if (!cell) {
+      console.error(
+        `ply ${ev.ply}: the ${ev.asset} overlay is tied to the ${ev.pawn}, and ${replay.state.config.variant} gives ${pawn.seat} no ${pawn.piece}`,
+      );
+      await browser.close();
+      process.exit(2);
+    }
+    OVERLAY_FACTS.set(ev, { player, cell });
+  }
   if (draw === "image") {
     const { file, sha256 } = OVERLAYS[ev.asset].image;
     const path = join(REPO, VISUAL_MEME_DIR, file);
@@ -3389,7 +3434,7 @@ for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
       await browser.close();
       process.exit(2);
     }
-    OVERLAY_FACTS.set(ev, { src: fileUrl(path) });
+    OVERLAY_FACTS.set(ev, { ...OVERLAY_FACTS.get(ev), src: fileUrl(path) });
   }
   if (draw === "card" && ev.seat !== undefined) {
     OVERLAY_FACTS.set(ev, {
@@ -4098,6 +4143,20 @@ const renderStyle = async (styleName) => {
    */
   const hasTrap = (plyIndex) =>
     eventsAt(plyIndex).some((e) => e.kind === "trap");
+  /**
+   * Hold the ply until the live overlay closes, when a pawn emotes it
+   * (overlays.mjs `pawn`): the next move waits, as it waits for a mark, so
+   * the pawn stands still under its tail (Wall Game Director, 2026-10-30,
+   * from the preview's ply 10: the scream showed over the next move).
+   */
+  const holdForOverlay = async (ply, plyIndex) => {
+    const live = liveOverlay();
+    if (!live || !takesPawn(live.asset) || live.end === null) return;
+    const rest = live.end - elapsed;
+    if (rest > 0.5 / FPS) {
+      await emit(playState(ply), rest, { kind: "move", ply: plyIndex });
+    }
+  };
   /** Close the live overlay now (the ending, or the end of a preview). */
   const closeOverlay = () => {
     const live = liveOverlay();
@@ -4178,8 +4237,27 @@ const renderStyle = async (styleName) => {
             src: facts.src,
             crop: w.asset.image.crop,
             pixels: w.asset.image.pixels,
+            // A cut-out: its outline as shares of its crop's box.
+            outline: w.asset.image.outline
+              ? w.asset.image.outline.map(([x, y]) => [
+                  x / w.asset.image.pixels[0] / w.asset.image.crop.w -
+                    w.asset.image.crop.x / w.asset.image.crop.w,
+                  y / w.asset.image.pixels[1] / w.asset.image.crop.h -
+                    w.asset.image.crop.y / w.asset.image.crop.h,
+                ])
+              : null,
+            fade: w.asset.image.fade ?? 0,
           }
         : {}),
+      ...(w.asset.draw === "redraw"
+        ? {
+            redraw: w.asset.redraw,
+            art: REACTOR_ART.get(w.ev)?.url ?? null,
+          }
+        : {}),
+      // Who emotes it: a ring in the pawn's seat colour, and the tail its
+      // place holds (placeNear).
+      ...(takesPawn(w.asset) ? { ring: side(facts.player).hex } : {}),
       ...(w.asset.tint ? { tint: w.asset.tint } : {}),
     };
     w.frames.push({ o, state, at: elapsed, image: timeline.length });
@@ -4440,6 +4518,8 @@ const renderStyle = async (styleName) => {
    * fit of its line (or the render stops), its span in RESULT.timeline and
    * its still on the contact sheet.
    */
+  /** A cell's size in the board, for a tail (overlays.mjs placeNear). */
+  const PITCH = { x: GRID.pitchX, y: GRID.pitchY };
   const placeOverlays = async () => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
@@ -4496,23 +4576,50 @@ const renderStyle = async (styleName) => {
             ]);
       const reach = await reachOf(w);
       const offRoom = await offBoardRoom(w);
-      const place = placeOverlay(w.asset, busy, reach, offRoom);
+      /*
+        A picture a pawn emotes goes nearest that pawn, with a tail that
+        points at it (overlays.mjs placeNear; Nil, 2026-10-30, C20). Its
+        ply holds while it shows, so the pawn stands still under the tail;
+        a zoom on that ply would move it, so the render stops.
+      */
+      const pawnAt = takesPawn(w.asset)
+        ? cellAt(OVERLAY_FACTS.get(w.ev).cell)
+        : null;
+      if (pawnAt && w.frames.some((f) => (f.state.zoom?.scale ?? 1) !== 1)) {
+        fault(
+          "overlay-pawn",
+          w.ev.ply,
+          `${where} points at the ${w.ev.pawn}, and a zoom on its ply moves the board under it: put the zoom on another ply`,
+          w.start,
+        );
+        continue;
+      }
+      const place = pawnAt
+        ? placeNear(w.asset, busy, reach, pawnAt, PITCH)
+        : placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
         // What is under each place, each thing once, and what stops each
         // place off the board: the director moves the overlay to a ply
         // where one place is free.
         const under = placesOf(w.asset).flatMap((kind) =>
           kind === "board"
-            ? overlayPlaces(w.asset, reach).map(
-                (p) =>
-                  `${placeName(p)}: ${[...new Set(coveredBy(p.full, busy).map((b) => b.what))].join(", ")}`,
-              )
+            ? overlayPlaces(w.asset, reach).map((p) => {
+                const under = coveredBy(p.full, busy);
+                // A free place of a picture a pawn emotes: what its tail
+                // to the pawn crosses.
+                const tail =
+                  pawnAt && under.length === 0
+                    ? tailOf(p.full, pawnAt, PITCH)
+                    : null;
+                const crossed = tail ? tailHits(tail, p.full, busy, PITCH) : [];
+                return `${placeName(p)}: ${[...new Set(under.map((b) => b.what))].join(", ")}${crossed.length > 0 ? `its tail crosses ${[...new Set(crossed.map((b) => b.what))].join(", ")}` : ""}`;
+              })
             : [`${kind}: ${offRoom(kind)}`],
         );
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}; under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear` : ""}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;
@@ -4530,7 +4637,7 @@ const renderStyle = async (styleName) => {
               ),
             );
       log(
-        `${where}: ${placeName(place)}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
+        `${where}: ${placeName(place)}${pawnAt ? (place.tail ? `, its tail to the ${w.ev.pawn}` : `, beside the ${w.ev.pawn}`) : ""}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
       for (const f of w.frames) {
         f.o.alpha = Math.max(
@@ -6161,6 +6268,7 @@ const renderStyle = async (styleName) => {
           ply: plyIndex,
         });
       }
+      await holdForOverlay(ply, plyIndex);
       musicEndAt = elapsed;
       // The ending covers the board: an overlay still open closes here.
       closeOverlay();
@@ -6394,6 +6502,7 @@ const renderStyle = async (styleName) => {
         },
       );
     }
+    if (wallz && !isLast) await holdForOverlay(ply, plyIndex);
     if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
   }
   // A preview can stop before an overlay closes.

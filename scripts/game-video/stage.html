@@ -768,6 +768,36 @@
         background-repeat: no-repeat;
         font-size: calc(var(--board) * 0.05);
       }
+      /* A cut-out in its own outline (overlays.mjs image.outline): no frame;
+         its ring, in the seat's colour, is its wrapper's filter. */
+      .image .ring {
+        flex: none;
+      }
+      .image .ring .pic {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 0;
+        filter: none;
+      }
+      /* A tail from a picture to the pawn that emotes it (overlays.mjs
+         placeNear): under the picture, over the board. */
+      #overlayTail {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+        overflow: visible;
+      }
+      #overlay.redraw {
+        z-index: 1;
+      }
+      #overlay.redraw svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
       #overlay.loading {
         flex-direction: column;
         justify-content: center;
@@ -1226,6 +1256,12 @@
             <div></div>
             <div></div>
           </div>
+          <svg
+            id="overlayTail"
+            class="hidden"
+            viewBox="0 0 1000 1000"
+            preserveAspectRatio="none"
+          ></svg>
           <div id="overlay" class="hidden"></div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
           <div id="replayBadge" class="hidden">
@@ -2182,7 +2218,225 @@
       const MARGIN_EDGE = 24;
       const MARGIN_GAP = 16;
       const MARGIN_MIN = 110;
+      /**
+       * The ring of a cut-out a pawn emotes, in its seat's colour: four
+       * hard shadows grow its outline by `r` px on every side, then a soft
+       * one lifts it off the board.
+       */
+      const ringFilter = (hex, r) =>
+        [
+          [r, 0],
+          [-r, 0],
+          [0, r],
+          [0, -r],
+        ]
+          .map(([x, y]) => "drop-shadow(" + x + "px " + y + "px 0 " + hex + ")")
+          .join(" ") + " drop-shadow(0 0.1em 0.3em rgba(0, 0, 0, 0.7))";
+      /** `hex` mixed with white: k = 1 is white. */
+      const tintOf = (hex, k) => {
+        const n = parseInt(hex.slice(1), 16);
+        const c = [n >> 16, (n >> 8) & 255, n & 255].map((v) =>
+          Math.round(v + (255 - v) * k),
+        );
+        return "rgb(" + c.join(",") + ")";
+      };
+      /**
+       * A redraw (overlays.mjs draw "redraw"): the seat's own pawn art
+       * (`o.art`) in a known meme's pose and props, as one SVG; every
+       * motion is a pure function of t.
+       */
+      const redrawSvg = (o, esc) => {
+        const t = o.t;
+        const art = esc(o.art);
+        const ink = "#0b1020";
+        if (o.redraw === "surprised") {
+          // The deadpan close-up: the pawn's top half, still, on a flat
+          // disc in its seat's colour.
+          return (
+            '<svg viewBox="0 0 100 100"><defs><clipPath id="rdDisc">' +
+            '<circle cx="50" cy="50" r="46"/></clipPath></defs>' +
+            '<circle cx="50" cy="50" r="46" fill="' +
+            tintOf(o.ring, 0.72) +
+            '"/><g clip-path="url(#rdDisc)"><image href="' +
+            art +
+            '" x="-22" y="-4" width="144" height="144"/></g>' +
+            '<circle cx="50" cy="50" r="46" fill="none" stroke="' +
+            ink +
+            '" stroke-width="2.5"/></svg>'
+          );
+        }
+        if (o.redraw === "this-is-fine") {
+          // Two beats: a calm sip, then the flames grow.
+          const grow = 0.5 + 0.5 * easeOut3(span(t, 1.0, 1.5));
+          const flame = (cx, base, h, w, phase, k) => {
+            const hh =
+              h * k * (1 + 0.09 * Math.sin(t * Math.PI * 2 * 3.1 + phase));
+            const one = (ww, hh2, fill) =>
+              '<path fill="' +
+              fill +
+              '" d="M' +
+              (cx - ww / 2) +
+              " " +
+              base +
+              " Q" +
+              (cx - ww / 2) +
+              " " +
+              (base - hh2 * 0.55) +
+              " " +
+              cx +
+              " " +
+              (base - hh2) +
+              " Q" +
+              (cx + ww / 2) +
+              " " +
+              (base - hh2 * 0.55) +
+              " " +
+              (cx + ww / 2) +
+              " " +
+              base +
+              ' Z"/>';
+            return one(w, hh, "#ea580c") + one(w * 0.55, hh * 0.6, "#fde047");
+          };
+          const side = span(t, 1.0, 1.4);
+          const back = [
+            [5, 80, 26, 12, 0.4],
+            [95, 80, 28, 12, 1.9],
+            [10, 62, 20, 10, 2.6],
+            [90, 62, 22, 10, 0.9],
+          ]
+            .map(([x, b, h, w, ph]) => flame(x, b, h, w, ph, side * grow))
+            .join("");
+          const front = [6, 17, 28, 39, 50, 61, 72, 83, 94]
+            .map((x, i) => flame(x, 94, 18 + (i % 3) * 5, 13, i * 1.3, grow))
+            .join("");
+          const lift =
+            easeOut3(span(t, 0.25, 0.55)) - easeOut3(span(t, 0.8, 1.05));
+          const cx = 68 - 9 * lift;
+          const cy = 66 - 13 * lift;
+          const cup =
+            '<g transform="translate(' +
+            cx +
+            " " +
+            cy +
+            ") rotate(" +
+            -25 * lift +
+            ')"><path d="M6 2 q5 0 5 4 q0 4 -5 4" fill="none" stroke="' +
+            ink +
+            '" stroke-width="1.6"/><rect x="-4" y="0" width="10" height="11" rx="1.5" fill="#fff" stroke="' +
+            ink +
+            '" stroke-width="1.6"/></g>';
+          const bubble =
+            '<g opacity="' +
+            span(t, 0.1, 0.25) +
+            '"><path d="M38 20 L48 31 L44 20 Z" fill="#fff" stroke="' +
+            ink +
+            '" stroke-width="1.4" stroke-linejoin="round"/><rect x="3" y="3" width="62" height="18" rx="8" fill="#fff" stroke="' +
+            ink +
+            '" stroke-width="1.6"/><rect x="36" y="18" width="11" height="4" fill="#fff"/>' +
+            '<text x="34" y="15.6" text-anchor="middle" font-size="10" font-weight="800" fill="#111" font-family="TikTok Sans, DejaVu Sans, sans-serif">this is fine</text></g>';
+          return (
+            '<svg viewBox="0 0 100 95">' +
+            back +
+            '<image href="' +
+            art +
+            '" x="27" y="32" width="46" height="46"/>' +
+            cup +
+            front +
+            bubble +
+            "</svg>"
+          );
+        }
+        // The scream: the pawn stretched and waving, on a Munch sky over a
+        // blue fjord and the bridge's rail.
+        const blob = [];
+        for (let k = 0; k < 72; k += 1) {
+          const a = (k / 72) * Math.PI * 2;
+          const c = Math.cos(a);
+          const sn = Math.sin(a);
+          // A rounded box, its edge waving.
+          const r =
+            1 /
+            Math.pow(
+              Math.pow(Math.abs(c), 4) + Math.pow(Math.abs(sn), 4),
+              0.25,
+            );
+          const wv = 1 + 0.03 * Math.sin(a * 7 + 1.3);
+          blob.push(
+            (40 + 38 * c * r * wv).toFixed(2) +
+              " " +
+              (50 + 48 * sn * r * wv).toFixed(2),
+          );
+        }
+        const wave = (y, amp, len, color, width, phase) => {
+          let d = "M-10 " + y;
+          for (let x = -10; x <= 90; x += 4) {
+            d +=
+              " L" +
+              x +
+              " " +
+              (y + amp * Math.sin((x / len) * Math.PI * 2 + phase)).toFixed(2);
+          }
+          return (
+            '<path d="' +
+            d +
+            '" fill="none" stroke="' +
+            color +
+            '" stroke-width="' +
+            width +
+            '" stroke-linecap="round"/>'
+          );
+        };
+        const ph = t * 2.2;
+        const sky = [
+          ["#fbbf24", 4],
+          ["#dc2626", 11],
+          ["#f97316", 18],
+          ["#b91c1c", 25],
+          ["#f59e0b", 32],
+          ["#ea580c", 39],
+        ]
+          .map(([c, y], i) => wave(y, 2.6, 46, c, 6, ph + i))
+          .join("");
+        const fjord = [
+          ["#1d4ed8", 52],
+          ["#60a5fa", 60],
+          ["#1e40af", 68],
+          ["#3b82f6", 76],
+          ["#1e3a8a", 86],
+        ]
+          .map(([c, y], i) => wave(y, 3, 38, c, 6, -ph + i * 1.7))
+          .join("");
+        const sway = 0.04 * Math.sin(t * Math.PI * 2 * 1.4);
+        return (
+          '<svg viewBox="0 0 80 100"><defs><clipPath id="rdBlob"><path d="M' +
+          blob.join(" L") +
+          ' Z"/></clipPath><filter id="rdWave" x="-20%" y="-20%" width="140%" height="140%">' +
+          '<feTurbulence type="fractalNoise" baseFrequency="0.015 0.05" numOctaves="1" seed="7"/>' +
+          '<feDisplacementMap in="SourceGraphic" scale="' +
+          (9 + 4 * Math.sin(t * Math.PI * 2 * 1.4)).toFixed(2) +
+          '" xChannelSelector="R" yChannelSelector="G"/></filter></defs>' +
+          '<g clip-path="url(#rdBlob)"><rect x="0" y="0" width="80" height="100" fill="#c2410c"/>' +
+          sky +
+          '<rect x="0" y="48" width="80" height="52" fill="#1e3a8a"/>' +
+          fjord +
+          '<path d="M-6 66 L86 104" stroke="#7c4a1e" stroke-width="7"/>' +
+          '<path d="M-6 74 L86 112" stroke="#a16207" stroke-width="3"/>' +
+          '<g transform="translate(40 92) scale(' +
+          (0.86 - sway) +
+          " " +
+          (1.22 + sway) +
+          ') translate(-40 -92)" filter="url(#rdWave)"><image href="' +
+          art +
+          '" x="10" y="34" width="60" height="58"/></g>' +
+          '</g><path d="M' +
+          blob.join(" L") +
+          ' Z" fill="none" stroke="' +
+          ink +
+          '" stroke-width="1.6"/></svg>'
+        );
+      };
       const paintOverlay = (o) => {
+        show($("overlayTail"), false);
         const placed = !!o && o.place.where !== undefined;
         const frame =
           placed && (o.place.where === "caption" || o.place.where === "margin");
@@ -2264,6 +2518,18 @@
         }
         const pop = easeOut3(span(o.t, 0, window.__TEXT_TIMING.overlayPop));
         el.style.opacity = pop * o.alpha;
+        // Who emotes it: a tail from it to the pawn (placeNear), as faded.
+        if (o.ring && p.tail) {
+          const tail = $("overlayTail");
+          tail.innerHTML =
+            '<polygon points="' +
+            p.tail.points.map(([x, y]) => x * 1000 + "," + y * 1000).join(" ") +
+            '" fill="' +
+            o.ring +
+            '" stroke="#0b1020" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+          tail.style.opacity = pop * o.alpha;
+          show(tail, true);
+        }
         // The save hits the loading bar: over ERROR_HIT_SECONDS the panel
         // shakes side to side, dying out, and the bar drains (Wall Game
         // Director, 2026-10-28: the save lands on screen, not only in text).
@@ -2337,8 +2603,8 @@
           // On its own child, so no inline style stays on the overlay
           // for the next one (a wasted card once kept an image's
           // flex-end and overflowed its band).
-          el.innerHTML =
-            '<div class="pic" style="align-self:' +
+          const box =
+            "align-self:" +
             (v === "top"
               ? "flex-start"
               : v === "bottom"
@@ -2350,7 +2616,9 @@
             w +
             "px;height:" +
             w / shape +
-            "px;background-image:url(&quot;" +
+            "px;";
+          const picture =
+            "background-image:url(&quot;" +
             esc(o.src) +
             "&quot;);background-size:" +
             100 / c.w +
@@ -2360,7 +2628,41 @@
             pos(c.x, c.w) +
             "% " +
             pos(c.y, c.h) +
-            '%"></div>';
+            "%;";
+          if (o.outline) {
+            // A cut-out: the picture in its outline, its bottom faded,
+            // ringed in the seat's colour when a pawn emotes it.
+            const cut =
+              "clip-path:polygon(" +
+              o.outline
+                .map(([x, y]) => x * 100 + "% " + y * 100 + "%")
+                .join(",") +
+              ");" +
+              (o.fade > 0
+                ? "-webkit-mask-image:linear-gradient(to bottom, #000 " +
+                  (1 - o.fade) * 100 +
+                  "%, transparent);"
+                : "");
+            el.innerHTML =
+              '<div class="ring" style="' +
+              box +
+              (o.ring
+                ? "filter:" + ringFilter(o.ring, Math.max(2, w * 0.03))
+                : "") +
+              '"><div class="pic" style="' +
+              picture +
+              cut +
+              '"></div></div>';
+          } else {
+            el.innerHTML =
+              '<div class="pic" style="' + box + picture + '"></div>';
+          }
+        } else if (o.draw === "redraw") {
+          el.innerHTML = redrawSvg(o, esc);
+          el.firstChild.style.filter = ringFilter(
+            o.ring,
+            Math.max(2, el.clientWidth * 0.025),
+          );
         } else if (o.draw === "reactor") {
           /*
             Each motion is a pure function of t, so a frame is the same

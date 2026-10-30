@@ -19,6 +19,14 @@ import {
   overlayWords,
   reactorRole,
   readingSeconds,
+  outlineCrop,
+  parsePawn,
+  placeNear,
+  tailHits,
+  tailOf,
+  tailPoints,
+  takesPawn,
+  TAIL_GAP,
 } from "./overlays.mjs";
 
 const cell = (x: number, y: number, size = 0.125) => ({
@@ -48,8 +56,9 @@ describe("overlays", () => {
           true,
         ]);
       }
-      // Only a picture from the web, or a known meme's look, has a risk.
-      if (a.draw !== "card" && a.draw !== "image") {
+      // Only a picture from the web, or a known meme's look (a card, a
+      // redraw), has a risk.
+      if (!["card", "image", "redraw"].includes(a.draw)) {
         expect([name, a.claim, a.likeness]).toEqual([name, "None", "None"]);
       }
       const places = placesOf(a);
@@ -359,5 +368,129 @@ describe("the pawn a reactor shows (Nil, 2026-10-29: cats are pursuers)", () => 
         expect(() => reactorRole(asset)).toThrow("no reactor role");
       }
     }
+  });
+});
+
+describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
+  const PITCH = { x: 0.125, y: 0.125 };
+  const scream = OVERLAYS["the-scream"];
+  const near = (
+    pawn: { x: number; y: number },
+    busy: Parameters<typeof placeNear>[1] = [],
+  ) =>
+    placeNear(
+      scream as Parameters<typeof placeNear>[0],
+      busy,
+      NO_REACH,
+      pawn,
+      PITCH,
+    );
+
+  test("the pictures and redraws take a pawn, on the board only", () => {
+    const tied = Object.entries(OVERLAYS)
+      .filter(([, a]) => takesPawn(a))
+      .map(([k]) => k);
+    expect(tied).toEqual([
+      "the-scream",
+      "smudge-cat",
+      "monkey-puppet",
+      "surprised-mouse",
+      "this-is-fine-mouse",
+      "scream-mouse",
+    ]);
+    for (const k of tied)
+      expect([k, placesOf(OVERLAYS[k])]).toEqual([k, ["board"]]);
+    expect(parsePawn("red mouse")).toEqual({ seat: "red", piece: "mouse" });
+    expect(parsePawn("blue cat")).toEqual({ seat: "blue", piece: "cat" });
+    for (const bad of ["red", "red  mouse", "Red mouse", "red rat", 3]) {
+      expect(parsePawn(bad)).toBeNull();
+    }
+  });
+
+  test("the scream is cut in its outline, its crop the outline's box", () => {
+    const img = scream.image!;
+    expect(img.outline!.length).toBeGreaterThan(8);
+    expect(img.crop).toEqual(outlineCrop(img.outline!, img.pixels));
+    expect(
+      outlineCrop(
+        [
+          [10, 20],
+          [30, 60],
+          [20, 40],
+        ],
+        [100, 200],
+      ),
+    ).toEqual({
+      x: 0.1,
+      y: 0.1,
+      w: 0.2,
+      h: 0.2,
+    });
+  });
+
+  test("goes to the free place nearest its pawn, not the first free corner", () => {
+    // A pawn near the top left: the top-left corner, though bottom-right
+    // comes first in the corners' order.
+    expect(near({ x: 0.2, y: 0.35 })?.where).toBe("top-left");
+    expect(near({ x: 0.8, y: 0.3 })?.where).toBe("top-right");
+    expect(near({ x: 0.2, y: 0.9 })?.where).toBe("bottom-left");
+    // Its nearest corner taken: the next nearest, big before small.
+    const p = near({ x: 0.2, y: 0.35 }, [cell(0.05, 0.05)]);
+    expect(p?.where).toBe("bottom-left");
+    expect(p?.scale).toBe(1);
+  });
+
+  test("its tail points at the pawn and stops short of it", () => {
+    const pawn = { x: 0.5, y: 0.5 };
+    const p = near(pawn)!;
+    const t = p.tail!;
+    // It starts inside the picture's box, near its edge, and leaves it.
+    const inBox = (q: { x: number; y: number }) =>
+      q.x > p.full.x &&
+      q.x < p.full.x + p.full.w &&
+      q.y > p.full.y &&
+      q.y < p.full.y + p.full.h;
+    expect(inBox(t.from)).toBe(true);
+    expect(inBox(t.to)).toBe(false);
+    const gap = Math.hypot(
+      (pawn.x - t.to.x) / PITCH.x,
+      (pawn.y - t.to.y) / PITCH.y,
+    );
+    expect(gap).toBeCloseTo(TAIL_GAP, 6);
+    // On the line from the picture to the pawn.
+    const cross =
+      (t.to.x - t.from.x) * (pawn.y - t.from.y) -
+      (t.to.y - t.from.y) * (pawn.x - t.from.x);
+    expect(cross).toBeCloseTo(0, 9);
+    // A wedge: two base points either side of its start, then its tip.
+    const [a, tip, b] = tailPoints(t, PITCH);
+    expect(tip).toEqual([t.to.x, t.to.y]);
+    expect((a[0] + b[0]) / 2).toBeCloseTo(t.from.x, 9);
+    expect((a[1] + b[1]) / 2).toBeCloseTo(t.from.y, 9);
+    // Too near for a tail: none.
+    expect(tailOf({ x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, pawn, PITCH)).toBeNull();
+  });
+
+  test("a place whose tail would cross a pawn is not taken", () => {
+    const pawn = { x: 0.5, y: 0.5 };
+    const first = near(pawn)!;
+    // Something on the tail's way, past the picture.
+    const t = first.tail!;
+    const mid = {
+      x: (t.from.x + t.to.x * 3) / 4,
+      y: (t.from.y + t.to.y * 3) / 4,
+    };
+    const block = {
+      x0: mid.x - 0.01,
+      y0: mid.y - 0.01,
+      x1: mid.x + 0.01,
+      y1: mid.y + 0.01,
+    };
+    expect(tailHits(t, first.full, [block], PITCH)).toEqual([block]);
+    const other = near(pawn, [block])!;
+    expect(other.where === first.where && other.scale === first.scale).toBe(
+      false,
+    );
+    expect(tailHits(other.tail!, other.full, [block], PITCH)).toEqual([]);
   });
 });

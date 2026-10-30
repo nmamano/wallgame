@@ -165,7 +165,12 @@
  *             fast-forward's end or the save closes it sooner. `text` is the asset's line,
  *             where it takes one; {red} and {blue} in it become the seats'
  *             names. `seat` ("red" or "blue") is required on an asset that
- *             shows a seat's portrait: who reacts is the story. The renderer puts it where it hides no pawn and
+ *             shows a seat's portrait: who reacts is the story. `pawn`
+ *             ("red mouse": a seat and a piece) is required on an asset
+ *             that a pawn emotes (overlays.mjs `pawn`: a picture, a
+ *             redraw): it goes in the free place nearest that pawn, with a
+ *             tail that points at it, and its ply holds until it closes;
+ *             such an overlay never goes in a fast-forward. The renderer puts it where it hides no pawn and
  *             nothing in play on any frame it covers, or stops and names
  *             what is under each place. One overlay at a time, and the
  *             ending cuts one still open. In a fastForward range the only
@@ -187,6 +192,8 @@ import {
   OVERLAY_NAME_TOKENS,
   OVERLAY_TEXT_CHARS,
   PORTRAIT_DRAWS,
+  parsePawn,
+  takesPawn,
   takesSeat,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
@@ -329,6 +336,7 @@ export const edlSoundUses = (edl) => [
 export const LINT_KINDS = {
   "overlay-overlap": "stops",
   "overlay-place": "stops",
+  "overlay-pawn": "stops",
   "reading-time": "stops",
   "text-fit": "stops",
   "sound-file": "stops",
@@ -391,7 +399,7 @@ const KIND_FIELDS = {
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
-  overlay: ["form", "asset", "text", "seconds", "seat"],
+  overlay: ["form", "asset", "text", "seconds", "seat", "pawn"],
   explain: ["hunter", "label", "expect"],
 };
 /** The kinds that name one cell, which must be on the board. */
@@ -747,6 +755,21 @@ export const validateEdl = (raw) => {
           : `${where}: ${ev.asset} takes a seat's colour; seat must be "red" or "blue" (who plays it)`,
       );
     }
+    if (!takesPawn(asset)) {
+      if (ev.pawn !== undefined)
+        fail(`${where}: ${ev.asset} is tied to no pawn`);
+    } else {
+      const pawn = parsePawn(ev.pawn);
+      if (!pawn) {
+        fail(
+          `${where}: ${ev.asset} shows who emotes it; pawn must be a seat and a piece, as "red mouse" or "blue cat"`,
+        );
+      } else if (asset.pieces && !asset.pieces.includes(pawn.piece)) {
+        fail(
+          `${where}: ${ev.asset} is drawn for a ${asset.pieces.join(" or ")}, not a ${pawn.piece}`,
+        );
+      }
+    }
     // null is "not set": validateEdl writes it for an overlay that the
     // asset or a fast-forward times, and the renderer validates that copy
     // again (2026-10-28, the first render on the release).
@@ -992,6 +1015,11 @@ export const validateEdl = (raw) => {
     if (!isFastOverlay(e, r)) {
       return fail(
         `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments, only one overlay on its first ply`,
+      );
+    }
+    if (takesPawn(OVERLAYS[e.asset] ?? {})) {
+      return fail(
+        `events[${i}]: ${e.asset} holds its ply until it closes, and a fast-forward holds none; put it on a ply outside the range`,
       );
     }
     if (filled.findIndex((x) => isFastOverlay(x, r)) !== i) {

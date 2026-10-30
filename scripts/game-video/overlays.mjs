@@ -71,12 +71,30 @@
  *            image    a still picture, `image.file` in VISUAL_MEME_DIR
  *                     (kept out of git, `pixels` wide and high), pinned
  *                     by its sha256 and cut to `image.crop` (shares of the
- *                     picture), kept whole in its box.
+ *                     picture), kept whole in its box. With
+ *                     `image.outline` (points in the picture's pixels) it
+ *                     is a cut-out in that outline, not a framed rectangle
+ *                     (Nil, 2026-10-30, C20: "carve outs ... the
+ *                     silhouette of the visual meme"); its crop is the
+ *                     outline's box (outlineCrop), and `image.fade` (a
+ *                     share of its height) fades its bottom out.
+ *            redraw   a known meme redrawn with the seat's own pawn art
+ *                     (the skin the board shows), the meme's props drawn
+ *                     by the stage around it (`redraw` names it;
+ *                     visual-memes.md "Redraws"): no picture from the web.
  *            The seat of a portrait is the EDL's `seat` ("red" or
  *            "blue"), which it must give: who reacts is the story, and a
  *            default once made the stopped hunter laugh at the save
  *            (Wall Game Director, 2026-10-28). So does a card with
  *            `seat: true`, drawn in that seat's colour (who plays it).
+ *   pawn     true: a pawn emotes it, and the EDL names the pawn ("red
+ *            mouse"; Nil, 2026-10-30, C20: "it should be clear who is
+ *            emoting. between the cats and mice"). It takes the free board
+ *            place nearest that pawn (placeNear), a ring in the seat's
+ *            colour round its outline and a tail that points at the pawn,
+ *            and its ply holds until it closes, so the pawn stays under
+ *            the tail. `pieces` limits the pawn's type where the meme names
+ *            one (the scream mouse).
  *   places   where it may go, in the order they are tried: "board" (its
  *            form's places on the board, overlayPlaces), "margin" (the
  *            left margin, at its size's shape) and "caption" (the
@@ -128,6 +146,57 @@ export const CARDS = [
 export const VISUAL_MEME_DIR = "assets/overlays/visual-memes";
 
 /**
+ * The box of an outline (points in a picture's pixels) as shares of the
+ * picture: an outlined image's crop.
+ * @param {[number, number][]} outline
+ * @param {[number, number]} pixels
+ */
+export const outlineCrop = (outline, [pw, ph]) => {
+  const xs = outline.map(([x]) => x);
+  const ys = outline.map(([, y]) => y);
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  return {
+    x: x0 / pw,
+    y: y0 / ph,
+    w: (Math.max(...xs) - x0) / pw,
+    h: (Math.max(...ys) - y0) / ph,
+  };
+};
+
+/**
+ * The Scream's figure: its head, its hands and its upper body, outlined in
+ * the painting's pixels (the full figure's dark coat runs into the dark
+ * bridge, so the bust is the part that reads; Video Editor (renderer),
+ * 2026-10-30). Its bottom fades out.
+ * @type {[number, number][]}
+ */
+const SCREAM_OUTLINE = [
+  [680, 774],
+  [722, 782],
+  [752, 804],
+  [768, 838],
+  [780, 880],
+  [786, 940],
+  [788, 1000],
+  [786, 1060],
+  [792, 1120],
+  [800, 1180],
+  [806, 1250],
+  [514, 1250],
+  [518, 1180],
+  [524, 1120],
+  [534, 1066],
+  [564, 1016],
+  [568, 964],
+  [568, 904],
+  [576, 852],
+  [594, 814],
+  [620, 788],
+  [650, 776],
+];
+
+/**
  * @typedef {{
  *   form: "clip" | "panel" | "bar",
  *   draw:
@@ -138,10 +207,14 @@ export const VISUAL_MEME_DIR = "assets/overlays/visual-memes";
  *     | "whitebar"
  *     | "sequence"
  *     | "card"
- *     | "image",
+ *     | "image"
+ *     | "redraw",
  *   card?: string,
- *   image?: { file: string, pixels: [number, number], sha256: string, crop: { x: number, y: number, w: number, h: number } },
+ *   image?: { file: string, pixels: [number, number], sha256: string, crop: { x: number, y: number, w: number, h: number }, outline?: [number, number][], fade?: number },
+ *   redraw?: string,
  *   seat?: true,
+ *   pawn?: true,
+ *   pieces?: string[],
  *   places?: ("board" | "margin" | "caption")[],
  *   tint?: "grey",
  *   nilOk?: string | null,
@@ -367,6 +440,8 @@ export const OVERLAYS = {
     Visual memes, Track B (visual-memes.md): pictures from the web, each
     with its origin page and risks there. Only the preview's three are
     here; a HIGH one gets our own redraw instead (Wall Game PM, 2026-10-30).
+    Nil, 2026-10-30 (C20): the-scream may go in posted videos;
+    smudge-cat and monkey-puppet got no OK.
   */
   "the-scream": {
     form: "clip",
@@ -376,19 +451,22 @@ export const OVERLAYS = {
       pixels: [1280, 1589],
       sha256:
         "2fcbcc4554496812fe37c4bc9c6da2ee45da98ce9d5c21de271f7ef3b3431a34",
-      crop: { x: 0, y: 0, w: 1, h: 1 },
+      crop: outlineCrop(SCREAM_OUTLINE, [1280, 1589]),
+      outline: SCREAM_OUTLINE,
+      fade: 0.13,
     },
+    pawn: true,
     text: "none",
     seconds: 1.4,
-    size: { w: 0.32, h: 0.4 },
-    small: { w: 0.25, h: 0.31 },
-    places: ["board", "margin"],
+    size: { w: 0.25, h: 0.41 },
+    small: { w: 0.2, h: 0.33 },
+    places: ["board"],
     source:
       "Edvard Munch, The Scream, 1893, National Gallery of Norway (Wikimedia Commons), public domain",
     claim:
       "LOW: public domain; some countries limit reuse of a photo of an artwork",
     likeness: "LOW",
-    nilOk: null,
+    nilOk: "Nil, 2026-10-30 (ask 695dd417, CASES.md C20)",
     rating: null,
   },
   "smudge-cat": {
@@ -407,7 +485,8 @@ export const OVERLAYS = {
     seconds: 1.4,
     size: { w: 0.34, h: 0.4 },
     small: { w: 0.26, h: 0.31 },
-    places: ["board", "margin"],
+    pawn: true,
+    places: ["board"],
     source:
       "Smudge the cat, first posted 2018-06-19 on Tumblr; owner probably @smudge_lord, not confirmed",
     claim: "MEDIUM: a private owner's photo",
@@ -429,7 +508,8 @@ export const OVERLAYS = {
     seconds: 1.6,
     size: { w: 0.5, h: 0.33 },
     small: { w: 0.39, h: 0.26 },
-    places: ["board", "margin"],
+    pawn: true,
+    places: ["board"],
     source:
       'the puppet Kento, Japanese children\'s TV "Ōkiku Naru Ko" (1959-1988); meme from 2016-05-05',
     claim: "MEDIUM: a TV frame, owner unknown",
@@ -437,6 +517,82 @@ export const OVERLAYS = {
     nilOk: null,
     rating: null,
   },
+  /*
+    The redraws (visual-memes.md "Redraws"; Nil, 2026-10-30, C20: redraw
+    surprised-pikachu and this-is-fine): the joke of a HIGH picture with
+    the seat's own pawn art and props the stage draws. Our pawn art is a
+    one-line drawing per skin, so a redraw cannot give it a new face: the
+    props and the motion carry the joke.
+  */
+  "surprised-mouse": {
+    form: "clip",
+    draw: "redraw",
+    redraw: "surprised",
+    pawn: true,
+    pieces: ["mouse"],
+    text: "none",
+    seconds: 1.2,
+    size: { w: 0.3, h: 0.3 },
+    small: { w: 0.24, h: 0.24 },
+    places: ["board"],
+    source:
+      "drawn by us (stage.html): the seat's own mouse, the deadpan close-up of surprised Pikachu",
+    claim: "LOW: our own drawing of a known meme's layout",
+    likeness: "None",
+    rating: null,
+  },
+  "this-is-fine-mouse": {
+    form: "clip",
+    draw: "redraw",
+    redraw: "this-is-fine",
+    pawn: true,
+    pieces: ["mouse"],
+    text: "none",
+    shows: "this is fine",
+    seconds: 2.4,
+    size: { w: 0.4, h: 0.38 },
+    small: { w: 0.32, h: 0.3 },
+    places: ["board"],
+    source:
+      "drawn by us (stage.html): the seat's own mouse with a cup in flames, the joke of K.C. Green's comic",
+    claim: "LOW: our own drawing of a known meme's joke",
+    likeness: "None",
+    rating: null,
+  },
+  "scream-mouse": {
+    form: "clip",
+    draw: "redraw",
+    redraw: "scream",
+    pawn: true,
+    pieces: ["mouse"],
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.3, h: 0.38 },
+    small: { w: 0.24, h: 0.3 },
+    places: ["board"],
+    source:
+      "drawn by us (stage.html): the seat's own mouse in The Scream's pose and sky (Munch, 1893, public domain)",
+    claim: "LOW: our own drawing after a public-domain painting",
+    likeness: "None",
+    rating: null,
+  },
+};
+
+/** The pawn types an EDL names (shared/domain/pawns.ts PawnType). */
+export const PAWN_PIECES = ["cat", "mouse", "home", "elephant", "dog"];
+
+/**
+ * An EDL's pawn ("red mouse"): its seat and piece, or null when it is not
+ * one.
+ * @param {unknown} pawn
+ * @returns {{ seat: "red" | "blue", piece: string } | null}
+ */
+export const parsePawn = (pawn) => {
+  const m =
+    typeof pawn === "string" ? /^(red|blue) ([a-z]+)$/.exec(pawn) : null;
+  return m && PAWN_PIECES.includes(m[2])
+    ? { seat: /** @type {"red" | "blue"} */ (m[1]), piece: m[2] }
+    : null;
 };
 
 /**
@@ -468,6 +624,9 @@ export const needsNilOk = (asset) =>
   [asset.claim, asset.likeness].some((r) =>
     ["MEDIUM", "HIGH"].includes(riskLevel(r)),
   ) && !asset.nilOk;
+
+/** Whether an EDL must name the pawn that emotes `asset` (`pawn`). */
+export const takesPawn = (asset) => asset.pawn === true;
 
 /** The draws that show a seat's portrait, so an EDL may name the seat. */
 export const PORTRAIT_DRAWS = ["reactor"];
@@ -736,6 +895,137 @@ export const placeOverlay = (asset, busy, reach, offRoom) => {
       if (free) return free;
     } else if (offRoom(kind) === null) {
       return offBoardPlace(asset, kind);
+    }
+  }
+  return null;
+};
+
+/** How far a tail stops short of its pawn's centre, in cells: off the pawn and its cell. */
+export const TAIL_GAP = 0.62;
+/** A tail's width where it leaves its picture, in cells; it narrows to its tip. */
+export const TAIL_WIDTH = 0.42;
+/** How far a tail starts inside its picture's box, in cells, so it tucks under the art. */
+export const TAIL_TUCK = 0.35;
+
+/**
+ * The tail of a picture tied to a pawn (`pawn`): on the line from the
+ * middle of its art (`full`) to the pawn's centre, from TAIL_TUCK cells
+ * inside the art's box (the stage draws it under the picture) to TAIL_GAP
+ * cells short of the pawn, in the board (0..1). It starts at the box's
+ * edge, not its middle, so it is TAIL_WIDTH wide where it shows (the proof
+ * of 2026-10-30: from the middle, a long tail showed as a needle). Null
+ * when the pawn is too near for one past the box.
+ * @param {{ x: number, y: number, w: number, h: number }} full
+ * @param {{ x: number, y: number }} pawn
+ * @param {{ x: number, y: number }} pitch a cell's size in the board
+ * @returns {{ from: { x: number, y: number }, to: { x: number, y: number } } | null}
+ */
+export const tailOf = (full, pawn, pitch) => {
+  const mid = { x: full.x + full.w / 2, y: full.y + full.h / 2 };
+  // In cells, from the middle.
+  const dx = (pawn.x - mid.x) / pitch.x;
+  const dy = (pawn.y - mid.y) / pitch.y;
+  const d = Math.hypot(dx, dy);
+  // Where the line leaves the box, as a distance from the middle.
+  const exit = Math.min(
+    dx === 0 ? Infinity : (full.w / 2 / pitch.x) * (d / Math.abs(dx)),
+    dy === 0 ? Infinity : (full.h / 2 / pitch.y) * (d / Math.abs(dy)),
+  );
+  const start = Math.max(0, exit - TAIL_TUCK);
+  const end = d - TAIL_GAP;
+  if (end <= exit) return null;
+  const at = (k) => ({
+    x: mid.x + (dx / d) * k * pitch.x,
+    y: mid.y + (dy / d) * k * pitch.y,
+  });
+  return { from: at(start), to: at(end) };
+};
+
+/**
+ * A tail as the stage draws it: a wedge TAIL_WIDTH cells wide at its start,
+ * to a point at its tip, as three points in the board (0..1).
+ * @param {{ from: { x: number, y: number }, to: { x: number, y: number } }} tail
+ * @param {{ x: number, y: number }} pitch
+ * @returns {[number, number][]}
+ */
+export const tailPoints = (tail, pitch) => {
+  const dx = (tail.to.x - tail.from.x) / pitch.x;
+  const dy = (tail.to.y - tail.from.y) / pitch.y;
+  const d = Math.hypot(dx, dy);
+  const half = TAIL_WIDTH / 2;
+  const px = (-dy / d) * half * pitch.x;
+  const py = (dx / d) * half * pitch.y;
+  return [
+    [tail.from.x + px, tail.from.y + py],
+    [tail.to.x, tail.to.y],
+    [tail.from.x - px, tail.from.y - py],
+  ];
+};
+
+/**
+ * The boxes that the part of `tail` past its art (`full`) overlaps: the
+ * tail as discs of its width along it, every 1/32 of its length.
+ * @template {{ x0: number, y0: number, x1: number, y1: number }} B
+ * @param {{ from: { x: number, y: number }, to: { x: number, y: number } }} tail
+ * @param {{ x: number, y: number, w: number, h: number }} full
+ * @param {B[]} boxes
+ * @param {{ x: number, y: number }} pitch
+ * @returns {B[]}
+ */
+export const tailHits = (tail, full, boxes, pitch) => {
+  const hits = new Set();
+  const steps = 32;
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const x = tail.from.x + (tail.to.x - tail.from.x) * t;
+    const y = tail.from.y + (tail.to.y - tail.from.y) * t;
+    if (x > full.x && x < full.x + full.w && y > full.y && y < full.y + full.h)
+      continue;
+    const half = (TAIL_WIDTH / 2) * (1 - t);
+    const disc = {
+      x: x - half * pitch.x,
+      y: y - half * pitch.y,
+      w: 2 * half * pitch.x,
+      h: 2 * half * pitch.y,
+    };
+    for (const b of coveredBy(disc, boxes)) hits.add(b);
+  }
+  return [...hits];
+};
+
+/**
+ * The place of a picture tied to a pawn (`pawn`; Nil, 2026-10-30, C20:
+ * "it should be clear who is emoting"): of its board places whose whole
+ * art overlaps none of the `busy` boxes and whose tail overlaps none
+ * either, the one nearest the pawn, at its big size first, then at its
+ * small size. With its tail (null when the pawn is too near for one), or
+ * null when no place is free.
+ * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
+ * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
+ * @param {(scale: number) => Reach} reach
+ * @param {{ x: number, y: number }} pawn its centre in the board as shown
+ * @param {{ x: number, y: number }} pitch a cell's size in the board
+ * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null }) | null}
+ */
+export const placeNear = (asset, busy, reach, pawn, pitch) => {
+  const places = overlayPlaces(asset, reach);
+  const far = (/** @type {Place} */ p) =>
+    Math.hypot(
+      (p.full.x + p.full.w / 2 - pawn.x) / pitch.x,
+      (p.full.y + p.full.h / 2 - pawn.y) / pitch.y,
+    );
+  for (const size of [1, "small"]) {
+    const group = places
+      .filter((p) => (size === 1 ? p.scale === 1 : p.scale < 1))
+      .sort((a, b) => far(a) - far(b));
+    for (const p of group) {
+      if (coveredBy(p.full, busy).length > 0) continue;
+      const tail = tailOf(p.full, pawn, pitch);
+      if (tail && tailHits(tail, p.full, busy, pitch).length > 0) continue;
+      return {
+        ...p,
+        tail: tail && { ...tail, points: tailPoints(tail, pitch) },
+      };
     }
   }
   return null;

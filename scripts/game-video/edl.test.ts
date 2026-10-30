@@ -1012,6 +1012,46 @@ describe("the overlay event's seat", () => {
   });
 });
 
+describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
+  const ev = (more: object, pace?: object[]) => ({
+    ...base,
+    ...(pace ? { pace } : {}),
+    events: [{ ply: 3, kind: "overlay", form: "clip", ...more }],
+  });
+  test("names the seat and piece, required on a picture a pawn emotes", () => {
+    expect(
+      accept(ev({ asset: "the-scream", pawn: "blue mouse" })).events[0],
+    ).toMatchObject({ pawn: "blue mouse" });
+    expect(
+      accept(ev({ asset: "this-is-fine-mouse", pawn: "red mouse" })).events[0],
+    ).toMatchObject({ pawn: "red mouse", seconds: 2.4 });
+    for (const pawn of [undefined, "g1", "green mouse", "red rat"]) {
+      expect(validateEdl(ev({ asset: "the-scream", pawn })).errors).toEqual([
+        'events[0]: the-scream shows who emotes it; pawn must be a seat and a piece, as "red mouse" or "blue cat"',
+      ]);
+    }
+    // A meme drawn for a mouse takes a mouse.
+    expect(
+      validateEdl(ev({ asset: "scream-mouse", pawn: "red cat" })).errors,
+    ).toEqual(["events[0]: scream-mouse is drawn for a mouse, not a cat"]);
+    expect(
+      validateEdl(ev({ asset: "chat-toast", text: "hi", pawn: "red cat" }))
+        .errors,
+    ).toEqual(["events[0]: chat-toast is tied to no pawn"]);
+  });
+  test("never in a fast-forward: it holds its ply", () => {
+    expect(
+      validateEdl(
+        ev({ asset: "the-scream", pawn: "red mouse" }, [
+          { fromPly: 3, toPly: 15, secondsPerMove: 0.2, fastForward: true },
+        ]),
+      ).errors,
+    ).toEqual([
+      "events[0]: the-scream holds its ply until it closes, and a fast-forward holds none; put it on a ply outside the range",
+    ]);
+  });
+});
+
 describe("the ending's caption bar", () => {
   test("is on the last move only, with a line and no seconds", () => {
     const ev = (more: object) => ({
