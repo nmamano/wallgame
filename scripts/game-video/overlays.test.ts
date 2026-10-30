@@ -386,6 +386,7 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     pawn: { x: number; y: number },
     busy: Parameters<typeof placeNear>[1] = [],
     others: Parameters<typeof placeNear>[4] = [],
+    walls: { x0: number; y0: number; x1: number; y1: number }[] = [],
   ) =>
     placeNear(
       scream as Parameters<typeof placeNear>[0],
@@ -401,6 +402,7 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       pawn,
       others,
       PITCH,
+      { walls },
     );
 
   test("the pictures and redraws take a pawn, on the board only", () => {
@@ -504,6 +506,22 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     expect(near(pawn, [], [clear])).toMatchObject({
       where: first.where,
       scale: first.scale,
+    });
+  });
+
+  test("a place that covers no wall comes before a nearer one that covers a wall (Wall Game Director, 2026-10-30)", () => {
+    expect([near(pawn)?.where, near(pawn)?.scale]).toEqual(["top-middle", 1]);
+    // An old wall under the big top middle only, not under the small one.
+    const wall = { x0: 0.38, y0: 0.38, x1: 0.39, y1: 0.42 };
+    expect(near(pawn, [], [], [wall])).toMatchObject({
+      where: "top-middle",
+      scale: 0.8,
+    });
+    // A wall under every place: the shortest tail again.
+    const everywhere = { x0: 0, y0: 0, x1: 1, y1: 1 };
+    expect(near(pawn, [], [], [everywhere])).toMatchObject({
+      where: "top-middle",
+      scale: 1,
     });
   });
 

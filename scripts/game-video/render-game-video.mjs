@@ -4635,7 +4635,15 @@ const renderStyle = async (styleName) => {
           )
         : [];
       const place = pawnAt
-        ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH)
+        ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
+            // Every wall it shows, old and new: it keeps off them first.
+            walls: w.frames.flatMap((f) =>
+              wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
+                const box = boxOnScreen(b, f.state.zoom);
+                return box ? [box] : [];
+              }),
+            ),
+          })
         : placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
         // What is under each place, each thing once, and what stops each

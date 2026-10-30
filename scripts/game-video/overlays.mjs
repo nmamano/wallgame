@@ -1080,7 +1080,11 @@ export const tailLength = (tail, pitch) =>
  * "it should be clear who is emoting"): of its board places at either
  * size, corners and edge middles, that nearFaults finds free, the one with
  * the shortest tail, the big size first when two are as short (review 102
- * N2: a small place near the pawn before a big place far from it). Only
+ * N2: a small place near the pawn before a big place far from it). A
+ * place whose art covers a wall on the board (`walls`, old or new) comes
+ * only after every place that covers none (Wall Game Director, 2026-10-30:
+ * old walls are the game too; a bottom-middle picture hid red's walls).
+ * Only
  * when no place has a clear tail, one whose tail crosses walls of the move
  * and nothing else, never a pawn or the hunt; `over` names those walls,
  * and the stage draws them over the tail, so a box stays whole (Wall Game
@@ -1092,15 +1096,32 @@ export const tailLength = (tail, pitch) =>
  * @param {{ x: number, y: number }} pawn its centre in the board as shown
  * @param {{ x: number, y: number, what: string }[]} others the centres of the other pawns
  * @param {{ x: number, y: number }} pitch a cell's size in the board
+ * @param {{ walls?: { x0: number, y0: number, x1: number, y1: number }[] }} [options] every wall on the board as shown
  * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null, over: { x0: number, y0: number, x1: number, y1: number }[] }) | null}
  */
-export const placeNear = (asset, busy, reach, pawn, others, pitch) => {
+export const placeNear = (
+  asset,
+  busy,
+  reach,
+  pawn,
+  others,
+  pitch,
+  { walls = [] } = {},
+) => {
   const ranked = overlayPlaces(asset, reach, { middles: true })
     .map((p) => {
       const tail = tailOf(p.full, pawn, pitch);
-      return { p, tail, length: tailLength(tail, pitch) };
+      return {
+        p,
+        tail,
+        onWall: coveredBy(p.full, walls).length > 0 ? 1 : 0,
+        length: tailLength(tail, pitch),
+      };
     })
-    .sort((a, b) => a.length - b.length || b.p.scale - a.p.scale);
+    .sort(
+      (a, b) =>
+        a.onWall - b.onWall || a.length - b.length || b.p.scale - a.p.scale,
+    );
   for (const crossWalls of [false, true]) {
     for (const { p, tail } of ranked) {
       if (nearFaults(p, tail, busy, others, pitch, { crossWalls }).length > 0)
