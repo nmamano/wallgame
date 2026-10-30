@@ -97,6 +97,11 @@ export const MEME_SOUNDS = {
   "pointing-2": { lufs: -10.1, truePeak: -1.2 },
   "violin-1": { lufs: -6.8, truePeak: 0.0 },
   "ambulance-1": { lufs: -13.2, truePeak: -4.5 },
+  // Meme list, cycle 1 (Director Rewriter, 2026-10-30), measured that day.
+  "buzzer-1": { lufs: -4.0, truePeak: -0.2 },
+  "levelwin-1": { lufs: -17.0, truePeak: -7.8 },
+  "accomplished-1": { lufs: -24.1, truePeak: -13.7 },
+  "whistle-1": { lufs: -25.8, truePeak: -19.4 },
 };
 
 /**
@@ -133,6 +138,10 @@ export const MEME_FAMILIES = {
   pointing: "a stand-off: face to face",
   violin: "the loser, at the end",
   ambulance: "the reversal: the saved side wins",
+  buzzer: "a chance missed",
+  levelwin: "home reached",
+  accomplished: "home reached",
+  whistle: "a stand-off",
 };
 
 /**
@@ -147,7 +156,8 @@ export const MEME_FAMILIES = {
  * to show: Director, 2026-10-29), win-2 (the GTA jingle), scared-2 (a
  * scream, no word), shotgun-1..3, boom, scratch, airhorn, trombone, sting,
  * ding (an instrument "correct"), alert, clang, bell, dundun, reveal (a
- * "shhh", then a sting), fail, horn and violin. Not known (no source line
+ * "shhh", then a sting), fail, horn, violin, buzzer, levelwin and
+ * accomplished (made with synths), and whistle (a whistled tune). Not known (no source line
  * says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
@@ -210,6 +220,8 @@ export const MEME_SOURCE_NOTES = {
   "getout-1": "medium claim risk: a GTA roleplay streamer, not Breaking Bad",
   "ambulance-1": "medium claim risk: a small company's 2018 ad",
   "clang-1": "low claim risk: no known owner",
+  "whistle-1":
+    'low claim risk, unheard: a "Morricone-inspired" tune, so a claim if it quotes a film theme; a 3.5 s cut of a 42 s whistle, not used until Nil hears it',
 };
 
 /** "boom-2" -> "boom". @type {(key: string) => string} */

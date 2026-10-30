@@ -186,6 +186,52 @@ Breaking Bad (Know Your Meme: a GTA 5 roleplay streamer who sounds like
 Tuco, 2023); the vine boom comes from a commercial sound library (Bluezone,
 2012); the metal pipe has no known owner.
 
+## Meme list, cycle 1 (buzzer, levelwin, accomplished, whistle)
+
+Director Rewriter, 2026-10-30 (improvement loop step 2): eight sounds for
+the moments of the director's meme list. The rules are those of the
+families above: CC0 on freesound.org, and the page says how the sound was
+made; a myinstants bite needs a known origin. Four passed and four were
+refused (below). None is a voice. The files are Freesound's "HQ preview"
+mp3 (128 kbps), fetched 2026-10-30; the levels in `meme-sounds.mjs` were
+measured the same day.
+
+| Key            | Freesound title          | Length | Uploader                | Why it is safe                                                                     | Claim risk     | Source page                                                         |
+| -------------- | ------------------------ | ------ | ----------------------- | ---------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------- |
+| buzzer-1       | Wrong Buzzer             | 0.5 s  | KevinVG207              | "Generated in Audacity" by the uploader                                            | Low            | https://freesound.org/people/KevinVG207/sounds/331912/              |
+| levelwin-1     | Level win.wav            | 3.5 s  | Tuudurt                 | Made by the uploader with Reason 4.0 and an M-Audio MIDI controller, Estonia, 2014 | Low            | https://freesound.org/people/Tuudurt/sounds/258142/                 |
+| accomplished-1 | Retro "Accomplished" SFX | 0.4 s  | suntemple               | Made by the uploader for their own game, Element Puzzle                            | Low            | https://freesound.org/people/suntemple/sounds/253177/               |
+| whistle-1      | THE WHISTLE.wav          | 3.5 s  | beautifuldaymonster1968 | Whistled by the uploader, "for a TV series titled After Sundown"; a cut, see below | Low; see below | https://freesound.org/people/beautifuldaymonster1968/sounds/699254/ |
+
+whistle-1 is a cut of the 42 s upload. The cut point comes from the
+upload's level per 100 ms, not from listening: the first phrase is about
+-28 to -36 dB from 0 to 2.5 s, and from 3.1 to 3.7 s only its reverb
+remains (-47 to -52 dB), about 20 dB under the phrase. The cut ends there,
+at 3.5 s, after a 0.8 s fade. It is not used until Nil hears it. Two
+points for his ear: the page calls the tune "Morricone-inspired", so a
+music publisher could claim it if it quotes a film theme (for example
+"The Good, the Bad and the Ugly"); and no TV series "After Sundown" was
+found on 2026-10-30 (only a 2023 Thai film and a 2006 US film, which are
+other works), so no released soundtrack of it was found.
+
+| Key       | Made from        | Length | Command (ffmpeg, from the downloaded preview)                                                         |
+| --------- | ---------------- | ------ | ----------------------------------------------------------------------------------------------------- |
+| whistle-1 | Freesound 699254 | 3.5 s  | `-i whistle.mp3 -af "atrim=0:3.5,afade=t=out:st=2.7:d=0.8" -c:a libmp3lame -b:a 128k -ar 44100 -ac 2` |
+
+Refused on 2026-10-30:
+
+- jaildoor-1 (TurtleLG, Freesound 80449): CC0 on its page, but the page
+  says it is "a cut from hugeSlidingDoorSlamECM800.wav with added sounds".
+  That recording is UATaudio's Freesound 31154, under CC BY 3.0, which
+  needs a credit; the added sounds are not named.
+- coconut-1 ("CUFFEM COCONUT", myinstants): no known origin. Know Your Meme
+  has no entry, and the streamer stories are not confirmed. The hit may be
+  the Sound Ideas library effect "COCONUT HIT 01".
+- rizz-1 ("rizz sound effect", myinstants): no known origin. Fan videos say
+  it comes from the film Kill Bill (2003); not confirmed.
+- bonecrack-1 ("Bone Crack", myinstants): no known origin. No page names a
+  library, a creator or a first video.
+
 ## Copyright risk
 
 A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, or swap the clip in `SOUNDS`.
