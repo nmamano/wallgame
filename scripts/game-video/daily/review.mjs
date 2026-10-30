@@ -262,6 +262,7 @@ export const REVIEW_PAGE = `<!doctype html>
   video { display: block; width: auto; height: auto; max-width: 100%; max-height: min(calc(78vh * var(--z, 1)), calc(100vh - var(--top) - 8px));
           aspect-ratio: auto 9 / 16; margin: 0 auto; border-radius: 10px; background: #000; }
   .caption { font-size: 17px; line-height: 1.4; margin: 10px 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  textarea.need { border-color: #f87171; }
   textarea { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b1222; color: #e2e8f0;
              border: 1px solid #334155; border-radius: 8px; padding: 8px; font: inherit; font-size: 15px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; }
@@ -314,16 +315,26 @@ export const REVIEW_PAGE = `<!doctype html>
     video.src = "/api/daily/video?item=" + encodeURIComponent(it.id) + "#t=0.5";
     const notes = el("textarea"); notes.placeholder = "Notes (needed to revise or discard)";
     const why = el("div", "why");
+    /** A refusal, right under the buttons, scrolled into view. */
+    const refused = (text) => { why.textContent = text; why.scrollIntoView({ block: "nearest" }); };
     const row = el("div", "actions");
     const buttons = [["approve", "Approve"], ["revise", "Revise"], ["discard", "Discard"]].map(([action, label]) => {
       const b = el("button", action, label);
       b.disabled = !canReview;
       b.onclick = async () => {
+        why.textContent = ""; notes.classList.remove("need");
+        // Revise and Discard need a note (store.mjs review): say so here,
+        // before anything is sent, and put the cursor in the note box (Nil,
+        // 2026-10-30: a Revise with no note looked done but was refused).
+        if (action !== "approve" && !notes.value.trim()) {
+          refused("Write a note first: " + (action === "revise" ? "what should change?" : "why discard it?"));
+          notes.classList.add("need"); notes.focus();
+          return;
+        }
         buttons.forEach((x) => (x.disabled = true));
-        why.textContent = "";
         const failed = await post(it.id, action,
           { notes: notes.value, videoSha256: it.videoSha256, copySha256: it.copySha256 });
-        if (failed) { why.textContent = failed.error; if (failed.retry) buttons.forEach((x) => (x.disabled = false)); return; }
+        if (failed) { refused(failed.error); if (failed.retry) buttons.forEach((x) => (x.disabled = false)); return; }
         done(box, it, action);
       };
       row.append(b); return b;

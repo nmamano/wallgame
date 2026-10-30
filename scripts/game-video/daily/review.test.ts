@@ -1035,6 +1035,21 @@ describe("the review routes", () => {
     );
     expect(REVIEW_PAGE).toContain('label + " (" + of[key].length + ")"');
     expect(REVIEW_PAGE).toContain('location.hash === "#approved"');
+    // Revise and Discard with no note (Nil, 2026-10-30: a refused Revise
+    // looked done): nothing is sent; the card says why and puts the cursor
+    // in the note box. The page's rule is the store's (approve needs none).
+    const click = REVIEW_PAGE.slice(
+      REVIEW_PAGE.indexOf("b.onclick = async () => {"),
+      REVIEW_PAGE.indexOf("done(box, it, action);"),
+    );
+    expect(
+      click.indexOf('if (action !== "approve" && !notes.value.trim())'),
+    ).toBeLessThan(click.indexOf("await post("));
+    expect(click).toContain("notes.focus();");
+    expect(click).toContain('refused("Write a note first: "');
+    // Every refusal is scrolled into view, right under the buttons.
+    expect(REVIEW_PAGE).toContain('why.scrollIntoView({ block: "nearest" })');
+    expect(click).toContain("if (failed) { refused(failed.error);");
     expect(REVIEW_PAGE).toContain('el("button", "undo", "Undo approval")');
     expect(REVIEW_PAGE).toContain("undo.disabled = !canReview;");
   });
