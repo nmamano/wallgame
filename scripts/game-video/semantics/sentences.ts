@@ -38,7 +38,12 @@
  * walks").
  */
 import type { PlayerId } from "../../../shared/domain/game-types";
-import type { GameFacts, HuntChange, PlyFacts } from "./facts";
+import {
+  boxedRoom,
+  type GameFacts,
+  type HuntChange,
+  type PlyFacts,
+} from "./facts";
 import type { GameLabels, Link } from "./labels";
 import type { PlySeen } from "./vision";
 
@@ -196,9 +201,7 @@ export const factsOf = (
     }
   }
   if (l.tags.includes("box-in")) {
-    const room = f.rooms
-      .filter((r) => r.before > 0)
-      .sort((a, b) => a.after / a.before - b.after / b.before)[0];
+    const room = boxedRoom(f);
     const cats = room.hunters
       .map((h) => `${names[h.player]}'s ${h.type}`)
       .join(" or ");
@@ -427,7 +430,7 @@ export const checkSentence = (
   // steps" left the reader to guess whose): "Normal Bot's walk" or
   // "Normal Bot's cat walk", never "the walk" or "its walk".
   const owner = new RegExp(
-    `(?:${seatNames.map(escapeRegExp).join("|")})'s (?:(?:cat|mouse|dog|elephant)(?:'s)? )?$`,
+    `(?:${seatNames.map(escapeRegExp).join("|")})'s (?:own )?(?:(?:cat|mouse|dog|elephant)(?:'s)? )?$`,
   );
   for (const walk of sentence.matchAll(/\bwalks?\b/gi)) {
     if (!owner.test(sentence.slice(0, walk.index))) {
@@ -603,9 +606,17 @@ export const writeSentences = (
       if (a && all[ply].some((f) => f.id === box)) {
         if (!a.factIds.includes(box))
           reasons.push(`does not tell the box-in (cite ${box})`);
+        // A box word, or a wall of the box with the boxed mouse's owner
+        // (VR1, 2026-10-30: a wall alone does not tell a box-in).
+        const room = boxedRoom(facts.plies[ply]);
+        const owner = facts.game.seats.find(
+          (x) => x.playerOrder === room.target.player,
+        )?.name;
         const says =
           /\b(box(es|ed|ing)? in|boxed)\b/i.test(a.sentence) ||
-          facts.plies[ply].walls.some((w) => a.sentence.includes(w));
+          (facts.plies[ply].walls.some((w) => a.sentence.includes(w)) &&
+            owner !== undefined &&
+            a.sentence.includes(`${owner}'s mouse`));
         if (!says)
           reasons.push(
             `does not say the box-in ("box in" or its walls ${facts.plies[ply].walls.join(", ")})`,

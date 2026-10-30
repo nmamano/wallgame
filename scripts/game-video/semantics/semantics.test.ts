@@ -411,7 +411,8 @@ describe("writeSentences and box-in", () => {
           ];
     });
     expect(asked[1]).toContain("does not tell the box-in (cite 0.box)");
-    expect(asked[1]).not.toContain("does not say the box-in");
+    // A wall alone does not say it (VR1, 2026-10-30)...
+    expect(asked[1]).toContain("does not say the box-in");
     expect(out.sentences![0]).toMatchObject({
       fallback: false,
       factIds: ["0.box", "0.play"],
@@ -503,6 +504,39 @@ describe("fixtures: what a move means", () => {
       l.plies.filter((p) => p.ply > sealed && p.tags.includes("turn")),
     ).toEqual([]);
     expect(l.links.filter((k) => k.kind === "blunder-punish")).toEqual([]);
+  });
+});
+
+describe("a box-in told by its walls", () => {
+  test("a wall with the boxed mouse's owner says it; the own-walk form passes", () => {
+    const game = gameOf([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+    ]);
+    const l = labelGame(game);
+    const out = writeSentences(game, l, () => [
+      {
+        ply: 0,
+        sentence:
+          "Guest Ferret's walls >f4 and ^g3 close Normal Bot's mouse in a corner.",
+        factIds: ["0.box", "0.play"],
+      },
+    ]);
+    expect(out.sentences![0].fallback).toBe(false);
+    const facts = factsOf(game, l, 0);
+    expect(
+      checkSentence(
+        "Guest Ferret's own cat walk stays at 9 steps.",
+        ["0.walk1"],
+        facts,
+        ["Guest Ferret", "Normal Bot"],
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -397,6 +397,13 @@ try {
     mkdirSync(tilesDir, { recursive: true });
     const tile = page.locator(".tile");
     const count = await tile.count();
+    // Names come from the DOM order (VR1, 2026-10-30): one tile per
+    // position, or every name would shift by one.
+    if (count !== game.moves.length + 1) {
+      throw new Error(
+        `--tiles: ${count} tiles for ${game.moves.length + 1} positions`,
+      );
+    }
     for (let k = 0; k < count; k++) {
       // Tile k is the position after ply k - 1 (tiles above).
       const name = k === 0 ? "tile-start.png" : `tile-ply-${k - 1}.png`;

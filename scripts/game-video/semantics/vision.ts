@@ -17,6 +17,7 @@
  */
 import type { PlayerId } from "../../../shared/domain/game-types";
 import { dailySeatColors } from "../edl.mjs";
+import { boxedRoom } from "./facts";
 import { MODEL, type GameSemantics } from "./sentences";
 
 export interface PlySeen {
@@ -117,9 +118,7 @@ export const claimOf = (s: GameSemantics, ply: number): string => {
   if (l.tags.includes("box-in")) {
     // The box is the story the board tells, not the label's walk (a box-in
     // under a blunder has the blunder's focus).
-    const room = f.rooms
-      .filter((r) => r.before > 0)
-      .sort((a, b) => a.after / a.before - b.after / b.before)[0];
+    const room = boxedRoom(f);
     lines.push(
       `the new walls close in ${name(room.target.player)}'s mouse on ${cellOf(room.target)}: the cells it reaches before ${room.hunters.map((h) => `${name(h.player)}'s ${h.type}`).join(" or ")} fall from ${room.before} to ${room.after}`,
     );

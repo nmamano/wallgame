@@ -117,6 +117,19 @@ export interface MouseRoom {
   after: number;
 }
 
+/**
+ * The room a box-in is about: the mouse whose room the move cut the most,
+ * by share. Throws on a ply with no room to cut (VR1, 2026-10-30), which a
+ * box-in label cannot have.
+ */
+export const boxedRoom = (f: PlyFacts): MouseRoom => {
+  const room = f.rooms
+    .filter((r) => r.before > 0)
+    .sort((a, b) => a.after / a.before - b.after / b.before)[0];
+  if (!room) throw new Error(`box-in with no room change at ply ${f.ply}`);
+  return room;
+};
+
 export interface PlyFacts {
   /** 0-based index into the stored move list (edl.mjs convention). */
   ply: number;
