@@ -1051,6 +1051,25 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
       'events[0]: the-scream is a picture a pawn emotes; it needs a "sound" as it opens',
     ]);
   });
+  test("may name its place, one of the pawn places, on a pawn picture only", () => {
+    expect(
+      accept(ev({ asset: "the-scream", pawn: "red mouse", place: "top-left" }))
+        .events[0],
+    ).toMatchObject({ place: "top-left" });
+    expect(
+      validateEdl(
+        ev({ asset: "the-scream", pawn: "red mouse", place: "middle" }),
+      ).errors,
+    ).toEqual([
+      'events[0]: place must be one of bottom-right, bottom-left, top-right, top-left, bottom-middle, top-middle, right-middle, left-middle, got "middle"',
+    ]);
+    expect(
+      validateEdl(ev({ asset: "chat-toast", text: "hi", place: "top-left" }))
+        .errors,
+    ).toEqual([
+      "events[0]: chat-toast is tied to no pawn; only a picture a pawn emotes takes a place",
+    ]);
+  });
   test("never in a fast-forward: it holds its ply", () => {
     expect(
       validateEdl(

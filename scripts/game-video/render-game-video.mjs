@@ -4638,6 +4638,7 @@ const renderStyle = async (styleName) => {
         : [];
       const place = pawnAt
         ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
+            place: w.ev.place,
             // Every wall it shows, old and new: it keeps off them first.
             walls: w.frames.flatMap((f) =>
               wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
@@ -4653,16 +4654,20 @@ const renderStyle = async (styleName) => {
         // where one place is free.
         const under = placesOf(w.asset).flatMap((kind) =>
           kind === "board"
-            ? overlayPlaces(w.asset, reach, { middles: !!pawnAt }).map(
-                (p) =>
-                  `${placeName(p)}: ${nearFaults(p, pawnAt ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
-              )
+            ? overlayPlaces(w.asset, reach, { middles: !!pawnAt })
+                .filter(
+                  (p) => w.ev.place === undefined || p.where === w.ev.place,
+                )
+                .map(
+                  (p) =>
+                    `${placeName(p)}: ${nearFaults(p, pawnAt ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
+                )
             : [`${kind}: ${offRoom(kind)}`],
         );
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place${w.ev.place === undefined ? "" : ` at its place ${w.ev.place}`} while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;

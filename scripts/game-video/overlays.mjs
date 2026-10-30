@@ -1040,6 +1040,23 @@ export const overlayPlaces = (asset, reach, { middles = false } = {}) => {
   return [...corners(asset.size), ...(asset.small ? corners(asset.small) : [])];
 };
 
+/**
+ * The places a picture a pawn emotes may take (overlayPlaces with
+ * `middles`), which an EDL may name as its `place` (Wall Game Director,
+ * 2026-10-30: the director picks the side when the nearest place tells the
+ * story worse). overlays.test.ts checks them against overlayPlaces.
+ */
+export const PAWN_PLACES = [
+  "bottom-right",
+  "bottom-left",
+  "top-right",
+  "top-left",
+  "bottom-middle",
+  "top-middle",
+  "right-middle",
+  "left-middle",
+];
+
 /** A place in words: its corner or band, and "small" at the small size. */
 export const placeName = (/** @type {{ where: string, scale: number }} */ p) =>
   p.scale < 1 ? `${p.where}, small` : p.where;
@@ -1289,15 +1306,18 @@ export const tailLength = (tail, pitch) =>
  * when no place has a clear tail, one whose tail crosses walls of the move
  * and nothing else, never a pawn or the hunt; `over` names those walls,
  * and the stage draws them over the tail, so a box stays whole (Wall Game
- * Director, 2026-10-30: a mouse boxed in a corner). With its tail (null
- * when the pawn is too near for one), or null when no place is free.
+ * Director, 2026-10-30: a mouse boxed in a corner). With `place` (one of
+ * PAWN_PLACES, the EDL's), only that place is tried, at either size, under
+ * the same faults; a wall it covers is the director's choice. With its
+ * tail (null when the pawn is too near for one), or null when no place is
+ * free.
  * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {(scale: number) => Reach} reach
  * @param {{ x: number, y: number }} pawn its centre in the board as shown
  * @param {{ x: number, y: number, what: string }[]} others the centres of the other pawns
  * @param {{ x: number, y: number }} pitch a cell's size in the board
- * @param {{ walls?: { x0: number, y0: number, x1: number, y1: number }[] }} [options] every wall on the board as shown
+ * @param {{ walls?: { x0: number, y0: number, x1: number, y1: number }[], place?: string }} [options] every wall on the board as shown, and the place the EDL names
  * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null, over: { x0: number, y0: number, x1: number, y1: number }[] }) | null}
  */
 export const placeNear = (
@@ -1307,9 +1327,10 @@ export const placeNear = (
   pawn,
   others,
   pitch,
-  { walls = [] } = {},
+  { walls = [], place } = {},
 ) => {
   const ranked = overlayPlaces(asset, reach, { middles: true })
+    .filter((p) => place === undefined || p.where === place)
     .map((p) => {
       const tail = tailOf(p.full, pawn, pitch);
       return {

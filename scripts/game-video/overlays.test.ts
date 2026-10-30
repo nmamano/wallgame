@@ -24,6 +24,7 @@ import {
   parsePawn,
   nearFaults,
   placeNear,
+  PAWN_PLACES,
   tailHits,
   tailLength,
   tailOf,
@@ -388,6 +389,7 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     busy: Parameters<typeof placeNear>[1] = [],
     others: Parameters<typeof placeNear>[4] = [],
     walls: { x0: number; y0: number; x1: number; y1: number }[] = [],
+    place?: string,
   ) =>
     placeNear(
       scream as Parameters<typeof placeNear>[0],
@@ -403,7 +405,7 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       pawn,
       others,
       PITCH,
-      { walls },
+      { walls, place },
     );
 
   test("the pictures and redraws take a pawn, on the board only", () => {
@@ -461,6 +463,26 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     // 1.1 cells), big before small.
     const p = near({ x: 0.2, y: 0.35 }, [busyCell(0.45, 0.05, 0.05)]);
     expect([p?.where, p?.scale]).toEqual(["bottom-left", 1]);
+  });
+
+  test("the EDL's place is the only one tried, under the same faults", () => {
+    const names = overlayPlaces(
+      scream as Parameters<typeof placeNear>[0],
+      NO_REACH,
+      { middles: true },
+    ).map((p) => p.where);
+    expect([...new Set(names)].sort()).toEqual([...PAWN_PLACES].sort());
+    // Its nearest place is the top middle; the director asks for another.
+    const pawn = { x: 0.2, y: 0.35 };
+    expect(near(pawn)?.where).toBe("top-middle");
+    expect(near(pawn, [], [], [], "bottom-right")).toMatchObject({
+      where: "bottom-right",
+      scale: 1,
+    });
+    // The asked place taken at both sizes: no other place stands in.
+    expect(
+      near(pawn, [busyCell(0.45, 0.05, 0.05)], [], [], "top-middle"),
+    ).toBeNull();
   });
 
   test("a small place near the pawn before a big place far from it (review 102 N2)", () => {

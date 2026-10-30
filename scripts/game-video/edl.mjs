@@ -170,6 +170,9 @@
  *             that a pawn emotes (overlays.mjs `pawn`: a picture, a
  *             redraw): it goes in the free place nearest that pawn, with a
  *             tail that points at it, and its ply holds until it closes;
+ *             its optional `place` (overlays.mjs PAWN_PLACES, as
+ *             "top-left" or "left-middle") is the only place tried, still
+ *             refused if it hides a pawn, a wall of the move or the hunt;
  *             such an overlay never goes in a fast-forward. The renderer puts it where it hides no pawn and
  *             nothing in play on any frame it covers, or stops and names
  *             what is under each place. One overlay at a time, and the
@@ -194,6 +197,7 @@ import {
   PORTRAIT_DRAWS,
   parsePawn,
   takesPawn,
+  PAWN_PLACES,
   takesSeat,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
@@ -399,7 +403,7 @@ const KIND_FIELDS = {
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
-  overlay: ["form", "asset", "text", "seconds", "seat", "pawn"],
+  overlay: ["form", "asset", "text", "seconds", "seat", "pawn", "place"],
   explain: ["hunter", "label", "expect"],
 };
 /** The kinds that name one cell, which must be on the board. */
@@ -758,6 +762,10 @@ export const validateEdl = (raw) => {
     if (!takesPawn(asset)) {
       if (ev.pawn !== undefined)
         fail(`${where}: ${ev.asset} is tied to no pawn`);
+      if (ev.place !== undefined)
+        fail(
+          `${where}: ${ev.asset} is tied to no pawn; only a picture a pawn emotes takes a place`,
+        );
     } else {
       const pawn = parsePawn(ev.pawn);
       if (!pawn) {
@@ -767,6 +775,11 @@ export const validateEdl = (raw) => {
       } else if (asset.pieces && !asset.pieces.includes(pawn.piece)) {
         fail(
           `${where}: ${ev.asset} is drawn for a ${asset.pieces.join(" or ")}, not a ${pawn.piece}`,
+        );
+      }
+      if (ev.place !== undefined && !PAWN_PLACES.includes(ev.place)) {
+        fail(
+          `${where}: place must be one of ${PAWN_PLACES.join(", ")}, got ${JSON.stringify(ev.place)}`,
         );
       }
       // Nil, 2026-10-30, C23: "the scream is fine but should be paired
