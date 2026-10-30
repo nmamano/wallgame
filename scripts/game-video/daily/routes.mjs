@@ -1970,6 +1970,23 @@ export const createDaily = ({
       );
     },
 
+    /**
+     * {item, script, by, why}: a lint-forced text fix of the passed script
+     * (store.recordScriptFix). It sends no message.
+     */
+    "POST /api/daily/script-fix": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.recordScriptFix(itemOf(body.item).id, {
+          script: body.script,
+          by: body.by,
+          why: body.why,
+        }),
+      );
+    },
+
     /** {item, sheetSha256, stills: [{ply, kind, ok, note}]} */
     "POST /api/daily/check": async (req, res) => {
       const body = await readJson(req);

@@ -138,6 +138,14 @@
  *                                  refuses the item until the latest one
  *                                  since its pick or Nil's last revise
  *                                  passes
+ *   script-fix --item ID --script F --by "<who>" --why "<lint line>"
+ *                                  a text fix after the script passed (the
+ *                                  lint forced a text, e.g. a caption's
+ *                                  7th token): the whole fixed file goes on
+ *                                  the passed review, so the stored script
+ *                                  matches the video. Not for a story
+ *                                  change: that needs a new review. The
+ *                                  render vet reads the fixed text
  *   vet-prompt --item ID           VET-BRIEF.md and the item's inputs (video
  *                                  and sha256, sheet, strips, the stored
  *                                  list in a file, a storyboard, the
@@ -246,7 +254,12 @@ import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
 import { lintReport, lintStops } from "./lint.mjs";
 import * as tools from "./tools.mjs";
-import { renderScriptReview, scriptAfterRender } from "./store.mjs";
+import {
+  currentScriptReview,
+  renderScriptReview,
+  scriptAfterRender,
+  scriptText,
+} from "./store.mjs";
 import {
   batchLines,
   directorLines,
@@ -1383,6 +1396,42 @@ const commands = {
   },
 
   /**
+   * A lint-forced text fix of the passed script, so the stored script
+   * matches the video: the whole fixed file, who made it and the lint line.
+   */
+  async "script-fix"() {
+    const id = itemFlag();
+    const path = resolve(
+      flag("script") ?? die("script-fix needs --script <file>"),
+    );
+    if (!existsSync(path)) die(`script-fix: no file ${path}`);
+    const why =
+      flag("why") ??
+      die('script-fix needs --why "<the lint line that forced the change>"');
+    const by = flag("by") ?? die('script-fix needs --by "<who made it>"');
+    const before = await itemNamed(id);
+    const was = currentScriptReview(before);
+    const item = await app("POST", "/api/daily/script-fix", {
+      item: id,
+      script: readFileSync(path, "utf8"),
+      by,
+      why,
+    });
+    const now = scriptText(currentScriptReview(item));
+    const lines = (t) => t.split("\n");
+    const old = new Set(lines(scriptText(was).script));
+    const changed = lines(now.script).filter((l) => !old.has(l));
+    console.log(
+      [
+        `${id}: script text fix by ${by} on the review ${was.verdict} by ${was.reviewer} (${was.at}), script now ${now.scriptSha256.slice(0, 12)}; the review stands.`,
+        `  why: ${why}`,
+        `  ${changed.length} line(s) new or changed:`,
+        ...changed.map((l) => `  + ${l}`),
+      ].join("\n"),
+    );
+  },
+
+  /**
    * The vet brief (VET-BRIEF.md) and the item's inputs, ready to paste
    * into a fresh reviewer: it reads the final video, so the item needs one.
    */
@@ -1407,8 +1456,9 @@ const commands = {
     const script = renderScriptReview(c);
     const scriptFile = join(scratch, "script.txt");
     const scriptNotes = join(scratch, "script-review.txt");
+    const text = script ? scriptText(script) : null;
     if (script) {
-      writeFileSync(scriptFile, script.script);
+      writeFileSync(scriptFile, text.script);
       writeFileSync(scriptNotes, script.notes);
     }
     console.log(
@@ -1422,7 +1472,7 @@ const commands = {
         `- EDL: ${edl} (the stored list, sha256 ${c.edl.sha256})`,
         `- STORYBOARD: ${board.png} (${board.plies} plies)`,
         script
-          ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}; its review notes: ${scriptNotes})`
+          ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}${text.fix ? `, with a text fix after the review by ${text.fix.by} at ${text.fix.at}, forced by the lint: ${JSON.stringify(text.fix.why)}` : ""}; its review notes: ${scriptNotes})`
           : "- SCRIPT: none recorded (this item rendered before phase 1)",
         `- RULES: ${rules()}`,
         `- SILENCE (the render's measure of the final track): ${c.render.quality?.silence?.note ?? "not measured (a render before the measure)"}`,

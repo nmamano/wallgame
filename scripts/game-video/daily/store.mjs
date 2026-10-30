@@ -324,8 +324,23 @@ export const renderScriptReview = (item) => {
 };
 
 /**
+ * The script text of `review` as the video tells it: the review's own
+ * script, or its latest text fix (recordScriptFix) when a lint-forced
+ * change came after the review (Wall Game Director, 2026-10-30: a
+ * caption's 7th token). `fix` is that fix, or null.
+ * @returns {{ script: string, scriptSha256: string, fix: object | null }}
+ */
+export const scriptText = (review) => {
+  const fix = review.fixes?.at(-1) ?? null;
+  return fix
+    ? { script: fix.script, scriptSha256: fix.scriptSha256, fix }
+    : { script: review.script, scriptSha256: review.scriptSha256, fix: null };
+};
+
+/**
  * A script review recorded after the render was asked: the video tells an
- * older story, so it does not go to Nil until it is rendered again.
+ * older story, so it does not go to Nil until it is rendered again. A text
+ * fix of a review is not a review: it changes no story.
  */
 export const scriptAfterRender = (item) =>
   (item.scriptReviews ?? []).some((r) => r.at > item.render?.requestedAt);
@@ -1243,6 +1258,62 @@ export const openStore = (dataDir) => {
           ];
         },
         `script review ${verdict} by ${who}`,
+      );
+    },
+
+    /**
+     * A text fix of the passed script after its review: the lint forced a
+     * text the review saw another way (a caption's 7th token), and the
+     * stored script must match the video (Wall Game Director, 2026-10-30).
+     * It goes on the current script review, which must have passed, with
+     * who made it and the lint line that forced it. It is not a review:
+     * the story stays the one the reviewer passed, so a render stays valid
+     * (scriptAfterRender) and the render vet reads the fixed text.
+     */
+    recordScriptFix(id, { script, by, why }) {
+      const who = typeof by === "string" ? by.trim() : "";
+      if (!who || /[\r\n]/.test(who) || who.length > VET_REVIEWER_MAX) {
+        refuse(
+          `script-fix needs who made it: one line of 1 to ${VET_REVIEWER_MAX} characters`,
+        );
+      }
+      if (
+        typeof script !== "string" ||
+        !script.trim() ||
+        script.length > SCRIPT_MAX
+      ) {
+        refuse(`script-fix needs the script: 1 to ${SCRIPT_MAX} characters`);
+      }
+      if (typeof why !== "string" || !why.trim() || why.length > NOTES_MAX) {
+        refuse(
+          `script-fix needs why: the lint line that forced the change, 1 to ${NOTES_MAX} characters`,
+        );
+      }
+      return updateItem(
+        id,
+        ["draft", "finished", "approved"],
+        (item) => {
+          const review = currentScriptReview(item);
+          if (review?.verdict !== "pass") {
+            refuse(
+              `${id} has no passed script review to fix: a story change needs a new review (crew.mjs script-review)`,
+            );
+          }
+          if (script === scriptText(review).script) {
+            refuse(`${id}: the script is the same as the stored one`);
+          }
+          review.fixes = [
+            ...(review.fixes ?? []),
+            {
+              at: new Date().toISOString(),
+              by: who,
+              why: why.trim(),
+              script,
+              scriptSha256: createHash("sha256").update(script).digest("hex"),
+            },
+          ];
+        },
+        `script text fix by ${who}`,
       );
     },
 

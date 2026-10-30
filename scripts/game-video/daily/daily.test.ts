@@ -36,6 +36,8 @@ import {
   currentScriptReview,
   currentVet,
   renderScriptReview,
+  scriptAfterRender,
+  scriptText,
   openStore,
   postProblem,
   readPostLog,
@@ -577,6 +579,50 @@ describe("the director checks the contact sheet before the review", () => {
     expect(() => {
       store.recordScriptReview(id, { ...SCRIPT_PASS, reviewer: "" });
     }).toThrow("script-review needs the reviewer");
+  });
+
+  test("a lint-forced text fix goes on the passed review; the render and its review stay (Director, 2026-10-30)", () => {
+    const store = openStore(tempDir());
+    const id = pickUnscripted(store);
+    const fix = {
+      script: SCRIPT_PASS.script.replace("the save", "the save!"),
+      by: "Video Editor (renderer)",
+      why: "caption has 7 words; at most 6 are allowed",
+    };
+    store.recordScriptReview(id, { ...SCRIPT_PASS, verdict: "fail" });
+    expect(() => {
+      store.recordScriptFix(id, fix);
+    }).toThrow(`${id} has no passed script review to fix`);
+    store.recordScriptReview(id, SCRIPT_PASS);
+    store.direct(id, {
+      edl: EDL,
+      text: JSON.stringify(EDL),
+      summary: [],
+      needsPawnArt: false,
+    });
+    store.startRender(id, "job-00000001");
+    expect(() => {
+      store.recordScriptFix(id, { ...fix, script: SCRIPT_PASS.script });
+    }).toThrow(`${id}: the script is the same as the stored one`);
+    expect(() => {
+      store.recordScriptFix(id, { ...fix, why: " " });
+    }).toThrow("script-fix needs why");
+    store.recordScriptFix(id, fix);
+    const item = itemOf(store, id);
+    const review = item.scriptReviews![1];
+    expect(renderScriptReview(item)).toEqual(review);
+    // The review keeps what the reviewer saw; the fix sits on it.
+    expect(review.script).toBe(SCRIPT_PASS.script);
+    expect(scriptText(review)).toMatchObject({
+      script: fix.script,
+      fix: { by: fix.by, why: fix.why },
+    });
+    expect(scriptText(review).scriptSha256).toBe(
+      createHash("sha256").update(fix.script).digest("hex"),
+    );
+    // Not a review: the render still tells the passed story.
+    expect(scriptAfterRender(item)).toBe(false);
+    expect(item.scriptReviews).toHaveLength(2);
   });
 
   test("a script review after the render keeps the video from Nil, and the vet sees the script the render passed under", async () => {
