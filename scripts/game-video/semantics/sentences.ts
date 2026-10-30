@@ -9,7 +9,7 @@
  *
  * THE MODEL writes the sentence and names the ids of the facts it used. It
  * does not choose the label or the strength (labels.ts does). One headless
- * `claude -p` call per game, Sonnet 5.5, with --strict-mcp-config and
+ * `claude -p` call per game, Opus 5.5 (Nil: Opus 5.5 only for Wall Game work), with --strict-mcp-config and
  * --setting-sources project (office note of 2026-10-21: without them each run
  * loads 200+ connector tools) and no tools.
  *
@@ -41,7 +41,7 @@ import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameFacts, HuntChange, PlyFacts } from "./facts";
 import type { GameLabels, Link } from "./labels";
 
-export const MODEL = "claude-sonnet-5-5";
+export const MODEL = "claude-opus-5-5";
 export const MAX_WORDS = 35;
 
 export interface Fact {
