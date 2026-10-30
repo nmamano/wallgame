@@ -389,7 +389,14 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
   ) =>
     placeNear(
       scream as Parameters<typeof placeNear>[0],
-      busy,
+      // The pawn's own box is busy, as in the render (pawnBoxes).
+      [
+        ...busy,
+        {
+          ...cell(pawn.x - PITCH.x / 2, pawn.y - PITCH.y / 2),
+          what: "the pawn",
+        },
+      ],
       NO_REACH,
       pawn,
       others,
@@ -438,57 +445,62 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     });
   });
 
-  test("goes to the free place nearest its pawn, not the first free corner", () => {
-    // A pawn near the top left: the top-left corner, though bottom-right
-    // comes first in the corners' order.
-    expect(near({ x: 0.2, y: 0.35 })?.where).toBe("top-left");
-    expect(near({ x: 0.8, y: 0.3 })?.where).toBe("top-right");
-    expect(near({ x: 0.2, y: 0.9 })?.where).toBe("bottom-left");
-    // Its nearest corner taken: the next nearest, big before small.
-    const p = near({ x: 0.2, y: 0.35 }, [busyCell(0.05, 0.05)]);
-    expect(p?.where).toBe("bottom-left");
-    expect(p?.scale).toBe(1);
+  test("goes to the free place with the shortest tail, corners and edge middles", () => {
+    // The top-left corner covers this pawn: the top middle is nearest.
+    expect(near({ x: 0.2, y: 0.35 })?.where).toBe("top-middle");
+    // A pawn in the bottom-right corner: the right middle, above it.
+    expect(near({ x: 0.9375, y: 0.9375 })?.where).toBe("right-middle");
+    // The top middle taken at both sizes: the bottom-left corner (tail
+    // 1.1 cells), big before small.
+    const p = near({ x: 0.2, y: 0.35 }, [busyCell(0.45, 0.05, 0.05)]);
+    expect([p?.where, p?.scale]).toEqual(["bottom-left", 1]);
   });
 
   test("a small place near the pawn before a big place far from it (review 102 N2)", () => {
     const pawn = { x: 0.3, y: 0.6 };
-    // Only the big bottom-left is under this.
-    const block = busyCell(0.05, 0.57, 0.05);
-    const p = near(pawn, [block])!;
-    expect([p.where, p.scale]).toEqual(["bottom-left", 0.8]);
-    // Its tail is shorter than the big top-left's, the nearest big place.
-    const bigTopLeft = overlayPlaces(
+    const all = overlayPlaces(
       scream as Parameters<typeof placeNear>[0],
       NO_REACH,
-    ).find((q) => q.where === "top-left" && q.scale === 1)!;
-    expect(near(pawn, [block, busyCell(0.05, 0.62, 0.05)])).toMatchObject({
-      where: "top-left",
-      scale: 1,
-    });
-    expect(tailLength(p.tail, PITCH)).toBeLessThan(
-      tailLength(tailOf(bigTopLeft.full, pawn, PITCH), PITCH),
+      { middles: true },
     );
+    const length = (where: string, scale: number) =>
+      tailLength(
+        tailOf(
+          all.find((q) => q.where === where && q.scale === scale)!.full,
+          pawn,
+          PITCH,
+        ),
+        PITCH,
+      );
+    // The small left middle (0.07 cell) before the big bottom middle (0.17).
+    expect(length("left-middle", 0.8)).toBeLessThan(length("bottom-middle", 1));
+    expect(near(pawn)).toMatchObject({ where: "left-middle", scale: 0.8 });
   });
 
+  // A pawn whose nearest place, the top middle, has a tail 0.82 cell long.
+  const pawn = { x: 0.8, y: 0.3 };
+
   test("a place whose tip ends next to another pawn is not taken (review 102 N2)", () => {
-    const pawn = { x: 0.5, y: 0.5 };
     const first = near(pawn)!;
+    expect(first.where).toBe("top-middle");
     const tip = first.tail!.to;
-    // Another pawn under TIP_CLEAR cells from the tip.
+    // Another pawn under TIP_CLEAR cells from the tip, on its far side
+    // from the pawn (the tail comes from the left).
+    expect(tip.x).toBeLessThan(pawn.x);
     const other = {
-      x: tip.x + 0.9 * TIP_CLEAR * PITCH.x,
+      x: tip.x - 0.9 * TIP_CLEAR * PITCH.x,
       y: tip.y,
-      what: "pawn on d4",
+      what: "pawn on f4",
     };
     expect(nearFaults(first, first.tail, [], [other], PITCH)).toEqual([
-      "its tip is next to the pawn on d4",
+      "its tip is next to the pawn on f4",
     ]);
     const next = near(pawn, [], [other])!;
     expect(next.where === first.where && next.scale === first.scale).toBe(
       false,
     );
     // Just past TIP_CLEAR: the tip points at its own pawn only.
-    const clear = { ...other, x: tip.x + 1.01 * TIP_CLEAR * PITCH.x };
+    const clear = { ...other, x: tip.x - 1.01 * TIP_CLEAR * PITCH.x };
     expect(near(pawn, [], [clear])).toMatchObject({
       where: first.where,
       scale: first.scale,
@@ -496,7 +508,6 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
   });
 
   test("its tail points at the pawn and stops short of it", () => {
-    const pawn = { x: 0.5, y: 0.5 };
     const p = near(pawn)!;
     const t = p.tail!;
     // It starts inside the picture's box, near its edge, and leaves it.
@@ -523,30 +534,82 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     expect((a[0] + b[0]) / 2).toBeCloseTo(t.from.x, 9);
     expect((a[1] + b[1]) / 2).toBeCloseTo(t.from.y, 9);
     // Too near for a tail: none.
-    expect(tailOf({ x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, pawn, PITCH)).toBeNull();
+    expect(
+      tailOf({ x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, { x: 0.5, y: 0.5 }, PITCH),
+    ).toBeNull();
   });
 
-  test("a place whose tail would cross a pawn is not taken", () => {
-    const pawn = { x: 0.5, y: 0.5 };
-    const first = near(pawn)!;
-    // Something on the tail's way, past the picture.
-    const t = first.tail!;
+  /** A box on `p`'s tail, three quarters of the way to its tip. */
+  const onTail = (
+    p: NonNullable<ReturnType<typeof near>>,
+    what: string,
+    wall = false,
+  ) => {
+    const t = p.tail!;
     const mid = {
       x: (t.from.x + t.to.x * 3) / 4,
       y: (t.from.y + t.to.y * 3) / 4,
     };
-    const block = {
+    return {
       x0: mid.x - 0.01,
       y0: mid.y - 0.01,
       x1: mid.x + 0.01,
       y1: mid.y + 0.01,
-      what: "a wall",
+      what,
+      ...(wall ? { wall: true } : {}),
     };
-    expect(tailHits(t, first.full, [block], PITCH)).toEqual([block]);
+  };
+
+  test("a place whose tail would cross a pawn is not taken", () => {
+    const first = near(pawn)!;
+    const block = onTail(first, "a pawn");
+    expect(tailHits(first.tail!, first.full, [block], PITCH)).toEqual([block]);
     const other = near(pawn, [block])!;
     expect(other.where === first.where && other.scale === first.scale).toBe(
       false,
     );
     expect(tailHits(other.tail!, other.full, [block], PITCH)).toEqual([]);
+    expect(other.over).toEqual([]);
+  });
+
+  test("a tail crosses a wall of the move only when no place has a clear tail, and names it to draw over", () => {
+    const first = near(pawn)!;
+    const all = overlayPlaces(
+      scream as Parameters<typeof placeNear>[0],
+      NO_REACH,
+      { middles: true },
+    );
+    // Every other place taken: a dot at its middle, off the first's art.
+    const taken = all
+      .filter((q) => !(q.where === first.where))
+      .map((q) => ({
+        x0: q.full.x + q.full.w / 2 - 0.005,
+        y0: q.full.y + q.full.h / 2 - 0.005,
+        x1: q.full.x + q.full.w / 2 + 0.005,
+        y1: q.full.y + q.full.h / 2 + 0.005,
+        what: "a cell in play",
+      }))
+      .filter(
+        (b) =>
+          !(
+            b.x1 > first.full.x &&
+            b.x0 < first.full.x + first.full.w &&
+            b.y1 > first.full.y &&
+            b.y0 < first.full.y + first.full.h
+          ),
+      );
+    const wall = onTail(first, "a new wall", true);
+    // The same corner is free while its tail is clear.
+    expect(near(pawn, taken)?.where).toBe(first.where);
+    // A wall of the move on every free tail: it crosses it, under the wall.
+    const crossed = near(pawn, [...taken, wall])!;
+    expect(crossed.where).toBe(first.where);
+    expect(crossed.over).toEqual([
+      { x0: wall.x0, y0: wall.y0, x1: wall.x1, y1: wall.y1 },
+    ]);
+    // A pawn there, not a wall: no place.
+    expect(near(pawn, [...taken, onTail(first, "a pawn")])).toBeNull();
+    // With a clear tail elsewhere, never a crossing.
+    expect(near(pawn, [wall])?.over).toEqual([]);
   });
 });

@@ -2557,12 +2557,36 @@
         // Who emotes it: a tail from it to the pawn (placeNear), as faded.
         if (o.ring && p.tail) {
           const tail = $("overlayTail");
+          // A wall of the move that the tail crosses shows over it, through
+          // a hole in the tail (placeNear's `over`), so a box stays whole.
+          const over = p.over ?? [];
           tail.innerHTML =
+            (over.length > 0
+              ? '<defs><mask id="tailHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">' +
+                '<rect x="0" y="0" width="1000" height="1000" fill="#fff"/>' +
+                over
+                  .map(
+                    (b) =>
+                      '<rect x="' +
+                      b.x0 * 1000 +
+                      '" y="' +
+                      b.y0 * 1000 +
+                      '" width="' +
+                      (b.x1 - b.x0) * 1000 +
+                      '" height="' +
+                      (b.y1 - b.y0) * 1000 +
+                      '" fill="#000"/>',
+                  )
+                  .join("") +
+                "</mask></defs>"
+              : "") +
             '<polygon points="' +
             p.tail.points.map(([x, y]) => x * 1000 + "," + y * 1000).join(" ") +
             '" fill="' +
             o.ring +
-            '" stroke="#0b1020" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+            '" stroke="#0b1020" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"' +
+            (over.length > 0 ? ' mask="url(#tailHoles)"' : "") +
+            "/>";
           tail.style.opacity = pop * o.alpha;
           show(tail, true);
         }

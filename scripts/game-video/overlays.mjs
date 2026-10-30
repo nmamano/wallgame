@@ -762,11 +762,17 @@ export const NO_REACH = () => ({ top: 0, right: 0, bottom: 0, left: 0 });
  * stage): a corner sits so that its whole art, `full`, keeps INSET from
  * the board's edge, and `full` is what a place must keep off the pawns. A
  * bar's or a panel's `full` is its box.
+ *
+ * With `middles`, a clip also has the middle of each edge at each size,
+ * after its corners (a picture a pawn emotes, placeNear: Wall Game
+ * Director, 2026-10-30, a pawn boxed in a corner has a free place nearer
+ * it there).
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, small?: { w: number, h: number } }} asset
  * @param {(scale: number) => Reach} reach
+ * @param {{ middles?: boolean }} [options]
  * @returns {Place[]}
  */
-export const overlayPlaces = (asset, reach) => {
+export const overlayPlaces = (asset, reach, { middles = false } = {}) => {
   if (asset.form === "bar" || asset.form === "panel") {
     // The edges first; then every band from the top down: for an ending
     // that covers both edges (ko: its pawn on top, its banner below), and
@@ -812,11 +818,22 @@ export const overlayPlaces = (asset, reach) => {
         h: h * (1 + r.top + r.bottom),
       },
     });
+    // The whole art centred on the edge.
+    const midX = (1 - w * (1 + r.left + r.right)) / 2 + r.left * w;
+    const midY = (1 - h * (1 + r.top + r.bottom)) / 2 + r.top * h;
     return [
       place("bottom-right", right, bottom),
       place("bottom-left", left, bottom),
       place("top-right", right, top),
       place("top-left", left, top),
+      ...(middles
+        ? [
+            place("bottom-middle", midX, bottom),
+            place("top-middle", midX, top),
+            place("right-middle", right, midY),
+            place("left-middle", left, midY),
+          ]
+        : []),
     ];
   };
   return [...corners(asset.size), ...(asset.small ? corners(asset.small) : [])];
@@ -1004,19 +1021,30 @@ export const TIP_CLEAR = 1;
  * Why a place of a picture tied to a pawn cannot take it: what its whole
  * art overlaps of the `busy` boxes, what its tail overlaps, and each other
  * pawn (`others`) whose centre is under TIP_CLEAR cells from the tail's
- * tip. Empty when the place is free.
+ * tip. With `crossWalls`, a tail may cross a wall of the move (a busy box
+ * with `wall`). Empty when the place is free.
  * @param {Place} p
  * @param {{ from: { x: number, y: number }, to: { x: number, y: number } } | null} tail
- * @param {{ x0: number, y0: number, x1: number, y1: number, what: string }[]} busy
+ * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {{ x: number, y: number, what: string }[]} others
  * @param {{ x: number, y: number }} pitch
+ * @param {{ crossWalls?: boolean }} [options]
  * @returns {string[]}
  */
-export const nearFaults = (p, tail, busy, others, pitch) => {
+export const nearFaults = (
+  p,
+  tail,
+  busy,
+  others,
+  pitch,
+  { crossWalls = false } = {},
+) => {
   const under = coveredBy(p.full, busy);
   if (under.length > 0) return [...new Set(under.map((b) => b.what))];
   if (!tail) return [];
-  const crossed = tailHits(tail, p.full, busy, pitch);
+  const crossed = tailHits(tail, p.full, busy, pitch).filter(
+    (b) => !(crossWalls && b.wall),
+  );
   if (crossed.length > 0)
     return [
       `its tail crosses ${[...new Set(crossed.map((b) => b.what))].join(", ")}`,
@@ -1050,28 +1078,53 @@ export const tailLength = (tail, pitch) =>
 /**
  * The place of a picture tied to a pawn (`pawn`; Nil, 2026-10-30, C20:
  * "it should be clear who is emoting"): of its board places at either
- * size that nearFaults finds free, the one with the shortest tail, the
- * big size first when two are as short (review 102 N2: a small place
- * near the pawn before a big place far from it). With its tail (null when
- * the pawn is too near for one), or null when no place is free.
+ * size, corners and edge middles, that nearFaults finds free, the one with
+ * the shortest tail, the big size first when two are as short (review 102
+ * N2: a small place near the pawn before a big place far from it). Only
+ * when no place has a clear tail, one whose tail crosses walls of the move
+ * and nothing else, never a pawn or the hunt; `over` names those walls,
+ * and the stage draws them over the tail, so a box stays whole (Wall Game
+ * Director, 2026-10-30: a mouse boxed in a corner). With its tail (null
+ * when the pawn is too near for one), or null when no place is free.
  * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
- * @param {{ x0: number, y0: number, x1: number, y1: number, what: string }[]} busy
+ * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {(scale: number) => Reach} reach
  * @param {{ x: number, y: number }} pawn its centre in the board as shown
  * @param {{ x: number, y: number, what: string }[]} others the centres of the other pawns
  * @param {{ x: number, y: number }} pitch a cell's size in the board
- * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null }) | null}
+ * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null, over: { x0: number, y0: number, x1: number, y1: number }[] }) | null}
  */
 export const placeNear = (asset, busy, reach, pawn, others, pitch) => {
-  const ranked = overlayPlaces(asset, reach)
+  const ranked = overlayPlaces(asset, reach, { middles: true })
     .map((p) => {
       const tail = tailOf(p.full, pawn, pitch);
       return { p, tail, length: tailLength(tail, pitch) };
     })
     .sort((a, b) => a.length - b.length || b.p.scale - a.p.scale);
-  for (const { p, tail } of ranked) {
-    if (nearFaults(p, tail, busy, others, pitch).length > 0) continue;
-    return { ...p, tail: tail && { ...tail, points: tailPoints(tail, pitch) } };
+  for (const crossWalls of [false, true]) {
+    for (const { p, tail } of ranked) {
+      if (nearFaults(p, tail, busy, others, pitch, { crossWalls }).length > 0)
+        continue;
+      // The walls its tail crosses, each once (a box per frame shown).
+      const over =
+        crossWalls && tail
+          ? [
+              ...new Map(
+                tailHits(tail, p.full, busy, pitch)
+                  .filter((b) => b.wall)
+                  .map((b) => [
+                    [b.x0, b.y0, b.x1, b.y1].join(),
+                    { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 },
+                  ]),
+              ).values(),
+            ]
+          : [];
+      return {
+        ...p,
+        tail: tail && { ...tail, points: tailPoints(tail, pitch) },
+        over,
+      };
+    }
   }
   return null;
 };

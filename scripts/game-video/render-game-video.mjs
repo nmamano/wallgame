@@ -4359,7 +4359,10 @@ const renderStyle = async (styleName) => {
     ];
     return named.flatMap(([what, box]) => {
       const shown = boxOnScreen(box, state.zoom);
-      return shown ? [{ ...shown, what }] : [];
+      // A wall of the move: a tail may cross it (overlays.mjs placeNear).
+      return shown
+        ? [{ ...shown, what, ...(what === "a new wall" ? { wall: true } : {}) }]
+        : [];
     });
   };
   /**
@@ -4640,7 +4643,7 @@ const renderStyle = async (styleName) => {
         // where one place is free.
         const under = placesOf(w.asset).flatMap((kind) =>
           kind === "board"
-            ? overlayPlaces(w.asset, reach).map(
+            ? overlayPlaces(w.asset, reach, { middles: !!pawnAt }).map(
                 (p) =>
                   `${placeName(p)}: ${nearFaults(p, pawnAt ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
               )
@@ -4667,7 +4670,7 @@ const renderStyle = async (styleName) => {
               ),
             );
       log(
-        `${where}: ${placeName(place)}${pawnAt ? (place.tail ? `, its tail to the ${w.ev.pawn}` : `, beside the ${w.ev.pawn}`) : ""}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
+        `${where}: ${placeName(place)}${pawnAt ? (place.tail ? `, its tail to the ${w.ev.pawn}${place.over.length > 0 ? `, under ${place.over.length} wall(s) of the move (no place had a clear tail)` : ""}` : `, beside the ${w.ev.pawn}`) : ""}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
       for (const f of w.frames) {
         f.o.alpha = Math.max(
@@ -5970,8 +5973,10 @@ const renderStyle = async (styleName) => {
       );
     }
     spanOf(ev, start);
-    // The camera it leaves: whole again after a pull-out.
-    return pullOut ? null : zoomFor((frames - 1) / FPS);
+    // The camera it leaves: whole again after a pull-out, and the push's
+    // last camera when it holds no frame (review 104 N1).
+    if (pullOut) return null;
+    return frames > 0 ? zoomFor((frames - 1) / FPS) : { ...z };
   };
 
   /**
