@@ -12,6 +12,7 @@ import {
   nextSlot,
   pacificDay,
   pacificLabel,
+  SLOTS,
   slotsBetween,
   zonedInstant,
 } from "./slots.mjs";
@@ -117,6 +118,7 @@ describe("decide", () => {
   const handled = (ms: number, lastPostMs: number | null = null) => ({
     lastSlotAt: iso(ms),
     lastPostAt: lastPostMs === null ? null : iso(lastPostMs),
+    slots: SLOTS,
   });
 
   test("the first run records now and posts no older slot", () => {
@@ -125,6 +127,29 @@ describe("decide", () => {
     ).toEqual({
       kind: "start",
     });
+  });
+
+  test("a state handled under another slot list starts again from now", () => {
+    // The 2026-10-30 ship: handled through the old 16:00 PT slot, and the
+    // new list puts 21:00 and 03:00 PT between that and now. They must not
+    // post (they did, at 07:24 PT, before this rule).
+    const old = {
+      lastSlotAt: "2026-10-29T23:00:00.000Z",
+      lastPostAt: "2026-10-30T03:12:00.000Z",
+    };
+    const now = at("2026-10-30T14:24:37Z");
+    expect(decide(old, now, 4)).toEqual({ kind: "start" });
+    expect(decide({ ...old, slots: ["09:00", "16:00"] }, now, 4)).toEqual({
+      kind: "start",
+    });
+    expect(decide({ ...old, slots: SLOTS }, now, 4)).toMatchObject({
+      kind: "fire",
+      folded: [{ time: "21:00" }],
+    });
+    // After the start, the next slot is 09:00 PT, not one from before.
+    expect(
+      nextSlot({ ...old, lastSlotAt: iso(now), slots: SLOTS }, now, 4),
+    ).toMatchObject({ pacific: "Fri 2026-10-30 09:00 PT", willPost: true });
   });
 
   test("a slot fires with one approved item, and is skipped with none", () => {
@@ -306,6 +331,7 @@ describe("nextSlot", () => {
   const state = {
     lastSlotAt: iso(OCT29_0900),
     lastPostAt: iso(OCT29_0900),
+    slots: SLOTS,
   };
 
   test("the next slot is 6 h after the last one, with any queue", () => {
@@ -330,6 +356,7 @@ describe("nextSlot", () => {
     const late = {
       lastSlotAt: iso(OCT29_0900),
       lastPostAt: iso(OCT29_0900 + 2 * HOUR),
+      slots: SLOTS,
     };
     expect(nextSlot(late, OCT29_0900 + 3 * HOUR, 1)).toEqual({
       slotAt: iso(OCT29_1500),
@@ -349,6 +376,7 @@ describe("nextSlot", () => {
     const close = {
       lastSlotAt: iso(OCT29_0900),
       lastPostAt: iso(OCT29_0900 + 20_000),
+      slots: SLOTS,
     };
     expect(nextSlot(close, OCT29_0900 + HOUR, 1)).toMatchObject({
       slotAt: iso(OCT29_1500),

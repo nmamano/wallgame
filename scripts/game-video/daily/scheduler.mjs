@@ -7,8 +7,10 @@
  * the app is a systemd user service and comes back on its own.
  *
  * The state file, <data>/daily/schedule.json:
- *   { lastSlotAt, lastPostAt, lastSlot, outbox }
+ *   { lastSlotAt, slots, lastPostAt, lastSlot, outbox }
  * - lastSlotAt: the newest slot time that was handled (slots.mjs).
+ * - slots: the slot list (slots.mjs SLOTS) that lastSlotAt was handled
+ *   under. When SLOTS changes, the first tick starts again from now.
  * - lastPostAt: the 6 h gap counts from it: the slot time of the last slot
  *   post when it fired on time, else when it started (slots.mjs gapFrom).
  * - lastSlot: { slotAt, firedAt, itemId, outcome, platforms, notApplicable,
@@ -44,6 +46,7 @@ import {
   pacificLabel,
   LATE_AFTER_MS,
   MIN_GAP_MS,
+  SLOTS,
 } from "./slots.mjs";
 
 export const TICK_MS = 30 * 1000;
@@ -53,6 +56,7 @@ export const GROWTH_AGENT_ID = "agent-1792966148239-zvmt";
 
 const EMPTY = {
   lastSlotAt: null,
+  slots: null,
   lastPostAt: null,
   lastSlot: null,
   outbox: [],
@@ -346,7 +350,14 @@ export const createScheduler = ({
       const t = now();
       const d = decide(state, t, store.approvedQueue().length);
       if (d.kind === "start") {
-        write({ ...state, lastSlotAt: iso(t) });
+        write({ ...state, lastSlotAt: iso(t), slots: SLOTS });
+        // A state from another slot list: Growth hears that the slots that
+        // came due under it do not post.
+        if (state.lastSlotAt) {
+          queueMessage([
+            `The slot times are now ${SLOTS.join(", ")} PT. Slots due before ${pacificLabel(t)} do not post.`,
+          ]);
+        }
       } else if (d.kind === "skip" || d.kind === "held") {
         const held = d.kind === "held";
         write({

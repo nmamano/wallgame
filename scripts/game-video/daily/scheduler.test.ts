@@ -184,6 +184,38 @@ describe("scheduler", () => {
     });
   });
 
+  test("a state from another slot list starts again: no older slot posts, Growth hears it", async () => {
+    // The 2026-10-30 ship, one day earlier: handled through the old 16:00
+    // PT slot (no slot list recorded); the new list has 21:00 and 03:00 PT
+    // since then. 08:00 PT now.
+    const w = world({ ready: 2 });
+    mkdirSync(dirname(w.statePath), { recursive: true });
+    writeFileSync(
+      w.statePath,
+      JSON.stringify({
+        lastSlotAt: "2026-10-28T23:00:00.000Z",
+        lastPostAt: "2026-10-28T23:00:00.000Z",
+        lastSlot: null,
+        outbox: [],
+      }),
+    );
+    const s = w.make();
+    await s.tick();
+    expect(w.posted).toEqual([]);
+    expect(w.sent).toHaveLength(1);
+    expect(w.sent[0]).toContain(
+      "The slot times are now 03:00, 09:00, 15:00, 21:00 PT. Slots due before Thu 2026-10-29 08:00 PT do not post.",
+    );
+    const state = readState(w.statePath) as State & { slots: string[] };
+    expect(state.lastSlotAt).toBe(new Date(OCT29_0900 - HOUR).toISOString());
+    expect(state.slots).toEqual(["03:00", "09:00", "15:00", "21:00"]);
+    // The next slot posts at its time, and a later tick sends nothing new.
+    w.setTime(OCT29_0900);
+    await s.tick();
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
+    expect(w.sent).toHaveLength(2);
+  });
+
   test("an empty queue skips the 09:00 slot with one message", async () => {
     const w = world({ ready: 0 });
     const s = w.make();

@@ -21,15 +21,24 @@
  *   burst (Wall Game PM, 2026-10-28; Nil wants a post at least once per
  *   24 h, so a late post beats a skip).
  *
- * The state that these functions read is { lastSlotAt, lastPostAt } (ISO
- * strings or null): the newest slot time that was handled (posted or
- * skipped), and the time from which the 6 h gap counts (gapFrom).
+ * The state that these functions read is { lastSlotAt, lastPostAt, slots }:
+ * the newest slot time that was handled (posted or skipped), the time from
+ * which the 6 h gap counts (gapFrom), both ISO strings or null, and the
+ * slot list that lastSlotAt was handled under.
  */
 
 export const SLOT_ZONE = "America/Los_Angeles";
 
 /** The slot times, Pacific wall clock. */
 export const SLOTS = ["03:00", "09:00", "15:00", "21:00"];
+
+/**
+ * Whether a state's recorded slot list is SLOTS. It compares the times
+ * only: a change of SLOT_ZONE or of the gap rule does not start the timer
+ * again, so such a change must reset the recorded list too (VR1, review 98).
+ */
+export const sameSlots = (slots) =>
+  Array.isArray(slots) && slots.join(",") === SLOTS.join(",");
 
 export const MIN_GAP_MS = 6 * 60 * 60 * 1000;
 
@@ -130,8 +139,12 @@ const ms = (iso) => (iso ? Date.parse(iso) : null);
 
 /**
  * What the timer does now. One of:
- * - { kind: "start" }: no state yet (first run): record now as handled, so
- *   slots from before the first run never post.
+ * - { kind: "start" }: no state yet (first run), or a state handled under
+ *   another slot list (a change of SLOTS, or a state from before the list
+ *   was recorded): record now as handled, under SLOTS, so slots from before
+ *   now never post. Without this, the slot times that a new list puts
+ *   between lastSlotAt and now count as missed and post late: the 03:00 PT
+ *   slot fired at 07:24 PT when the 6 h list shipped (2026-10-30).
  * - { kind: "wait" }: no slot is due.
  * - { kind: "wait", slot, until }: a slot is due, and the 6 h gap holds it
  *   for LATE_AFTER_MS or less: it fires at `until`.
@@ -146,7 +159,7 @@ const ms = (iso) => (iso ? Date.parse(iso) : null);
  */
 export const decide = (state, nowMs, ready) => {
   const lastSlotAt = ms(state?.lastSlotAt);
-  if (lastSlotAt === null) return { kind: "start" };
+  if (lastSlotAt === null || !sameSlots(state.slots)) return { kind: "start" };
   const due = slotsBetween(lastSlotAt, nowMs);
   if (!due.length) return { kind: "wait" };
   const slot = due.at(-1);
