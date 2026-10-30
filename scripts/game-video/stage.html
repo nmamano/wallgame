@@ -886,11 +886,14 @@
         text-overflow: ellipsis;
         min-width: 0;
       }
+      /* How the game was won: on a resignation it is the payoff, so it
+         reads on a phone (Wall Game Director, 2026-10-30: at 0.032 it was
+         too small on v-2026-10-30-8). */
       #ggCard .how {
-        font-size: calc(var(--board) * 0.032);
-        font-weight: 700;
-        color: var(--dim);
-        letter-spacing: 0.04em;
+        font-size: calc(var(--board) * 0.05);
+        font-weight: 800;
+        color: #cbd5e1;
+        letter-spacing: 0.02em;
       }
       #ggCard .cta {
         margin-top: 2%;
@@ -1331,14 +1334,18 @@
        * the impact, so the sound cannot drift off the picture when an ending
        * is retimed.
        *
+       * gg's cardIn is when its card is fully shown, so the renderer holds
+       * the card for its words' reading time.
+       *
        * e = { kind, t: seconds into the ending, at: {x, y} the capture cell
        *       in the board image (0..1), cell: one cell's width (0..1),
        *       before: the board image before the last move, stamp, how,
-       *       winner, loser }
+       *       winner, loser, crack: whether a move ended the game (gg
+       *       cracks out of its cell; a resignation has no hit) }
        */
       window.__ENDINGS = {
         replay: { seconds: 2.0, impact: 1.4, hold: 1.3, flash: 0 },
-        gg: { seconds: 1.0, impact: 0, hold: 1.6, flash: 0.18 },
+        gg: { seconds: 1.0, impact: 0, hold: 1.6, flash: 0.18, cardIn: 0.95 },
         ko: { seconds: 1.0, impact: 0, hold: 1.5, flash: 0.12 },
       };
       /*
@@ -2969,14 +2976,17 @@
             "px," +
             Math.cos(phase * 5.1) * 12 * k +
             "px)";
-          show($("crack"), true);
-          paintCracks(e.at.x, e.at.y, easeOut3(span(t, 0, 0.35)));
+          // A crack reads as a hit: only when a move ended the game (Wall
+          // Game Director, 2026-10-30: on v-2026-10-30-8, a resignation,
+          // it ran out of the bot's cat).
+          show($("crack"), e.crack);
+          if (e.crack) paintCracks(e.at.x, e.at.y, easeOut3(span(t, 0, 0.35)));
           const g = span(t, 0.15, 0.6);
           boardFilter(
             "grayscale(" + g + ") brightness(" + (1 - 0.55 * g) + ")",
           );
           if (t >= 0.55) {
-            const p = easeOut3(span(t, 0.55, 0.95));
+            const p = easeOut3(span(t, 0.55, window.__ENDINGS.gg.cardIn));
             show($("ggCard"), true);
             $("ggCard").style.opacity = p;
             // It grows in where it rests, never sliding: the ending's bar

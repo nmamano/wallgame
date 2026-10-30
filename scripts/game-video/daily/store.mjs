@@ -1318,6 +1318,74 @@ export const openStore = (dataDir) => {
     },
 
     /**
+     * Nil's revise asks only for a change of look (a sound, a mark, a
+     * place), not of the story: the script that passed before it still
+     * tells the video (Wall Game Director, 2026-10-30). Recorded as a pass
+     * that carries that review over the revise, with who decided it and
+     * why, so `render` and the render vet read the same script, and the
+     * director needs no new script review for a look-only revise. A story
+     * change still needs one (recordScriptReview). A draft only, after a
+     * revise with no script review since.
+     */
+    recordScriptUnchanged(id, { by, why }) {
+      const who = typeof by === "string" ? by.trim() : "";
+      if (!who || /[\r\n]/.test(who) || who.length > VET_REVIEWER_MAX) {
+        refuse(
+          `script-unchanged needs who decided it: one line of 1 to ${VET_REVIEWER_MAX} characters`,
+        );
+      }
+      if (typeof why !== "string" || !why.trim() || why.length > NOTES_MAX) {
+        refuse(
+          `script-unchanged needs why: why Nil's revise changes no story, 1 to ${NOTES_MAX} characters`,
+        );
+      }
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          const revise = item.reviews?.findLast((r) => r.action === "revise");
+          if (!revise) {
+            refuse(
+              `${id} has no revise from Nil: its script review stands as it is`,
+            );
+          }
+          const since = currentScriptReview(item);
+          if (since) {
+            refuse(
+              `${id} already has a script review since Nil's revise (${since.verdict} by ${since.reviewer}, ${since.at})`,
+            );
+          }
+          const passed = (item.scriptReviews ?? []).findLast(
+            (r) => r.verdict === "pass" && r.at <= revise.at,
+          );
+          if (!passed) {
+            refuse(
+              `${id} has no passed script review before Nil's revise to carry over: write the script and get it reviewed (crew.mjs script-review)`,
+            );
+          }
+          const text = scriptText(passed);
+          item.scriptReviews = [
+            ...item.scriptReviews,
+            {
+              at: new Date().toISOString(),
+              reviewer: who,
+              verdict: "pass",
+              notes: `SCRIPT UNCHANGED after Nil's revise of ${revise.at} (${JSON.stringify(revise.notes ?? "")}), decided by ${who}: ${why.trim()}\nIt carries the review ${passed.verdict} by ${passed.reviewer} (${passed.at}); its notes:\n\n${passed.notes}`,
+              script: text.script,
+              scriptSha256: text.scriptSha256,
+              carried: {
+                from: passed.at,
+                revisedAt: revise.at,
+                why: why.trim(),
+              },
+            },
+          ];
+        },
+        `script unchanged after the revise, by ${who}`,
+      );
+    },
+
+    /**
      * The director stops work on an item that Nil has not reviewed (a game
      * that does not make a video). It is discarded with the director's
      * reason as an event; Nil's discards are review actions instead.

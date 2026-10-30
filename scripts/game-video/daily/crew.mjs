@@ -149,6 +149,15 @@
  *                                  approved item it changes no video and
  *                                  needs no new ask to Nil: it fixes the
  *                                  record only
+ *   script-unchanged --item ID --by "<who>" --why "<reason>"
+ *                                  Nil's revise asks only for a change of
+ *                                  look (a sound, a mark, a place), not of
+ *                                  the story: the script that passed
+ *                                  before it carries over, with who decided
+ *                                  it and why, and `render` needs no new
+ *                                  script review. Only on a draft after a
+ *                                  revise with no script review since. A
+ *                                  story change still needs a review
  *   vet-prompt --item ID           VET-BRIEF.md and the item's inputs (video
  *                                  and sha256, sheet, strips, the stored
  *                                  list in a file, a storyboard, the
@@ -1402,6 +1411,24 @@ const commands = {
    * A lint-forced text fix of the passed script, so the stored script
    * matches the video: the whole fixed file, who made it and the lint line.
    */
+  async "script-unchanged"() {
+    const id = itemFlag();
+    const why =
+      flag("why") ??
+      die('script-unchanged needs --why "<why the revise changes no story>"');
+    const by =
+      flag("by") ?? die('script-unchanged needs --by "<who decided it>"');
+    const item = await app("POST", "/api/daily/script-unchanged", {
+      item: id,
+      by,
+      why,
+    });
+    const r = currentScriptReview(item);
+    console.log(
+      `${id}: script unchanged after Nil's revise (${r.carried.revisedAt}), by ${by}; it carries the review of ${r.carried.from}, script ${r.scriptSha256.slice(0, 12)}. render may go on.`,
+    );
+  },
+
   async "script-fix"() {
     const id = itemFlag();
     const path = resolve(

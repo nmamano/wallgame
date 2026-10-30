@@ -581,6 +581,53 @@ describe("the director checks the contact sheet before the review", () => {
     }).toThrow("script-review needs the reviewer");
   });
 
+  test("a look-only revise carries the passed script over, once, with who and why (Director, 2026-10-30)", () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    const id = pickUnscripted(store);
+    const unchanged = {
+      by: "Wall Game Director",
+      why: "Nil asked for another sound on ply 9; the beats stay",
+    };
+    expect(() => {
+      store.recordScriptUnchanged(id, unchanged);
+    }).toThrow(`${id} has no revise from Nil`);
+    store.recordScriptReview(id, SCRIPT_PASS);
+    // Nil's revise, as the review page writes it.
+    const file = join(dir, "daily", "items", `${id}.json`);
+    const revise = {
+      action: "revise",
+      notes: "use boom-2 on the save",
+      at: new Date().toISOString(),
+    };
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Item;
+    writeFileSync(
+      file,
+      JSON.stringify({ ...raw, reviews: [...(raw.reviews ?? []), revise] }),
+    );
+    Bun.sleepSync(3);
+    expect(currentScriptReview(itemOf(store, id))).toBeNull();
+    expect(() => {
+      store.recordScriptUnchanged(id, { ...unchanged, why: " " });
+    }).toThrow("script-unchanged needs why");
+    store.recordScriptUnchanged(id, unchanged);
+    const item = itemOf(store, id);
+    const carried = currentScriptReview(item) as { notes: string };
+    expect(carried).toMatchObject({
+      verdict: "pass",
+      reviewer: unchanged.by,
+      script: SCRIPT_PASS.script,
+      carried: { revisedAt: revise.at, why: unchanged.why },
+    });
+    // The vet reads why, and the notes of the review it carries.
+    expect(carried.notes).toContain("SCRIPT UNCHANGED");
+    expect(carried.notes).toContain(SCRIPT_PASS.notes);
+    // Once: after it, a story change needs a real review.
+    expect(() => {
+      store.recordScriptUnchanged(id, unchanged);
+    }).toThrow(`${id} already has a script review since Nil's revise`);
+  });
+
   test("a lint-forced text fix goes on the passed review; the render and its review stay (Director, 2026-10-30)", () => {
     const store = openStore(tempDir());
     const id = pickUnscripted(store);

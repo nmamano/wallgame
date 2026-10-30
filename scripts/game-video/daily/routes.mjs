@@ -2012,6 +2012,22 @@ export const createDaily = ({
       );
     },
 
+    /**
+     * {item, by, why}: Nil's revise changes no story, so the passed script
+     * carries over (store.recordScriptUnchanged). It sends no message.
+     */
+    "POST /api/daily/script-unchanged": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.recordScriptUnchanged(itemOf(body.item).id, {
+          by: body.by,
+          why: body.why,
+        }),
+      );
+    },
+
     /** {item, sheetSha256, stills: [{ply, kind, ok, note}]} */
     "POST /api/daily/check": async (req, res) => {
       const body = await readJson(req);

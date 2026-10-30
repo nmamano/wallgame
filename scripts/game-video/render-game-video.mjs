@@ -1490,6 +1490,8 @@ const capturePlan = captureFeedbackPlan({
 });
 const CAPTURE_SHAKE = capturePlan.stageShakeCount === 1;
 
+/** The ends a move makes, so the gg ending cracks out of its cell. */
+const ENDS_BY_MOVE = ["capture", "goal"];
 const REASON_WORDS = {
   capture: "by capture",
   resignation: "by resignation",
@@ -6195,6 +6197,7 @@ const renderStyle = async (styleName) => {
       if (winnerId) {
         const timing = endingTimings[style.ending];
         const impactFrame = Math.round(timing.impact * FPS);
+        const how = `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`;
         const ending = (t) => ({
           kind: style.ending,
           t,
@@ -6204,7 +6207,8 @@ const renderStyle = async (styleName) => {
           cell: GRID.pitchX,
           before: fileUrl(boardFrames[ply - 1]),
           stamp: FINISH_WORD,
-          how: `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`,
+          how,
+          crack: ENDS_BY_MOVE.includes(outcome.reason),
           winner: { ...side(winnerId), name: dailyName(winnerId) },
           loser: {
             ...side(winnerId === 1 ? 2 : 1),
@@ -6233,12 +6237,32 @@ const renderStyle = async (styleName) => {
           }
         }
         const barShows = (endingFrames - impactFrame) / FPS + timing.hold;
+        /*
+          With no bar, the GG card is the last line: it holds for its
+          words' reading time ("GG", the winner, how), fully shown from
+          cardIn (Wall Game Director, 2026-10-30: on v-2026-10-30-8 it was
+          fully shown 1.85 s, and "GG Bot wins by resignation" needs 2.7 s;
+          on a resignation it is the hook's payoff).
+        */
+        const cardMore =
+          !bar && style.ending === "gg"
+            ? Math.ceil(
+                Math.max(
+                  0,
+                  readingSeconds({}, `GG ${dailyName(winnerId)} ${how}`) -
+                    (timing.seconds - timing.cardIn + timing.hold),
+                ) * FPS,
+              ) / FPS
+            : 0;
+        if (cardMore > 0) {
+          log(`ending held +${cardMore.toFixed(1)} s for the GG card`);
+        }
         await emit(
           playState(ply, {
             ending: ending(timing.seconds),
             credit: creditAt(timing.seconds),
           }),
-          timing.hold + (bar ? holdFor(barShows, timing.flash) : 0),
+          timing.hold + (bar ? holdFor(barShows, timing.flash) : cardMore),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else if (creditText) {
