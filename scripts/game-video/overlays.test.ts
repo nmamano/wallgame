@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CARDS,
+  DEATH_CARDS,
   NO_REACH,
   OVERLAYS,
   OVERLAY_FORMS,
@@ -629,5 +630,15 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     expect(near(pawn, [...taken, onTail(first, "a pawn")])).toBeNull();
     // With a clear tail elsewhere, never a crossing.
     expect(near(pawn, [wall])?.over).toEqual([]);
+  });
+});
+
+describe("the death cards (Wall Game Director, 2026-10-30)", () => {
+  test("are the wasted and you-died cards, each an asset the stage draws", () => {
+    expect(DEATH_CARDS).toEqual(["wasted", "you-died"]);
+    for (const card of DEATH_CARDS) {
+      expect(CARDS).toContain(card);
+      expect(OVERLAYS[card]).toMatchObject({ draw: "card", card });
+    }
   });
 });

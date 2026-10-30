@@ -120,6 +120,7 @@ import {
   placeOverlay,
   placeNear,
   parsePawn,
+  DEATH_CARDS,
   nearFaults,
   tailOf,
   takesPawn,
@@ -6410,7 +6411,19 @@ const renderStyle = async (styleName) => {
             name: dailyName(winnerId === 1 ? 2 : 1),
           },
         });
-        cue(sounds.finish, "finish", { at: elapsed + timing.impact });
+        // The finish slot starts at the impact, or as a death card on this
+        // ply opens (overlays.mjs DEATH_CARDS).
+        const deathCard = overlayWindows.find(
+          (w) => w.ev.ply === plyIndex && DEATH_CARDS.includes(w.asset.card),
+        );
+        cue(sounds.finish, "finish", {
+          at: deathCard ? deathCard.start : elapsed + timing.impact,
+        });
+        if (deathCard) {
+          log(
+            `finish sound ${sounds.finish.name} at ${deathCard.start.toFixed(2)} s, as the ${deathCard.ev.asset} card opens`,
+          );
+        }
         const endingFrames = Math.round(timing.seconds * FPS);
         for (let i = 0; i < endingFrames; i += 1) {
           if (bar && i === impactFrame) openOverlay(bar);

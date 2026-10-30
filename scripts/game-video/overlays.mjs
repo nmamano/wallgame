@@ -128,6 +128,14 @@ export const PLACE_KINDS = ["board", "margin", "caption"];
 /** The places off the board: the stage measures their room. */
 export const OFF_BOARD = ["margin", "caption"];
 
+/**
+ * The death cards: on the winning ply, the finish slot's sound starts as
+ * one opens, not at the ending (Wall Game Director, 2026-10-30: the "wah
+ * wah" over WASTED is the loser's finish, and it fills the silence after
+ * the catch).
+ */
+export const DEATH_CARDS = ["wasted", "you-died"];
+
 /** The cards the stage draws (stage.html paintOverlay, visual-memes.md). */
 export const CARDS = [
   "wasted",
