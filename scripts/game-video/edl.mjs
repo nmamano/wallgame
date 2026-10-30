@@ -554,6 +554,21 @@ export const validateEdl = (raw) => {
       `ending must be one of ${ENDINGS.join(", ")}, got ${JSON.stringify(raw.ending)}`,
     );
   }
+  /*
+    The ko ending throws the caught pawn up and across the whole frame
+    while its banner comes in, so no place is free for the ending's bar on
+    any game: the renderer found none on a4wv (Wall Game Director,
+    2026-10-30). Refused here, before any render.
+  */
+  if (
+    raw.ending === "ko" &&
+    Array.isArray(raw.events) &&
+    raw.events.some((e) => e?.kind === "overlay" && e?.form === "bar")
+  ) {
+    fail(
+      `the ko ending takes no ending bar: its thrown pawn and banner cover every place the bar can take; use ending "gg" or "replay" with a bar, or drop the bar`,
+    );
+  }
 
   const startPly = raw.startPly ?? 0;
   if (!isPly(startPly)) {

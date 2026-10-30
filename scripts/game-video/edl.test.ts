@@ -1041,4 +1041,21 @@ describe("the ending's caption bar", () => {
       "events[0]: ending-caption lasts as long as its moment; it takes no seconds",
     ]);
   });
+
+  test("never with the ko ending: its thrown pawn crosses every place (a4wv, 2026-10-30)", () => {
+    const bar = {
+      ply: 2,
+      kind: "overlay",
+      form: "bar",
+      asset: "ending-caption",
+      text: "gg",
+    };
+    expect(
+      validateEdl({ ...base, ending: "ko", events: [bar] }).errors,
+    ).toEqual([
+      'the ko ending takes no ending bar: its thrown pawn and banner cover every place the bar can take; use ending "gg" or "replay" with a bar, or drop the bar',
+    ]);
+    expect(accept({ ...base, ending: "gg", events: [bar] }).ending).toBe("gg");
+    expect(accept({ ...base, ending: "ko", events: [] }).ending).toBe("ko");
+  });
 });
