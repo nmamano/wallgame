@@ -145,7 +145,10 @@
  *                                  the passed review, so the stored script
  *                                  matches the video. Not for a story
  *                                  change: that needs a new review. The
- *                                  render vet reads the fixed text
+ *                                  render vet reads the fixed text. On an
+ *                                  approved item it changes no video and
+ *                                  needs no new ask to Nil: it fixes the
+ *                                  record only
  *   vet-prompt --item ID           VET-BRIEF.md and the item's inputs (video
  *                                  and sha256, sheet, strips, the stored
  *                                  list in a file, a storyboard, the
@@ -1419,14 +1422,18 @@ const commands = {
     });
     const now = scriptText(currentScriptReview(item));
     const lines = (t) => t.split("\n");
-    const old = new Set(lines(scriptText(was).script));
-    const changed = lines(now.script).filter((l) => !old.has(l));
+    const [oldLines, newLines] = [scriptText(was).script, now.script].map(
+      (t) => new Set(lines(t)),
+    );
+    const removed = [...oldLines].filter((l) => !newLines.has(l));
+    const added = [...newLines].filter((l) => !oldLines.has(l));
     console.log(
       [
         `${id}: script text fix by ${by} on the review ${was.verdict} by ${was.reviewer} (${was.at}), script now ${now.scriptSha256.slice(0, 12)}; the review stands.`,
         `  why: ${why}`,
-        `  ${changed.length} line(s) new or changed:`,
-        ...changed.map((l) => `  + ${l}`),
+        `  ${removed.length} line(s) out, ${added.length} line(s) in:`,
+        ...removed.map((l) => `  - ${l}`),
+        ...added.map((l) => `  + ${l}`),
       ].join("\n"),
     );
   },
