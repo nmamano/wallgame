@@ -27,8 +27,10 @@ import { ENDINGS, fastForwardTag } from "../edl.mjs";
  * carries it, so Wall Game Growth can compare the posts before and after a
  * change (Wall Game PM, 2026-10-26). Bump it whenever those rules change, and
  * name the new value in DIRECTOR.md (in the director's docs repo, not this
- * one): crew.mjs stops script, script-review-prompt and vet-prompt while the
- * two differ. The post text has its own version, from Growth (copy.mjs).
+ * one), in the same session: CI cannot see that repo, so a bump passes CI
+ * and then crew.mjs stops script, script-review-prompt and vet-prompt while
+ * the two differ (Video Reviewer 1, review 86). The post text has its own
+ * version, from Growth (copy.mjs).
  */
 export const CAPTION_STYLE_VERSION = "wallz-lingo-2";
 
