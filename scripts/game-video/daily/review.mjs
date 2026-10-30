@@ -500,7 +500,7 @@ export const REVIEW_PAGE = `<!doctype html>
       let s;
       try { s = await (await fetch("/api/review/social")).json(); }
       catch { list.append(el("p", "quiet", LOST)); return; }
-      if (s.error) { list.append(el("p", "quiet", s.error)); return; }
+      if (s.error) { list.append(el("p", "quiet", "The Social tab cannot load. " + s.error)); return; }
       drawSocial(list, s);
       return;
     }

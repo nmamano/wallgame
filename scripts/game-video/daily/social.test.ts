@@ -43,8 +43,12 @@ describe("the follower history", () => {
       },
       { day: "2026-10-30", platform: "bluesky", followers: 3, at },
     ]);
-    // The next UTC day gets its own row.
-    h.record({ bluesky: { followers: 5, at, error: null } }, DAY + 864e5);
+    // The next UTC day: a count cached from the day before writes no row
+    // (X is cached 24 h); a count read that day writes its own row.
+    h.record({ bluesky: { followers: 4, at, error: null } }, DAY + 864e5);
+    expect(h.read()).toHaveLength(2);
+    const next = "2026-10-31T09:00:00.000Z";
+    h.record({ bluesky: { followers: 5, at: next, error: null } }, DAY + 864e5);
     expect(h.read().map((r) => [r.day, r.followers])).toEqual([
       ["2026-10-28", 0],
       ["2026-10-30", 3],
@@ -152,6 +156,7 @@ describe("socialView", () => {
       note: "",
     });
     expect(v.followers!.rows[1]).toMatchObject({ now: "-", note: "no key" });
+    expect(v.followers!.note).toStartWith("Counts cached 1 h (X: 24 h). ");
     expect(v.followers!.note).toContain("since 2026-10-23");
   });
 });

@@ -1708,7 +1708,16 @@ export const createDaily = ({
      * counts. Secret names only. Opening it also records today's counts.
      */
     "GET /api/review/social": async (req, res) => {
-      const data = JSON.parse(readFileSync(platformsFile, "utf8"));
+      let data;
+      try {
+        data = JSON.parse(readFileSync(platformsFile, "utf8"));
+      } catch (err) {
+        // Loud, with the reason on the tab (VR1, review 89 N3).
+        json(res, 500, {
+          error: `Wall Game Growth's platforms.json cannot be read: ${err?.message ?? err}`,
+        });
+        return;
+      }
       const followers = await followerCounts().catch(() => null);
       followerHistory.record(followers);
       const { modes, modeReasons: reasons } = state();

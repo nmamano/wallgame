@@ -73,7 +73,11 @@ export const createFollowerHistory = (path) => {
           .filter(Boolean)
           .map((l) => JSON.parse(l))
       : [];
-  /** Append today's count of each platform that has one and no row today. */
+  /**
+   * Append today's count of each platform that has one, read today, and no
+   * row today. A cached count read on an earlier day (X is cached 24 h)
+   * writes no row: its day would be wrong (VR1, review 89 N1).
+   */
   const record = (counts, nowMs = Date.now()) => {
     if (!counts) return;
     const day = new Date(nowMs).toISOString().slice(0, 10);
@@ -83,7 +87,11 @@ export const createFollowerHistory = (path) => {
         .map((r) => r.platform),
     );
     for (const [platform, c] of Object.entries(counts)) {
-      if (typeof c?.followers === "number" && !have.has(platform)) {
+      if (
+        typeof c?.followers === "number" &&
+        String(c.at).slice(0, 10) === day &&
+        !have.has(platform)
+      ) {
         appendFileSync(
           path,
           JSON.stringify({ day, platform, followers: c.followers, at: c.at }) +
@@ -119,7 +127,7 @@ const followersBox = (counts, history, names, nowMs) => {
       week: delta(c.followers, ago(p, 7)),
       note: c.error ?? "",
     })),
-    note: `Counts cached 1 h. History: one count a day${first ? ` since ${first}` : ""}.`,
+    note: `Counts cached 1 h (X: 24 h). History: one count a day${first ? ` since ${first}` : ""}.`,
   };
 };
 

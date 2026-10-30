@@ -4581,6 +4581,14 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     const page = await (await fetch(base + "/review")).text();
     expect(page).toContain('["social", "Social"]');
     expect(page).toContain('location.hash === "#social"');
+    // A broken platforms.json: a 500 that names the file and the reason.
+    writeFileSync(platforms, "{");
+    const broken = await call<{ error: string }>(base, "/api/review/social");
+    expect(broken.status).toBe(500);
+    expect(broken.body.error).toStartWith(
+      "Wall Game Growth's platforms.json cannot be read: ",
+    );
+    expect(page).toContain('"The Social tab cannot load. " + s.error');
   });
 
   test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {
