@@ -544,6 +544,26 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       where: "top-middle",
       scale: 0.8,
     });
+    // An old wall under the big top middle's tail only (not its art):
+    // that place comes last too (Director Rewriter, 2026-10-30: saturn's
+    // tip lay on an old wall).
+    const first = near(pawn)!;
+    const { from, to } = first.tail!;
+    const mid = {
+      x: from.x + (to.x - from.x) * 0.6,
+      y: from.y + (to.y - from.y) * 0.6,
+    };
+    const underTail = {
+      x0: mid.x - 0.005,
+      y0: mid.y - 0.005,
+      x1: mid.x + 0.005,
+      y1: mid.y + 0.005,
+    };
+    expect(coveredBy(first.full, [underTail])).toEqual([]);
+    const moved = near(pawn, [], [], [underTail])!;
+    expect(moved.where === first.where && moved.scale === first.scale).toBe(
+      false,
+    );
     // A wall under every place: the shortest tail again.
     const everywhere = { x0: 0, y0: 0, x1: 1, y1: 1 };
     expect(near(pawn, [], [], [everywhere])).toMatchObject({

@@ -1299,9 +1299,11 @@ export const tailLength = (tail, pitch) =>
  * size, corners and edge middles, that nearFaults finds free, the one with
  * the shortest tail, the big size first when two are as short (review 102
  * N2: a small place near the pawn before a big place far from it). A
- * place whose art covers a wall on the board (`walls`, old or new) comes
- * only after every place that covers none (Wall Game Director, 2026-10-30:
- * old walls are the game too; a bottom-middle picture hid red's walls).
+ * place whose art or tail covers a wall on the board (`walls`, old or new)
+ * comes only after every place that covers none (Wall Game Director,
+ * 2026-10-30: old walls are the game too; a bottom-middle picture hid
+ * red's walls; Director Rewriter, the same day: saturn's tip lay on an
+ * old wall).
  * Only
  * when no place has a clear tail, one whose tail crosses walls of the move
  * and nothing else, never a pawn or the hunt; `over` names those walls,
@@ -1310,7 +1312,8 @@ export const tailLength = (tail, pitch) =>
  * PAWN_PLACES, the EDL's), only that place is tried, at either size, under
  * the same faults; a wall it covers is the director's choice. With its
  * tail (null when the pawn is too near for one), or null when no place is
- * free.
+ * free. `onWall` says that its art or tail covers a wall (every free
+ * place did, or the EDL named it).
  * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {(scale: number) => Reach} reach
@@ -1318,7 +1321,7 @@ export const tailLength = (tail, pitch) =>
  * @param {{ x: number, y: number, what: string }[]} others the centres of the other pawns
  * @param {{ x: number, y: number }} pitch a cell's size in the board
  * @param {{ walls?: { x0: number, y0: number, x1: number, y1: number }[], place?: string }} [options] every wall on the board as shown, and the place the EDL names
- * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null, over: { x0: number, y0: number, x1: number, y1: number }[] }) | null}
+ * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null, over: { x0: number, y0: number, x1: number, y1: number }[], onWall: boolean }) | null}
  */
 export const placeNear = (
   asset,
@@ -1336,7 +1339,11 @@ export const placeNear = (
       return {
         p,
         tail,
-        onWall: coveredBy(p.full, walls).length > 0 ? 1 : 0,
+        onWall:
+          coveredBy(p.full, walls).length > 0 ||
+          (tail !== null && tailHits(tail, p.full, walls, pitch).length > 0)
+            ? 1
+            : 0,
         length: tailLength(tail, pitch),
       };
     })
@@ -1345,7 +1352,7 @@ export const placeNear = (
         a.onWall - b.onWall || a.length - b.length || b.p.scale - a.p.scale,
     );
   for (const crossWalls of [false, true]) {
-    for (const { p, tail } of ranked) {
+    for (const { p, tail, onWall } of ranked) {
       if (nearFaults(p, tail, busy, others, pitch, { crossWalls }).length > 0)
         continue;
       // The walls its tail crosses, each once (a box per frame shown).
@@ -1366,6 +1373,7 @@ export const placeNear = (
         ...p,
         tail: tail && { ...tail, points: tailPoints(tail, pitch) },
         over,
+        onWall: onWall === 1,
       };
     }
   }

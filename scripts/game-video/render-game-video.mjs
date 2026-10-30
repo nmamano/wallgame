@@ -4684,8 +4684,17 @@ const renderStyle = async (styleName) => {
                 b.full ? [touchDepth(place.full, b)] : [],
               ),
             );
+      // Where a picture a pawn emotes points, and what it covers.
+      const pawnWords = !pawnAt
+        ? ""
+        : (place.tail
+            ? `, its tail to the ${w.ev.pawn}${place.over.length > 0 ? `, under ${place.over.length} wall(s) of the move (no place had a clear tail)` : ""}`
+            : `, beside the ${w.ev.pawn}`) +
+          (place.onWall
+            ? ", over a wall (every free place covers one, or the list named it)"
+            : "");
       log(
-        `${where}: ${placeName(place)}${pawnAt ? (place.tail ? `, its tail to the ${w.ev.pawn}${place.over.length > 0 ? `, under ${place.over.length} wall(s) of the move (no place had a clear tail)` : ""}` : `, beside the ${w.ev.pawn}`) : ""}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
+        `${where}: ${placeName(place)}${pawnWords}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
       for (const f of w.frames) {
         f.o.alpha = Math.max(
