@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
 import { checkSentence, factsOf, writeSentences } from "./sentences";
+import { checkSeen } from "./vision";
 
 /*
  * Standard has two hunts: P1's cat to P2's mouse (walk1), P2's cat to P1's
@@ -451,6 +452,60 @@ describe("a box-in sentence says the box", () => {
   });
 });
 
+/** A stored game with the engine's scores of 2026-10-29, labelled. */
+const fixtureLabels = (gameId: string) => {
+  const fixture = JSON.parse(
+    readFileSync(new URL(`fixtures/${gameId}.json`, import.meta.url), "utf8"),
+  ) as { game: SemanticGame; engine: EngineData };
+  return labelGame(gameFacts(fixture.game, fixture.engine));
+};
+
+/*
+ * Regression fixtures: what a move of a real game means, by game id and ply
+ * (0-based) only. Each one was a review finding on a daily video.
+ */
+describe("fixtures: what a move means", () => {
+  test("v-lQeZ8T: the walls of ply 4 box in the mouse (a tag under the blunder)", () => {
+    const l = fixtureLabels("v-lQeZ8T");
+    expect(l.plies[4].label).toBe("blunder");
+    expect(l.plies[4].tags).toContain("box-in");
+  });
+
+  test("v-lQeZ8T: the mouse's step at ply 25 (cat 1 -> 3) is no escape", () => {
+    const l = fixtureLabels("v-lQeZ8T");
+    expect(l.plies[25].label).toBe("quiet");
+    expect(l.plies[25].focus).toMatchObject({ before: 1, after: 3 });
+  });
+
+  test("v-lQeZ8T: ply 33, the mouse steps onto the cat, is the capture", () => {
+    const l = fixtureLabels("v-lQeZ8T");
+    expect(l.plies[33].label).toBe("capture");
+    expect(l.plies[33].mover).toBe(2);
+    expect(l.plies[33].focus.hunter).toEqual({ player: 1, type: "cat" });
+  });
+
+  test("VX-IPenv: the threat at ply 14 is on the guest's mouse", () => {
+    const l = fixtureLabels("VX-IPenv");
+    expect(l.plies[14].label).toBe("threat");
+    expect(l.plies[14].focus.target).toEqual({ player: 2, type: "mouse" });
+  });
+
+  test("8FroT1GU: the capture at ply 44 comes after the seal, with no turn after it", () => {
+    const l = fixtureLabels("8FroT1GU");
+    expect(l.plies[44].label).toBe("capture");
+    const sealed = l.plies.find((p) => p.label === "trap-closes")!.ply;
+    expect(l.links).toContainEqual({
+      kind: "sealed-capture",
+      from: sealed,
+      to: 44,
+    });
+    expect(
+      l.plies.filter((p) => p.ply > sealed && p.tags.includes("turn")),
+    ).toEqual([]);
+    expect(l.links.filter((k) => k.kind === "blunder-punish")).toEqual([]);
+  });
+});
+
 describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
   test("a punish that a wall undoes next move shows no cost; 2 -> 16 does", () => {
     const fixture = JSON.parse(
@@ -632,5 +687,45 @@ describe("checkSentence", () => {
       fallback: false,
       sentence: "Normal Bot punishes the blunder.",
     });
+  });
+});
+
+describe("checkSeen (the image check)", () => {
+  test("asks about labelled plies only, with their two tiles; a missing answer is not seen", () => {
+    const game = gameOf([
+      { w1: [9, 9], w2: [9, 9], wc: [0.5, 0.5] },
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+      { w1: [9, 7], w2: [9, 9], wc: [0.5, 0.5] },
+    ]);
+    const labels = labelGame(game);
+    let asked = "";
+    const seen = checkSeen(
+      { facts: game, labels, sentences: null, seen: null },
+      "/tmp/tiles",
+      (input) => {
+        asked = input;
+        return { plies: [], costUsd: 0 };
+      },
+    );
+    expect(labels.plies.map((p) => p.label)).toEqual([
+      "quiet",
+      "box-in",
+      "quiet",
+    ]);
+    expect(seen).toEqual([
+      { ply: 1, seen: false, reason: "the model gave no answer" },
+    ]);
+    expect(asked).toContain(
+      "ply 1: tiles tile-ply-0.png (before) and tile-ply-1.png (after)",
+    );
+    expect(asked).toContain("fall from 42 to 20");
+    expect(asked).toContain("Normal Bot plays red");
+    expect(asked).not.toContain("ply 0:");
   });
 });

@@ -40,6 +40,7 @@
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameFacts, HuntChange, PlyFacts } from "./facts";
 import type { GameLabels, Link } from "./labels";
+import type { PlySeen } from "./vision";
 
 export const MODEL = "claude-opus-5-5";
 export const MAX_WORDS = 35;
@@ -63,6 +64,8 @@ export interface GameSemantics {
   facts: GameFacts;
   labels: GameLabels;
   sentences: PlySentence[] | null;
+  /** The image check (vision.ts) of each labelled ply; null without it. */
+  seen: PlySeen[] | null;
 }
 
 /* ----------------------------------------------------------- the facts -- */
@@ -640,10 +643,14 @@ export const writeSentences = (
     facts,
     labels,
     sentences: facts.plies.map((f) => result.get(f.ply)!),
+    seen: null,
   };
 };
 
 /* ------------------------------------------------------------- the table -- */
+
+const seenCell = (x: PlySeen | undefined) =>
+  x === undefined ? "?" : `${x.seen ? "seen" : "NOT seen"}: ${x.reason}`;
 
 /** The short file for a person: the moves that mean something, then the rest. */
 export const renderTable = (s: GameSemantics): string => {
@@ -657,9 +664,12 @@ export const renderTable = (s: GameSemantics): string => {
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = ply + 1 (the replay page's count)`,
     "",
-    "| move | ply | by | label | strength | sentence |",
-    "|---|---|---|---|---|---|",
+    s.seen
+      ? "| move | ply | by | label | strength | seen | sentence |"
+      : "| move | ply | by | label | strength | sentence |",
+    s.seen ? "|---|---|---|---|---|---|---|" : "|---|---|---|---|---|---|",
   ];
+  const seen = new Map((s.seen ?? []).map((x) => [x.ply, x]));
   const quiet: number[] = [];
   for (const l of s.labels.plies) {
     if (l.label === "quiet") {
@@ -672,7 +682,7 @@ export const renderTable = (s: GameSemantics): string => {
       : "";
     const tags = l.tags.filter((t) => t !== l.label);
     lines.push(
-      `| ${l.moveNumber} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""} | ${l.strength.toFixed(2)} | ${text} |`,
+      `| ${l.moveNumber} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""} | ${l.strength.toFixed(2)} |${s.seen ? ` ${seenCell(seen.get(l.ply))} |` : ""} ${text} |`,
     );
   }
   lines.push("", `Quiet moves (${quiet.length}): ${quiet.join(", ")}.`);

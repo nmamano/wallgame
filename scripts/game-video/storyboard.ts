@@ -25,12 +25,18 @@
  * per event's ply, so the Director sees every event's still before a render
  * costs the game a view.
  *
+ * With --tiles <dir>, each tile is also shot alone, named as its label
+ * says: <dir>/tile-start.png, then tile-ply-<N>.png for the position after
+ * ply N (move N + 1). The game layer's
+ * image check (semantics/vision.ts) shows a model the tiles before and
+ * after a labelled move.
+ *
  * stdout carries one line, `RESULT {"png", "sha256", "plies", "width",
  * "height"}`; errors go to stderr with a non-zero exit.
  */
 import { chromium } from "playwright-core";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { colorFilterMap } from "../../frontend/src/lib/player-colors";
@@ -81,9 +87,10 @@ const arg = (name: string) => {
 const candidatePath = arg("candidate");
 const outPath = arg("out");
 const edlPath = arg("edl");
+const tilesDir = arg("tiles");
 if (!candidatePath || !outPath) {
   console.error(
-    "usage: storyboard.ts --candidate <ranked entry json> --out <png> [--edl <edl json>]",
+    "usage: storyboard.ts --candidate <ranked entry json> --out <png> [--edl <edl json>] [--tiles <dir>]",
   );
   process.exit(2);
 }
@@ -386,6 +393,16 @@ try {
     width: Math.ceil(whole?.width ?? 0),
     height: Math.ceil(whole?.height ?? 0),
   };
+  if (tilesDir) {
+    mkdirSync(tilesDir, { recursive: true });
+    const tile = page.locator(".tile");
+    const count = await tile.count();
+    for (let k = 0; k < count; k++) {
+      // Tile k is the position after ply k - 1 (tiles above).
+      const name = k === 0 ? "tile-start.png" : `tile-ply-${k - 1}.png`;
+      await tile.nth(k).screenshot({ path: join(tilesDir, name) });
+    }
+  }
   const sha256 = createHash("sha256").update(readFileSync(out)).digest("hex");
   process.stdout.write(
     `RESULT ${JSON.stringify({ png: out, sha256, plies: game.moves.length, ...size })}\n`,

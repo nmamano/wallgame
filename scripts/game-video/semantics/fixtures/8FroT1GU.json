@@ -1,0 +1,166 @@
+{
+  "note": "8FroT1GU (wallgame.io/game/8FroT1GU), stored moves and start position, and the evaluation bar engine's scores of 2026-10-29 (dw-transformer on the 4090), for semantics.test.ts.",
+  "game": {
+    "gameId": "8FroT1GU",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [1, 0],
+          "mouse": [5, 1]
+        },
+        "p2": {
+          "cat": [1, 7],
+          "mouse": [5, 6]
+        }
+      },
+      "walls": [
+        {
+          "cell": [3, 2],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [3, 2],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [3, 4],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [3, 5],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [6, 2],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [6, 5],
+          "orientation": "horizontal"
+        }
+      ]
+    },
+    "moves": [
+      "Cc7",
+      "Ch5",
+      "Ce7",
+      "Ch3",
+      "Cg7",
+      "Cf3",
+      "^g2.^h2",
+      "Cd3",
+      ">c4.>c3",
+      "Cc2",
+      ">b2.>b1",
+      "Cd3",
+      "^d4.^e4",
+      ">g7.^g6",
+      ">f6.>f5",
+      "^f7.^g7",
+      "Ce7",
+      "Cf3",
+      "Cf8",
+      ">g1.Mf3",
+      "Ch8",
+      "^b7.Me3",
+      "Ch6",
+      "^c4.Me2",
+      "Cg5",
+      "Ch3",
+      "Cf4",
+      "Ch5",
+      "Ce3",
+      ">d3.^e2",
+      "Cd4",
+      ">d2.^d1",
+      "Cd2",
+      "^e1.^f1",
+      "Cc1",
+      "^b6.^c1",
+      "Ce1",
+      ">d1.^e7",
+      "Cg1",
+      "^g4.^h5",
+      "^b5.^b4",
+      "Cg6",
+      "Cf2",
+      "Ch7",
+      "Ce2.>e2"
+    ],
+    "seats": [
+      {
+        "playerOrder": 1,
+        "kind": "guest",
+        "name": "Guest Raven"
+      },
+      {
+        "playerOrder": 2,
+        "kind": "official bot",
+        "name": "Normal Bot"
+      }
+    ]
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      -0.2144, -0.3767, 0.1744, -0.4845, 0.4795, -0.4481, -0.3967, -0.4529,
+      0.0305, 0.46, 0.6127, 0.6533, 0.6951, 0.7086, 0.6734, 0.6317, 0.5737,
+      0.5989, 0.6632, 0.737, 0.6625, 0.7168, 0.661, 0.7281, 0.6898, 0.6886,
+      0.7572, 0.7855, 0.8009, 0.8124, 0.7811, 0.8007, 0.742, 0.8523, 0.7725,
+      0.8039, 0.8197, 0.8581, 0.888, 0.9394, 0.9571, 0.9436, 0.9572, 0.9894,
+      1.0, 1.0
+    ],
+    "bestMoves": [
+      ">b6.Cb7",
+      "Cg7.>c7",
+      ">g5.^h4",
+      "^g5.^h5",
+      ">c3.>c2",
+      "^g5.^h5",
+      ">e4.>e3",
+      "^g5.^h5",
+      ">c4.>c3",
+      "^g5.^h5",
+      ">b2.>b1",
+      ">f7.^g6",
+      "Cg5",
+      ">g7.^g6",
+      ">f6.Cg8",
+      "^f7.^g7",
+      ">d8.>d7",
+      "^d7.^e7",
+      "Cf8",
+      "Mf3.Cg3",
+      "Ch8",
+      "Me3.Cg3",
+      "Ch6",
+      "Me2.Cf4",
+      "Ch4",
+      ">g5.^g4",
+      "Cf4",
+      ">d2.^e2",
+      "Ce3",
+      ">d3.^e2",
+      "Cd4",
+      ">d2.^d1",
+      "Cd2",
+      "^e1.^f1",
+      "Cc1",
+      ">c2.Ch4",
+      "Ce1",
+      "^g4.Ch4",
+      "Cg1",
+      "^b5.Ch4",
+      "Cf2",
+      "^e5.Ch4",
+      "Cf2",
+      ">b8.Ch6",
+      "Ce2",
+      "^h6"
+    ],
+    "finalFromResult": false
+  }
+}

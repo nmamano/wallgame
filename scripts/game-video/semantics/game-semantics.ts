@@ -19,6 +19,10 @@
  * Without either, the engine labels (threat, blunder, turn, punish,
  * trap-closes) do not appear.
  *
+ * --vision shoots each position's storyboard tile (DIR/<game>.tiles/) and
+ * asks a model whether each labelled move can be SEEN in its tiles
+ * (vision.ts); the result is `seen` in the json and a column in the .md.
+ *
  * --sentences asks a model for one sentence per move (sentences.ts) and
  * checks each against the move's facts.
  *
@@ -39,6 +43,7 @@ import { replayDistances } from "../race-replay";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
 import { renderTable, writeSentences, type GameSemantics } from "./sentences";
+import { checkSeen, shootTiles } from "./vision";
 
 interface Args {
   item?: string;
@@ -47,6 +52,7 @@ interface Args {
   out: string;
   engine: boolean;
   sentences: boolean;
+  vision: boolean;
 }
 
 const parseArgs = (argv: string[]): Args => {
@@ -70,6 +76,7 @@ const parseArgs = (argv: string[]): Args => {
     out,
     engine: argv.includes("--engine"),
     sentences: argv.includes("--sentences"),
+    vision: argv.includes("--vision"),
   };
   if (!args.item === !args.candidates) {
     throw new Error("give exactly one of --item or --candidates");
@@ -77,8 +84,16 @@ const parseArgs = (argv: string[]): Args => {
   return args;
 };
 
-/** The fields a candidate (in an item or a day file) has for this script. */
+/**
+ * The fields a candidate (in an item or a day file) has for this script; the
+ * image check hands the whole stored entry to storyboard.ts.
+ */
 type StoredCandidate = SemanticGame & { movesCount: number };
+
+interface ReadGame {
+  game: SemanticGame;
+  stored: StoredCandidate;
+}
 
 const asGame = (c: StoredCandidate): SemanticGame => ({
   gameId: c.gameId,
@@ -94,19 +109,20 @@ const asGame = (c: StoredCandidate): SemanticGame => ({
   })),
 });
 
-const readGames = (args: Args): SemanticGame[] => {
+const readGames = (args: Args): ReadGame[] => {
+  const read = (stored: StoredCandidate) => ({ game: asGame(stored), stored });
   if (args.item) {
     const item = JSON.parse(readFileSync(args.item, "utf8")) as {
       candidate: StoredCandidate;
     };
-    return [asGame(item.candidate)];
+    return [read(item.candidate)];
   }
   const day = JSON.parse(readFileSync(args.candidates!, "utf8")) as {
     ranked: StoredCandidate[];
   };
   return day.ranked
     .filter((c) => args.games.length === 0 || args.games.includes(c.gameId))
-    .map(asGame);
+    .map(read);
 };
 
 const scoreOnGpu = async (games: SemanticGame[], dir: string) => {
@@ -161,9 +177,13 @@ const scoreOnGpu = async (games: SemanticGame[], dir: string) => {
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   mkdirSync(args.out, { recursive: true });
-  const games = readGames(args);
-  if (args.engine) await scoreOnGpu(games, args.out);
-  for (const game of games) {
+  const read = readGames(args);
+  if (args.engine)
+    await scoreOnGpu(
+      read.map((r) => r.game),
+      args.out,
+    );
+  for (const { game, stored } of read) {
     const enginePath = join(args.out, `${game.gameId}.engine.json`);
     const engine = existsSync(enginePath)
       ? (JSON.parse(readFileSync(enginePath, "utf8")) as EngineData)
@@ -172,7 +192,16 @@ const main = async () => {
     const labels = labelGame(facts);
     const semantics: GameSemantics = args.sentences
       ? writeSentences(facts, labels)
-      : { facts, labels, sentences: null };
+      : { facts, labels, sentences: null, seen: null };
+    if (args.vision) {
+      // The stored entry, as storyboard.ts reads it, and its tiles.
+      const tiles = join(args.out, `${game.gameId}.tiles`);
+      mkdirSync(tiles, { recursive: true });
+      const candidate = join(tiles, "candidate.json");
+      writeFileSync(candidate, JSON.stringify(stored));
+      shootTiles(candidate, tiles);
+      semantics.seen = checkSeen(semantics, tiles);
+    }
     writeFileSync(
       join(args.out, `${game.gameId}.semantics.json`),
       JSON.stringify(semantics, null, 1),

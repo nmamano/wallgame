@@ -1,0 +1,142 @@
+{
+  "note": "v-lQeZ8T (wallgame.io/game/v-lQeZ8T), stored moves and start position, and the evaluation bar engine's scores of 2026-10-29 (dw-transformer on the 4090), for semantics.test.ts.",
+  "game": {
+    "gameId": "v-lQeZ8T",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [0, 0],
+          "mouse": [3, 1]
+        },
+        "p2": {
+          "cat": [0, 7],
+          "mouse": [3, 6]
+        }
+      },
+      "walls": [
+        {
+          "cell": [1, 0],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [1, 7],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [5, 0],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [5, 7],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [7, 0],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [7, 6],
+          "orientation": "vertical"
+        }
+      ]
+    },
+    "moves": [
+      ">b5.^b5",
+      "^b7.^c7",
+      "Cc8",
+      ">f5.^g5",
+      ">f4.^g3",
+      "Cg7",
+      "Ce8",
+      "Mh6",
+      "Cg8",
+      "Mf6",
+      ">e6.^f5",
+      "Me7",
+      "Cf7",
+      "Me5",
+      "Ce7.^a5",
+      "Me3",
+      "Ce5",
+      ">d5.^e4",
+      ">b4.^e5",
+      "Ce7",
+      "Cf4",
+      "Mc3",
+      ">b3.Ce4",
+      "Mc5",
+      "Cc4",
+      "Mc7",
+      "Cc6",
+      "Md8",
+      "Cd7",
+      "^d7.^e7",
+      "Cf7",
+      "Cf7.Mc8",
+      "Ce8",
+      "Me8"
+    ],
+    "seats": [
+      {
+        "playerOrder": 1,
+        "kind": "official bot",
+        "name": "Normal Bot"
+      },
+      {
+        "playerOrder": 2,
+        "kind": "guest",
+        "name": "Guest Ibex"
+      }
+    ]
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.3385, 0.0505, 0.5289, 0.5752, 0.5417, -0.2772, 0.6623, 0.4896, 0.8252,
+      0.7625, 0.8192, 0.8913, 0.836, 0.8324, 0.6137, 0.6363, 0.6023, 0.6902,
+      0.63, 0.6801, 0.6776, 0.751, 0.6623, 0.6965, 0.7873, 0.756, 0.7872,
+      0.9269, 0.8456, 0.8932, 0.8772, 0.8918, 0.9148, 0.9798, 1
+    ],
+    "bestMoves": [
+      ">b5.^b5",
+      "Mg3",
+      ">c7.>c6",
+      "^g5.^h5",
+      ">b4.^a5",
+      ">d8.>d7",
+      ">c7.>c6",
+      ">e8.>e7",
+      "Cf7",
+      "^f7.^g7",
+      ">e6.^f5",
+      "^f7.^g7",
+      "Cf8.^e6",
+      ">e7.^f7",
+      "^a5.Ce7",
+      ">d5.^e5",
+      "Ce5",
+      "^d4.^e4",
+      ">b4.^e5",
+      "Mc3",
+      "Cf4",
+      "Md3.>d3",
+      ">b3.Ce4",
+      ">d4.>d3",
+      "Cd4.^c5",
+      ">c4.^c4",
+      "Cc6",
+      "^b6.^c6",
+      "Cd7",
+      ">d7.^d7",
+      "Cf7",
+      ">f7.^f7",
+      "Ce8",
+      "Mb8.Cg7",
+      "Cf8"
+    ],
+    "finalFromResult": false
+  }
+}
