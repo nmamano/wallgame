@@ -51,8 +51,10 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
   }));
   const sent: string[] = [];
   const posted: string[] = [];
-  // The slot time each post was given (recover() matches it).
+  // The slot time each post was given (recover() matches it), and who
+  // fired a slot by hand.
   const slotAts: string[] = [];
+  const firedBys: (string | undefined)[] = [];
   // While set, a post waits for it (a post in flight).
   let hold: Promise<void> | null = null;
   let officeUp = true;
@@ -94,8 +96,15 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
       },
       livePlatforms: () => live,
       busy: () => false,
-      postItem: async ({ slotAt }: { slotAt: string }) => {
+      postItem: async ({
+        slotAt,
+        firedBy,
+      }: {
+        slotAt: string;
+        firedBy?: string;
+      }) => {
         slotAts.push(slotAt);
+        firedBys.push(firedBy);
         if (hold) await hold;
         const next = items.find((i) => i.state === "approved");
         if (!next) return { kind: "empty" };
@@ -131,6 +140,7 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
     sent,
     posted,
     slotAts,
+    firedBys,
     setHold: (p: Promise<void> | null) => {
       hold = p;
     },
@@ -516,7 +526,7 @@ describe("a slot by hand (fireNow)", () => {
     const s = w.make();
     await s.tick(); // first run: records 08:00 PT
     const before = readState(w.statePath);
-    const r = await s.fireNow();
+    const r = await s.fireNow({ by: "Wall Game Growth" });
     expect(r).toMatchObject({
       ok: true,
       lastSlot: { itemId: "v-2026-10-28-1", outcome: "posted" },
@@ -524,7 +534,7 @@ describe("a slot by hand (fireNow)", () => {
     expect(w.posted).toEqual(["v-2026-10-28-1"]);
     expect(w.sent).toHaveLength(1);
     expect(w.sent[0]).toContain(
-      "Slot by hand Thu 2026-10-29 08:00 PT: POSTED v-2026-10-28-1.",
+      "Slot by hand (Wall Game Growth) Thu 2026-10-29 08:00 PT: POSTED v-2026-10-28-1.",
     );
     expect(w.sent[0]).toContain("- x: posted https://x.example/1");
     const state = readState(w.statePath) as State & {
@@ -536,11 +546,14 @@ describe("a slot by hand (fireNow)", () => {
     // The post was given the slot's own time: recover() finds the item.
     expect(state.lastSlot.slotAt).toBe(at);
     expect(w.slotAts).toEqual([at]);
+    // Who fired it: on the post (the post log's firedBy) and in lastSlot.
+    expect(w.firedBys).toEqual(["Wall Game Growth"]);
+    expect(state.lastSlot).toMatchObject({ firedBy: "Wall Game Growth" });
 
     // Within 6 h: refused, nothing posted, written or sent.
     w.setTime(OCT29_0900 - HOUR + 5 * HOUR);
     const raw = readFileSync(w.statePath, "utf8");
-    const again = await s.fireNow();
+    const again = await s.fireNow({ by: "Wall Game Growth" });
     expect(again.ok).toBe(false);
     expect((again as { reason: string }).reason).toContain(
       "the 6 h gap after the last post",
@@ -557,18 +570,24 @@ describe("a slot by hand (fireNow)", () => {
     await s.tick();
     expect(w.posted).toEqual(["v-2026-10-28-1", "v-2026-10-28-2"]);
     expect(w.sent[1]).toContain("Slot Thu 2026-10-29 09:00 PT, LATE");
+    expect(w.firedBys).toEqual(["Wall Game Growth", undefined]);
   });
 
   test("refused before the first tick and with no approved item: nothing written or sent", async () => {
     const empty = world({ ready: 0 });
     const s = empty.make();
-    expect(await s.fireNow()).toEqual({
+    // Unnamed: refused first.
+    expect(await s.fireNow({ by: " " })).toEqual({
+      ok: false,
+      reason: "name who fires it (by)",
+    });
+    expect(await s.fireNow({ by: "Wall Game Growth" })).toEqual({
       ok: false,
       reason: "the slot timer has not run its first tick yet",
     });
     await s.tick();
     const raw = readFileSync(empty.statePath, "utf8");
-    expect(await s.fireNow()).toEqual({
+    expect(await s.fireNow({ by: "Wall Game Growth" })).toEqual({
       ok: false,
       reason: "the approved queue is empty",
     });
@@ -583,11 +602,11 @@ describe("a slot by hand (fireNow)", () => {
     await s.tick();
     let release = () => undefined as void;
     w.setHold(new Promise<void>((r) => (release = r)));
-    const first = s.fireNow();
+    const first = s.fireNow({ by: "Wall Game Growth" });
     // The 09:00 slot is due while the post by hand runs.
     w.setTime(OCT29_0900);
     await s.tick();
-    expect(await s.fireNow()).toEqual({
+    expect(await s.fireNow({ by: "Wall Game Growth" })).toEqual({
       ok: false,
       reason: "a slot or a post is running: try again in a minute",
     });

@@ -196,12 +196,14 @@
  *                                  account, then --confirm-not-posted. Slots
  *                                  post approved items on their own; a retry
  *                                  uses no slot
- *   slot --now                     (Growth) fire a slot now: the oldest
+ *   slot --now --by "<agent name>" (Growth) fire a slot now: the oldest
  *                                  approved item through the timer's own
  *                                  slot step (same checks, platforms, slot
  *                                  message and 6 h gap). Refused while a
  *                                  post runs, with no approved item, or
- *                                  within 6 h of the last post
+ *                                  within 6 h of the last post. --by is
+ *                                  recorded in the slot message and the
+ *                                  post log
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
@@ -1042,7 +1044,8 @@ const commands = {
 
   async slot() {
     if (!has("now")) die("slot needs --now (a slot now, by hand)");
-    const r = await app("POST", "/api/daily/slot-now", {});
+    const by = flag("by") ?? die('slot --now needs --by "<your agent name>"');
+    const r = await app("POST", "/api/daily/slot-now", { by });
     console.log(
       `slot by hand: ${r.itemId ?? "no item"} ${r.outcome}${r.platforms ? ` (${r.platforms.join(", ")})` : ""}`,
     );

@@ -190,8 +190,10 @@ export const createItemPoster = ({
    * passed over. An item that fails its checks goes to post-failed and the
    * next one is taken (Nil wants a post at least once per 24 h); `refused`
    * lists those, {itemId, error}.
+   * @param {{ slotAt: string, firedBy?: string }} slot  firedBy: who fired
+   *   a slot by hand
    */
-  const postNext = async ({ slotAt }) => {
+  const postNext = async ({ slotAt, firedBy }) => {
     const platforms = livePlatforms();
     if (!platforms.length) return { kind: "no-live" };
     const refused = [];
@@ -216,6 +218,9 @@ export const createItemPoster = ({
             i.posts ??= {};
             i.posting = {
               slotAt,
+              // Who fired a slot by hand (crew.mjs slot --now); a timed slot
+              // has none.
+              ...(firedBy ? { firedBy } : {}),
               at: iso(),
               platforms: platforms.filter((p) => !(p in skipped)),
               ...(Object.keys(skipped).length

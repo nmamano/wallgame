@@ -3151,6 +3151,7 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     gameId: "TESTGAME1",
     mode: "dry-run",
     approver: "Nil",
+    firedBy: null,
     videoSha256: approved.approval?.videoSha256,
     effect: "daily",
     ending: "replay",
@@ -4469,10 +4470,18 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     // crew blocks this process while it runs: the app runs in its own.
     const emptyBase = await serve(emptyDir, "unused");
     await waitFirstTick(openStore(emptyDir).dirs.root);
-    const refused = await call(emptyBase, "/api/daily/slot-now", {});
+    const unnamed = await call(emptyBase, "/api/daily/slot-now", {});
+    expect(unnamed.status).toBe(409);
+    expect(unnamed.body.error).toBe("slot --now: name who fires it (by)");
+    const refused = await call(emptyBase, "/api/daily/slot-now", {
+      by: "Wall Game Growth",
+    });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toBe("slot --now: the approved queue is empty");
-    const said = crew(emptyBase, "slot", "--now");
+    expect(crew(emptyBase, "slot", "--now").err).toContain(
+      'slot --now needs --by "<your agent name>"',
+    );
+    const said = crew(emptyBase, "slot", "--now", "--by", "Wall Game Growth");
     expect(said.code).toBe(1);
     expect(said.err).toContain("slot --now: the approved queue is empty");
     expect(crew(emptyBase, "slot").err).toContain("slot needs --now");
@@ -4485,7 +4494,7 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     approveItem(store, id);
     const base = await serve(dir, "unused");
     const schedule = await waitFirstTick(store.dirs.root);
-    const ran = crew(base, "slot", "--now");
+    const ran = crew(base, "slot", "--now", "--by", "Wall Game Growth");
     expect(ran.out).toContain("slot by hand: no item no-live");
     expect(ran.code).toBe(1);
     const state = JSON.parse(readFileSync(schedule, "utf8")) as {

@@ -234,7 +234,7 @@ export const createScheduler = ({
   const slotHead = (slot, firedAt, folded) => {
     const late = firedAt - slot.at > LATE_AFTER_MS;
     return [
-      `Slot ${slot.byHand ? "by hand " : ""}${pacificLabel(slot.at)}`,
+      `Slot ${slot.by ? `by hand (${slot.by}) ` : ""}${pacificLabel(slot.at)}`,
       late ? `, LATE: fired ${pacificLabel(firedAt)}` : "",
       folded.length
         ? `, ${folded.length} older missed slot${folded.length > 1 ? "s" : ""} folded in`
@@ -258,13 +258,17 @@ export const createScheduler = ({
         outcome: "posting",
         platforms: null,
         folded: d.folded.length,
+        ...(d.slot.by ? { firedBy: d.slot.by } : {}),
         // Back in lastPostAt when the slot proves that nothing went out.
         prevPostAt: before.lastPostAt,
       },
     });
     let result;
     try {
-      result = await postItem({ slotAt: iso(d.slot.at) });
+      result = await postItem({
+        slotAt: iso(d.slot.at),
+        ...(d.slot.by ? { firedBy: d.slot.by } : {}),
+      });
     } catch (err) {
       result = { kind: "error", error: String(err?.message ?? err) };
     }
@@ -378,9 +382,15 @@ export const createScheduler = ({
    * the timer's first tick, when no item is approved, or while the 6 h gap
    * since the last post holds. lastSlotAt
    * stays: no timed slot is used up; the gap from this post may push the
-   * next one. Returns { ok: true, lastSlot } or { ok: false, reason }.
+   * next one. `by` names who fired it (Wall Game PM, 2026-10-30: the
+   * record is enough, no refusal by name); it goes into the slot message,
+   * lastSlot and the post log. Returns { ok: true, lastSlot } or
+   * { ok: false, reason }.
    */
-  const fireNow = async () => {
+  const fireNow = async ({ by }) => {
+    if (typeof by !== "string" || !by.trim()) {
+      return { ok: false, reason: "name who fires it (by)" };
+    }
     if (running || busy()) {
       return {
         ok: false,
@@ -409,7 +419,7 @@ export const createScheduler = ({
         };
       }
       await fire({
-        slot: { at: t, byHand: true },
+        slot: { at: t, by: by.trim() },
         folded: [],
         through: Date.parse(state.lastSlotAt),
       });

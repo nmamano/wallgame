@@ -1671,11 +1671,13 @@ export const createDaily = ({
      * A slot now, by hand (Growth, `crew.mjs slot --now`): the scheduler's
      * own slot step (scheduler.mjs fireNow), so the oldest approved item,
      * its checks and platforms, the slot message and the 6 h gap are a
-     * timed slot's. A refusal (a post runs, no item approved, the gap
+     * timed slot's. {by}: who fires it, recorded in the slot message and the
+     * post log. A refusal (no by, a post runs, no item approved, the gap
      * holds) is a 409 with its reason; nothing was written or sent.
      */
     "POST /api/daily/slot-now": async (req, res) => {
-      const r = await scheduler.fireNow();
+      const body = await readJson(req);
+      const r = await scheduler.fireNow({ by: body.by });
       if (!r.ok) throw new StepRefused(`slot --now: ${r.reason}`);
       json(res, 200, r.lastSlot);
     },
@@ -2597,6 +2599,9 @@ export const logRow = (item, platform, result) => ({
   swingSize: item.candidate.picks[0].size,
   swingMove: item.candidate.picks[0].moveNumber,
   approver: item.approval.by,
+  // Who fired the slot by hand (crew.mjs slot --now), also on a retry of
+  // that slot's item; null for a timed slot.
+  firedBy: item.posting?.firedBy ?? null,
   videoSha256: item.approval.videoSha256,
   youtubePrivacyStatus:
     platform === "youtube" ? (result.privacyStatus ?? null) : null,

@@ -153,7 +153,7 @@ const world = (live: string[]) => {
     },
     logPost: (_item, platform) => logged.push(platform),
   });
-  const post = async (slot: { slotAt: string }) =>
+  const post = async (slot: { slotAt: string; firedBy?: string }) =>
     (await poster.postNext(slot)) as Outcome;
   const retry = async (id: string, opts?: { confirmNotPosted: string[] }) =>
     (await poster.retry(id, opts)) as Outcome;
@@ -188,6 +188,17 @@ describe("post(itemId)", () => {
       posting: { slotAt: SLOT.slotAt, platforms: ["x", "bluesky"] },
     });
     expect(w.logged).toEqual(["x", "bluesky"]);
+    // A timed slot names nobody.
+    expect(w.get().posting).not.toHaveProperty("firedBy");
+  });
+
+  test("a slot by hand records who fired it on the item (the post log's firedBy)", async () => {
+    const w = world(["x"]);
+    await w.post({ ...SLOT, firedBy: "Wall Game Growth" });
+    expect(w.get()).toMatchObject({
+      state: "posted",
+      posting: { slotAt: SLOT.slotAt, firedBy: "Wall Game Growth" },
+    });
   });
 
   test("an item withdrawn since the queue was read is passed over", async () => {
