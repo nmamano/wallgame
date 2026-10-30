@@ -1805,22 +1805,32 @@
        *          open cuts in on walls that are already lit) }
        */
       /**
-       * A hunter's walk (edl.mjs "path"): p = { cell, lines: [{ hex,
-       * points, holes, steps, drawn, alpha }] }, points, holes (the cells
-       * on the walk where another pawn stands) and the cell's size as
-       * fractions of the board, from the hunter to its target. Each line is
-       * a dotted trail in its hunter's colour (hex), drawn from the hunter up to
-       * `drawn` of its length; once whole it shows its steps in a disc half
-       * a cell beside the target: across the walk's last step (towards the
-       * board's middle first), or else ahead of it, on the first side that
-       * is on the board and off the walk, so the disc covers neither the
-       * target nor the walk.
+       * A hunter's walk (edl.mjs "path"): p = { cell, pawns, lines: [{
+       * hex, points, holes, steps, drawn, alpha }] }, points, holes (the
+       * cells on the walk where another pawn stands) and the cell's size as
+       * fractions of the board, from the hunter to its target. p.pawns is
+       * every pawn the board shows, as the page drew it ({x, y, w, h}):
+       * render-game-video.mjs playState adds it to every path, so it is
+       * read as given. Each line is a dotted trail in its hunter's colour
+       * (hex), drawn from the hunter up to `drawn` of its length, with no
+       * dot on a pawn: not on the hunter's cell, the target's or a hole
+       * (Nil, 2026-10-28: overlays never cover the pawns). Once whole it
+       * shows its steps in a disc beside the target: across the walk's last
+       * step (towards the board's middle first), or else ahead of it, on
+       * the first side that is on the board, off the walk and off every
+       * pawn, so the disc covers neither the target nor the walk. Returns
+       * the whole walks whose number found no such side (the lint's
+       * walk-number-crowded), as { steps, hex }.
        */
       const DOT_GAP = 52;
+      /** The number's disc: its radius in cells, its dark ring in board units (1000 a board). */
+      const DISC_R = 0.3;
+      const DISC_RING = 8;
       const paintPath = (p) => {
         const svg = $("pathSvg");
         show(svg, !!p);
-        if (!p) return;
+        const crowded = [];
+        if (!p) return crowded;
         const k = (v) => (v * 1000).toFixed(1);
         svg.innerHTML = p.lines
           .filter((l) => l.alpha > 0 && l.drawn > 0)
@@ -1839,9 +1849,14 @@
               left -= seg[i];
             }
             // A dot every DOT_GAP along the drawn part, from the hunter, as
-            // a dash of 0 with round caps drew them; none on a cell where
-            // another pawn stands (l.holes, the cells' centres).
-            const holes = l.holes ?? [];
+            // a dash of 0 with round caps drew them; none on a cell where a
+            // pawn stands: the hunter's, the target's and the holes (the
+            // cells' centres), so the walk starts and ends at their edges.
+            const holes = [
+              l.points[0],
+              l.points[l.points.length - 1],
+              ...(l.holes ?? []),
+            ];
             const dots = [];
             let next = 0;
             let run = 0;
@@ -1919,24 +1934,29 @@
                 noPawn(d)
               );
             };
-            const side = sides.find(free) ?? sides.find(noPawn) ?? sides[0];
+            const freeSide = sides.find(free);
+            if (!freeSide && l.drawn >= 1) {
+              crowded.push({ steps: l.steps, hex: l.hex });
+            }
+            const side = freeSide ?? sides.find(noPawn) ?? sides[0];
             // Clear of the walk's own target too: its pawn as the page
             // drew it (p.pawns' box), plus the disc and its ring, measured
             // (render vet, 2026-10-30: at a fixed 0.55 cell, the ring cut
             // the feet of the mouse below it by 7-8 px).
             const target = p.pawns.find((q) => !away(tip)(q));
+            // The disc's outer edge: its radius and half its ring.
+            const rim = DISC_R * p.cell + DISC_RING / 2 / 1000;
             const reach = target
-              ? (side.x !== 0 ? target.w : target.h) / 2 +
-                0.3 * p.cell +
-                0.004 +
-                0.03 * p.cell
+              ? (side.x !== 0 ? target.w : target.h) / 2 + rim + 0.03 * p.cell
               : 0;
             const out = Math.max(0.55 * p.cell, reach);
+            // Whole on the board, even on a side that faces its edge.
+            const inside = (v) => Math.min(1 - rim, Math.max(rim, v));
             const end = {
-              x: tip.x + out * side.x,
-              y: tip.y + out * side.y,
+              x: inside(tip.x + out * side.x),
+              y: inside(tip.y + out * side.y),
             };
-            const r = (0.3 * p.cell * 1000).toFixed(1);
+            const r = (DISC_R * p.cell * 1000).toFixed(1);
             const disc =
               l.drawn < 1
                 ? ""
@@ -1948,7 +1968,9 @@
                   r +
                   '" fill="' +
                   l.hex +
-                  '" stroke="#0b0f1c" stroke-width="8"/>' +
+                  '" stroke="#0b0f1c" stroke-width="' +
+                  DISC_RING +
+                  '"/>' +
                   '<text x="' +
                   k(end.x) +
                   '" y="' +
@@ -1969,6 +1991,7 @@
             );
           })
           .join("");
+        return crowded;
       };
 
       /**
@@ -2825,7 +2848,8 @@
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
-          paintPath(s.path);
+          // The walks whose number found no free side, for the lint.
+          window.__crowdedWalks = paintPath(s.path);
           paintOverlay(s.overlay);
           paintHud(s.race, goalNow, s.credit, s.fastForward);
           paintFreeze(s.freeze);

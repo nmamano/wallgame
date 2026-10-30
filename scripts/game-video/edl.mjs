@@ -342,6 +342,7 @@ export const LINT_KINDS = {
   "voice-no-speaker": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
+  "walk-number-crowded": "note",
 };
 /**
  * The stopping kinds that are a fault of the game's capture, not of the

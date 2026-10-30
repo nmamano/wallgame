@@ -3912,10 +3912,27 @@ const renderStyle = async (styleName) => {
     the checks that read the page (the geometry probes, the board box after
     effects) see the frame they follow.
   */
+  /**
+   * The whole walks whose number found no free side beside its target
+   * (stage.html paintPath), once each by ply, colour and steps: the disc
+   * then sits off the board's middle, on the walk or by a pawn (Video
+   * Reviewer 1, review 84). A note: the page still keeps it off the pawns
+   * where it can.
+   */
+  const crowdedWalks = new Map();
   const shoot = async (state, seconds, meta) => {
     firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
-    await stage.evaluate((s) => window.__stage(s), state);
+    const crowded = await stage.evaluate((s) => {
+      window.__stage(s);
+      return window.__crowdedWalks;
+    }, state);
+    for (const w of crowded) {
+      const key = `${meta.ply ?? ""}|${w.hex}|${w.steps}`;
+      if (!crowdedWalks.has(key)) {
+        crowdedWalks.set(key, { ply: meta.ply ?? null, at: elapsed, ...w });
+      }
+    }
     // A part of the shoot pass may start here only at a plain position.
     const rest =
       meta.ply !== undefined &&
@@ -6311,6 +6328,15 @@ const renderStyle = async (styleName) => {
       );
     }
     reach = Math.max(reach, b);
+  }
+
+  for (const w of crowdedWalks.values()) {
+    fault(
+      "walk-number-crowded",
+      w.ply,
+      `the number of a ${w.steps}-step walk has no free side beside its target (each is off the board, on the walk or by a pawn); it sits on the first side with no pawn, or across the last step`,
+      w.at,
+    );
   }
 
   /*
