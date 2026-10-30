@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { allocateFrameRanges } from "./timeline-frames.mjs";
+import { allocateFrameRanges, restAfterEvents } from "./timeline-frames.mjs";
 
 describe("video timeline frame allocation", () => {
   test("maps each move to a positive ordered frame and time range", () => {
@@ -28,5 +28,19 @@ describe("video timeline frame allocation", () => {
         30,
       ),
     ).toThrow("zero frames");
+  });
+});
+
+describe("the rest after a ply's events", () => {
+  const rest = (now) =>
+    restAfterEvents({ landedAt: 14.15, pace: 1.6, now, minRest: 0.3 });
+  test("a short event (a sound): the ply holds its pace from the landing", () => {
+    // v-2026-10-30-10 ply 12: buzzer-1 only, its events done 0.3 s after
+    // the landing; the ply ends at 14.15 + 1.6 s, not 0.3 s later.
+    expect(14.45 + rest(14.45)).toBeCloseTo(15.75, 9);
+  });
+  test("an event longer than the pace keeps its time, then the effects' rest", () => {
+    expect(rest(17)).toBe(0.3);
+    expect(rest(15.6)).toBeCloseTo(0.3, 9);
   });
 });

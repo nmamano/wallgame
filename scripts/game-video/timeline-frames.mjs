@@ -28,6 +28,19 @@ export function allocateFrameRanges(timeline, fps, { sample = false } = {}) {
 }
 
 /**
+ * How long a ply rests after its EDL events: until its pace is used up,
+ * counted from the move's landing, and never less than `minRest` (the
+ * effects' own rest). An event that runs past the pace (an explain, a
+ * mark) keeps its own time and gets only `minRest`. v-2026-10-30-10's
+ * ply 12 held 0.6 s of its 1.6 s, because its only event was a sound and
+ * the rest ignored the pace (its vet, 2026-10-30).
+ * @param {{ landedAt: number, pace: number, now: number, minRest: number }} t seconds
+ */
+export function restAfterEvents({ landedAt, pace, now, minRest }) {
+  return Math.max(minRest, landedAt + pace - now);
+}
+
+/**
  * The frames under the VS overlay (kind "vs-overlay") that show anything but
  * the opening position: a move under the banners, which Nil's rule forbids.
  * `openingPly` is the opening position's label, startPly - 1.

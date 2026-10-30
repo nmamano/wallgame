@@ -163,6 +163,7 @@ import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import {
   allocateFrameRanges,
   movesUnderOverlay,
+  restAfterEvents,
   videoTimeline,
 } from "./timeline-frames.mjs";
 import { fileUrlsIn, isRestShot, partsOf } from "./shoot-workers.mjs";
@@ -6149,10 +6150,18 @@ const renderStyle = async (styleName) => {
       }
     }
     if (!endsInZoom) {
-      await emit(playState(ply), EFFECT_REST_SECONDS, {
-        kind: "move",
-        ply: plyIndex,
-      });
+      // The rest of the ply's pace, from its landing (timeline-frames.mjs).
+      const landedAt = moveTimes.findLast((m) => m.ply === plyIndex).at;
+      await emit(
+        playState(ply),
+        restAfterEvents({
+          landedAt,
+          pace: paceAt(plyIndex),
+          now: elapsed,
+          minRest: EFFECT_REST_SECONDS,
+        }),
+        { kind: "move", ply: plyIndex },
+      );
     }
     // The board's layout box, not the camera layer: after a zoom that runs
     // into the ending (endsInZoom) the camera is still zoomed here.
