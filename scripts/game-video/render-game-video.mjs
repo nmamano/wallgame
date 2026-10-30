@@ -4147,13 +4147,26 @@ const renderStyle = async (styleName) => {
    * (overlays.mjs `pawn`): the next move waits, as it waits for a mark, so
    * the pawn stands still under its tail (Wall Game Director, 2026-10-30,
    * from the preview's ply 10: the scream showed over the next move).
+   * Before the ending (`ending`), any overlay with its seconds holds the
+   * last ply, because the ending closes it: v-2026-10-30-9 and -10's panel
+   * on the winning ply opened after the lead zoom and showed 0 s. `zoom`
+   * is the camera the lead zoom left, when it runs into the ending: the
+   * hold keeps it, and the ending's flash covers the cut.
    */
-  const holdForOverlay = async (ply, plyIndex) => {
+  const holdForOverlay = async (
+    ply,
+    plyIndex,
+    { ending = false, zoom = null } = {},
+  ) => {
     const live = liveOverlay();
-    if (!live || !takesPawn(live.asset) || live.end === null) return;
+    if (!live || live.end === null) return;
+    if (!ending && !takesPawn(live.asset)) return;
     const rest = live.end - elapsed;
     if (rest > 0.5 / FPS) {
-      await emit(playState(ply), rest, { kind: "move", ply: plyIndex });
+      await emit(zoom ? playState(ply, { zoom }) : playState(ply), rest, {
+        kind: zoom ? "swing-zoom" : "move",
+        ply: plyIndex,
+      });
     }
   };
   /** Close the live overlay now (the ending, or the end of a preview). */
@@ -5940,6 +5953,10 @@ const renderStyle = async (styleName) => {
     const frames = Math.round(
       (ev.holdSeconds + (pullOut ? ZOOM_OUT : 0)) * FPS,
     );
+    const zoomFor = (t) => ({
+      ...z,
+      scale: zoomAt(ZOOM_IN + t, z.scale, ev.holdSeconds),
+    });
     const stillAt = Math.round(LEAD_STILL_AT * FPS);
     for (let i = 0; i < frames; i += 1) {
       if (i === stillAt) {
@@ -5947,15 +5964,14 @@ const renderStyle = async (styleName) => {
       }
       const t = i / FPS;
       await emit(
-        playState(ply, {
-          zoom: { ...z, scale: zoomAt(ZOOM_IN + t, z.scale, ev.holdSeconds) },
-          race: raceHud(ply, t),
-        }),
+        playState(ply, { zoom: zoomFor(t), race: raceHud(ply, t) }),
         1 / FPS,
         { kind: "swing-zoom", ply: plyIndex },
       );
     }
     spanOf(ev, start);
+    // The camera it leaves: whole again after a pull-out.
+    return pullOut ? null : zoomFor((frames - 1) / FPS);
   };
 
   /**
@@ -6266,8 +6282,12 @@ const renderStyle = async (styleName) => {
       intoEnding &&
       lead !== undefined &&
       landingEventsAt(plyIndex).length === 0;
+    // The camera a lead zoom into the ending leaves (playLeadZoom).
+    let leftZoom = null;
     if (lead) {
-      await playLeadZoom(ply, plyIndex, lead, { pullOut: !leadIntoEnding });
+      leftZoom = await playLeadZoom(ply, plyIndex, lead, {
+        pullOut: !leadIntoEnding,
+      });
     } else if (explain) {
       await playExplain(ply, plyIndex, explain);
     } else {
@@ -6313,7 +6333,7 @@ const renderStyle = async (styleName) => {
           ply: plyIndex,
         });
       }
-      await holdForOverlay(ply, plyIndex);
+      await holdForOverlay(ply, plyIndex, { ending: true, zoom: leftZoom });
       musicEndAt = elapsed;
       // The ending covers the board: an overlay still open closes here.
       closeOverlay();
