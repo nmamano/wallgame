@@ -338,7 +338,7 @@ export const OVERLAYS = {
     seconds: 1.4,
     size: { w: 0.28, h: 0.42 },
     small: { w: 0.22, h: 0.33 },
-    places: ["margin", "board"],
+    places: ["board", "margin"],
     source: "drawn by us (stage.html), a reverse card in the seat's colour",
     claim: "LOW: our own drawing of a known card game's card",
     likeness: "None",
@@ -350,7 +350,9 @@ export const OVERLAYS = {
     card: "directed-by",
     text: "optional",
     chars: 24,
-    line: "ROBERT B. WEIDE",
+    // The side that "made" the disaster, never a real person's name (Wall
+    // Game Director, 2026-10-30: the show's real director's name is MEDIUM).
+    line: "{red}",
     shows: "Directed by",
     seconds: 2.4,
     size: { w: 0.95, h: 0.24 },
@@ -358,7 +360,7 @@ export const OVERLAYS = {
     source: "drawn by us (stage.html), the look of a TV show's end credit",
     claim: "LOW: our own drawing of a known credit",
     likeness:
-      "LOW: its default line names a real person (the credit's director), in text, with no picture",
+      "LOW: names a seat ({red} or {blue}); a real person's name in its text is MEDIUM and needs Nil's OK",
     rating: null,
   },
   /*
@@ -380,7 +382,7 @@ export const OVERLAYS = {
     seconds: 1.4,
     size: { w: 0.32, h: 0.4 },
     small: { w: 0.25, h: 0.31 },
-    places: ["margin", "board"],
+    places: ["board", "margin"],
     source:
       "Edvard Munch, The Scream, 1893, National Gallery of Norway (Wikimedia Commons), public domain",
     claim:
@@ -405,7 +407,7 @@ export const OVERLAYS = {
     seconds: 1.4,
     size: { w: 0.34, h: 0.4 },
     small: { w: 0.26, h: 0.31 },
-    places: ["margin", "board"],
+    places: ["board", "margin"],
     source:
       "Smudge the cat, first posted 2018-06-19 on Tumblr; owner probably @smudge_lord, not confirmed",
     claim: "MEDIUM: a private owner's photo",
@@ -427,7 +429,7 @@ export const OVERLAYS = {
     seconds: 1.6,
     size: { w: 0.5, h: 0.33 },
     small: { w: 0.39, h: 0.26 },
-    places: ["margin", "board"],
+    places: ["board", "margin"],
     source:
       'the puppet Kento, Japanese children\'s TV "Ōkiku Naru Ko" (1959-1988); meme from 2016-05-05',
     claim: "MEDIUM: a TV frame, owner unknown",

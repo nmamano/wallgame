@@ -4623,10 +4623,13 @@ const renderStyle = async (styleName) => {
       if (vs()) {
         s = {
           ...s,
+          // Red on top, in the strip's order ("Red vs Blue"), not the
+          // replay page's (Wall Game Director, 2026-10-30: v-2026-10-30-7,
+          // two humans, showed Blue on top over a "Red vs Blue" strip).
           vsOverlay: {
             t: elapsed - overlayStart,
-            a: overlaySide(seats.top),
-            b: overlaySide(seats.bottom),
+            a: overlaySide(redSeat),
+            b: overlaySide(blueSeat),
           },
         };
         kind = "vs-overlay";

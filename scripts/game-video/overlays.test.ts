@@ -168,8 +168,11 @@ describe("overlays", () => {
     expect(place(later, [])?.where).toBe("caption");
     expect(place(later, [], () => "no room")?.where).toBe("top");
     expect(place(later, pawnsEverywhere, () => "no room")).toBeNull();
-    // The reverse card: the left margin first, then a board corner.
+    // The reverse card and the pictures: a board corner first (Wall Game
+    // Director, 2026-10-30: in the margin they are too small to read on a
+    // phone), the left margin when no corner is free.
     const uno = OVERLAYS["uno-reverse"];
+    expect(place(uno, [])?.where).toBe("bottom-right");
     expect(place(uno, pawnsEverywhere)).toEqual({
       where: "margin",
       x: 0,
