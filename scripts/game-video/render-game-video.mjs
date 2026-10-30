@@ -4385,11 +4385,17 @@ const renderStyle = async (styleName) => {
         continue;
       }
       Object.assign(w.place, place);
-      // How far it goes into the capture picture, where endingTouch let it.
-      const touch = Math.max(
-        0,
-        ...busy.flatMap((b) => (b.full ? [touchDepth(place.full, b)] : [])),
-      );
+      // How far it goes into the capture picture, where endingTouch let it
+      // (none from the caption's place, off the board).
+      const touch =
+        place.full === null
+          ? 0
+          : Math.max(
+              0,
+              ...busy.flatMap((b) =>
+                b.full ? [touchDepth(place.full, b)] : [],
+              ),
+            );
       log(
         `${where}: ${placeName(place)}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
@@ -4435,6 +4441,15 @@ const renderStyle = async (styleName) => {
           },
           { ...f.state, overlay: f.o },
         );
+        if (!fit.room) {
+          fault(
+            "overlay-place",
+            w.ev.ply,
+            `${where}: no board place is free, and in the caption's place it does not fit between the safe area's top and the head row; this is a bug`,
+            w.start,
+          );
+          break;
+        }
         if (!fit.fits) {
           fault(
             "text-fit",

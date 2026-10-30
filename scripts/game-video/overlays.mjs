@@ -321,6 +321,12 @@ const INSET = 0.025;
  * scale its content is drawn at, and `full`, the box of its whole art.
  * @typedef {{ where: string, x: number, y: number, w: number, h: number, scale: number, full: { x: number, y: number, w: number, h: number } }} Place
  */
+/**
+ * The bar's place off the board (placeOverlay): the board bar's width and
+ * height, on the caption's line, which the stage measures; it hides nothing
+ * on the board.
+ * @typedef {{ where: "caption", x: number, w: number, h: number, scale: 1, full: null }} CaptionPlace
+ */
 /** The reach of art that stays inside its box. */
 export const NO_REACH = () => ({ top: 0, right: 0, bottom: 0, left: 0 });
 
@@ -437,16 +443,24 @@ export const coveredBy = (p, boxes) =>
 
 /**
  * The first place for `asset` whose whole art (`full`) overlaps none of
- * the `busy` boxes (in the board as shown, 0..1), or null when every place
- * hides something.
+ * the `busy` boxes (in the board as shown, 0..1). When every place hides
+ * something: a bar takes the caption's place, over the frame above the
+ * board, and the caption hides while it shows (Wall Game Director,
+ * 2026-10-30: the last line replaces the stale caption, and the credit
+ * stays under it); anything else gets null.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  * @param {(scale: number) => Reach} reach
+ * @returns {Place | CaptionPlace | null}
  */
-export const placeOverlay = (asset, busy, reach) =>
-  overlayPlaces(asset, reach).find(
-    (p) => coveredBy(p.full, busy).length === 0,
-  ) ?? null;
+export const placeOverlay = (asset, busy, reach) => {
+  const places = overlayPlaces(asset, reach);
+  const free = places.find((p) => coveredBy(p.full, busy).length === 0);
+  if (free) return free;
+  if (asset.form !== "bar") return null;
+  const { x, w, h } = places[0];
+  return { where: "caption", x, w, h, scale: 1, full: null };
+};
 
 /**
  * The loading bar's percent for a hunter `steps` from its target: 99% one

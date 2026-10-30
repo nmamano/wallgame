@@ -66,7 +66,10 @@ describe("overlays", () => {
     expect(place(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])?.where).toBe(
       "band 0.25",
     );
-    const band = place(panel, [cell(0.4, 0.1), cell(0.1, 0.8)])!;
+    // A panel never takes the bar's caption place: a board place.
+    const band = place(panel, [cell(0.4, 0.1), cell(0.1, 0.8)]) as ReturnType<
+      typeof overlayPlaces
+    >[number];
     expect(band.y).toBeGreaterThanOrEqual(0.225);
     expect(band.y + band.h).toBeLessThanOrEqual(0.8);
     // A pawn on every row band: none.
@@ -95,7 +98,17 @@ describe("overlays", () => {
         { x0: -0.35, y0: 0.52, x1: 1.35, y1: 1.02 },
       ])?.where,
     ).toBe("band 0.15");
-    expect(place(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toBeNull();
+    // No board place free: the caption's place, over the frame (Wall Game
+    // Director, 2026-10-30), at the board bar's size.
+    const { x, w, h } = place(bar, [])!;
+    expect(place(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toEqual({
+      where: "caption",
+      x,
+      w,
+      h,
+      scale: 1,
+      full: null,
+    });
   });
 
   test("a clip takes the first free corner, bottom right first", () => {
