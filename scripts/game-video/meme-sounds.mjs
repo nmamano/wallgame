@@ -102,6 +102,19 @@ export const MEME_SOUNDS = {
   "levelwin-1": { lufs: -17.0, truePeak: -7.8 },
   "accomplished-1": { lufs: -24.1, truePeak: -13.7 },
   "whistle-1": { lufs: -25.8, truePeak: -19.4 },
+  // Meme list, cycle 2 (Director Rewriter, 2026-10-30), measured that day.
+  // buzzer-2 is our own (ffmpeg); the rest are CC0 on freesound.org.
+  "buzzer-2": { lufs: -7.6, truePeak: -4.8 },
+  "slam-1": { lufs: -15.2, truePeak: -3.3 },
+  "tada-1": { lufs: -8.5, truePeak: -0.8 },
+  "tick-1": { lufs: -46.6, truePeak: -27.9 },
+  "wind-1": { lufs: -32.0, truePeak: -21.2 },
+  "whoosh-1": { lufs: -25.8, truePeak: -7.1 },
+  "chomp-1": { lufs: -26.6, truePeak: -12.0 },
+  "hit-1": { lufs: -23.1, truePeak: -8.2 },
+  "uhoh-1": { lufs: -16.7, truePeak: -6.7 },
+  "fall-1": { lufs: -6.5, truePeak: -7.3 },
+  "fightbell-1": { lufs: -12.8, truePeak: -4.4 },
 };
 
 /**
@@ -142,6 +155,16 @@ export const MEME_FAMILIES = {
   levelwin: "home reached",
   accomplished: "home reached",
   whistle: "a stand-off",
+  slam: "the trap closes",
+  tada: "the trick works: the trap closes",
+  tick: "a stand-off",
+  wind: "a stand-off",
+  whoosh: "the prey gets away",
+  chomp: "the capture",
+  hit: "a hit that lands: the punish",
+  uhoh: "a mistake",
+  fall: "a fall: the self-trap",
+  fightbell: "the VS card",
 };
 
 /**
@@ -157,7 +180,9 @@ export const MEME_FAMILIES = {
  * scream, no word), shotgun-1..3, boom, scratch, airhorn, trombone, sting,
  * ding (an instrument "correct"), alert, clang, bell, dundun, reveal (a
  * "shhh", then a sting), fail, horn, violin, buzzer, levelwin and
- * accomplished (made with synths), and whistle (a whistled tune). Not known (no source line
+ * accomplished (made with synths), whistle (a whistled tune), and the
+ * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh, fall and
+ * fightbell, and chomp (a mouth's bite, no word). Not known (no source line
  * says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */

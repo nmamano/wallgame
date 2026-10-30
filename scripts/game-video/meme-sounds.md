@@ -232,6 +232,74 @@ Refused on 2026-10-30:
 - bonecrack-1 ("Bone Crack", myinstants): no known origin. No page names a
   library, a creator or a first video.
 
+## Meme list, cycle 2 (slam, tada, tick, wind, whoosh, chomp, hit, uhoh, fall, fightbell, buzzer-2)
+
+Director Rewriter, 2026-10-30, after Nil's C26 ("more variety of memes and
+sound effects"): eleven sounds for the moments of the director's meme list.
+Ten are CC0 on freesound.org, and each page says how the sound was made
+(the Director Rewriter read each page on 2026-10-30; the renderer checked
+the CC0 licence on each page the same day). buzzer-2 is our own, made with
+ffmpeg. None is a voice: chomp-1 is a mouth's bite, with no word. The files
+are Freesound's "HQ preview" mp3 (128 kbps), fetched 2026-10-30; the levels
+in `meme-sounds.mjs` were measured the same day.
+
+| Key         | Freesound title                     | Length | Uploader      | Why it is safe                                                          | Claim risk | Source page                                               |
+| ----------- | ----------------------------------- | ------ | ------------- | ----------------------------------------------------------------------- | ---------- | --------------------------------------------------------- |
+| slam-1      | Metal Door Slam_SoundSmith.wav      | 1.2 s  | Lunardrive    | A metal industrial door, recorded, "no effects"                         | Low        | https://freesound.org/people/Lunardrive/sounds/48980/     |
+| tada-1      | TaDa!.wav                           | 4.2 s  | jimhancock    | A brass sting made in GarageBand; a cut, see below                      | Low        | https://freesound.org/people/jimhancock/sounds/376318/    |
+| tick-1      | Clock ticking                       | 3.0 s  | Mortifreshman | A large mechanical clock (a MIG cockpit clock), recorded; a cut         | Low        | https://freesound.org/people/Mortifreshman/sounds/237210/ |
+| wind-1      | Wind blowing into some cactus spine | 3.5 s  | felix.blume   | A field recording, Atacama desert (Schoeps + Sound Devices 744T); a cut | Low        | https://freesound.org/people/felix.blume/sounds/156414/   |
+| whoosh-1    | Cartoony whooshes                   | 0.3 s  | BranRainey    | Recorded by the uploader for his web series; one whoosh of several      | Low        | https://freesound.org/people/BranRainey/sounds/142348/    |
+| chomp-1     | Open Mouth Chomp.wav                | 1.4 s  | princessemilu | The uploader's own mouth, recorded; a cut                               | Low        | https://freesound.org/people/princessemilu/sounds/457475/ |
+| hit-1       | Damage sound effect                 | 0.3 s  | Raclure       | "Created using Audacity"                                                | Low        | https://freesound.org/people/Raclure/sounds/458867/       |
+| uhoh-1      | uh oh.mp3                           | 2.8 s  | nomiqbomi     | A sting made with organ and modulated guitar; a cut                     | Low        | https://freesound.org/people/nomiqbomi/sounds/578797/     |
+| fall-1      | Cartoon Fall                        | 2.1 s  | plasterbrain  | "Made in Hybrid3"; the page says it "evokes" a game, not that it is one | Low        | https://freesound.org/people/plasterbrain/sounds/395443/  |
+| fightbell-1 | Boxing Bell Signals                 | 2.0 s  | Mateusz_Chenc | A bicycle bell, recorded with a Zoom H1; the first signal only          | Low        | https://freesound.org/people/Mateusz_Chenc/sounds/520998/ |
+| buzzer-2    | (our own)                           | 0.7 s  | renderer      | Two square waves, made with ffmpeg                                      | None       | none                                                      |
+
+The cut points come from each upload's level per 100 ms (per 10 ms for the
+short ones), not from listening:
+
+- tada-1: the upload starts with 0.38 s of silence; the cut starts after it,
+  so the sting hits on its event. Its tail is under -58 dB after 4.5 s.
+- tick-1: the ticking is even from the start (about -48 dB, a tick each
+  0.2 s); the first 3 s.
+- wind-1: one gust, from 109.3 s: about -40 dB, then -32 dB at 110 s, then
+  -42 dB at 112.5 s.
+- whoosh-1: the upload is about ten short whooshes, each 0.1 to 0.2 s, with
+  silence between; the cut is the fourth (0.59 to 0.83 s), the longest of
+  the first five.
+- chomp-1: the first 0.4 s is quiet mouth noise (about -47 dB); the bite is
+  at 0.8 to 1.0 s of the upload.
+- uhoh-1: the sting is at -16 to -19 dB for 0.8 s and falls to -41 dB by
+  2.7 s; the cut ends at 2.8 s after a 0.8 s fade.
+- fightbell-1: the upload has three bell signals (at 0.08, 9.3 and 17.8 s);
+  the cut is the first one and its ring, faded out by 2.0 s. Whether that
+  signal is one strike or a "ding ding" pair is not clear from the level.
+- buzzer-2: 110 Hz and 116 Hz square waves together (they beat 6 times a
+  second), 0.7 s; buzzer-1 is a different, higher buzz.
+
+Four of them play quieter than the target: the true-peak ceiling (-10
+dBTP) holds back a clip whose peak is high for its loudness, so tick-1 and
+whoosh-1 play near -29 LUFS and chomp-1 and hit-1 near -25, against -21 for
+the others. In the 2026-10-30 proof render (item 13's game, every new key)
+each was still 7.5 to 23 LU over its bed. Nil judges by ear on the sounds
+page.
+
+| Key         | Made from         | Length | Command (ffmpeg, from the downloaded preview)                                                                                                |
+| ----------- | ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| tada-1      | Freesound 376318  | 4.2 s  | `-af "atrim=0.38:4.5,asetpts=PTS-STARTPTS,afade=t=out:st=3.32:d=0.8"`                                                                        |
+| tick-1      | Freesound 237210  | 3.0 s  | `-af "atrim=0:3,afade=t=in:d=0.02,afade=t=out:st=2.7:d=0.3"`                                                                                 |
+| wind-1      | Freesound 156414  | 3.5 s  | `-af "atrim=109.3:112.8,asetpts=PTS-STARTPTS,afade=t=in:d=0.3,afade=t=out:st=2.7:d=0.8"`                                                     |
+| whoosh-1    | Freesound 142348  | 0.3 s  | `-af "atrim=0.59:0.83,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=0.2:d=0.04"`                                                     |
+| chomp-1     | Freesound 457475  | 1.4 s  | `-af "atrim=0.4:1.75,asetpts=PTS-STARTPTS,afade=t=in:d=0.02"`                                                                                |
+| uhoh-1      | Freesound 578797  | 2.8 s  | `-af "atrim=0:2.8,afade=t=out:st=2.0:d=0.8"`                                                                                                 |
+| fightbell-1 | Freesound 520998  | 2.0 s  | `-af "atrim=0.05:2.0,asetpts=PTS-STARTPTS,afade=t=out:st=1.4:d=0.55"`                                                                        |
+| buzzer-2    | ffmpeg (no input) | 0.7 s  | `-f lavfi -i "aevalsrc='0.35*(sgn(sin(2*PI*110*t))+sgn(sin(2*PI*116*t)))':s=44100:d=0.7" -af "afade=t=in:d=0.01,afade=t=out:st=0.55:d=0.15"` |
+
+Each is then written with `-c:a libmp3lame -b:a 128k -ar 44100 -ac 2`.
+slam-1, hit-1 and fall-1 are the previews as fetched.
+
 ## Copyright risk
 
 A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, or swap the clip in `SOUNDS`.

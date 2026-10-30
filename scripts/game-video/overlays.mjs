@@ -173,6 +173,87 @@ export const outlineCrop = (outline, [pw, ph]) => {
 };
 
 /**
+ * Track C (visual-memes.md, Director Rewriter, 2026-10-30): the cut-outs of
+ * three public-domain paintings, outlined in their pixels by Video Editor
+ * (renderer), 2026-10-30. The wanderer and his rock top; Saturn's head,
+ * hands and the body he eats, down to the hands (the legs below read as a
+ * thin strip); Medusa's face and snakes, a circle inside the shield.
+ * @type {[number, number][]}
+ */
+const WANDERER_OUTLINE = [
+  [600, 560],
+  [625, 543],
+  [665, 550],
+  [668, 615],
+  [720, 650],
+  [752, 695],
+  [772, 770],
+  [772, 830],
+  [745, 865],
+  [742, 975],
+  [790, 1040],
+  [815, 1150],
+  [530, 1150],
+  [518, 1060],
+  [522, 960],
+  [520, 900],
+  [538, 800],
+  [546, 720],
+  [565, 660],
+  [600, 628],
+  [597, 590],
+];
+
+/** @type {[number, number][]} */
+const SATURN_OUTLINE = [
+  [420, 290],
+  [520, 280],
+  [580, 330],
+  [640, 420],
+  [700, 520],
+  [840, 700],
+  [880, 900],
+  [860, 1010],
+  [800, 1150],
+  [560, 1150],
+  [420, 1100],
+  [250, 1050],
+  [230, 900],
+  [250, 700],
+  [250, 500],
+  [300, 370],
+  [360, 300],
+];
+
+/** @type {[number, number][]} */
+const MEDUSA_OUTLINE = [
+  [1060, 625],
+  [1045, 736],
+  [1002, 840],
+  [934, 929],
+  [845, 997],
+  [741, 1040],
+  [630, 1055],
+  [519, 1040],
+  [415, 997],
+  [326, 929],
+  [258, 840],
+  [215, 736],
+  [200, 625],
+  [215, 514],
+  [258, 410],
+  [326, 321],
+  [415, 253],
+  [519, 210],
+  [630, 195],
+  [741, 210],
+  [845, 253],
+  [934, 321],
+  [1002, 410],
+  [1045, 514],
+];
+
+/**
  * The Scream's figure: its head, its hands and its upper body, outlined in
  * the painting's pixels (the full figure's dark coat runs into the dark
  * bridge, so the bust is the part that reads; Video Editor (renderer),
@@ -522,6 +603,118 @@ export const OVERLAYS = {
       'the puppet Kento, Japanese children\'s TV "Ōkiku Naru Ko" (1959-1988); meme from 2016-05-05',
     claim: "MEDIUM: a TV frame, owner unknown",
     likeness: "LOW: a puppet",
+    nilOk: null,
+    rating: null,
+  },
+  /*
+    Visual memes, Track C (visual-memes.md, Director Rewriter,
+    2026-10-30): public-domain paintings from Wikimedia Commons, each with
+    its sound (Nil, C23) and next to the pawn that feels it (C20). LOW
+    claim and likeness, so no OK is needed; medusa and saturn are dark, and
+    the Director judges each against the video's mood.
+  */
+  "great-wave": {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "great-wave.jpg",
+      pixels: [1280, 884],
+      sha256:
+        "3e07c53f3ef84a42399c86e40b1b33a450ad2aa767d044589f950b66a03a5d41",
+      // The wave, the boats and Fuji: the print's left part, without its
+      // paper margin (a rectangle: the print has no figure to cut out).
+      crop: { x: 28 / 1280, y: 100 / 884, w: 872 / 1280, h: 758 / 884 },
+    },
+    pawn: true,
+    pieces: ["mouse"],
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.38, h: 0.33 },
+    small: { w: 0.3, h: 0.26 },
+    places: ["board"],
+    source:
+      "Hokusai, The Great Wave off Kanagawa, about 1831, the Met's print DP141063 (Wikimedia Commons), CC0",
+    claim: "LOW: public domain (the Met's CC0 photo of the print)",
+    likeness: "LOW",
+    nilOk: null,
+    rating: null,
+  },
+  wanderer: {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "wanderer.jpg",
+      pixels: [1280, 1639],
+      sha256:
+        "97b0a5a0ea20deaa9a6f7fd310fdc7dfc6b80b43bd243b31aad5a6acce1aaa34",
+      crop: outlineCrop(WANDERER_OUTLINE, [1280, 1639]),
+      outline: WANDERER_OUTLINE,
+      fade: 0.13,
+    },
+    pawn: true,
+    pieces: ["mouse"],
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.2, h: 0.41 },
+    small: { w: 0.16, h: 0.33 },
+    places: ["board"],
+    source:
+      "Caspar David Friedrich, Wanderer above the Sea of Fog, 1818, Hamburger Kunsthalle (Wikimedia Commons), public domain",
+    claim:
+      "LOW: public domain; some countries limit reuse of a photo of an artwork",
+    likeness: "LOW",
+    nilOk: null,
+    rating: null,
+  },
+  medusa: {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "medusa.jpg",
+      pixels: [1280, 1312],
+      sha256:
+        "b5aeb18245111188a0de347e296057e3a775e8b5fc387c8aa7334b5f990ff930",
+      crop: outlineCrop(MEDUSA_OUTLINE, [1280, 1312]),
+      outline: MEDUSA_OUTLINE,
+    },
+    pawn: true,
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.32, h: 0.32 },
+    small: { w: 0.26, h: 0.26 },
+    places: ["board"],
+    source:
+      "Caravaggio, Medusa, 1597, Uffizi (Wikimedia Commons, Google Art Project), public domain",
+    claim:
+      "LOW: public domain; some countries limit reuse of a photo of an artwork",
+    likeness: "LOW",
+    nilOk: null,
+    rating: null,
+  },
+  saturn: {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "saturn.jpg",
+      pixels: [1280, 2351],
+      sha256:
+        "8079619101d0780a75815ed32349876f40da602f0ae29ddd386c10861781ec19",
+      crop: outlineCrop(SATURN_OUTLINE, [1280, 2351]),
+      outline: SATURN_OUTLINE,
+      fade: 0.13,
+    },
+    pawn: true,
+    pieces: ["cat"],
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.3, h: 0.4 },
+    small: { w: 0.24, h: 0.32 },
+    places: ["board"],
+    source:
+      "Francisco de Goya, Saturn Devouring His Son, 1819-1823, Prado (Wikimedia Commons), public domain",
+    claim:
+      "LOW: public domain; some countries limit reuse of a photo of an artwork",
+    likeness: "LOW",
     nilOk: null,
     rating: null,
   },

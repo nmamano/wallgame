@@ -2714,8 +2714,16 @@
               cut +
               '"></div></div>';
           } else {
+            // A framed rectangle, ringed the same way when a pawn emotes
+            // it (great-wave: the first rectangle a video used, 2026-10-30).
             el.innerHTML =
-              '<div class="pic" style="' + box + picture + '"></div>';
+              '<div class="pic" style="' +
+              box +
+              picture +
+              (o.ring
+                ? "filter:" + ringFilter(o.ring, Math.max(2, w * 0.03))
+                : "") +
+              '"></div>';
           }
         } else if (o.draw === "redraw") {
           el.innerHTML = redrawSvg(o, esc);
