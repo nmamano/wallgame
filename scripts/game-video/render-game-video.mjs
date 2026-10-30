@@ -4690,6 +4690,15 @@ const renderStyle = async (styleName) => {
           }
         : null,
     ...extra,
+    // A walk's number keeps off the pawns this board shows (stage.html
+    // path; render vet, 2026-10-30: since walks go around the other pawns,
+    // the "6" of v-2026-10-28-3's opening walks sat on a cat and a mouse).
+    ...(extra.path && {
+      path: {
+        ...extra.path,
+        pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y }) => ({ x, y })),
+      },
+    }),
   });
 
   /** The site's own click for a turn: one sound per turn, wall wins. */

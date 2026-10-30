@@ -1900,19 +1900,26 @@
                     { x: 0, y: -toMid(tip.y) },
                   ]
             ).concat([ahead]);
+            const away = (c) => (q) =>
+              Math.hypot(q.x - c.x, q.y - c.y) > 0.3 * p.cell;
+            const cellOf = (d) => ({
+              x: tip.x + d.x * p.cell,
+              y: tip.y + d.y * p.cell,
+            });
+            // No pawn in the number's cell (p.pawns: the board's pawns).
+            const noPawn = (d) => p.pawns.every(away(cellOf(d)));
             const free = (d) => {
-              const c = { x: tip.x + d.x * p.cell, y: tip.y + d.y * p.cell };
+              const c = cellOf(d);
               return (
                 c.x > 0 &&
                 c.x < 1 &&
                 c.y > 0 &&
                 c.y < 1 &&
-                l.points.every(
-                  (q) => Math.hypot(q.x - c.x, q.y - c.y) > 0.3 * p.cell,
-                )
+                l.points.every(away(c)) &&
+                noPawn(d)
               );
             };
-            const side = sides.find(free) ?? sides[0];
+            const side = sides.find(free) ?? sides.find(noPawn) ?? sides[0];
             const end = {
               x: tip.x + 0.55 * side.x * p.cell,
               y: tip.y + 0.55 * side.y * p.cell,
