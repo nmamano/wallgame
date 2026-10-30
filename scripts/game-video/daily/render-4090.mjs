@@ -126,6 +126,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BUDGET, desktopName, memoryFor } from "./desktop-budget.mjs";
+import { PAWN_ART_PROBE } from "../capture-cache.mjs";
 
 /** Relative to the 4090 user's home. Each job gets its own folder here. */
 export const REMOTE_JOBS = "nil/wallgame-video-jobs";
@@ -263,7 +264,7 @@ const homeAndCapture = async (ssh, gameId) => {
     fail(`not a game id: ${gameId}`);
   }
   const probe = await ssh(
-    `printf '%s\\n' "$HOME"${gameId === null ? "" : `; f=${CAPTURE_CACHE}/${gameId}/capture.json; if ! test -f $f; then echo none; elif grep -q '"pawnArt":\\[' $f; then echo cached; else echo cached-no-pawn-art; fi`}`,
+    `printf '%s\\n' "$HOME"${gameId === null ? "" : `; f=${CAPTURE_CACHE}/${gameId}/capture.json; if ! test -f $f; then echo none; elif grep -qF '${PAWN_ART_PROBE}' $f; then echo cached; else echo cached-no-pawn-art; fi`}`,
   );
   const [home, capture = null] = probe.stdout.trim().split("\n");
   if (!home?.startsWith("/")) fail("could not read the 4090's home folder");

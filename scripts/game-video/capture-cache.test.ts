@@ -12,6 +12,7 @@ import {
   pruneCaptureCaches,
   readCaptureCache,
   writeCaptureCache,
+  PAWN_ART_PROBE,
 } from "./capture-cache.mjs";
 
 const INPUTS = {
@@ -113,6 +114,18 @@ describe("the capture cache", () => {
     const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "VoSWbMDd");
     writeCaptureCache(dir, old);
     expect(readCaptureCache(dir, INPUTS).pawnArt).toBeNull();
+  });
+
+  test("capture.json holds PAWN_ART_PROBE exactly when the pawn art was kept (render-4090.mjs --has-capture)", () => {
+    const root = mkdtempSync(join(tmpdir(), "cache-"));
+    const text = (c: Parameters<typeof writeCaptureCache>[1], name: string) => {
+      writeCaptureCache(join(root, name), c);
+      return readFileSync(join(root, name, "capture.json"), "utf8");
+    };
+    expect(text(fixture(), "new")).toContain(PAWN_ART_PROBE);
+    expect(text({ ...fixture(), pawnArt: undefined }, "old")).not.toContain(
+      PAWN_ART_PROBE,
+    );
   });
 
   test("refuses a render whose inputs change the pixels", () => {

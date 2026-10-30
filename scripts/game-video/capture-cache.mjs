@@ -65,6 +65,14 @@ const sha256Of = (file) =>
  */
 
 /**
+ * The text capture.json holds when its capture kept the board's pawn art:
+ * render-4090.mjs --has-capture looks for it (grep -F) to tell a capture
+ * from before the art ("cached-no-pawn-art"). writeCaptureCache writes the
+ * file with no spacing, and its test holds the two together (VR1, review 81).
+ */
+export const PAWN_ART_PROBE = '"pawnArt":[';
+
+/**
  * Save a capture under `dir`, replacing any older one. The files are written
  * to a sibling folder first and moved in at the end, so a reader never sees
  * half a cache.
