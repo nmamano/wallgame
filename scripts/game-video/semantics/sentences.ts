@@ -594,10 +594,20 @@ export const writeSentences = (
           )
         : ["no sentence returned"];
       // A box-in must be told (Nil, 2026-10-29: the boxed mouse drew no
-      // attention): the sentence cites the move's box fact.
+      // attention): the sentence cites the move's box fact, and SAYS it
+      // (VR1, 2026-10-29): a box word or a wall of the box in its text.
       const box = `${ply}.box`;
-      if (a && all[ply].some((f) => f.id === box) && !a.factIds.includes(box))
-        reasons.push(`does not tell the box-in (cite ${box})`);
+      if (a && all[ply].some((f) => f.id === box)) {
+        if (!a.factIds.includes(box))
+          reasons.push(`does not tell the box-in (cite ${box})`);
+        const says =
+          /\b(box(es|ed|ing)? in|boxed)\b/i.test(a.sentence) ||
+          facts.plies[ply].walls.some((w) => a.sentence.includes(w));
+        if (!says)
+          reasons.push(
+            `does not say the box-in ("box in" or its walls ${facts.plies[ply].walls.join(", ")})`,
+          );
+      }
       if (a && reasons.length === 0) {
         result.set(ply, {
           ply,

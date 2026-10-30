@@ -410,10 +410,44 @@ describe("writeSentences and box-in", () => {
           ];
     });
     expect(asked[1]).toContain("does not tell the box-in (cite 0.box)");
+    expect(asked[1]).not.toContain("does not say the box-in");
     expect(out.sentences![0]).toMatchObject({
       fallback: false,
       factIds: ["0.box", "0.play"],
     });
+  });
+});
+
+describe("a box-in sentence says the box", () => {
+  test("citing the box fact is not enough: the words must say it", () => {
+    const game = gameOf([
+      {
+        w1: [9, 9],
+        w2: [9, 9],
+        wc: [0.5, 0.5],
+        walls: [">f4", "^g3"],
+        room: [42, 20],
+      },
+    ]);
+    const l = labelGame(game);
+    const asked: string[] = [];
+    const out = writeSentences(game, l, (input) => {
+      asked.push(input);
+      return [
+        {
+          ply: 0,
+          sentence:
+            asked.length === 1
+              ? "Guest Ferret plays a wall move."
+              : "Guest Ferret's walls box in Normal Bot's mouse.",
+          factIds: ["0.box", "0.play"],
+        },
+      ];
+    });
+    expect(asked[1]).toContain(
+      'does not say the box-in (\\"box in\\" or its walls >f4, ^g3)',
+    );
+    expect(out.sentences![0].fallback).toBe(false);
   });
 });
 
