@@ -1028,7 +1028,13 @@ describe("the review routes", () => {
       }),
     ).toBe("Approved: no slot posts it yet (no platform is live).");
     // The page: the list under the queue, one button, Nil only.
-    expect(REVIEW_PAGE).toContain('"Approved, waiting for a slot"');
+    // Two tabs with their counts (Nil, 2026-10-30); "#approved" opens the
+    // second.
+    expect(REVIEW_PAGE).toContain(
+      'const TABS = [["review", "In review"], ["approved", "Approved"]];',
+    );
+    expect(REVIEW_PAGE).toContain('label + " (" + of[key].length + ")"');
+    expect(REVIEW_PAGE).toContain('location.hash === "#approved"');
     expect(REVIEW_PAGE).toContain('el("button", "undo", "Undo approval")');
     expect(REVIEW_PAGE).toContain("undo.disabled = !canReview;");
   });

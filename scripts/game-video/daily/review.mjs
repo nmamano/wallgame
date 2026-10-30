@@ -19,10 +19,12 @@
  *   Discard  -> discarded, with Nil's notes (required)
  *
  * Right after an Approve, the card offers Undo (withdraw: in review again),
- * so a mis-tap on a phone is undone without a confirm dialog. Under the
- * queue, each approved item that no slot took yet shows its video, its
- * caption and one button, "Undo approval" (the same withdraw), so Nil can
- * take back an approval later too (Nil, 2026-10-29: v-2026-10-28-3 was
+ * so a mis-tap on a phone is undone without a confirm dialog. The page has
+ * two tabs, each with its count: "In review" (the queue) and "Approved"
+ * (Nil, 2026-10-30; "#approved" opens it), where each approved item that
+ * no slot took yet shows when it posts, its video, its caption and one
+ * button, "Undo approval" (the same withdraw), so Nil can take back an
+ * approval later too (Nil, 2026-10-29: v-2026-10-28-3 was
  * approved, and he wanted it revised before its slot). A reason shows
  * only when an action cannot work: a refusal, or Approve disabled while
  * another video of the game posts or the render's music may not play
@@ -278,10 +280,12 @@ export const REVIEW_PAGE = `<!doctype html>
   .zoom button { flex: none; width: 34px; height: 34px; padding: 0; font-size: 20px; line-height: 1;
                  background: rgba(51, 65, 85, 0.85); color: #fff; }
   .quiet { color: #94a3b8; text-align: center; margin-top: 40px; }
-  h2 { font-size: 16px; color: #94a3b8; margin: 36px 2px 12px; }
+  .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
+  .tabs button { flex: 0 0 auto; padding: 9px 14px; background: #1e293b; color: #cbd5e1; font-size: 15px; }
+  .tabs button.on { background: #e2e8f0; color: #0b0f1c; }
 </style></head>
 <body><div class="zoom" id="zoom" hidden><button id="zoom-out" aria-label="Smaller videos">−</button><button id="zoom-in" aria-label="Larger videos">+</button></div>
-<main id="list"></main>
+<main><nav class="tabs" id="tabs"></nav><div id="list"></div></main>
 <script>
   // NOTHING HERE MAY USE innerHTML: captions and refusals are untrusted text.
   const el = (tag, cls, text) => { const n = document.createElement(tag);
@@ -379,18 +383,36 @@ export const REVIEW_PAGE = `<!doctype html>
     return box;
   };
 
+  // Two tabs (Nil, 2026-10-30: "make tabs for the pending queue vs
+  // approved queue so i can find"), each with its count. "#approved" in the
+  // address opens the second, so a link can point at it.
+  const TABS = [["review", "In review"], ["approved", "Approved"]];
+  let tab = location.hash === "#approved" ? "approved" : "review";
+
   const load = async () => {
     const list = document.getElementById("list");
+    const tabs = document.getElementById("tabs");
     let v;
     try { v = await (await fetch("/api/review/queue")).json(); }
     catch { list.replaceChildren(el("p", "quiet", LOST)); return; }
+    const of = { review: v.items, approved: v.approved };
+    tabs.replaceChildren(...TABS.map(([key, label]) => {
+      const b = el("button", key === tab ? "on" : "", label + " (" + of[key].length + ")");
+      b.onclick = () => {
+        tab = key;
+        history.replaceState(null, "", key === "approved" ? "#approved" : location.pathname + location.search);
+        load();
+      };
+      return b;
+    }));
     list.replaceChildren();
     if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
-    document.getElementById("zoom").hidden = !v.items.length && !v.approved.length;
-    if (!v.items.length) list.append(el("p", "quiet", "Nothing to review."));
-    for (const it of v.items) list.append(card(it, v.canReview));
-    if (v.approved.length) {
-      list.append(el("h2", null, "Approved, waiting for a slot"));
+    document.getElementById("zoom").hidden = !of[tab].length;
+    if (tab === "review") {
+      if (!v.items.length) list.append(el("p", "quiet", "Nothing to review."));
+      for (const it of v.items) list.append(card(it, v.canReview));
+    } else {
+      if (!v.approved.length) list.append(el("p", "quiet", "No approved video waits for a slot."));
       for (const it of v.approved) list.append(approvedCard(it, v.canReview));
     }
     const first = list.querySelector("video");
