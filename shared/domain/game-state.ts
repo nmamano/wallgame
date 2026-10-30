@@ -72,7 +72,11 @@ export interface MoveInHistory {
   grid: Grid;
   /** Snapshot of every pawn after this move. Deep-copied, never shared. */
   pawns: GamePawns;
-  timeLeftSeconds: [number, number];
+  /**
+   * Each side's clock right after this move. Null only in a replay of a game
+   * stored before clocks were recorded; live play always has it.
+   */
+  timeLeftSeconds: [number, number] | null;
   distances: [number, number];
   wallCounts: [number, number];
 }
@@ -307,17 +311,24 @@ export class GameState {
       throw new Error("Game is not playing");
     }
 
-    if (action.kind === "move") {
-      if (action.playerId !== this.turn) {
-        throw new Error("Not your turn");
-      }
+    if (action.kind === "move" && action.playerId !== this.turn) {
+      throw new Error("Not your turn");
+    }
+    // The side on turn pays for its thinking time when it moves, and also when
+    // the game ends without its move (a timeout ends at 0), so the final clock
+    // is the time that was really left.
+    if (
+      action.kind === "move" ||
+      action.kind === "resign" ||
+      action.kind === "timeout" ||
+      action.kind === "draw"
+    ) {
       // Start the clock on the first move; don't penalize pre-move waiting time.
       const elapsed =
         this.moveCount === 0
           ? 0
           : (action.timestamp - this.lastMoveTime) / 1000;
-      // Deduct time, ensuring 0.1s resolution (rounding down/up? usually floor or just float)
-      // Let's keep it as float for accuracy, but display/store rounded if needed.
+      // Kept as a float for accuracy; display rounds.
       this.timeLeft[this.turn] = Math.max(
         0,
         this.timeLeft[this.turn] - elapsed,
@@ -779,6 +790,10 @@ export class GameState {
       prevGrid = last.grid;
       // Copy out, so replaying forward from here cannot mutate the snapshot.
       prevPawns = clonePawns(last.pawns);
+      if (!last.timeLeftSeconds) {
+        // Only a stored replay lacks clocks, and a replay takes nothing back.
+        throw new Error("Cannot take back a move with no recorded clock");
+      }
       prevTimeLeft = {
         1: last.timeLeftSeconds[0],
         2: last.timeLeftSeconds[1],

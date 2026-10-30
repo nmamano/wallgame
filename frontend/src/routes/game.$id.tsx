@@ -423,7 +423,8 @@ function GamePageContent() {
                       avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
                       timeLeft={
-                        timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
+                        timers.displayedTimeLeft?.[timers.topPlayer.playerId] ??
+                        null
                       }
                       goalDistance={
                         showsGoalDistance
@@ -521,9 +522,9 @@ function GamePageContent() {
                         timers.gameTurn === timers.bottomPlayer.playerId
                       }
                       timeLeft={
-                        timers.displayedTimeLeft[
+                        timers.displayedTimeLeft?.[
                           timers.bottomPlayer.playerId
-                        ] ?? 0
+                        ] ?? null
                       }
                       goalDistance={
                         showsGoalDistance
@@ -678,7 +679,8 @@ function GamePageContent() {
                     avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                     isActive={timers.gameTurn === timers.topPlayer.playerId}
                     timeLeft={
-                      timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
+                      timers.displayedTimeLeft?.[timers.topPlayer.playerId] ??
+                      null
                     }
                     minWidthRem={minTimerPanelWidth}
                     goalDistance={
@@ -759,8 +761,9 @@ function GamePageContent() {
                     avatarPawn={avatarPawns[timers.bottomPlayer.playerId]}
                     isActive={timers.gameTurn === timers.bottomPlayer.playerId}
                     timeLeft={
-                      timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??
-                      0
+                      timers.displayedTimeLeft?.[
+                        timers.bottomPlayer.playerId
+                      ] ?? null
                     }
                     minWidthRem={minTimerPanelWidth}
                     goalDistance={

@@ -41,6 +41,10 @@ import type {
   PastGamePlayerKind,
   PastGamesResponse,
 } from "../../shared/contracts/games";
+import {
+  storedGameClocksSchema,
+  type StoredGameClocks,
+} from "../../shared/contracts/game-clocks";
 import { classifyPastGamePlayer } from "./past-game-player-kind";
 import {
   resolveReplayMatchScore,
@@ -146,6 +150,7 @@ const fetchReplayDetails = (gameIds: string[]) =>
       gameId: gameDetailsTable.gameId,
       configParameters: gameDetailsTable.configParameters,
       moves: gameDetailsTable.moves,
+      clocks: gameDetailsTable.clocks,
     })
     .from(gameDetailsTable)
     .where(inArray(gameDetailsTable.gameId, gameIds));
@@ -192,6 +197,29 @@ type ReplayDetailsRow = Awaited<ReturnType<typeof fetchReplayDetails>>[number];
 export type ReplayPlayerRow = Awaited<
   ReturnType<typeof fetchReplayPlayers>
 >[number];
+
+/**
+ * game_details.clocks, or null when this game has none: every game stored
+ * before clocks were recorded, and (logged) a value that does not fit its moves.
+ */
+const resolveStoredClocks = (
+  gameId: string,
+  stored: unknown,
+  moveCount: number,
+): StoredGameClocks | null => {
+  if (stored == null) {
+    return null;
+  }
+  const parsed = storedGameClocksSchema.safeParse(stored);
+  if (!parsed.success || parsed.data.afterMove.length !== moveCount) {
+    console.error(`Game ${gameId} has unreadable clocks; showing none`, {
+      moveCount,
+      error: parsed.success ? "move count mismatch" : parsed.error.message,
+    });
+    return null;
+  }
+  return parsed.data;
+};
 
 /** Pure assembly: replays the moves and shapes the response. Touches no tables. */
 const assembleReplayGame = (
@@ -267,9 +295,15 @@ const assembleReplayGame = (
     replayState.result = result;
   }
 
+  const clocks = resolveStoredClocks(
+    game.gameId,
+    details?.clocks,
+    moves.length,
+  );
   const history = moves.map((notation, index) => ({
     index: index + 1,
     notation: String(notation),
+    timeLeftSeconds: clocks?.afterMove[index] ?? null,
   }));
 
   const serialized: SerializedGameState = {
@@ -277,7 +311,9 @@ const assembleReplayGame = (
     result: replayState.result,
     turn: replayState.turn,
     moveCount: replayState.moveCount,
-    timeLeft: { ...replayState.timeLeft },
+    // The replay above runs on made-up timestamps, so its own clock is
+    // meaningless; only the recorded one is shown.
+    timeLeft: clocks ? { 1: clocks.final[0], 2: clocks.final[1] } : null,
     lastMoveTime: replayState.lastMoveTime,
     pawns: clonePawns(replayState.pawns),
     walls: replayState.grid.getWalls(),

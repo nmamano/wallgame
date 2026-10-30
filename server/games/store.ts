@@ -2038,6 +2038,7 @@ export const serializeGameState = (
     history: state.history.map((entry) => ({
       index: entry.index,
       notation: moveToStandardNotation(entry.move, historyRows),
+      timeLeftSeconds: entry.timeLeftSeconds,
     })),
     config: {
       boardWidth: state.config.boardWidth,

@@ -77,6 +77,7 @@ import {
 } from "@/lib/game-session";
 import {
   buildGameConfigurationFromSerialized,
+  hasRecordedClocks,
   hydrateGameStateFromSerialized,
 } from "@/lib/game-state-utils";
 import type { SerializedGameState } from "../../../shared/domain/game-types";
@@ -3378,7 +3379,15 @@ export function useGamePageController(gameId: string) {
   const rows = effectiveConfig?.boardHeight ?? DEFAULT_CONFIG.boardHeight;
   const cols = effectiveConfig?.boardWidth ?? DEFAULT_CONFIG.boardWidth;
 
-  const displayedTimeLeft = useMemo(() => {
+  // Null: this game's clocks were never recorded, so the timers show none.
+  const displayedTimeLeft = useMemo((): Record<PlayerId, number> | null => {
+    if (gameState && !hasRecordedClocks(gameState)) {
+      return null;
+    }
+    // A past position shows the clocks as they were right after its move.
+    if (historyState) {
+      return { 1: historyState.timeLeft[1], 2: historyState.timeLeft[2] };
+    }
     const base: Record<PlayerId, number> = {
       1: gameState?.timeLeft?.[1] ?? 0,
       2: gameState?.timeLeft?.[2] ?? 0,
@@ -3398,7 +3407,7 @@ export function useGamePageController(gameId: string) {
     return base;
     // clockTick is intentionally included to trigger clock updates every second
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, clockTick]);
+  }, [gameState, historyState, clockTick]);
 
   const goalDistances = useMemo(() => {
     const base: Record<PlayerId, number | null> = {

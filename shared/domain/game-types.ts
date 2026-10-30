@@ -358,17 +358,30 @@ export type GameAction =
       timestamp: number;
     };
 
+/** One move of SerializedGameState.history. */
+export interface SerializedHistoryEntry {
+  index: number;
+  notation: string;
+  // Each side's clock in seconds right after the move. Null only in a replay
+  // of a game stored before clocks were recorded.
+  timeLeftSeconds: [number, number] | null;
+}
+
 // Serialized game state sent over the wire (plain data structure for JSON serialization)
 export interface SerializedGameState {
   status: GameStatus;
   result?: GameResult;
   turn: PlayerId;
   moveCount: number; // Completed moves count (0 before any moves), not per-player
-  timeLeft: Record<PlayerId, number>; // Milliseconds remaining for each player
+  // Seconds remaining for each player. Null only in a replay of a game stored
+  // before clocks were recorded (game_details.clocks is NULL).
+  timeLeft: Record<PlayerId, number> | null;
   lastMoveTime: number; // Timestamp in milliseconds (milliseconds since epoch)
   pawns: GamePawns;
   walls: WallPosition[];
   initialState: GameInitialState;
-  history: { index: number; notation: string }[]; // Move history: notation is a string representation (e.g., "Ce4.Md5.>f3") that can be parsed back into Move objects via Move.fromNotation()
+  // Move history: notation is a string representation (e.g., "Ce4.Md5.>f3")
+  // that can be parsed back into Move objects via Move.fromNotation().
+  history: SerializedHistoryEntry[];
   config: GameConfiguration;
 }

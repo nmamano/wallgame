@@ -204,6 +204,13 @@
       "when": 1786862644809,
       "tag": "0028_user_chose_display_name",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793392838680,
+      "tag": "0029_game_clocks",
+      "breakpoints": true
     }
   ]
 }

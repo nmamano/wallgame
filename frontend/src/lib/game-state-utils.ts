@@ -45,9 +45,11 @@ export const hydrateGameStateFromSerialized = (
   }
   state.status = serialized.status;
   state.result = serialized.result;
+  // A replay with no recorded clocks (timeLeft null) still needs a number for
+  // the rules state; the timers show none for it (see hasRecordedClocks).
   state.timeLeft = {
-    1: serialized.timeLeft[1] ?? config.timeControl.initialSeconds,
-    2: serialized.timeLeft[2] ?? config.timeControl.initialSeconds,
+    1: serialized.timeLeft?.[1] ?? config.timeControl.initialSeconds,
+    2: serialized.timeLeft?.[2] ?? config.timeControl.initialSeconds,
   };
   state.lastMoveTime = serialized.lastMoveTime;
 
@@ -87,7 +89,9 @@ export const hydrateGameStateFromSerialized = (
         move,
         grid: nextState.grid.clone(),
         pawns: clonePawns(nextState.pawns),
-        timeLeftSeconds: [nextState.timeLeft[1], nextState.timeLeft[2]],
+        // From the server, not from this walk: the walk runs on made-up
+        // timestamps, so its clocks are meaningless.
+        timeLeftSeconds: entry.timeLeftSeconds,
         distances: [0, 0],
         wallCounts: [0, 0],
       };
@@ -98,3 +102,10 @@ export const hydrateGameStateFromSerialized = (
 
   return state;
 };
+
+/**
+ * Whether this game's clocks are known. False only for a replay of a game
+ * stored before clocks were recorded; a game either has every clock or none.
+ */
+export const hasRecordedClocks = (state: GameState): boolean =>
+  state.history.every((entry) => entry.timeLeftSeconds !== null);

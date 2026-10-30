@@ -51,10 +51,14 @@ export function buildHistoryState({
 
   snapshot.grid = entry.grid.clone();
   snapshot.pawns = clonePawns(entry.pawns);
-  snapshot.timeLeft = {
-    1: entry.timeLeftSeconds[0],
-    2: entry.timeLeftSeconds[1],
-  };
+  // With no recorded clock the snapshot keeps the starting time; the timers
+  // show none for such a game (hasRecordedClocks).
+  if (entry.timeLeftSeconds) {
+    snapshot.timeLeft = {
+      1: entry.timeLeftSeconds[0],
+      2: entry.timeLeftSeconds[1],
+    };
+  }
   snapshot.turn = nextTurnAfter(entry.index, initialPlayer);
   snapshot.actionsRemaining = 2;
   snapshot.previousPawnPosition = undefined;

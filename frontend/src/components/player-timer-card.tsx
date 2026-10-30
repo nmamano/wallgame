@@ -28,7 +28,8 @@ interface PlayerTimerCardProps {
    */
   avatarPawn?: BoardPawn;
   isActive: boolean;
-  timeLeft: number;
+  /** Seconds left; null when this game's clock was never recorded. */
+  timeLeft: number | null;
   goalDistance?: number | null;
   minWidthRem?: number;
   score?: number | null;
@@ -38,9 +39,11 @@ interface PlayerTimerCardProps {
   compact?: boolean;
 }
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+function formatTime(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const whole = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(whole / 60);
+  const secs = whole % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
@@ -73,6 +76,7 @@ export function PlayerTimerCard({
 
   // Suppress active highlighting when game is finished (nobody's turn)
   const shouldShowActiveState = gameStatus !== "finished" && isActive;
+  const isLowOnTime = !isUnlimited && timeLeft !== null && timeLeft < 30;
   const goalDistanceLabel =
     goalDistance == null
       ? "--"
@@ -147,9 +151,9 @@ export function PlayerTimerCard({
               shouldShowActiveState
                 ? "text-foreground"
                 : "text-muted-foreground/50"
-            } ${!isUnlimited && timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
+            } ${isLowOnTime ? "text-red-500 animate-pulse" : ""}`}
           >
-            {isUnlimited ? "∞" : formatTime(Math.max(0, Math.round(timeLeft)))}
+            {isUnlimited ? "∞" : formatTime(timeLeft)}
           </span>
         </div>
       </div>
@@ -259,12 +263,12 @@ export function PlayerTimerCard({
             shouldShowActiveState
               ? "text-foreground"
               : "text-muted-foreground/50"
-          } ${!isUnlimited && timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
+          } ${isLowOnTime ? "text-red-500 animate-pulse" : ""}`}
         >
           {isUnlimited ? (
             <span className="text-xl lg:text-2xl">∞</span>
           ) : (
-            formatTime(Math.max(0, Math.round(timeLeft)))
+            formatTime(timeLeft)
           )}
         </div>
       </div>

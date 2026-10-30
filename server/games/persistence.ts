@@ -7,6 +7,8 @@ import { userAuthTable } from "../db/schema/users";
 import { eq } from "drizzle-orm";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type { GameSession, SessionPlayer } from "./store";
+import type { GameState } from "../../shared/domain/game-state";
+import type { StoredGameClocks } from "../../shared/contracts/game-clocks";
 import type {
   PlayerAppearance,
   PlayerId,
@@ -15,6 +17,17 @@ import {
   endedBeforeBothPlayersMoved,
   isCountedResult,
 } from "../../shared/domain/game-utils";
+
+/** The clocks a finished live game writes to game_details.clocks. */
+export const buildStoredGameClocks = (state: GameState): StoredGameClocks => ({
+  afterMove: state.history.map((entry) => {
+    if (!entry.timeLeftSeconds) {
+      throw new Error(`Live move ${entry.index} has no clock`);
+    }
+    return entry.timeLeftSeconds;
+  }),
+  final: [state.timeLeft[1], state.timeLeft[2]],
+});
 
 const resolveUserId = async (
   authUserId: string | undefined,
@@ -163,6 +176,7 @@ export const persistCompletedGame = async (
   const moveNotations = state.history.map((entry) =>
     moveToStandardNotation(entry.move, session.config.boardHeight),
   );
+  const clocks = buildStoredGameClocks(state);
 
   await db.transaction(async (tx) => {
     const [insertedGame] = await tx
@@ -205,6 +219,7 @@ export const persistCompletedGame = async (
       gameId: session.id,
       configParameters,
       moves: moveNotations,
+      clocks,
       botResignCause: botResignCause ?? null,
     });
 
