@@ -320,7 +320,7 @@ resolve any suspicious open session against `GET /api/games/<id>`
 (`matchStatus.status`). Do NOT use "a session start with no matching end" as
 the signal — around 70 sessions are permanently unmatched in a normal log, so
 that test says nothing. A live game would survive anyway if the client returns
-inside the 30s grace window, but do not rely on that.
+inside the 60s grace window, but do not rely on that.
 
 **If `desktop-053vvpl-1` (WSL) is unreachable entirely** (ssh hangs, tailscale
 shows it offline while `desktop-053vvpl` — the WINDOWS side of the same box —
@@ -345,13 +345,18 @@ round-trip probe (bot actually replies to a move) proves engine health.
 
 No kill-to-start gap is needed (the 15s rule is retired). Since `0c197b6` the server's
 teardown is connection-scoped and deferred: a stale connection's close event cannot wipe
-a newer attach with the same clientId, and a dropped client gets a 30s grace window
-(`BOT_DISCONNECT_GRACE_MS`) in which its ACTIVE GAMES SURVIVE - on reattach the server
+a newer attach with the same clientId, and a dropped client gets a 60s grace window
+(`BOT_DISCONNECT_GRACE_MS`; 30s until task 43d8c5ae), in which its ACTIVE GAMES SURVIVE - on reattach the server
 rebuilds each game's engine session and play continues (verified in prod: a puzzle game
 survived a mid-game client kill+restart, game `0Sfsq10b`). During grace the bots are
 hidden from listings, cannot start new games, and their seats show disconnected. If the
 client stays down past the grace window, the games are resigned as before. Routine 1006
-websocket blips therefore no longer resign live games.
+websocket blips therefore no longer resign live games. A bot request that times out
+with nothing at all received from the client since it was sent (a stalled network, where
+the server sees no close) counts as a drop too and starts the same grace; a timeout after
+which the client still sent something is an engine failure and resigns at once (task
+43d8c5ae, game E56U_8Ds). A second silent timeout from the same client within 60s is an
+engine failure too, so a hung engine cannot make the client reconnect in a loop.
 
 Never use `pkill -f` on either box - on auntie it matches the isomux office server and
 takes the whole office down. Capture an exact PID instead.

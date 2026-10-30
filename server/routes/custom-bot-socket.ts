@@ -87,8 +87,18 @@ const OFFICIAL_BOT_TOKEN = process.env.OFFICIAL_BOT_TOKEN;
 // Constants
 // ============================================================================
 
-/** Timeout for BGS requests (10 seconds as per V3 spec) */
-export const BGS_REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * Timeout for BGS requests (10 seconds as per V3 spec). Overridable via
+ * BGS_REQUEST_TIMEOUT_MS, only for tests.
+ */
+export const BGS_REQUEST_TIMEOUT_MS = (() => {
+  const raw = process.env.BGS_REQUEST_TIMEOUT_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 10_000;
+})();
 
 /** Maximum unexpected messages before disconnect */
 const MAX_UNEXPECTED_MESSAGES = 100;
@@ -97,15 +107,19 @@ const MAX_UNEXPECTED_MESSAGES = 100;
  * Grace period after a bot client's websocket drops before its games are
  * resigned and the client unregistered. Reattaching within the window keeps
  * registration and games alive (each game's BGS is rebuilt via resync).
- * Overridable via BOT_DISCONNECT_GRACE_MS, mainly for tests.
+ *
+ * 60 s, not 30 s (task 43d8c5ae): the official client finds a dead socket
+ * only on its next 30 s ping, so it can reattach up to about 60 s after a
+ * stall starts. Overridable via BOT_DISCONNECT_GRACE_MS, mainly for tests.
  */
+export const DEFAULT_BOT_DISCONNECT_GRACE_MS = 60_000;
 const BOT_DISCONNECT_GRACE_MS = (() => {
   const raw = process.env.BOT_DISCONNECT_GRACE_MS;
   if (raw !== undefined) {
     const parsed = Number(raw);
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
   }
-  return 30_000;
+  return DEFAULT_BOT_DISCONNECT_GRACE_MS;
 })();
 
 // ============================================================================
@@ -123,6 +137,14 @@ interface BotSocket {
    * belongs to the newer connection.
    */
   superseded: boolean;
+  /**
+   * How many frames of any kind (responses, the client's 30 s ping) arrived
+   * on this socket. A request that times out with this count unchanged since
+   * it was sent means the connection is gone, not the engine. A counter, not
+   * a time: the previous response and the next request can share a
+   * millisecond.
+   */
+  inboundFrames: number;
 }
 
 /** Response types the bot can send */
@@ -192,6 +214,73 @@ const ownsClientIdMapping = (ctx: WSContext, clientId: string): boolean => {
         typeof currentCtx.raw === "object" &&
         currentCtx.raw === ctx.raw))
   );
+};
+
+/** When disconnectIfSilent last fired, per clientId. */
+const lastSilentDisconnectAt = new Map<string, number>();
+
+/**
+ * A request sent on `ctx` timed out (`framesAtSend`: the socket's
+ * inboundFrames when it was sent). If nothing at all has arrived on that
+ * socket since then (not even the client's 30 s ping), the
+ * connection is gone and the server has not seen it close yet: during a
+ * network stall the close can come a minute late, or never. Treat it as a
+ * close now, so the client's games wait in the disconnect grace for its
+ * reattach (which rebuilds them) instead of being forfeited as an engine
+ * failure. Returns true when it did. Fires at most once per client per grace
+ * window (see below), so a hung engine forfeits after one reconnect cycle.
+ *
+ * A frame since the request means the connection works and the engine did not
+ * answer: that stays an engine failure. Game E56U_8Ds (2026-10-25) was
+ * forfeited 10 s into a stall; its client reattached 13 s later.
+ */
+const disconnectIfSilent = (
+  ctx: WSContext,
+  framesAtSend: number,
+  requestType: string,
+  bgsId: string,
+): boolean => {
+  const socket = getSocketForContext(ctx);
+  if (!socket?.clientId || socket.superseded) return false;
+  if (socket.inboundFrames !== framesAtSend) return false;
+  if (!ownsClientIdMapping(ctx, socket.clientId)) return false;
+
+  // At most once per client per grace window. A hung engine on a quiet socket
+  // would otherwise loop: disconnect, reattach, the resync's request times
+  // out on the new socket before its first ping (the client starts its 30 s
+  // ping loop at attach), disconnect again - and each cycle rebuilds every
+  // game of the client. The second silent timeout inside the window is an
+  // engine failure, as before. The expiry is a fixed time, the grace length,
+  // not "until the new socket's first frame": the first ping comes at 30 s,
+  // inside the 60 s window, and a fixed time needs no state on the socket.
+  // The record lives outside the socket and pendingGrace, which a reattach
+  // replaces and deletes.
+  const now = Date.now();
+  const previous = lastSilentDisconnectAt.get(socket.clientId);
+  if (previous !== undefined && now - previous < BOT_DISCONNECT_GRACE_MS) {
+    console.info(
+      "[custom-bot-ws] second silent timeout inside the grace window — an engine failure",
+      { clientId: socket.clientId, requestType, bgsId },
+    );
+    return false;
+  }
+  lastSilentDisconnectAt.set(socket.clientId, now);
+
+  console.info(
+    "[custom-bot-ws] request timed out on a silent connection — treating it as a disconnect",
+    { clientId: socket.clientId, requestType, bgsId },
+  );
+  // What onClose does, done now. Superseded makes the real close event (and
+  // any late frame from this socket) a no-op.
+  socket.superseded = true;
+  clientIdToContext.delete(socket.clientId);
+  beginDisconnectGrace(socket.clientId);
+  try {
+    ctx.close(4000, "No response");
+  } catch {
+    // Ignore close errors: the socket is already dead
+  }
+  return true;
 };
 
 /**
@@ -1157,6 +1246,7 @@ export const requestEvaluation = async (
   }
 
   // Send evaluate_position message
+  const framesAtSend = getSocketForContext(ctx)?.inboundFrames ?? 0;
   send(ctx, {
     type: "evaluate_position",
     bgsId,
@@ -1168,7 +1258,19 @@ export const requestEvaluation = async (
     const timeoutId = setTimeout(() => {
       pendingResolvers.delete(bgsId);
       clearPendingRequest(bgsId);
-      reject(new Error("evaluate_position timeout"));
+      const silent = disconnectIfSilent(
+        ctx,
+        framesAtSend,
+        "evaluate_position",
+        bgsId,
+      );
+      reject(
+        new Error(
+          silent
+            ? "evaluate_position timeout on a silent connection"
+            : "evaluate_position timeout",
+        ),
+      );
     }, BGS_REQUEST_TIMEOUT_MS);
 
     pendingResolvers.set(bgsId, {
@@ -1225,6 +1327,7 @@ export const applyBgsMove = async (
   }
 
   // Send apply_move message
+  const framesAtSend = getSocketForContext(ctx)?.inboundFrames ?? 0;
   send(ctx, {
     type: "apply_move",
     bgsId,
@@ -1237,7 +1340,14 @@ export const applyBgsMove = async (
     const timeoutId = setTimeout(() => {
       pendingResolvers.delete(bgsId);
       clearPendingRequest(bgsId);
-      reject(new Error("apply_move timeout"));
+      const silent = disconnectIfSilent(ctx, framesAtSend, "apply_move", bgsId);
+      reject(
+        new Error(
+          silent
+            ? "apply_move timeout on a silent connection"
+            : "apply_move timeout",
+        ),
+      );
     }, BGS_REQUEST_TIMEOUT_MS);
 
     pendingResolvers.set(bgsId, {
@@ -1630,6 +1740,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             attached: false,
             unexpectedMessageCount: 0,
             superseded: false,
+            inboundFrames: 0,
           };
           mapSocketContext(ws, socket);
           console.info("[custom-bot-ws] connection opened");
@@ -1654,6 +1765,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             return;
           }
 
+          socket.inboundFrames += 1;
           handleMessage(ws, socket, event.data as string | ArrayBuffer);
         },
 

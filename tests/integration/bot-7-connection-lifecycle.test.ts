@@ -10,7 +10,7 @@
  *
  * 2. Disconnect grace: a routine websocket drop used to resign every active
  *    game instantly. Now the client gets BOT_DISCONNECT_GRACE_MS (default
- *    30s) to reattach; its games survive and are healed by a full BGS
+ *    60s; 30s before task 43d8c5ae) to reattach; its games survive and are healed by a full BGS
  *    rebuild (resync) on the new connection. Grace expiry performs the old
  *    teardown, owned by a generation token so a reattach can never be torn
  *    down by a stale timer.

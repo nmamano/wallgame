@@ -137,6 +137,7 @@ interface ClientInternals {
   engines: Map<string, EngineProcess>;
   sessionRoutes: Map<string, string>;
   ws: WebSocket | null;
+  pongReceived: boolean;
   startEngines(): Promise<void>;
   startPingLoop(): void;
 }
@@ -195,6 +196,20 @@ const until = async (
     await flushIo();
   }
   throw new Error(`did not observe ${label}`);
+};
+
+/**
+ * The client's keepalive frame, which a live official client sends every 30 s
+ * (its ping loop is off here). Since task 43d8c5ae the server treats a request
+ * timeout with no frame at all since the send as a lost connection; these
+ * cases are about a live connection whose ENGINE holds the reply.
+ */
+const keepalive = async (): Promise<void> => {
+  const internals = client as unknown as ClientInternals;
+  internals.pongReceived = false;
+  internals.ws?.send(JSON.stringify({ type: "ping" }));
+  // The pong proves the server has counted the frame.
+  await until("keepalive answered", () => internals.pongReceived);
 };
 
 async function start(id: string): Promise<void> {
@@ -277,6 +292,7 @@ describe("real BGS request deadlines with client FIFO", () => {
         "held Evaluate",
         () => engine.heldCount("evaluate_position") === 1,
       );
+      await keepalive();
 
       timers.advanceTimersByTime(delay);
       await flushIo();
