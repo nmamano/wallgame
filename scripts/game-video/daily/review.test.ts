@@ -1028,13 +1028,16 @@ describe("the review routes", () => {
       }),
     ).toBe("Approved: no slot posts it yet (no platform is live).");
     // The page: the list under the queue, one button, Nil only.
-    // Two tabs with their counts (Nil, 2026-10-30); "#approved" opens the
-    // second.
+    // Three tabs (Nil, 2026-10-30); the first two with their counts;
+    // "#approved" and "#social" open theirs.
     expect(REVIEW_PAGE).toContain(
-      'const TABS = [["review", "In review"], ["approved", "Approved"]];',
+      'const TABS = [["review", "In review"], ["approved", "Approved"], ["social", "Social"]];',
     );
     expect(REVIEW_PAGE).toContain('label + " (" + of[key].length + ")"');
     expect(REVIEW_PAGE).toContain('location.hash === "#approved"');
+    expect(REVIEW_PAGE).toContain('location.hash === "#social"');
+    // The Social tab draws text only: the page's no-innerHTML rule holds.
+    expect(REVIEW_PAGE).not.toContain("innerHTML =");
     // Revise and Discard with no note (Nil, 2026-10-30: a refused Revise
     // looked done): nothing is sent; the card says why and puts the cursor
     // in the note box. The page's rule is the store's (approve needs none).

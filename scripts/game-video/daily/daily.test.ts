@@ -44,6 +44,7 @@ import {
   utcDay,
 } from "./store.mjs";
 import { openTokenStore } from "./token-store.mjs";
+import { FOLLOWER_PLATFORMS } from "./followers.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
   candidateFromReport,
@@ -2358,6 +2359,7 @@ const serve = async (dir: string, renderer: string): Promise<string> => {
       "--daily-desktop-status",
       stubStatus(dir),
       "--daily-no-backup-window",
+      "--daily-no-follower-record",
     ],
     {
       env: {
@@ -2383,6 +2385,7 @@ const serveHere = async (
   dir: string,
   renderer: string,
   budgetEveryMs?: number,
+  platformsFile?: string,
 ) => {
   const daily = createDaily({
     dataDir: dir,
@@ -2391,6 +2394,7 @@ const serveHere = async (
     desktopStatus: [process.execPath, stubStatus(dir)],
     backupWindow: null,
     ...(budgetEveryMs !== undefined && { budgetEveryMs }),
+    ...(platformsFile !== undefined && { platformsFile }),
   });
   const server = createHttpServer((req, res) => {
     void daily
@@ -4504,6 +4508,79 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(state.lastSlot.outcome).toBe("no-live");
     expect(state.lastPostAt).toBeNull();
     expect(itemOf(openStore(dir), id).state).toBe("approved");
+  });
+
+  test("the Social tab: Growth's file with the app's modes, names only; opening it records the day's counts", async () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    const platforms = join(dir, "platforms.json");
+    writeFileSync(
+      platforms,
+      JSON.stringify({
+        updated: "2026-10-30",
+        updatedBy: "Wall Game Growth",
+        flow: "f",
+        root: { name: "r", why: "w", credentials: "c", twoFactor: "t" },
+        roles: [],
+        later: [],
+        log: [],
+        platforms: [
+          {
+            id: "bluesky",
+            name: "Bluesky",
+            status: "setup",
+            keys: ["BLUESKY_APP_PASSWORD"],
+          },
+        ],
+      }),
+    );
+    // A fresh cache: the tab reads no live count.
+    const at = new Date().toISOString();
+    writeFileSync(
+      join(store.dirs.root, "followers.json"),
+      JSON.stringify({
+        counts: Object.fromEntries(
+          FOLLOWER_PLATFORMS.map((p) => [
+            p,
+            { followers: p === "bluesky" ? 9 : null, at, error: null },
+          ]),
+        ),
+      }),
+    );
+    const { base } = await serveHere(dir, "unused", undefined, platforms);
+    const { status, body } = await call<{
+      cards: {
+        name: string;
+        rows: { k: string; v: string; codes?: string[] }[];
+      }[];
+      followers: { rows: { platform: string; now: number | string }[] };
+    }>(base, "/api/review/social");
+    expect(status).toBe(200);
+    const [card] = body.cards;
+    expect(card.name).toBe("Bluesky");
+    // No key in the test env: dry-run, and the reason names the secret.
+    expect(card.rows.find((r) => r.k === "Poster mode now")!.v).toStartWith(
+      "dry-run (nothing is posted: ",
+    );
+    expect(card.rows.find((r) => r.k.startsWith("Keys"))!.codes).toEqual([
+      "BLUESKY_APP_PASSWORD",
+    ]);
+    expect(body.followers.rows.find((r) => r.platform === "Bluesky")!.now).toBe(
+      9,
+    );
+    // Opening the tab recorded today's count, once.
+    await call(base, "/api/review/social");
+    const rows = readFileSync(join(store.dirs.root, "followers.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { platform: string; followers: number });
+    expect(rows.map((r) => [r.platform, r.followers])).toEqual([
+      ["bluesky", 9],
+    ]);
+    // The page has the tab, and "#social" opens it.
+    const page = await (await fetch(base + "/review")).text();
+    expect(page).toContain('["social", "Social"]');
+    expect(page).toContain('location.hash === "#social"');
   });
 
   test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {

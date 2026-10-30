@@ -106,6 +106,12 @@ import { appMessenger } from "./office.mjs";
 import { createItemPoster } from "./review-post.mjs";
 import { createScheduler, GROWTH_AGENT_ID } from "./scheduler.mjs";
 import {
+  createFollowerHistory,
+  PLATFORMS_FILE,
+  socialView,
+} from "./social.mjs";
+
+import {
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
@@ -366,6 +372,13 @@ export const createDaily = ({
   ),
   // The slot timer (scheduler.mjs); a test that drives it by hand sets false.
   schedule = true,
+  // How often the follower history is recorded with no visitor
+  // (social.mjs). The app server sets it (app/server.mjs); null records only
+  // when the Social tab is opened, so a test reads no live count.
+  followerRecordMs = /** @type {number | null} */ (null),
+  // Wall Game Growth's platform file, for the Social tab; a test gives its
+  // own.
+  platformsFile = PLATFORMS_FILE,
 }) => {
   // The secrets from the environment, the public ids from code: an env var
   // with a public id's name has no effect (Nil, 2026-10-27).
@@ -1146,6 +1159,56 @@ export const createDaily = ({
     }
   };
 
+  /**
+   * The follower counts {<platform>: {followers, at, error}}: each
+   * platform's last result, kept in the app's data until it is too old
+   * (followersDue: an X count after 24 hours, as X reads are paid; any
+   * other result after an hour), then only the platforms that are due are
+   * read again. While a post runs no read starts: the last result, or null
+   * when there is none.
+   */
+  const followerCounts = async () => {
+    const cached = readFollowersCache();
+    const due = followersDue(cached, Date.now());
+    if (!due.length) return cached;
+    if (posting) return cached;
+    followersRun ??= (async () => {
+      try {
+        const fresh = await readFollowers(
+          { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
+          due,
+        );
+        const counts = Object.fromEntries(
+          FOLLOWER_PLATFORMS.map((p) => [p, fresh[p] ?? cached[p]]),
+        );
+        // A read where no platform gave a count (a short network loss)
+        // is not kept, so the next request tries again (Reviewer 1).
+        if (Object.values(fresh).some((c) => c.followers !== null)) {
+          writeFileSync(followersCachePath, JSON.stringify({ counts }));
+        }
+        return counts;
+      } finally {
+        followersRun = null;
+      }
+    })();
+    return followersRun;
+  };
+  /**
+   * The follower history (social.mjs): one row per platform per UTC day,
+   * moved from the app wallgame-social on 2026-10-30 with its rows.
+   */
+  const followerHistory = createFollowerHistory(
+    join(dirs.root, "followers.jsonl"),
+  );
+  /** Today's counts into the history; a failed read waits for the next. */
+  const recordFollowers = async () => {
+    try {
+      followerHistory.record(await followerCounts());
+    } catch (err) {
+      console.warn(`followers: not recorded: ${err?.message ?? err}`);
+    }
+  };
+
   /** The platforms that post live now (every secret set, connected). */
   const livePlatforms = () =>
     Object.entries(modesNow())
@@ -1382,6 +1445,13 @@ export const createDaily = ({
     send: (text) => sendMessage(GROWTH_AGENT_ID, text),
   });
   const stopSchedule = schedule ? scheduler.start() : () => {};
+  // The follower history is recorded even when nobody opens the Social tab
+  // (as wallgame-social did): at start, then every followerRecordMs.
+  const followerTimer = followerRecordMs
+    ? setInterval(() => void recordFollowers(), followerRecordMs)
+    : null;
+  followerTimer?.unref();
+  if (followerTimer) void recordFollowers();
 
   /* ------------------------------------------------------------ routes -- */
 
@@ -1630,6 +1700,32 @@ export const createDaily = ({
         ...reviewView(store, scheduler.status().nextSlot),
         canReview: member?.id === REVIEWER_MEMBER_ID,
       });
+    },
+
+    /**
+     * The review page's Social tab (social.mjs): Growth's platforms.json,
+     * read on each request, with this app's modes, post logs and follower
+     * counts. Secret names only. Opening it also records today's counts.
+     */
+    "GET /api/review/social": async (req, res) => {
+      const data = JSON.parse(readFileSync(platformsFile, "utf8"));
+      const followers = await followerCounts().catch(() => null);
+      followerHistory.record(followers);
+      const { modes, modeReasons: reasons } = state();
+      json(
+        res,
+        200,
+        socialView({
+          data,
+          modes,
+          reasons,
+          live: readPostLog(store.postLog.live),
+          dry: readPostLog(store.postLog.dryRun),
+          followers,
+          history: followerHistory.read(),
+          nowMs: Date.now(),
+        }),
+      );
     },
 
     /** {reviewTarget}: how many items Growth wants in review. */
@@ -2364,41 +2460,15 @@ export const createDaily = ({
     },
 
     /**
-     * READ-ONLY: {<platform>: {followers, at, error}} for Growth's
-     * dashboard (followers.mjs). Each platform's last result is kept in the
-     * app's data and comes back until it is too old (followersDue: an X
-     * count after 24 hours, as X reads are paid; any other result after an
-     * hour); then only the platforms that are due are read again. While a
-     * post runs no read starts: the last result comes back, or a refusal.
+     * READ-ONLY: {<platform>: {followers, at, error}} (followers.mjs,
+     * followerCounts): while a post runs with no last result, a refusal.
      */
     "GET /api/daily/followers": async (req, res) => {
-      const cached = readFollowersCache();
-      const due = followersDue(cached, Date.now());
-      if (!due.length) return json(res, 200, cached);
-      if (posting) {
-        if (cached) return json(res, 200, cached);
+      const counts = await followerCounts();
+      if (!counts) {
         throw new StepRefused("a post is running: ask again in a few minutes");
       }
-      followersRun ??= (async () => {
-        try {
-          const fresh = await readFollowers(
-            { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
-            due,
-          );
-          const counts = Object.fromEntries(
-            FOLLOWER_PLATFORMS.map((p) => [p, fresh[p] ?? cached[p]]),
-          );
-          // A read where no platform gave a count (a short network loss)
-          // is not kept, so the next request tries again (Reviewer 1).
-          if (Object.values(fresh).some((c) => c.followers !== null)) {
-            writeFileSync(followersCachePath, JSON.stringify({ counts }));
-          }
-          return counts;
-        } finally {
-          followersRun = null;
-        }
-      })();
-      json(res, 200, await followersRun);
+      json(res, 200, counts);
     },
 
     "GET /api/daily/post-log": (req, res, url) =>
@@ -2450,6 +2520,7 @@ export const createDaily = ({
   /** Stop a running render (and so its 4090 unit) when the app stops. */
   const stop = () => {
     if (threadsTimer) clearInterval(threadsTimer);
+    if (followerTimer) clearInterval(followerTimer);
     stopSchedule();
     budget.stop();
     for (const child of children) {

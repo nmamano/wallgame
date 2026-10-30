@@ -41,7 +41,8 @@ afterEach(() => {
 /** Start the app on a free port with an empty data dir; its base URL. */
 const startApp = async () => {
   const port = await freePort();
-  const child = Bun.spawn(["node", SERVER], {
+  // No live follower read in a test (the hourly follower record).
+  const child = Bun.spawn(["node", SERVER, "--daily-no-follower-record"], {
     env: testEnv({
       PORT: String(port),
       ISOMUX_APP_DATA_DIR: mkdtempSync(join(tmpdir(), "game-video-test-")),

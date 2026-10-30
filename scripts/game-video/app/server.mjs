@@ -24,6 +24,7 @@ import { createServer } from "node:http";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDaily } from "../daily/routes.mjs";
+import { FOLLOWER_RECORD_MS } from "../daily/social.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -71,6 +72,10 @@ const daily = createDaily({
   // A test runs at any time of day: no backup window (desktop-budget.mjs).
   ...(process.argv.includes("--daily-no-backup-window") && {
     backupWindow: null,
+  }),
+  // The follower history, hourly; a test reads no live count.
+  ...(!process.argv.includes("--daily-no-follower-record") && {
+    followerRecordMs: FOLLOWER_RECORD_MS,
   }),
   ...(plumbing("daily-desktop-status") && {
     desktopStatus: [
