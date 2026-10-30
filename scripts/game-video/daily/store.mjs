@@ -1355,12 +1355,20 @@ export const openStore = (dataDir) => {
               `${id} already has a script review since Nil's revise (${since.verdict} by ${since.reviewer}, ${since.at})`,
             );
           }
+          // The latest review before the revise, pass or fail: a carry never
+          // jumps over a later fail back to an older pass (VR1, review 100
+          // N1; Wall Game PM).
           const passed = (item.scriptReviews ?? []).findLast(
-            (r) => r.verdict === "pass" && r.at <= revise.at,
+            (r) => r.at <= revise.at,
           );
           if (!passed) {
             refuse(
               `${id} has no passed script review before Nil's revise to carry over: write the script and get it reviewed (crew.mjs script-review)`,
+            );
+          }
+          if (passed.verdict !== "pass") {
+            refuse(
+              `${id}: the last review before the revise failed (${passed.reviewer}, ${passed.at}): write the script and get it reviewed (crew.mjs script-review)`,
             );
           }
           const text = scriptText(passed);

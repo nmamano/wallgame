@@ -628,6 +628,36 @@ describe("the director checks the contact sheet before the review", () => {
     }).toThrow(`${id} already has a script review since Nil's revise`);
   });
 
+  test("a carry never jumps over a later fail to an older pass (VR1, review 100 N1)", () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    const id = pickUnscripted(store);
+    store.recordScriptReview(id, SCRIPT_PASS);
+    Bun.sleepSync(3);
+    store.recordScriptReview(id, { ...SCRIPT_PASS, verdict: "fail" });
+    Bun.sleepSync(3);
+    const file = join(dir, "daily", "items", `${id}.json`);
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Item;
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...raw,
+        reviews: [
+          ...(raw.reviews ?? []),
+          { action: "revise", notes: "a sound", at: new Date().toISOString() },
+        ],
+      }),
+    );
+    Bun.sleepSync(3);
+    expect(() => {
+      store.recordScriptUnchanged(id, {
+        by: "Wall Game Director",
+        why: "a sound only",
+      });
+    }).toThrow(`${id}: the last review before the revise failed`);
+    expect(currentScriptReview(itemOf(store, id))).toBeNull();
+  });
+
   test("a lint-forced text fix goes on the passed review; the render and its review stay (Director, 2026-10-30)", () => {
     const store = openStore(tempDir());
     const id = pickUnscripted(store);

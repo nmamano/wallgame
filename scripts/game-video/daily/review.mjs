@@ -58,7 +58,7 @@
  * are the poster's.
  */
 import { copySha256 } from "./copy.mjs";
-import { StepRefused } from "./store.mjs";
+import { renderScriptReview, StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
 import { claimRisk, soundUses } from "./sounds.mjs";
@@ -101,6 +101,18 @@ export const versionLine = (item, others) => {
   const list = others.map((o) => `${o.id} (${o.shown})`).join(", ");
   return `one of ${others.length + 1} videos of game ${item.gameId}; the other${others.length > 1 ? "s are" : " is"} ${list}`;
 };
+
+/**
+ * The line on a card whose video renders a script carried over Nil's revise
+ * (store.recordScriptUnchanged), or null: no fresh reviewer read the script
+ * after his revise, and Nil must not think one did (VR1, review 100).
+ * @param {{ carried?: { from: string } } | null} scriptReview the review
+ *   the render passed under (store.renderScriptReview)
+ */
+export const carriedScriptLine = (scriptReview) =>
+  scriptReview?.carried
+    ? `Script unchanged (carried from the script review of ${scriptReview.carried.from.slice(0, 16).replace("T", " ")} UTC).`
+    : null;
 
 /**
  * The line on an approved card: when it posts. The post queue is
@@ -150,6 +162,7 @@ export const reviewView = (store, nextSlot) => ({
     ],
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
+    scriptCarried: carriedScriptLine(renderScriptReview(it)),
   })),
   // Approved and no slot took it yet (a slot makes it posting), in post
   // order: Nil may still take the approval back (withdraw).
@@ -374,6 +387,7 @@ export const REVIEW_PAGE = `<!doctype html>
     if (it.youtubeTitle) box.append(el("div", "alt", "YouTube: " + it.youtubeTitle));
     for (const key of it.claimRiskSounds) box.append(el("div", "risk", "Uses " + key + ": a claim is possible."));
     if (it.noStory) box.append(el("div", "risk", it.noStory));
+    if (it.scriptCarried) box.append(el("div", "alt", it.scriptCarried));
     box.append(notes, row, why);
     return box;
   };

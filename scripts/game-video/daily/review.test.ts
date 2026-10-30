@@ -25,6 +25,7 @@ import {
   reviewView,
   versionLine,
   approvedLine,
+  carriedScriptLine,
 } from "./review.mjs";
 
 const BLOCK = [
@@ -81,6 +82,7 @@ interface View {
     youtubeTitle: string | null;
     noStory: string | null;
     version: string | null;
+    scriptCarried: string | null;
   }[];
   approved: { id: string; caption: string; when: string }[];
 }
@@ -623,11 +625,48 @@ describe("the review page's view", () => {
       "copySha256",
       "id",
       "noStory",
+      "scriptCarried",
       "version",
       "videoSha256",
       "youtubeTitle",
     ]);
     expect(viewOf(store).items[0].noStory).toBeNull();
+    expect(viewOf(store).items[0].scriptCarried).toBeNull();
+  });
+
+  test("a video rendered from a script carried over Nil's revise: the card says no fresh reviewer read it (VR1, review 100)", () => {
+    const { store } = withItemInReview();
+    const pass = {
+      at: "2026-10-30T14:02:11.000Z",
+      reviewer: "Wall Game Director",
+      verdict: "pass",
+      notes: "SCRIPT UNCHANGED ...",
+      script: "s",
+      scriptSha256: "abc",
+      carried: {
+        from: "2026-10-30T09:41:05.123Z",
+        revisedAt: "2026-10-30T13:00:00.000Z",
+        why: "a sound only",
+      },
+    };
+    store.updateItem(
+      "v-2026-10-28-1",
+      ["finished"],
+      (it: Record<string, unknown> & { render: Record<string, unknown> }) => {
+        it.scriptReviews = [pass];
+        it.render.scriptReview = {
+          at: pass.at,
+          scriptSha256: pass.scriptSha256,
+        };
+      },
+      "a carried script (test)",
+    );
+    expect(viewOf(store).items[0].scriptCarried).toBe(
+      "Script unchanged (carried from the script review of 2026-10-30 09:41 UTC).",
+    );
+    expect(REVIEW_PAGE).toContain("it.scriptCarried");
+    // A fresh review: no line.
+    expect(carriedScriptLine({ ...pass, carried: undefined })).toBeNull();
   });
 
   test("a video over 60 s: the card tells Nil it posts no Instagram Story", () => {
