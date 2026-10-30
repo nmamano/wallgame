@@ -9,7 +9,8 @@
  * The state file, <data>/daily/schedule.json:
  *   { lastSlotAt, lastPostAt, lastSlot, outbox }
  * - lastSlotAt: the newest slot time that was handled (slots.mjs).
- * - lastPostAt: when the last slot post started; the 6 h gap counts from it.
+ * - lastPostAt: the 6 h gap counts from it: the slot time of the last slot
+ *   post when it fired on time, else when it started (slots.mjs gapFrom).
  * - lastSlot: { slotAt, firedAt, itemId, outcome, platforms, notApplicable,
  *   folded } of the last slot that posted or was skipped; notApplicable is
  *   {platform: reason} of the live platforms that the video does not suit.
@@ -28,13 +29,16 @@
  * A slot by hand (fireNow; Nil through Growth, 2026-10-30: "one could go
  * out now") is a timed slot fired now: the same fire() step, so the same
  * item, checks, platforms, message and 6 h gap. It leaves lastSlotAt, so
- * the timed slots come as before.
+ * the timed slots come as before; a timed slot that its 6 h gap holds is
+ * skipped (slots.mjs).
  */
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { writeAtomic } from "./store.mjs";
 import {
   decide,
+  gapFrom,
+  heldWhy,
   nextSlot,
   pacificDay,
   pacificLabel,
@@ -250,7 +254,7 @@ export const createScheduler = ({
     write({
       ...before,
       lastSlotAt: iso(d.through),
-      lastPostAt: iso(firedAt),
+      lastPostAt: iso(gapFrom(d.slot.at, firedAt)),
       lastSlot: {
         slotAt: iso(d.slot.at),
         firedAt: iso(firedAt),
@@ -343,9 +347,8 @@ export const createScheduler = ({
       const d = decide(state, t, store.approvedQueue().length);
       if (d.kind === "start") {
         write({ ...state, lastSlotAt: iso(t) });
-      } else if (d.kind === "pass") {
-        write({ ...state, lastSlotAt: iso(d.through) });
-      } else if (d.kind === "skip") {
+      } else if (d.kind === "skip" || d.kind === "held") {
+        const held = d.kind === "held";
         write({
           ...state,
           lastSlotAt: iso(d.through),
@@ -353,13 +356,13 @@ export const createScheduler = ({
             slotAt: iso(d.slot.at),
             firedAt: iso(t),
             itemId: null,
-            outcome: "skipped",
+            outcome: held ? "held" : "skipped",
             platforms: null,
             folded: d.folded.length,
           },
         });
         queueMessage([
-          `${slotHead(d.slot, t, d.folded)}: SKIPPED, the approved queue is empty.`,
+          `${slotHead(d.slot, t, d.folded)}: SKIPPED, ${held ? `${heldWhy(d.lastPostAt)}. The approved items stay approved; the next slot posts at its time.` : "the approved queue is empty."}`,
         ]);
       } else if (d.kind === "fire") {
         // A post runs, or a follower read that the post would wait for:
@@ -381,9 +384,10 @@ export const createScheduler = ({
    * (nothing written, nothing sent) while a slot or a post runs, before
    * the timer's first tick, when no item is approved, or while the 6 h gap
    * since the last post holds. lastSlotAt
-   * stays: no timed slot is used up; the gap from this post may push the
-   * next one. `by` names who fired it (Wall Game PM, 2026-10-30: the
-   * record is enough, no refusal by name); it goes into the slot message,
+   * stays: no timed slot is used up, but a slot that the gap from this
+   * post holds is skipped (slots.mjs decide "held"). `by` names who fired
+   * it (Wall Game PM, 2026-10-30: the record is enough, no refusal by
+   * name); it goes into the slot message,
    * lastSlot and the post log. Returns { ok: true, lastSlot } or
    * { ok: false, reason }.
    */

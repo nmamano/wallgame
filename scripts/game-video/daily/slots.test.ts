@@ -1,11 +1,14 @@
 /**
- * The slot rules (slots.mjs): 09:00 and 16:00 in America/Los_Angeles
- * across daylight saving time, 16:00 only with 3+ approved items, the 6 h
- * gap, and missed slots that fold into one late post.
+ * The slot rules (slots.mjs): 03:00, 09:00, 15:00 and 21:00 in
+ * America/Los_Angeles across daylight saving time, the 6 h gap (a held slot
+ * is skipped) and where it counts from, and missed slots that fold into one
+ * late post.
  */
 import { describe, expect, test } from "bun:test";
 import {
   decide,
+  gapFrom,
+  heldWhy,
   nextSlot,
   pacificDay,
   pacificLabel,
@@ -17,20 +20,38 @@ const at = (iso: string) => Date.parse(iso);
 const iso = (ms: number) => new Date(ms).toISOString();
 
 // 2026-10-29 is PDT (UTC-7); daylight saving time ends on 2026-11-01.
+const OCT29_0300 = at("2026-10-29T10:00:00Z");
 const OCT29_0900 = at("2026-10-29T16:00:00Z");
-const OCT29_1600 = at("2026-10-29T23:00:00Z");
+const OCT29_1500 = at("2026-10-29T22:00:00Z");
+const OCT29_2100 = at("2026-10-30T04:00:00Z");
 const OCT28_0900 = at("2026-10-28T16:00:00Z");
 const HOUR = 60 * 60 * 1000;
+const MIN = 60 * 1000;
 
 describe("zone", () => {
-  test("09:00 and 16:00 move with daylight saving time", () => {
+  test("the four slots move with daylight saving time", () => {
+    expect(zonedInstant("2026-10-29", "03:00")).toBe(OCT29_0300);
     expect(zonedInstant("2026-10-29", "09:00")).toBe(OCT29_0900);
-    expect(zonedInstant("2026-10-29", "16:00")).toBe(OCT29_1600);
-    // PST (UTC-8) after 2026-11-01 02:00.
+    expect(zonedInstant("2026-10-29", "15:00")).toBe(OCT29_1500);
+    expect(zonedInstant("2026-10-29", "21:00")).toBe(OCT29_2100);
+    // PST (UTC-8) after 2026-11-01 02:00: 03:00 is one hour after the
+    // change, and the 21:00 before it is still PDT.
+    expect(iso(zonedInstant("2026-10-31", "21:00"))).toBe(
+      "2026-11-01T04:00:00.000Z",
+    );
+    expect(iso(zonedInstant("2026-11-01", "03:00"))).toBe(
+      "2026-11-01T11:00:00.000Z",
+    );
     expect(iso(zonedInstant("2026-11-01", "09:00"))).toBe(
       "2026-11-01T17:00:00.000Z",
     );
-    // PDT again from 2026-03-08 02:00.
+    // PDT again from 2027-03-14 02:00 (03:00 PDT is the hour after it).
+    expect(iso(zonedInstant("2027-03-13", "21:00"))).toBe(
+      "2027-03-14T05:00:00.000Z",
+    );
+    expect(iso(zonedInstant("2027-03-14", "03:00"))).toBe(
+      "2027-03-14T10:00:00.000Z",
+    );
     expect(iso(zonedInstant("2026-03-07", "09:00"))).toBe(
       "2026-03-07T17:00:00.000Z",
     );
@@ -45,12 +66,50 @@ describe("zone", () => {
     expect(pacificLabel(OCT29_0900)).toBe("Thu 2026-10-29 09:00 PT");
   });
 
-  test("slotsBetween: from is exclusive, to inclusive", () => {
+  test("slotsBetween: from is exclusive, to inclusive, every 6 h", () => {
     const s = slotsBetween(OCT28_0900, OCT29_0900);
     expect(s.map((x) => iso(x.at))).toEqual([
-      "2026-10-28T23:00:00.000Z",
+      "2026-10-28T22:00:00.000Z",
+      "2026-10-29T04:00:00.000Z",
+      "2026-10-29T10:00:00.000Z",
       "2026-10-29T16:00:00.000Z",
     ]);
+    expect(s.map((x) => x.time)).toEqual(["15:00", "21:00", "03:00", "09:00"]);
+  });
+
+  test("slotsBetween across both clock changes: four slots a day", () => {
+    // Fall: 21:00 PDT to 03:00 PST is 7 h.
+    expect(
+      slotsBetween(at("2026-10-31T16:00:00Z"), at("2026-11-01T17:00:00Z")).map(
+        (x) => iso(x.at),
+      ),
+    ).toEqual([
+      "2026-10-31T22:00:00.000Z",
+      "2026-11-01T04:00:00.000Z",
+      "2026-11-01T11:00:00.000Z",
+      "2026-11-01T17:00:00.000Z",
+    ]);
+    // Spring: 21:00 PST to 03:00 PDT is 5 h.
+    expect(
+      slotsBetween(at("2027-03-13T17:00:00Z"), at("2027-03-14T16:00:00Z")).map(
+        (x) => iso(x.at),
+      ),
+    ).toEqual([
+      "2027-03-13T23:00:00.000Z",
+      "2027-03-14T05:00:00.000Z",
+      "2027-03-14T10:00:00.000Z",
+      "2027-03-14T16:00:00.000Z",
+    ]);
+  });
+});
+
+describe("gapFrom", () => {
+  test("an on-time slot counts from its slot time, a late one from when it fired", () => {
+    expect(gapFrom(OCT29_0900, OCT29_0900 + 30_000)).toBe(OCT29_0900);
+    expect(gapFrom(OCT29_0900, OCT29_0900 + 5 * MIN)).toBe(OCT29_0900);
+    expect(gapFrom(OCT29_0900, OCT29_0900 + 5 * MIN + 1)).toBe(
+      OCT29_0900 + 5 * MIN + 1,
+    );
   });
 });
 
@@ -68,8 +127,8 @@ describe("decide", () => {
     });
   });
 
-  test("09:00 fires with one approved item, and is skipped with none", () => {
-    const state = handled(OCT28_0900 + 8 * HOUR, OCT28_0900);
+  test("a slot fires with one approved item, and is skipped with none", () => {
+    const state = handled(OCT29_0300, OCT29_0300);
     expect(decide(state, OCT29_0900 - 1000, 1).kind).toBe("wait");
     const fire = decide(state, OCT29_0900, 1);
     expect(fire).toMatchObject({
@@ -82,51 +141,144 @@ describe("decide", () => {
     expect(skip).toMatchObject({ kind: "skip", through: OCT29_0900 });
   });
 
-  test("16:00 is a slot only with 3 or more approved items", () => {
-    const state = handled(OCT29_0900, OCT29_0900);
-    expect(decide(state, OCT29_1600, 2)).toEqual({
-      kind: "pass",
-      through: OCT29_1600,
+  test("each of the four slots posts, whatever the size of the queue", () => {
+    for (const [prev, slot] of [
+      [OCT29_0300, OCT29_0900],
+      [OCT29_0900, OCT29_1500],
+      [OCT29_1500, OCT29_2100],
+    ]) {
+      expect(decide(handled(prev, prev), slot, 1).kind).toBe("fire");
+    }
+  });
+
+  test("an on-time post 30 s after its slot does not hold the next slot", () => {
+    // The timer ticks every 30 s; the gap counts from the slot time.
+    const state = handled(OCT29_0900, gapFrom(OCT29_0900, OCT29_0900 + 30_000));
+    expect(decide(state, OCT29_1500, 1).kind).toBe("fire");
+  });
+
+  test("a slot that the gap holds is skipped, and the next one posts on time", () => {
+    // A late post at 05:00 PT (the 03:00 slot, after an outage) holds the
+    // 09:00 slot until 11:00 PT: it is skipped, 15:00 posts.
+    const lastPost = OCT29_0300 + 2 * HOUR;
+    const state = handled(OCT29_0300, lastPost);
+    expect(decide(state, OCT29_0900, 1)).toEqual({
+      kind: "held",
+      slot: { time: "09:00", at: OCT29_0900 },
+      folded: [],
+      through: OCT29_0900,
+      lastPostAt: lastPost,
     });
-    // An empty queue at 16:00 is not a skipped slot either.
-    expect(decide(state, OCT29_1600, 0).kind).toBe("pass");
-    expect(decide(state, OCT29_1600, 3).kind).toBe("fire");
+    expect(decide(handled(OCT29_0900, lastPost), OCT29_1500, 1).kind).toBe(
+      "fire",
+    );
+    // An empty queue is a plain skip, held or not.
+    expect(decide(state, OCT29_0900, 0).kind).toBe("skip");
+    expect(heldWhy(lastPost)).toBe(
+      "held by the gap: 6 h after the Thu 2026-10-29 05:00 PT post",
+    );
   });
 
-  test("the 6 h gap pushes a slot, and it fires when the gap ends", () => {
-    // A late post at 04:00 PT holds the 09:00 slot until 10:00 PT.
-    const lastPost = OCT29_0900 - 5 * HOUR;
-    const state = handled(OCT28_0900 + 7 * HOUR, lastPost);
-    const held = decide(state, OCT29_0900, 1);
-    expect(held).toMatchObject({ kind: "wait", until: lastPost + 6 * HOUR });
-    expect(held.slot?.at).toBe(OCT29_0900);
-    expect(decide(state, lastPost + 6 * HOUR, 1).kind).toBe("fire");
-    // A queue that empties while the slot waits gives a skip.
-    expect(decide(state, OCT29_0900 + 30 * 60_000, 0).kind).toBe("skip");
+  test("a slot by hand: the next slot is held, the one after posts on time", () => {
+    // slot --now at 12:00 PT: 15:00 is held (skipped), 21:00 posts.
+    const byHand = OCT29_0900 + 3 * HOUR;
+    expect(decide(handled(OCT29_0900, byHand), OCT29_1500, 1).kind).toBe(
+      "held",
+    );
+    expect(decide(handled(OCT29_1500, byHand), OCT29_2100, 1).kind).toBe(
+      "fire",
+    );
   });
 
-  test("a late post pushes the next slot", () => {
-    // 09:00 posted at 11:00 PT: 16:00 waits until 17:00 PT.
-    const lastPost = OCT29_0900 + 2 * HOUR;
-    const state = handled(OCT29_0900, lastPost);
-    expect(decide(state, OCT29_1600, 3)).toMatchObject({
+  test("a hold of 5 min or less waits and fires, as on time", () => {
+    // A gap that counted from the fire time (the state before gapFrom):
+    // 20 s after 03:00 holds 09:00 for 20 s.
+    const lastPost = OCT29_0300 + 20_000;
+    const state = handled(OCT29_0300, lastPost);
+    expect(decide(state, OCT29_0900, 1)).toMatchObject({
       kind: "wait",
       until: lastPost + 6 * HOUR,
     });
+    expect(decide(state, lastPost + 6 * HOUR, 1).kind).toBe("fire");
+    expect(gapFrom(OCT29_0900, OCT29_0900 + 50_000)).toBe(OCT29_0900);
+  });
+
+  test("a slot that came due while the app was down and is out of the gap now posts late", () => {
+    // Last post 05:00 PT; down at 09:00; back at 12:00, after the gap.
+    const state = handled(OCT29_0300, OCT29_0300 + 2 * HOUR);
+    expect(decide(state, OCT29_0900 + 3 * HOUR, 1).kind).toBe("fire");
+  });
+
+  test("spring clock change: 21:00 PST to 03:00 PDT is 5 h, so 03:00 is held and 09:00 posts on time", () => {
+    const lastPost = at("2027-03-14T05:00:00Z"); // 21:00 PST, on time
+    const held = decide(
+      handled(lastPost, lastPost),
+      at("2027-03-14T10:00:00Z"),
+      1,
+    );
+    expect(held).toMatchObject({ kind: "held", lastPostAt: lastPost });
+    expect(
+      decide(
+        handled(at("2027-03-14T10:00:00Z"), lastPost),
+        at("2027-03-14T16:00:00Z"),
+        1,
+      ).kind,
+    ).toBe("fire");
+  });
+
+  test("fall clock change: 21:00 PDT to 03:00 PST is 7 h, so 03:00 posts on time", () => {
+    const lastPost = at("2026-11-01T04:00:00Z"); // 21:00 PDT, on time
+    const state = handled(lastPost, lastPost);
+    expect(decide(state, at("2026-11-01T11:00:00Z"), 1).kind).toBe("fire");
+  });
+
+  test("a month of slots fired one tick late: no drift, every slot on time", () => {
+    // The timer, as scheduler.mjs runs it, with each slot seen 29 s late.
+    const run = (fromIso: string, toIso: string) => {
+      let state = handled(at(fromIso), at(fromIso));
+      const out: { at: string; kind: string; late: number }[] = [];
+      // slotsBetween looks back 2 days at most: list the month a day at a
+      // time.
+      const slots = [];
+      for (let f = at(fromIso); f < at(toIso); f += 24 * HOUR) {
+        slots.push(...slotsBetween(f, Math.min(f + 24 * HOUR, at(toIso))));
+      }
+      for (const slot of slots) {
+        const t = slot.at + 29_000;
+        // One tick per slot, so the slot it decides on is `slot`.
+        const { kind } = decide(state, t, 1);
+        out.push({ at: iso(slot.at), kind, late: t - slot.at });
+        if (kind === "fire") {
+          state = handled(slot.at, gapFrom(slot.at, t));
+        } else if (kind === "held") {
+          state = { ...state, lastSlotAt: iso(slot.at) };
+        }
+      }
+      return out;
+    };
+    // 31 days across the fall change (to 09:00 PST = 17:00Z): 124 slots,
+    // all posted, none late.
+    const fall = run("2026-10-29T16:00:00Z", "2026-11-29T17:00:00Z");
+    expect(fall).toHaveLength(124);
+    expect(fall.filter((x) => x.kind !== "fire")).toEqual([]);
+    expect(Math.max(...fall.map((x) => x.late))).toBe(29_000);
+    // Across the spring change: only its 03:00 slot is held.
+    const spring = run("2027-03-01T17:00:00Z", "2027-03-31T16:00:00Z");
+    expect(spring.filter((x) => x.kind !== "fire")).toEqual([
+      { at: "2027-03-14T10:00:00.000Z", kind: "held", late: 29_000 },
+    ]);
   });
 
   test("missed slots fold into one late post", () => {
     // Down from 2026-10-28 09:00 PT to 2026-10-29 11:00 PT.
     const state = handled(OCT28_0900, OCT28_0900);
-    const now = OCT29_0900 + 2 * HOUR;
-    const few = decide(state, now, 1);
-    expect(few).toMatchObject({ kind: "fire", folded: [] });
-    expect(few.slot?.at).toBe(OCT29_0900);
-    const many = decide(state, now, 3);
-    expect(many.kind).toBe("fire");
-    expect(many.slot?.at).toBe(OCT29_0900);
-    expect(many.folded?.map((s: { at: number }) => s.at)).toEqual([
-      OCT28_0900 + 7 * HOUR,
+    const d = decide(state, OCT29_0900 + 2 * HOUR, 1);
+    expect(d).toMatchObject({ kind: "fire", through: OCT29_0900 });
+    expect(d.slot?.at).toBe(OCT29_0900);
+    expect(d.folded?.map((s: { at: number }) => s.at)).toEqual([
+      OCT28_0900 + 6 * HOUR,
+      OCT28_0900 + 12 * HOUR,
+      OCT29_0300,
     ]);
   });
 
@@ -141,7 +293,7 @@ describe("decide", () => {
     ).toEqual([]);
   });
 
-  test("a long outage gives one post, not one per day", () => {
+  test("a long outage gives one post, not one per slot", () => {
     const state = handled(OCT28_0900 - 10 * 24 * HOUR, null);
     const d = decide(state, OCT29_0900 + HOUR, 1);
     expect(d.kind).toBe("fire");
@@ -156,45 +308,53 @@ describe("nextSlot", () => {
     lastPostAt: iso(OCT29_0900),
   };
 
-  test("16:00 with 3 ready, else the next 09:00", () => {
-    const now = OCT29_0900 + HOUR;
-    expect(nextSlot(state, now, 3)).toEqual({
-      slotAt: iso(OCT29_1600),
-      at: iso(OCT29_1600),
-      pacific: "Thu 2026-10-29 16:00 PT",
+  test("the next slot is 6 h after the last one, with any queue", () => {
+    expect(nextSlot(state, OCT29_0900 + HOUR, 1)).toEqual({
+      slotAt: iso(OCT29_1500),
+      at: iso(OCT29_1500),
+      pacific: "Thu 2026-10-29 15:00 PT",
       willPost: true,
       why: null,
     });
-    expect(nextSlot(state, now, 2)).toMatchObject({
-      slotAt: "2026-10-30T16:00:00.000Z",
-      willPost: true,
-    });
   });
 
-  test("an empty queue: the next 09:00 does not post", () => {
+  test("an empty queue: the next slot does not post", () => {
     expect(nextSlot(state, OCT29_0900 + HOUR, 0)).toMatchObject({
-      slotAt: "2026-10-30T16:00:00.000Z",
+      slotAt: iso(OCT29_1500),
       willPost: false,
       why: "the approved queue is empty",
     });
   });
 
-  test("a pushed slot shows the time it will fire", () => {
+  test("a slot that the gap will hold shows that it will not post", () => {
     const late = {
       lastSlotAt: iso(OCT29_0900),
       lastPostAt: iso(OCT29_0900 + 2 * HOUR),
     };
-    expect(nextSlot(late, OCT29_0900 + 3 * HOUR, 3)).toMatchObject({
-      slotAt: iso(OCT29_1600),
-      at: iso(OCT29_0900 + 8 * HOUR),
-      pacific: "Thu 2026-10-29 17:00 PT",
+    expect(nextSlot(late, OCT29_0900 + 3 * HOUR, 1)).toEqual({
+      slotAt: iso(OCT29_1500),
+      at: iso(OCT29_1500),
+      pacific: "Thu 2026-10-29 15:00 PT",
+      willPost: false,
+      why: "held by the gap: 6 h after the Thu 2026-10-29 11:00 PT post",
+    });
+    // Due and held.
+    expect(nextSlot(late, OCT29_1500 + 1000, 1)).toMatchObject({
+      slotAt: iso(OCT29_1500),
+      willPost: false,
+    });
+  });
+
+  test("a hold of 5 min or less: the slot posts when the gap ends", () => {
+    const close = {
+      lastSlotAt: iso(OCT29_0900),
+      lastPostAt: iso(OCT29_0900 + 20_000),
+    };
+    expect(nextSlot(close, OCT29_0900 + HOUR, 1)).toMatchObject({
+      slotAt: iso(OCT29_1500),
+      at: iso(OCT29_1500 + 20_000),
       willPost: true,
       why: "pushed: 6 h after the last post",
-    });
-    // Due and held by the gap.
-    expect(nextSlot(late, OCT29_1600 + 1000, 3)).toMatchObject({
-      at: iso(OCT29_0900 + 8 * HOUR),
-      willPost: true,
     });
   });
 

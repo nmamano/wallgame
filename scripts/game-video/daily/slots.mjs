@@ -5,32 +5,31 @@
  * and the tests all ask the same question in the same way.
  *
  * The rules, in America/Los_Angeles:
- * - 09:00 every day. With no approved item, the slot is skipped (and Growth
- *   hears it).
- * - 16:00 only while 3 or more approved items wait at that time. With fewer,
- *   16:00 is not a slot at all: nothing posts and nobody hears of it.
- * - Never two posts within 6 h: a due slot waits until 6 h after the last
- *   post (a late post pushes the next).
+ * - A slot every 6 h: 03:00, 09:00, 15:00 and 21:00 every day (Nil through
+ *   Growth, 2026-10-30: "i think we can post every 6h"). With no approved
+ *   item, the slot is skipped (and Growth hears it).
+ * - Never two posts within 6 h. A slot that the gap holds is skipped, and
+ *   the next slot posts at its own time, so posts stay on the four slot
+ *   times (Growth and Wall Game PM, 2026-10-30): after a post by hand
+ *   (slot --now) or a late post, and on the day clocks go forward (21:00
+ *   PST to 03:00 PDT is 5 h). A hold of LATE_AFTER_MS or less is not a
+ *   skip: the slot waits for the gap and still counts as on time.
+ * - A slot that fires on time counts the gap from its slot time (gapFrom),
+ *   so the timer's tick does not add up from slot to slot.
  * - A slot that came due while the app was down posts late when the app is
  *   back, and older missed slots fold into the newest one: one post, never a
  *   burst (Wall Game PM, 2026-10-28; Nil wants a post at least once per
  *   24 h, so a late post beats a skip).
  *
  * The state that these functions read is { lastSlotAt, lastPostAt } (ISO
- * strings or null): the newest slot time that was handled (posted, skipped
- * or passed), and the time of the last slot post.
+ * strings or null): the newest slot time that was handled (posted or
+ * skipped), and the time from which the 6 h gap counts (gapFrom).
  */
 
 export const SLOT_ZONE = "America/Los_Angeles";
 
-/**
- * `always`: the slot counts with any number of approved items. Otherwise it
- * counts only while `whileReady` or more approved items wait.
- */
-export const SLOTS = [
-  { time: "09:00", always: true, whileReady: 1 },
-  { time: "16:00", always: false, whileReady: 3 },
-];
+/** The slot times, Pacific wall clock. */
+export const SLOTS = ["03:00", "09:00", "15:00", "21:00"];
 
 export const MIN_GAP_MS = 6 * 60 * 60 * 1000;
 
@@ -38,8 +37,8 @@ export const MIN_GAP_MS = 6 * 60 * 60 * 1000;
 export const LATE_AFTER_MS = 5 * 60 * 1000;
 
 /**
- * Slots older than this before now are not listed: the 09:00 slot counts
- * always, so a newer one folds them in any case.
+ * Slots older than this before now are not listed: a newer one folds them
+ * in any case.
  */
 const LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 
@@ -85,8 +84,9 @@ export const pacificDay = (ms) => {
 /**
  * The instant of the wall-clock time `hhmm` on `day` in the zone. The offset
  * is read twice, at the guess and at the result, so a day on which daylight
- * saving time starts or ends gives the right hour (09:00 and 16:00 are far
- * from the 02:00 change).
+ * saving time starts or ends gives the right hour. 03:00 is one hour after
+ * the 02:00 change: on 2026-11-01 it is 03:00 PST, on 2027-03-14 03:00 PDT
+ * (slots.test.ts).
  */
 export const zonedInstant = (day, hhmm) => {
   const [y, m, d] = day.split("-").map(Number);
@@ -107,7 +107,7 @@ export const pacificLabel = (ms) => {
 
 /**
  * Every slot time after `fromMs` (exclusive) up to `toMs` (inclusive),
- * oldest first: [{ at, time, always, whileReady }].
+ * oldest first: [{ at, time }].
  */
 export const slotsBetween = (fromMs, toMs) => {
   const from = Math.max(fromMs, toMs - LOOKBACK_MS);
@@ -117,16 +117,14 @@ export const slotsBetween = (fromMs, toMs) => {
   const out = [];
   const last = pacificDay(toMs);
   for (let day = pacificDay(from); ; day = nextDay(day)) {
-    for (const slot of SLOTS) {
-      const at = zonedInstant(day, slot.time);
-      if (at > from && at <= toMs) out.push({ ...slot, at });
+    for (const time of SLOTS) {
+      const at = zonedInstant(day, time);
+      if (at > from && at <= toMs) out.push({ time, at });
     }
     if (day === last) break;
   }
   return out;
 };
-
-const counts = (slot, ready) => slot.always || ready >= slot.whileReady;
 
 const ms = (iso) => (iso ? Date.parse(iso) : null);
 
@@ -135,9 +133,11 @@ const ms = (iso) => (iso ? Date.parse(iso) : null);
  * - { kind: "start" }: no state yet (first run): record now as handled, so
  *   slots from before the first run never post.
  * - { kind: "wait" }: no slot is due.
- * - { kind: "wait", slot, until }: a slot is due, but the 6 h gap holds it.
- * - { kind: "pass", through }: only 16:00 slots with too few approved items
- *   came due; mark them handled, no post, no message.
+ * - { kind: "wait", slot, until }: a slot is due, and the 6 h gap holds it
+ *   for LATE_AFTER_MS or less: it fires at `until`.
+ * - { kind: "held", slot, folded, through, lastPostAt }: a slot is due, and
+ *   the gap holds it longer: it is skipped (the gap counts from
+ *   `lastPostAt`).
  * - { kind: "skip", slot, folded, through }: a slot is due and no item is
  *   approved.
  * - { kind: "fire", slot, folded, through }: post the oldest approved item.
@@ -148,21 +148,39 @@ export const decide = (state, nowMs, ready) => {
   const lastSlotAt = ms(state?.lastSlotAt);
   if (lastSlotAt === null) return { kind: "start" };
   const due = slotsBetween(lastSlotAt, nowMs);
-  const counting = due.filter((s) => counts(s, ready));
-  if (!counting.length) {
-    return due.length
-      ? { kind: "pass", through: due.at(-1).at }
-      : { kind: "wait" };
-  }
-  const slot = counting.at(-1);
-  const folded = counting.slice(0, -1);
-  const through = due.at(-1).at;
+  if (!due.length) return { kind: "wait" };
+  const slot = due.at(-1);
+  const folded = due.slice(0, -1);
+  const through = slot.at;
   if (ready === 0) return { kind: "skip", slot, folded, through };
   const lastPostAt = ms(state.lastPostAt);
   const until = lastPostAt === null ? 0 : lastPostAt + MIN_GAP_MS;
-  if (nowMs < until) return { kind: "wait", slot, until };
-  return { kind: "fire", slot, folded, through };
+  // A slot that came due while the app was down and is out of the gap now
+  // posts late (a late post beats a skip).
+  if (nowMs >= until) return { kind: "fire", slot, folded, through };
+  return until - slot.at <= LATE_AFTER_MS
+    ? { kind: "wait", slot, until }
+    : { kind: "held", slot, folded, through, lastPostAt };
 };
+
+/** Why a held slot does not post, for the slot message and the status. */
+export const heldWhy = (lastPostAt) =>
+  `held by the gap: 6 h after the ${pacificLabel(lastPostAt)} post`;
+
+/**
+ * The time from which the 6 h gap after a slot post counts: the slot time
+ * when the slot fired on time (within LATE_AFTER_MS), else the time it
+ * fired. The timer fires up to one tick after a slot; with slots exactly
+ * 6 h apart, a gap from the fire time would hold each next slot for that
+ * tick, and the delay would add up (about 1 min a day). A late slot (after
+ * an outage) counts from when it fired, so the next slot is held if it
+ * comes within 6 h of that post.
+ * @param {number} slotAtMs
+ * @param {number} firedAtMs
+ * @returns {number}
+ */
+export const gapFrom = (slotAtMs, firedAtMs) =>
+  firedAtMs - slotAtMs <= LATE_AFTER_MS ? slotAtMs : firedAtMs;
 
 /**
  * The next thing the timer will do, for GET /api/review/status and the
@@ -188,15 +206,16 @@ export const nextSlot = (state, nowMs, ready) => {
       "pushed: 6 h after the last post",
     );
   }
+  if (d.kind === "held") {
+    return describe(d.slot.at, nowMs, false, heldWhy(d.lastPostAt));
+  }
   if (d.kind === "fire") return describe(d.slot.at, nowMs, true, null);
   if (d.kind === "skip") {
     return describe(d.slot.at, nowMs, false, "the approved queue is empty");
   }
-  // Nothing is due: the first coming slot that counts with today's queue.
+  // Nothing is due: the first coming slot.
   const from = Math.max(nowMs, ms(state?.lastSlotAt) ?? nowMs);
-  const slot = slotsBetween(from, from + 2 * DAY_MS).find((s) =>
-    counts(s, ready),
-  );
+  const [slot] = slotsBetween(from, from + DAY_MS);
   const lastPostAt = ms(state?.lastPostAt);
   const at = Math.max(
     slot.at,
@@ -204,6 +223,9 @@ export const nextSlot = (state, nowMs, ready) => {
   );
   if (ready === 0) {
     return describe(slot.at, at, false, "the approved queue is empty");
+  }
+  if (lastPostAt !== null && at - slot.at > LATE_AFTER_MS) {
+    return describe(slot.at, slot.at, false, heldWhy(lastPostAt));
   }
   return describe(
     slot.at,

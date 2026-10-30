@@ -169,8 +169,8 @@ describe("scheduler", () => {
     expect(w.sent[0]).toContain("- tiktok: inbox draft");
     expect(w.sent[0]).toContain("Status: ready (approved) 1,");
     expect(w.sent[0]).toContain("posted today 1.");
-    // 16:00 needs 3 ready: the next is tomorrow 09:00.
-    expect(w.sent[0]).toContain("Next slot: Fri 2026-10-30 09:00 PT");
+    // A slot every 6 h: the next is 15:00 the same day.
+    expect(w.sent[0]).toContain("Next slot: Thu 2026-10-29 15:00 PT");
     // A new app (a restart) reads the file and does not post again.
     s = w.make();
     w.setTime(OCT29_0900 + 60_000);
@@ -206,6 +206,31 @@ describe("scheduler", () => {
     expect(w.posted).toEqual(["v-2026-10-28-1"]);
     expect(w.sent[0]).toContain(
       "Slot Thu 2026-10-29 09:00 PT, LATE: fired Thu 2026-10-29 11:12 PT: POSTED",
+    );
+  });
+
+  test("the gap counts from the slot time of an on-time post, from the fire time of a late one", async () => {
+    // On time: fired one tick (30 s) after 09:00, the 15:00 slot still
+    // posts at 15:00, so the delay never adds up from slot to slot.
+    const w = world({ ready: 2 });
+    const s = w.make();
+    await s.tick();
+    w.setTime(OCT29_0900 + 30_000);
+    await s.tick();
+    expect(readState(w.statePath).lastPostAt).toBe(
+      new Date(OCT29_0900).toISOString(),
+    );
+    w.setTime(OCT29_0900 + 6 * HOUR);
+    await s.tick();
+    expect(w.posted).toEqual(["v-2026-10-28-1", "v-2026-10-28-2"]);
+    // Late (after an outage): the gap counts from when it fired.
+    const late = world({ ready: 1 });
+    await late.make().tick();
+    const firedAt = OCT29_0900 + 2 * HOUR;
+    late.setTime(firedAt);
+    await late.make().tick();
+    expect(readState(late.statePath).lastPostAt).toBe(
+      new Date(firedAt).toISOString(),
     );
   });
 
@@ -562,14 +587,22 @@ describe("a slot by hand (fireNow)", () => {
     expect(w.sent).toHaveLength(1);
     expect(readFileSync(w.statePath, "utf8")).toBe(raw);
 
-    // The 09:00 slot came during the gap: it waits, then posts late.
+    // The 09:00 slot came during the gap: it is held (skipped, with a
+    // message), and the 15:00 slot posts at its time.
     w.setTime(OCT29_0900);
     await s.tick();
     expect(w.posted).toEqual(["v-2026-10-28-1"]);
-    w.setTime(OCT29_0900 - HOUR + 6 * HOUR);
+    expect(w.sent[1]).toContain(
+      "Slot Thu 2026-10-29 09:00 PT: SKIPPED, held by the gap: 6 h after the Thu 2026-10-29 08:00 PT post. The approved items stay approved; the next slot posts at its time.",
+    );
+    expect(readState(w.statePath).lastSlot).toMatchObject({
+      outcome: "held",
+      itemId: null,
+    });
+    w.setTime(OCT29_0900 + 6 * HOUR);
     await s.tick();
     expect(w.posted).toEqual(["v-2026-10-28-1", "v-2026-10-28-2"]);
-    expect(w.sent[1]).toContain("Slot Thu 2026-10-29 09:00 PT, LATE");
+    expect(w.sent[2]).toContain("Slot Thu 2026-10-29 15:00 PT: POSTED");
     expect(w.firedBys).toEqual(["Wall Game Growth", undefined]);
   });
 
