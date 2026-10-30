@@ -323,7 +323,8 @@ export const REVIEW_PAGE = `<!doctype html>
       b.disabled = !canReview;
       b.onclick = async () => {
         why.textContent = ""; notes.classList.remove("need");
-        // Revise and Discard need a note (store.mjs review): say so here,
+        // Revise and Discard need a note (the same rule as store.mjs review,
+        // which stays the judge: change both together): say so here,
         // before anything is sent, and put the cursor in the note box (Nil,
         // 2026-10-30: a Revise with no note looked done but was refused).
         if (action !== "approve" && !notes.value.trim()) {

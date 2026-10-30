@@ -711,6 +711,8 @@ export const openStore = (dataDir) => {
       if (typeof notes !== "string" || notes.length > NOTES_MAX) {
         refuse(`the notes are a text of at most ${NOTES_MAX} characters`);
       }
+      // The same rule as the review page's card (review.mjs REVIEW_PAGE,
+      // b.onclick), which checks it before it sends: change both together.
       if (action !== "approve" && !notes.trim()) {
         refuse(
           `${action} needs notes: tell the director ${action === "revise" ? "what to change" : "why"}`,
