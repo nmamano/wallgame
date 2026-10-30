@@ -2773,6 +2773,10 @@
        * data lifted from the game record or from a screenshot of the product.
        */
       window.__stage = (s) => {
+        // The walks whose number found no free side (paintPath), for the
+        // lint: none unless this frame paints a walk, so a VS or end frame
+        // never reports a play frame's walks (Video Reviewer 1, review 88).
+        window.__crowdedWalks = [];
         show($("vs"), s.segment === "vs");
         show($("play"), s.segment === "play");
         show($("end"), s.segment === "end");
@@ -2848,7 +2852,6 @@
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
-          // The walks whose number found no free side, for the lint.
           window.__crowdedWalks = paintPath(s.path);
           paintOverlay(s.overlay);
           paintHud(s.race, goalNow, s.credit, s.fastForward);
