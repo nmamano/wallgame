@@ -1370,6 +1370,11 @@ const CAPTURE_INPUTS = {
   boardTheme: BOARD_THEME,
   browser: BROWSER,
   captureDpr: CAPTURE_DPR,
+  // The site's yellow glow on the last placed wall is off at capture: a
+  // plain new wall has no mark, and a trap's or an explain's walls take the
+  // stage's own look (paintTrap; Nil, 2026-10-30, C27: "B is the best look.
+  // all others have weird gaps").
+  siteWallGlow: false,
 };
 const GAME_CACHE = join(CACHE_DIR, GAME_ID);
 /** The cached capture with --from-cache; null when the page is captured live. */
@@ -2016,6 +2021,31 @@ if (!cached && STYLE_NAMES.includes("daily")) {
     );
   }
   log(`start walls: ${startWalls}, ${before.site} parts repainted grey`);
+  // The site's glow on the last placed wall (board.tsx, a box-shadow in
+  // --wall-highlight-glow) is off (CAPTURE_INPUTS.siteWallGlow). If the
+  // site renames the variable, the old one is no longer set: the render
+  // stops rather than capture the glow.
+  const glow = () =>
+    game.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--wall-highlight-glow")
+        .trim(),
+    );
+  const siteGlow = await glow();
+  if (siteGlow === "") {
+    throw new Error(
+      "the page sets no --wall-highlight-glow: the site changed how it marks the last wall",
+    );
+  }
+  await game.addStyleTag({
+    content: "* { --wall-highlight-glow: transparent !important; }",
+  });
+  if ((await glow()) !== "transparent") {
+    throw new Error(
+      `the site's last-wall glow did not turn off: --wall-highlight-glow is still ${await glow()}`,
+    );
+  }
+  log(`the site's last-wall glow: off (was ${siteGlow})`);
 }
 
 /**
@@ -2965,6 +2995,45 @@ const litWallLine = (term, boardIndex) => {
   }
   return line;
 };
+
+/**
+ * A wall's owner's colour (the seat's accent): the seat whose move placed
+ * it. Player 1 moves on even plies.
+ */
+const wallOwnerRgb = (term) => {
+  const i = history.findIndex((h) =>
+    String(h.notation ?? "")
+      .split(".")
+      .includes(term),
+  );
+  if (i < 0) throw new Error(`no move of the game placed the wall ${term}`);
+  return `rgb(${accents[i % 2 === 0 ? 1 : 2].join(",")})`;
+};
+/**
+ * The outer cells' box, as fractions of the image: a lit wall ends at its
+ * edge, where the page's wall at the board's edge ends (measured on item
+ * 13's >d1, 2026-10-30: the page's wall ends at the cell's edge, half a
+ * groove inside GRID.y(rows)).
+ */
+const GRID_BOX = [
+  GRID.x(0) + GROOVE.x / 2,
+  GRID.y(0) + GROOVE.y / 2,
+  GRID.x(GRID.cols) - GROOVE.x / 2,
+  GRID.y(GRID.rows) - GROOVE.y / 2,
+];
+/**
+ * The stage's lit walls (paintTrap) for the wall terms `terms` over the
+ * position after `boardIndex` plies: each wall's line and its owner's
+ * colour, the groove's width and the outer cells' box.
+ * @param {string[]} terms
+ * @param {number} boardIndex
+ */
+const litWalls = (terms, boardIndex) => ({
+  walls: terms.map((w) => litWallLine(w, boardIndex)),
+  colors: terms.map(wallOwnerRgb),
+  groove: GROOVE,
+  box: GRID_BOX,
+});
 
 /**
  * The punch-in that frames every term of a zoom: the scale, at most
@@ -5139,7 +5208,7 @@ const renderStyle = async (styleName) => {
       },
     );
     cue(moveClick(coldPly), "cold-open");
-    const coldLines = walls.map((w) => litWallLine(w, coldPly + 1));
+    const coldLit = litWalls(walls, coldPly + 1);
     const frames = Math.round(COLD_OPEN_SECONDS * FPS);
     for (let i = 0; i < frames; i += 1) {
       const t = i / FPS;
@@ -5148,12 +5217,7 @@ const renderStyle = async (styleName) => {
         playState(coldPly + 1, {
           zoom: { ...z, scale: 1 + (z.scale - 1) * push },
           ...(walls.length > 0 && {
-            trap: {
-              t,
-              walls: coldLines,
-              groove: GROOVE,
-              lit: true,
-            },
+            trap: { t, ...coldLit, lit: true },
           }),
         }),
         1 / FPS,
@@ -5713,11 +5777,7 @@ const renderStyle = async (styleName) => {
     }
     if (ev.kind === "trap") {
       return {
-        trap: {
-          t,
-          walls: ev.walls.map((w) => litWallLine(w, ply)),
-          groove: GROOVE,
-        },
+        trap: { t, ...litWalls(ev.walls, ply) },
         midStamp:
           t >= TRAP_STAMP_AT
             ? {
@@ -5839,11 +5899,8 @@ const renderStyle = async (styleName) => {
       drawn,
       alpha,
     });
-    const glow = (t) => ({
-      t,
-      walls: f.walls.map((w) => litWallLine(w, ply)),
-      groove: GROOVE,
-    });
+    const lit = litWalls(f.walls, ply);
+    const glow = (t) => ({ t, ...lit });
     const oldWalk = was > 1;
     // 1. The old walk, on the position before the move.
     const drawBefore = drawSeconds(f.before.points);

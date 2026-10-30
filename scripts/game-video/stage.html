@@ -2893,68 +2893,68 @@
       };
 
       /*
-        A trap's or an explain's glow (render-game-video.mjs): the lit walls
-        are ringed in yellow as one shape, and the glow is cut out of the
-        walls' own grooves (tr.groove, measured from the page's grid), so
-        each wall keeps its owner's red or blue (Nil, 2026-10-30, C16: "a
-        highlight that still let the color through would help follow
-        what's happening"). One shape, not a ring per wall (Nil,
-        2026-10-30, C21: "the wall highlights are unpolished on the
-        corners"): each layer is drawn opaque inside a group that has the
-        layer's opacity, so where two walls meet their glows join with no
-        brighter seam, and their round ends make a round join. A groove's
-        cut has square ends, so it also takes the corner square where two
-        walls meet.
+        A trap's or an explain's lit walls (render-game-video.mjs litWalls):
+        each wall itself, drawn over the page's wall 1.6 times as thick and
+        35% lighter in its owner's colour (Nil, 2026-10-30, C27: "B is the
+        best look. all others have weird gaps"; a ring or a glow round the
+        wall left gaps at the corners). All walls are drawn opaque in one
+        group that has the fade's opacity, so where two walls meet they
+        join with no brighter seam, and their round ends make a round join.
+        The group is clipped to the outer cells' box (tr.box): a wall that ends
+        at the board's edge ends flat there, and its round end does not
+        run off the board.
       */
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);
         if (!tr) return;
         const on = tr.lit ? 1 : easeOut3(span(tr.t, 0, 0.15));
-        const pulse = 0.65 + 0.35 * Math.cos(tr.t * Math.PI * 4);
-        const pts = ([x1, y1, x2, y2]) =>
-          'x1="' +
-          x1 * 1000 +
-          '" y1="' +
-          y1 * 1000 +
-          '" x2="' +
-          x2 * 1000 +
-          '" y2="' +
-          y2 * 1000 +
-          '"';
         // The groove's width in the svg's units, across the wall.
         const across = ([x1, , x2]) =>
           (x1 === x2 ? tr.groove.x : tr.groove.y) * 1000;
-        const layer = (opacity, color, width, cap) =>
-          '<g opacity="' +
-          opacity +
+        const lighter = (rgb) =>
+          "rgb(" +
+          rgb
+            .match(/\d+/g)
+            .map((v) => Math.round(+v + (255 - v) * TRAP_LIGHTER))
+            .join(",") +
+          ")";
+        const [x0, y0, x1, y1] = tr.box.map((v) => v * 1000);
+        svg.innerHTML =
+          '<defs><clipPath id="trapBox"><rect x="' +
+          x0 +
+          '" y="' +
+          y0 +
+          '" width="' +
+          (x1 - x0) +
+          '" height="' +
+          (y1 - y0) +
+          '"/></clipPath></defs><g clip-path="url(#trapBox)" opacity="' +
+          on +
           '">' +
           tr.walls
             .map(
-              (w) =>
-                "<line " +
-                pts(w) +
-                ' stroke="' +
-                color +
+              ([ax, ay, bx, by], i) =>
+                '<line x1="' +
+                ax * 1000 +
+                '" y1="' +
+                ay * 1000 +
+                '" x2="' +
+                bx * 1000 +
+                '" y2="' +
+                by * 1000 +
+                '" stroke="' +
+                lighter(tr.colors[i]) +
                 '" stroke-width="' +
-                width(w) +
-                '" stroke-linecap="' +
-                cap +
-                '"/>',
+                across([ax, ay, bx, by]) * TRAP_THICK +
+                '" stroke-linecap="round"/>',
             )
             .join("") +
           "</g>";
-        svg.innerHTML =
-          '<defs><mask id="trapHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">' +
-          '<rect width="1000" height="1000" fill="#fff"/>' +
-          layer(1, "#000", across, "square") +
-          '</mask></defs><g mask="url(#trapHoles)">' +
-          layer(0.6 * on * pulse, "#facc15", () => 64, "round") +
-          layer(on, "#fef08a", (w) => across(w) + TRAP_RING * 2, "round") +
-          "</g>";
       };
-      // The bright ring's width each side of a lit wall, in the svg's units.
-      const TRAP_RING = 7;
+      // A lit wall's width, in grooves, and how far it goes toward white.
+      const TRAP_THICK = 1.6;
+      const TRAP_LIGHTER = 0.35;
 
       /**
        * The head row: the race counter, or the goal line while the VS
