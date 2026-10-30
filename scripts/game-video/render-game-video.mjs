@@ -2998,7 +2998,9 @@ const litWallLine = (term, boardIndex) => {
 
 /**
  * A wall's owner's colour (the seat's accent): the seat whose move placed
- * it. Player 1 moves on even plies.
+ * it, from REPLAYED.movers (the game state's turn, not the ply's parity: a
+ * custom setup can start with player 2; VR1, review 106 C1). Only an EDL
+ * lights walls, so REPLAYED is there.
  */
 const wallOwnerRgb = (term) => {
   const i = history.findIndex((h) =>
@@ -3007,7 +3009,8 @@ const wallOwnerRgb = (term) => {
       .includes(term),
   );
   if (i < 0) throw new Error(`no move of the game placed the wall ${term}`);
-  return `rgb(${accents[i % 2 === 0 ? 1 : 2].join(",")})`;
+  if (!REPLAYED) throw new Error(`the wall ${term} is lit with no EDL`);
+  return `rgb(${accents[REPLAYED.movers[i]].join(",")})`;
 };
 /**
  * The outer cells' box, as fractions of the image: a lit wall ends at its
