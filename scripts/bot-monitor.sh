@@ -18,6 +18,12 @@
 #   healthy in that state. Asking the PUBLIC bot listing the same question a
 #   player's browser asks is the only check that sees it.
 #
+# It also times that check. A slow site makes the bot client's 30s ping go
+# unanswered, so the client drops its socket and a game in flight can be
+# forfeited (2026-10-25 and 2026-10-30: 40 drops while these checks took ~10s
+# instead of ~2.6s). It alerts on the change only: slow, still slow after
+# SLOW_REMIND_RUNS checks, normal again.
+#
 # Install as a systemd user timer: see scripts/wallgame-bot-monitor.{service,timer}
 set -uo pipefail
 
@@ -49,6 +55,8 @@ STATE_FILE="${WALLGAME_MONITOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/wall
 
 FAIL_THRESHOLD="${WALLGAME_MONITOR_FAIL_THRESHOLD:-2}" # consecutive misses before declaring DOWN
 RESTART_COOLDOWN="${WALLGAME_MONITOR_RESTART_COOLDOWN:-1800}" # seconds between restart attempts
+SLOW_MS="${WALLGAME_MONITOR_SLOW_MS:-10000}" # a check slower than this is "slow"
+SLOW_REMIND_RUNS="${WALLGAME_MONITOR_SLOW_REMIND_RUNS:-6}" # slow checks in a row before "still slow"
 
 # bot id | variant | placement | display name. A bot only appears under the
 # variants and placement it declares, so PuzzleBot must be queried through the
@@ -86,16 +94,19 @@ send_isomux() {
 
 mkdir -p "$(dirname "$STATE_FILE")"
 
-# Prior state: line 1 = up|down, line 2 = consecutive fails, line 3 = last restart epoch
-prev="up"; fails=0; last_restart=0
+# Prior state: line 1 = up|down, line 2 = consecutive fails, line 3 = last restart
+# epoch, line 4 = consecutive slow checks
+prev="up"; fails=0; last_restart=0; slow_runs=0
 if [ -f "$STATE_FILE" ]; then
   prev="$(sed -n 1p "$STATE_FILE")"
   fails="$(sed -n 2p "$STATE_FILE")"
   last_restart="$(sed -n 3p "$STATE_FILE")"
+  slow_runs="$(sed -n 4p "$STATE_FILE")"
 fi
 [ -z "$prev" ] && prev="up"
 [[ "$fails" =~ ^[0-9]+$ ]] || fails=0
 [[ "$last_restart" =~ ^[0-9]+$ ]] || last_restart=0
+[[ "$slow_runs" =~ ^[0-9]+$ ]] || slow_runs=0
 
 now="$(date -Is)"
 now_epoch="$(date +%s)"
@@ -108,6 +119,7 @@ now_epoch="$(date +%s)"
 
 declare -A listings=()
 reachable=1
+check_start_ms="$(date +%s%3N)"
 for entry in "${BOTS[@]}"; do
   variant="$(cut -d'|' -f2 <<< "$entry")"
   placement="$(cut -d'|' -f3 <<< "$entry")"
@@ -118,6 +130,26 @@ for entry in "${BOTS[@]}"; do
     listings[$listing_key]="$resp"
   fi
 done
+check_ms=$(( $(date +%s%3N) - check_start_ms ))
+check_s="$(awk -v ms="$check_ms" 'BEGIN { printf "%.1f", ms / 1000 }')"
+slow_s="$(awk -v ms="$SLOW_MS" 'BEGIN { printf "%.0f", ms / 1000 }')"
+
+# Speed alerts. A check where the site did not answer at all leaves the slow
+# count as it is: the outage alert below covers that case, and one dead check
+# inside a slow spell must not read as "normal again".
+if [ "$reachable" = "1" ]; then
+  if [ "$check_ms" -gt "$SLOW_MS" ]; then
+    slow_runs=$((slow_runs + 1))
+    if [ "$slow_runs" -eq 1 ]; then
+      send_discord "🐢 **$API_BASE is slow**: the bot check took ${check_s}s (limit ${slow_s}s) (${now}). Bot games can lose their connection while this lasts."
+    elif [ "$slow_runs" -eq "$SLOW_REMIND_RUNS" ]; then
+      send_discord "🐢 **$API_BASE is still slow** after ${slow_runs} checks in a row: this check took ${check_s}s (${now})."
+    fi
+  elif [ "$slow_runs" -gt 0 ]; then
+    send_discord "✅ **$API_BASE is fast again** after ${slow_runs} slow checks: this check took ${check_s}s (${now})."
+    slow_runs=0
+  fi
+fi
 
 missing=""
 if [ "$reachable" = "1" ]; then
@@ -175,5 +207,5 @@ else
   fi
 fi
 
-printf '%s\n%s\n%s\n' "$state" "$fails" "$last_restart" > "$STATE_FILE"
-echo "${now} reachable=${reachable} missing=[${missing# }] prev=${prev} -> state=${state} fails=${fails}"
+printf '%s\n%s\n%s\n%s\n' "$state" "$fails" "$last_restart" "$slow_runs" > "$STATE_FILE"
+echo "${now} reachable=${reachable} missing=[${missing# }] prev=${prev} -> state=${state} fails=${fails} check=${check_s}s slow_runs=${slow_runs}"
