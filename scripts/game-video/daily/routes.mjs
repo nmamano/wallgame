@@ -862,12 +862,13 @@ export const createDaily = ({
   };
 
   /**
-   * The summary lines of a list that direct may store, and whether its
-   * render must capture the game live, or a refusal: the list's lint
-   * (`lintId`) must be done, of this text, with nothing that stops it but
-   * a fault of the capture (lintRecapture), which a live render mends.
+   * The summary lines of a list that direct may store, and whether it
+   * needs a capture with the pawn art (a reactor's pawn), or a refusal:
+   * the list's lint (`lintId`) must be done, of this text, with nothing
+   * that stops it but a fault of the capture (lintRecapture), which a live
+   * render mends.
    * `noLint` stores without one, for a 4090 that cannot lint.
-   * @returns {{ lines: string[], liveCapture: boolean }}
+   * @returns {{ lines: string[], needsPawnArt: boolean }}
    */
   const lintGate = (item, text, { lint: lintId, noLint }) => {
     if (noLint === true) {
@@ -875,7 +876,7 @@ export const createDaily = ({
         lines: [
           "NOT LINTED (direct --no-lint): the render checks the list before its shoot pass",
         ],
-        liveCapture: false,
+        needsPawnArt: false,
       };
     }
     const rec = typeof lintId === "string" ? lints.get(lintId) : undefined;
@@ -903,7 +904,7 @@ export const createDaily = ({
     if (rec.skipped) {
       return {
         lines: [`not linted by the renderer: ${rec.skipped}`],
-        liveCapture: false,
+        needsPawnArt: false,
       };
     }
     const recapture = lintRecapture(rec);
@@ -915,7 +916,7 @@ export const createDaily = ({
         ),
         ...lintNotes(rec),
       ],
-      liveCapture: recapture.length > 0,
+      needsPawnArt: recapture.length > 0,
     };
   };
 
@@ -946,8 +947,16 @@ export const createDaily = ({
       child.on("close", (code) => {
         clearTimeout(timer);
         const answer = stdout.trim();
-        if (code === 0 && (answer === "cached" || answer === "none")) {
-          return done({ cached: answer === "cached" });
+        // "cached-no-pawn-art": a capture from before the board's pawn art
+        // was kept (render-4090.mjs homeAndCapture).
+        if (
+          code === 0 &&
+          ["cached", "cached-no-pawn-art", "none"].includes(answer)
+        ) {
+          return done({
+            cached: answer !== "none",
+            pawnArt: answer === "cached",
+          });
         }
         done({
           error:
@@ -1762,7 +1771,7 @@ export const createDaily = ({
         store.direct(item.id, {
           edl,
           text,
-          liveCapture: linted.liveCapture,
+          needsPawnArt: linted.needsPawnArt,
           summary: [
             ...edlSummary(edl),
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
@@ -1867,18 +1876,22 @@ export const createDaily = ({
       const jobId = `${item.id}-${item.gameId}-${Date.now().toString(36)}`;
       // With the game's capture on the 4090 the render reads it and adds no
       // view; `live` captures again on purpose (one view), for example when
-      // the renderer cannot use the cached capture. A list whose lint found
-      // the capture too old for it (edl.liveCapture, lintGate) captures live
-      // without being asked.
+      // the renderer cannot use the cached capture. A list that needs the
+      // pawn art (edl.needsPawnArt, lintGate) captures live, without being
+      // asked, while the capture has none; a live render of it saves one,
+      // so the next render reads that (the 4090's capture decides, not the
+      // list: VR1, review 81).
       let fromCache = false;
-      if (body.live !== true && item.edl?.liveCapture !== true) {
+      if (body.live !== true) {
         const capture = await captureOf(item.candidate.gameId);
         if (capture.error) {
           throw new StepRefused(
             `${capture.error}; the app must know whether the 4090 has the game's capture before it renders, so try again`,
           );
         }
-        fromCache = capture.cached;
+        fromCache =
+          capture.cached &&
+          (capture.pawnArt || item.edl?.needsPawnArt !== true);
       }
       store.startRender(item.id, jobId, {
         force: body.force === true,

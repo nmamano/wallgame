@@ -900,12 +900,13 @@ export const openStore = (dataDir) => {
      * back to draft: its next render and check finish it again.
      */
     /**
-     * `liveCapture`: the list's lint found the game's capture too old for
-     * it (routes.mjs lintGate), so its render captures live.
+     * `needsPawnArt`: the list's lint found that the game's capture has
+     * no pawn art, which a reactor of the list shows (routes.mjs lintGate):
+     * its render captures live while the 4090's capture has none.
      * @param {string} id
-     * @param {{ edl: any, text: string, summary: unknown[], liveCapture: boolean }} list
+     * @param {{ edl: any, text: string, summary: unknown[], needsPawnArt: boolean }} list
      */
-    direct(id, { edl, text, summary, liveCapture }) {
+    direct(id, { edl, text, summary, needsPawnArt }) {
       const sha = createHash("sha256").update(text).digest("hex");
       return updateItem(
         id,
@@ -918,7 +919,7 @@ export const openStore = (dataDir) => {
             text,
             sha256: sha,
             summary,
-            liveCapture,
+            needsPawnArt,
             directedAt: new Date().toISOString(),
           };
           item.render = null;

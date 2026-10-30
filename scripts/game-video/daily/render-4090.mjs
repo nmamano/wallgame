@@ -83,7 +83,8 @@
  *     --edl <edl.json> --job-id <id> --out <out.mp4> --from-cache --draft
  *
  * The app asks first, so a preview of a game with no capture is refused
- * before it is queued. This prints "cached" or "none" and exits 0, or
+ * before it is queued. This prints "cached", "cached-no-pawn-art" or "none"
+ * (homeAndCapture) and exits 0, or
  * fails when it cannot look:
  *
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
@@ -252,8 +253,9 @@ const tail = (text) => text.trim().split("\n").slice(-10).join("\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The 4090's home folder and, for `gameId`, "cached" or "none": whether it
- * has the game's capture. One ssh call, two short lines; it fails when it
+ * The 4090's home folder and, for `gameId`, "cached", "cached-no-pawn-art"
+ * (a capture from before the board's pawn art was kept: a reactor's pawn
+ * needs a new one) or "none": whether it has the game's capture. One ssh call, two short lines; it fails when it
  * cannot look. ssh starts in the home folder, so the cache path is relative.
  */
 const homeAndCapture = async (ssh, gameId) => {
@@ -261,11 +263,14 @@ const homeAndCapture = async (ssh, gameId) => {
     fail(`not a game id: ${gameId}`);
   }
   const probe = await ssh(
-    `printf '%s\\n' "$HOME"${gameId === null ? "" : `; if test -f ${CAPTURE_CACHE}/${gameId}/capture.json; then echo cached; else echo none; fi`}`,
+    `printf '%s\\n' "$HOME"${gameId === null ? "" : `; f=${CAPTURE_CACHE}/${gameId}/capture.json; if ! test -f $f; then echo none; elif grep -q '"pawnArt":\\[' $f; then echo cached; else echo cached-no-pawn-art; fi`}`,
   );
   const [home, capture = null] = probe.stdout.trim().split("\n");
   if (!home?.startsWith("/")) fail("could not read the 4090's home folder");
-  if (gameId !== null && capture !== "cached" && capture !== "none") {
+  if (
+    gameId !== null &&
+    !["cached", "cached-no-pawn-art", "none"].includes(capture)
+  ) {
     fail(
       `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
     );

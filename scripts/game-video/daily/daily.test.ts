@@ -241,7 +241,7 @@ interface Item {
   // Only a carry-over has it.
   source: { carriedFrom?: string };
   candidate: { gameId: string };
-  edl: { sha256: string; liveCapture?: boolean; summary: string[] } | null;
+  edl: { sha256: string; needsPawnArt?: boolean; summary: string[] } | null;
   copy: {
     block: Record<string, string>;
     sha256: string;
@@ -413,7 +413,7 @@ const directItem = (store: Store, text = JSON.stringify(EDL)): string => {
     edl: EDL,
     text,
     summary: edlSummary(EDL),
-    liveCapture: false,
+    needsPawnArt: false,
   });
   return id;
 };
@@ -523,7 +523,7 @@ describe("the director checks the contact sheet before the review", () => {
       edl: EDL,
       text: JSON.stringify(EDL),
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     expect(() => {
       store.startRender(id, "job-00000001");
@@ -625,7 +625,7 @@ describe("the director checks the contact sheet before the review", () => {
       edl: EDL,
       text: JSON.stringify(EDL),
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     expect(stage(itemOf(store, id))).toBe("directed");
     expect(itemOf(store, id).render).toBeNull();
@@ -816,7 +816,7 @@ describe("an item's production", () => {
       edl: EDL,
       text: JSON.stringify(EDL),
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     expect(now()).toBe("directed");
     store.startRender(id, "job-1");
@@ -846,7 +846,7 @@ describe("an item's production", () => {
       edl: EDL,
       text: "a new list",
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     const it = itemOf(store, id);
     expect([it.state, stage(it), reviewState(it)]).toEqual([
@@ -864,7 +864,7 @@ describe("an item's production", () => {
       edl: EDL,
       text: "new list",
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     expect(itemOf(store, a).state).toBe("finished");
     expect(stage(itemOf(store, b))).toBe("directed");
@@ -877,7 +877,7 @@ describe("an item's production", () => {
       edl: EDL,
       text: "new list",
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     renderItem(store, b, { ...VIDEO, sha256: "dd" }, { force: true });
     store.recordCheck(b, { sheetSha256: "ss", stills: [ZOOM_OK] });
@@ -907,7 +907,7 @@ describe("an item's production", () => {
       edl: EDL,
       text: "same list",
       summary: [],
-      liveCapture: false,
+      needsPawnArt: false,
     });
     renderItem(store, b, { ...VIDEO, sha256: "bb" }, { force: true });
     expect(store.staleCopy(itemOf(store, b))).toBeNull();
@@ -936,7 +936,7 @@ describe("an item's production", () => {
         edl: EDL,
         text: "again",
         summary: [],
-        liveCapture: false,
+        needsPawnArt: false,
       });
     }).toThrow(`${done} is discarded`);
   });
@@ -2237,8 +2237,9 @@ afterEach(() => {
 
 /**
  * A stand-in for render-4090.mjs that follows the same contract. A live
- * render saves the game's capture (a file "captured-<game>"), which
- * --has-capture reports and --from-cache needs; the file "probe-fails"
+ * render saves the game's capture (a file "captured-<game>"; its text
+ * "no-pawn-art" makes it an old one), which --has-capture reports and
+ * --from-cache needs; the file "probe-fails"
  * makes --has-capture fail as an unreachable 4090 would, and the file
  * "claim-draft" makes the render say it is a quick look (RESULT.draft).
  * --lint gives lint.json when a test writes one.
@@ -2255,7 +2256,11 @@ if (process.argv.includes("--has-capture")) {
     console.error("ssh: connect to host desktop: Connection timed out");
     process.exit(1);
   }
-  console.log(existsSync(captured(at("has-capture"))) ? "cached" : "none");
+  // A capture file that says "no-pawn-art" is one from before the pawn art.
+  const file = captured(at("has-capture"));
+  console.log(!existsSync(file) ? "none"
+    : readFileSync(file, "utf8") === "no-pawn-art" ? "cached-no-pawn-art"
+    : "cached");
   process.exit(0);
 }
 if (process.argv.includes("--lint")) {
@@ -2604,19 +2609,21 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   );
 }, 30_000);
 
-test("a list whose lint finds the capture too old is stored, and its render captures live", async () => {
+test("a list that needs the pawn art is stored; its render captures live only while the capture has none", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-render.cjs");
   writeFileSync(stub, STUB_RENDER);
   const base = await serve(dir, stub);
   const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
   expect((await directOver(base, id)).status).toBe(200);
-  // The game's first render captures it: one view.
+  // The game's first render captures it: one view. Then that capture is
+  // made an old one, from before the board's pawn art was kept.
   expect((await renderAndWait(base, id)).it.render?.fromCache).toBe(false);
   expect(viewsToday(dir)).toEqual({ TESTGAME1: 1 });
+  writeFileSync(join(dir, "captured-TESTGAME1"), "no-pawn-art");
 
-  // The capture is older than the pawn art a reactor shows: the only
-  // stop is the capture's, so direct stores the list for a live render.
+  // A reactor needs the pawn art: the only stop is the capture's, so
+  // direct stores the list and marks it.
   const recapture = {
     kind: "reactor-capture",
     ply: 4,
@@ -2651,25 +2658,36 @@ test("a list whose lint finds the capture too old is stored, and its render capt
     "LIVE ply 4, 0.0 s, reactor-capture: the reactor-shock:",
   );
   let it = await fetchItem(base, id);
-  expect(it.edl?.liveCapture).toBe(true);
+  expect(it.edl?.needsPawnArt).toBe(true);
   expect(JSON.stringify(it.edl?.summary)).toContain(
     "the next render captures the game live",
   );
-  // The capture exists, but the render captures again: a second view,
-  // which needs force as every live render does.
+  // The capture has no pawn art: the render captures again, a second view,
+  // which needs force as every live render does. This one saves a new
+  // capture and then fails.
   const refused = await renderAndWait(base, id);
   expect(refused.started.body.error).toContain(
     "TESTGAME1 was already rendered 1 time(s) today",
   );
+  writeFileSync(join(dir, "claim-draft"), "");
   ({ it } = await renderAndWait(base, id, { force: true }));
-  expect(stage(it)).toBe("rendered");
+  expect(stage(it)).toBe("render-failed");
   expect(it.render?.fromCache).toBe(false);
   expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
+  unlinkSync(join(dir, "claim-draft"));
 
-  // With the new capture the lint is clean: the next list reads it.
+  // The 4090's capture decides, not the list (VR1, review 81): the same
+  // list renders again from the new capture, with no view and no force.
+  ({ it } = await renderAndWait(base, id));
+  expect(stage(it)).toBe("rendered");
+  expect(it.render?.fromCache).toBe(true);
+  expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
+
+  // A list that does not need the pawn art reads an old capture too.
+  writeFileSync(join(dir, "captured-TESTGAME1"), "no-pawn-art");
   unlinkSync(join(dir, "lint.json"));
   expect(crew(base, "direct", "--item", id, "--edl", path).code).toBe(0);
-  expect((await fetchItem(base, id)).edl?.liveCapture).toBe(false);
+  expect((await fetchItem(base, id)).edl?.needsPawnArt).toBe(false);
   ({ it } = await renderAndWait(base, id));
   expect(it.render?.fromCache).toBe(true);
   expect(viewsToday(dir)).toEqual({ TESTGAME1: 2 });
