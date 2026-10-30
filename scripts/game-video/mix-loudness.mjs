@@ -240,6 +240,12 @@ export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
   VX-IPenv with "music": []). So an encode under the target by more than
   MASTER_MAKEUP_BELOW gets the shortfall as more gain (masterRetry), and the
   limiter keeps the peaks: at most MASTER_ENCODES encodes in all.
+  The AAC overshoot does not shrink steadily with the limit: measured
+  2026-10-30 on v-2026-10-30-5 (a boom-3 hit), the master before AAC was
+  exactly at each limit, and after AAC a limit at -2.0 came out at -0.7,
+  one at -2.5 at -0.1 and one at -3.6 at -2.8 dBTP. That mix needs a gain
+  step, two peak steps and a gain step again, so MASTER_ENCODES leaves
+  room for five.
 */
 export const MASTER_LUFS = -14;
 /** A master outside these LUFS, or over this true peak, fails the render. */
@@ -247,7 +253,7 @@ export const MASTER_LUFS_RANGE = [-15, -13];
 export const MASTER_MAX_TRUE_PEAK = -1;
 export const MASTER_LIMIT_DBTP = -2;
 export const MASTER_MAKEUP_BELOW = 0.5;
-export const MASTER_ENCODES = 3;
+export const MASTER_ENCODES = 5;
 const OVERSAMPLE = 4;
 
 /**

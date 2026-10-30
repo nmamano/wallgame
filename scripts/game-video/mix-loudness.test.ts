@@ -321,7 +321,6 @@ describe("the master", () => {
       { limitDbtp: -2, makeupDb: 1.1 },
       { limitDbtp: -2, makeupDb: 1.8 },
     ]);
-    expect(seen.length).toBe(MASTER_ENCODES);
     expect(lines[0]).toContain("-15.1 LUFS");
     // A master that is done at once is encoded once.
     let n = 0;
@@ -333,6 +332,34 @@ describe("the master", () => {
       (line) => lines.push(line),
     );
     expect(n).toBe(1);
+  });
+
+  test("v-2026-10-30-5's master, measured 2026-10-30: two peak steps between two gain steps pass in MASTER_ENCODES", () => {
+    // The AAC overshoot does not shrink steadily with the limit. The
+    // numbers the render logged: -14.9 LUFS (encodes 1 and 4), -0.7 and
+    // -0.1 dBTP (2 and 3), and the last encode. The others only sit on
+    // the same side of the gate as the render's.
+    const measured: Record<string, { lufs: number; truePeakDbtp: number }> = {
+      "-2/0": { lufs: -14.9, truePeakDbtp: -1.5 },
+      "-2/0.9": { lufs: -14.4, truePeakDbtp: -0.7 },
+      "-2.5/0.9": { lufs: -14.5, truePeakDbtp: -0.1 },
+      "-3.6/0.9": { lufs: -14.9, truePeakDbtp: -2.8 },
+      "-3.6/1.8": { lufs: -14.4, truePeakDbtp: -2 },
+    };
+    const seen: string[] = [];
+    const lines: string[] = [];
+    const master = runMaster(
+      ({ limitDbtp, makeupDb }: { limitDbtp: number; makeupDb: number }) => {
+        const key = `${limitDbtp}/${makeupDb}`;
+        seen.push(key);
+        return measured[key];
+      },
+      (line) => lines.push(line),
+    );
+    expect(seen).toEqual(Object.keys(measured));
+    expect(lines).toHaveLength(4);
+    expect(seen.length).toBeLessThanOrEqual(MASTER_ENCODES);
+    expect(masterFault(master)).toBeNull();
   });
 
   test("the gate: -15 to -13 LUFS, true peak at most -1 dBTP", () => {

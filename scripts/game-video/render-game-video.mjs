@@ -342,7 +342,10 @@ if (LOG_FILE) {
     process.stderr.write(String(m[0]).slice(0, 300) + "\n");
   };
   const die = (err) => {
-    errorToFile(err?.stack ?? err);
+    // The message first: a Bun stack can leave it out (2026-10-30, the
+    // v-2026-10-30-5 master fault logged as a bare "Error").
+    errorToFile(String(err?.message ?? err));
+    if (err?.stack) errorToFile(err.stack);
     process.stderr.write(
       `render failed: ${String(err?.message ?? err).slice(0, 300)}\n`,
     );
