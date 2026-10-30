@@ -187,6 +187,7 @@ import {
   OVERLAY_NAME_TOKENS,
   OVERLAY_TEXT_CHARS,
   PORTRAIT_DRAWS,
+  takesSeat,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
   TEXT_TIMING,
@@ -337,6 +338,7 @@ export const LINT_KINDS = {
   "zoom-cuts-pawn": "warns",
   "stamp-covers": "warns",
   "mark-covers-wall": "warns",
+  "mark-covers-pawn": "stops",
   "finish-cut": "warns",
   "race-small": "warns",
   "explain-mismatch": "stops",
@@ -736,11 +738,13 @@ export const validateEdl = (raw) => {
     } else if (ev.text !== undefined) {
       checkOverlayText(ev.text, where, asset.chars ?? OVERLAY_TEXT_CHARS);
     }
-    if (!PORTRAIT_DRAWS.includes(asset.draw)) {
+    if (!takesSeat(asset)) {
       if (ev.seat !== undefined) fail(`${where}: ${ev.asset} shows no seat`);
     } else if (ev.seat !== "red" && ev.seat !== "blue") {
       fail(
-        `${where}: ${ev.asset} shows a seat's portrait; seat must be "red" or "blue" (who reacts)`,
+        PORTRAIT_DRAWS.includes(asset.draw)
+          ? `${where}: ${ev.asset} shows a seat's portrait; seat must be "red" or "blue" (who reacts)`
+          : `${where}: ${ev.asset} takes a seat's colour; seat must be "red" or "blue" (who plays it)`,
       );
     }
     // null is "not set": validateEdl writes it for an overlay that the

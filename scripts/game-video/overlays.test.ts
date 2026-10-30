@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CARDS,
   NO_REACH,
   OVERLAYS,
   OVERLAY_FORMS,
+  PLACE_KINDS,
   boxOnScreen,
+  needsNilOk,
+  offBoardPlace,
+  placesOf,
+  riskLevel,
+  takesSeat,
   coveredBy,
   loadingPercent,
   overlayPlaces,
@@ -21,17 +28,57 @@ const cell = (x: number, y: number, size = 0.125) => ({
   y1: y + size,
 });
 
-/** A place with no art past its box. */
+/** Every off-board place has room. */
+const ROOM = () => null;
+/** A place with no art past its box, every off-board place with room. */
 const place = (
   asset: Parameters<typeof placeOverlay>[0],
   busy: Parameters<typeof placeOverlay>[1],
-) => placeOverlay(asset, busy, NO_REACH);
+  offRoom: Parameters<typeof placeOverlay>[3] = ROOM,
+) => placeOverlay(asset, busy, NO_REACH, offRoom);
 
 describe("overlays", () => {
-  test("every asset has a form, a draw and its risks", () => {
+  test("every asset has a form, a draw, its places and its risks", () => {
     for (const [name, a] of Object.entries(OVERLAYS)) {
       expect([name, OVERLAY_FORMS.includes(a.form)]).toEqual([name, true]);
-      expect([name, a.claim, a.likeness]).toEqual([name, "None", "None"]);
+      // A risk is "None", or a level and why.
+      for (const risk of [a.claim, a.likeness]) {
+        expect([name, /^(None|(LOW|MEDIUM|HIGH)(: .+)?)$/.test(risk)]).toEqual([
+          name,
+          true,
+        ]);
+      }
+      // Only a picture from the web, or a known meme's look, has a risk.
+      if (a.draw !== "card" && a.draw !== "image") {
+        expect([name, a.claim, a.likeness]).toEqual([name, "None", "None"]);
+      }
+      const places = placesOf(a);
+      expect([name, places.every((k) => PLACE_KINDS.includes(k))]).toEqual([
+        name,
+        true,
+      ]);
+      expect([name, new Set(places).size]).toEqual([name, places.length]);
+      // The margin takes the shape of a size; a bar has none.
+      if (places.includes("margin")) expect(a.size).toBeDefined();
+      expect([name, a.draw === "card"]).toEqual([
+        name,
+        CARDS.includes(a.card ?? ""),
+      ]);
+      if (a.draw === "image") {
+        expect(a.image!.sha256).toMatch(/^[0-9a-f]{64}$/);
+        const c = a.image!.crop;
+        expect(c.x + c.w).toBeLessThanOrEqual(1);
+        expect(c.y + c.h).toBeLessThanOrEqual(1);
+        // A picture's box and its crop have about the same shape (the
+        // board is square), so it fills its place.
+        const [w, h] = a.image!.pixels;
+        expect(a.size!.w / a.size!.h / ((c.w * w) / (c.h * h))).toBeCloseTo(
+          1,
+          1,
+        );
+      } else {
+        expect([name, a.image]).toEqual([name, undefined]);
+      }
       if (a.form === "clip") expect(a.size).toBeDefined();
       // A clip's frames: a corner clip, its length its frames' length.
       if (a.draw === "sequence") {
@@ -101,7 +148,8 @@ describe("overlays", () => {
     // No board place free: the caption's place, over the frame (Wall Game
     // Director, 2026-10-30), at the board bar's size.
     const { x, w, h } = place(bar, [])!;
-    expect(place(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toEqual({
+    const full = [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }];
+    expect(place(bar, full)).toEqual({
       where: "caption",
       x,
       w,
@@ -109,6 +157,73 @@ describe("overlays", () => {
       scale: 1,
       full: null,
     });
+    // ... when it has room there (a look with no caption line has none).
+    expect(place(bar, full, () => "no caption line")).toBeNull();
+  });
+
+  test("an asset takes its places in its order, off the board with room", () => {
+    const pawnsEverywhere = [{ x0: 0, y0: 0, x1: 1, y1: 1 }];
+    // The time card: the caption's place first, then the board.
+    const later = OVERLAYS["eternity-later"];
+    expect(place(later, [])?.where).toBe("caption");
+    expect(place(later, [], () => "no room")?.where).toBe("top");
+    expect(place(later, pawnsEverywhere, () => "no room")).toBeNull();
+    // The reverse card: the left margin first, then a board corner.
+    const uno = OVERLAYS["uno-reverse"];
+    expect(place(uno, pawnsEverywhere)).toEqual({
+      where: "margin",
+      x: 0,
+      w: uno.size!.w,
+      h: uno.size!.h,
+      scale: 1,
+      full: null,
+    });
+    expect(place(uno, [], () => "too narrow")?.where).toBe("bottom-right");
+    // A board place still never covers a pawn.
+    expect(place(uno, pawnsEverywhere, () => "too narrow")).toBeNull();
+    // The death screens: a band on the board, then the caption's place.
+    const wasted = OVERLAYS.wasted;
+    expect(place(wasted, [])?.where).toBe("top");
+    expect(place(wasted, pawnsEverywhere)?.where).toBe("caption");
+    // An asset with no off-board place never asks for one.
+    const asked: string[] = [];
+    place(OVERLAYS["chat-toast"], pawnsEverywhere, (k) => {
+      asked.push(k);
+      return null;
+    });
+    expect(asked).toEqual([]);
+    expect(offBoardPlace(wasted, "caption")).toEqual(
+      offBoardPlace(OVERLAYS["ending-caption"], "caption"),
+    );
+  });
+
+  test("a MEDIUM or HIGH asset needs Nil's OK for a daily video", () => {
+    expect(riskLevel("None")).toBe("None");
+    expect(riskLevel("MEDIUM: a TV frame")).toBe("MEDIUM");
+    expect(needsNilOk(OVERLAYS["the-scream"])).toBe(false);
+    expect(needsNilOk(OVERLAYS["smudge-cat"])).toBe(true);
+    expect(needsNilOk(OVERLAYS["monkey-puppet"])).toBe(true);
+    expect(
+      needsNilOk({ ...OVERLAYS["monkey-puppet"], nilOk: "2026-10-31" }),
+    ).toBe(false);
+    expect(needsNilOk({ claim: "None", likeness: "HIGH: a real person" })).toBe(
+      true,
+    );
+    for (const name of CARDS) expect(needsNilOk(OVERLAYS[name])).toBe(false);
+  });
+
+  test("the reverse card and the reactors name their seat; nothing else", () => {
+    expect(
+      Object.entries(OVERLAYS)
+        .filter(([, a]) => takesSeat(a))
+        .map(([n]) => n),
+    ).toEqual([
+      "reactor-shock",
+      "reactor-laugh",
+      "reactor-stare",
+      "do-something",
+      "uno-reverse",
+    ]);
   });
 
   test("a clip takes the first free corner, bottom right first", () => {
@@ -194,8 +309,12 @@ describe("overlays", () => {
     // Just above the bottom-right box, under its art's reach.
     const box = overlayPlaces(reactor, reach)[0];
     const pawn = cell(0.8, box.y - 0.1, 0.05);
-    expect(placeOverlay(reactor, [pawn], NO_REACH)?.where).toBe("bottom-right");
-    expect(placeOverlay(reactor, [pawn], reach)?.where).toBe("bottom-left");
+    expect(placeOverlay(reactor, [pawn], NO_REACH, ROOM)?.where).toBe(
+      "bottom-right",
+    );
+    expect(placeOverlay(reactor, [pawn], reach, ROOM)?.where).toBe(
+      "bottom-left",
+    );
   });
 
   test("a zoom moves a box away from its point and cuts it to the board", () => {

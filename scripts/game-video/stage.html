@@ -674,6 +674,100 @@
         white-space: nowrap;
         line-height: 1.25;
       }
+      /*
+        Visual memes (overlays.mjs "card" and "image", visual-memes.md):
+        known memes' cards in our own art, and still pictures. In the board,
+        the left margin or the caption's place (#frameBar), so in em of the
+        board's size: the stage scales the font with a smaller place.
+      */
+      #overlay.card,
+      #frameBar.card {
+        z-index: 1;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        white-space: nowrap;
+        line-height: 1.1;
+        /* A card below may set its own size: same weight, later rule. */
+        font-size: calc(var(--board) * 0.1);
+      }
+      :is(#overlay, #frameBar).wasted,
+      :is(#overlay, #frameBar).you-died {
+        background: linear-gradient(
+          transparent,
+          rgba(0, 0, 0, 0.82) 22%,
+          rgba(0, 0, 0, 0.82) 78%,
+          transparent
+        );
+      }
+      :is(#overlay, #frameBar).wasted {
+        color: #d42a2a;
+        font-size: calc(var(--board) * 0.15);
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: 0.02em;
+        -webkit-text-stroke: 0.05em #000;
+        paint-order: stroke fill;
+      }
+      :is(#overlay, #frameBar).you-died {
+        color: #a3161a;
+        font-family: "DejaVu Serif", serif;
+        font-size: calc(var(--board) * 0.11);
+        letter-spacing: 0.14em;
+      }
+      :is(#overlay, #frameBar).eternity-later {
+        border-radius: 0.3em;
+        background: radial-gradient(circle at 30% 30%, #5fd0f5, #1f8fc4);
+        border: 0.06em solid #fff;
+        box-shadow: 0 0.1em 0.4em rgba(0, 0, 0, 0.6);
+        color: #fde047;
+        font-size: calc(var(--board) * 0.075);
+        font-weight: 900;
+        -webkit-text-stroke: 0.08em #5b3209;
+        paint-order: stroke fill;
+      }
+      :is(#overlay, #frameBar).mission-passed {
+        border-radius: 0.2em;
+        background: rgba(0, 0, 0, 0.6);
+        font-weight: 900;
+        -webkit-text-stroke: 0.08em #000;
+        paint-order: stroke fill;
+      }
+      .card.mission-passed .big {
+        color: #e8a92a;
+        font-size: 0.9em;
+      }
+      .card.mission-passed .small {
+        color: #fff;
+        font-size: 0.5em;
+      }
+      :is(#overlay, #frameBar).directed-by {
+        background: rgba(0, 0, 0, 0.94);
+        color: #fff;
+        font-family: "DejaVu Serif", serif;
+        font-size: calc(var(--board) * 0.075);
+        gap: 0.15em;
+      }
+      .card.directed-by .small {
+        font-size: 0.55em;
+      }
+      .card.uno-reverse svg,
+      .image .pic {
+        flex: none;
+        filter: drop-shadow(0 0.1em 0.3em rgba(0, 0, 0, 0.7));
+      }
+      #overlay.image,
+      #frameBar.image {
+        z-index: 1;
+      }
+      .image .pic {
+        box-sizing: border-box;
+        border: 0.08em solid #fff;
+        border-radius: 0.12em;
+        background-repeat: no-repeat;
+        font-size: calc(var(--board) * 0.05);
+      }
       #overlay.loading {
         flex-direction: column;
         justify-content: center;
@@ -2015,22 +2109,113 @@
        * placed (o.place, 0..1 of the board). It pops in over its first
        * overlayPop (TEXT_TIMING) and fades by o.alpha. With no place yet
        * (the renderer places an overlay once its window closes), nothing
-       * shows. The bar's caption place paints #frameBar instead, on the
-       * caption's last line, with the caption hidden while it shows.
+       * shows. A place off the board paints #frameBar instead: the
+       * caption's (on the caption's last line, with the caption hidden
+       * while it shows) or the left margin's. An overlay with a tint greys
+       * the board under it (the camera, so the capture picture too).
        */
       const ERROR_HIT_SECONDS = 0.3;
       const OVERLAY_FIT_FLOOR = 0.6;
+      /*
+        The left margin (overlays.mjs OffPlace): from MARGIN_EDGE px off the
+        frame's left edge to MARGIN_GAP px before the board, centred on the
+        board's height, at the shape of the asset's size. Under
+        MARGIN_MIN px wide it has no room (a wide board leaves almost none).
+        It lies out of the Reels safe area's 6% inset, which keeps clear of
+        the buttons on the right; the left edge has none.
+      */
+      /** A card's inside (overlays.mjs CARDS), in our own art. */
+      const cardHtml = (o, esc) => {
+        if (o.card === "wasted") return "<div>wasted</div>";
+        if (o.card === "you-died") return "<div>YOU DIED</div>";
+        if (o.card === "eternity-later") return "<div>ONE ETERNITY LATER</div>";
+        if (o.card === "mission-passed") {
+          return (
+            '<div class="big">mission passed!</div>' +
+            '<div class="small">respect +</div>'
+          );
+        }
+        if (o.card === "directed-by") {
+          return (
+            '<div class="small">Directed by</div><div>' + esc(o.text) + "</div>"
+          );
+        }
+        // uno-reverse: a reverse card in the seat's colour, two arrows on
+        // its white oval, a small one in two corners.
+        const c = esc(o.hex);
+        const arrows = (x, y, k) =>
+          '<g transform="translate(' +
+          x +
+          " " +
+          y +
+          ") scale(" +
+          k +
+          ') rotate(-40)">' +
+          '<path d="M-34 -10 h44 v-16 l30 28 l-30 28 v-16 h-44 z" fill="' +
+          c +
+          '" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>' +
+          '<path d="M34 10 h-44 v16 l-30 -28 l30 -28 v16 h44 z" transform="translate(0 30)" fill="' +
+          c +
+          '" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>' +
+          "</g>";
+        return (
+          '<svg viewBox="0 0 200 300" style="height:100%;width:auto;max-width:100%">' +
+          '<rect x="4" y="4" width="192" height="292" rx="18" fill="#fff"/>' +
+          '<rect x="16" y="16" width="168" height="268" rx="12" fill="' +
+          c +
+          '"/>' +
+          '<ellipse cx="100" cy="150" rx="62" ry="112" transform="rotate(28 100 150)" fill="#fff"/>' +
+          arrows(100, 135, 1) +
+          '<g opacity="0.95">' +
+          arrows(40, 44, 0.32) +
+          arrows(160, 250, 0.32) +
+          "</g></svg>"
+        );
+      };
+      const MARGIN_EDGE = 24;
+      const MARGIN_GAP = 16;
+      const MARGIN_MIN = 110;
       const paintOverlay = (o) => {
-        const frame = !!o && o.place.where === "caption";
+        const placed = !!o && o.place.where !== undefined;
+        const frame =
+          placed && (o.place.where === "caption" || o.place.where === "margin");
         const el = $(frame ? "frameBar" : "overlay");
         show($(frame ? "overlay" : "frameBar"), false);
-        $("caption").style.visibility = frame ? "hidden" : "";
-        show(el, !!o && o.place.where !== undefined);
-        if (!o || o.place.where === undefined) return;
+        $("caption").style.visibility =
+          frame && o.place.where === "caption" ? "hidden" : "";
+        show(el, placed);
+        const tint = placed && o.tint === "grey";
+        $("boardCam").style.filter = tint
+          ? "grayscale(" +
+            easeOut3(span(o.t, 0, window.__TEXT_TIMING.overlayPop)) * o.alpha +
+            ") brightness(" +
+            (1 -
+              0.3 *
+                easeOut3(span(o.t, 0, window.__TEXT_TIMING.overlayPop)) *
+                o.alpha) +
+            ")"
+          : "";
+        if (!placed) return;
         const p = o.place;
-        el.className = o.draw;
+        el.className = o.draw === "card" ? "card " + o.card : o.draw;
         let room = "ok";
-        if (frame) {
+        // The scale of its content: a clip's small size, or the margin.
+        let scale = p.scale;
+        if (p.where === "margin") {
+          const board = $("boardWrap");
+          const shape = (p.h * board.offsetHeight) / (p.w * board.offsetWidth);
+          const w = Math.min(
+            board.offsetLeft - MARGIN_GAP - MARGIN_EDGE,
+            p.w * board.offsetWidth,
+          );
+          const h = Math.min(w * shape, board.offsetHeight);
+          room = w >= MARGIN_MIN ? "ok" : "narrow";
+          scale = Math.max(0, w) / (p.w * board.offsetWidth);
+          el.style.left = board.offsetLeft - MARGIN_GAP - w + "px";
+          el.style.top = board.offsetTop + (board.offsetHeight - h) / 2 + "px";
+          el.style.width = Math.max(0, w) + "px";
+          el.style.height = h + "px";
+        } else if (frame) {
           /*
             The board bar's size, centred on the caption's last line (its
             text sits at the bottom of its box), MEASURED in #play, which
@@ -2082,15 +2267,16 @@
         el.style.transform =
           "translateX(" + shake + "%) scale(" + (0.85 + 0.15 * pop) + ")";
         el.style.fontSize = "";
-        // A clip at its small size (overlays.mjs `small`) draws its content
-        // scaled with its box, before the fit measures it.
-        if (p.scale !== 1) {
+        // A clip at its small size (overlays.mjs `small`) or in the margin
+        // draws its content scaled with its box, before the fit measures it.
+        if (scale !== 1) {
           el.style.fontSize =
-            parseFloat(getComputedStyle(el).fontSize) * p.scale + "px";
+            parseFloat(getComputedStyle(el).fontSize) * scale + "px";
         }
         // A reactor's motion goes on after the fit is measured: a transform
         // counts in the box's overflow, and the shake would shrink the line.
-        let faceMove = null;
+        // [element, transform] pairs, set after the fit.
+        const moves = [];
         const esc = (v) =>
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
         if (o.draw === "whitebar") {
@@ -2110,6 +2296,64 @@
         } else if (o.draw === "toast") {
           el.innerHTML =
             '<div class="dot"></div><div>' + esc(o.text) + "</div>";
+        } else if (o.draw === "card") {
+          el.innerHTML = cardHtml(o, esc);
+          if (o.card === "uno-reverse") {
+            // Played face down, then turned over: a flip about its upright
+            // axis, so it stays inside its box.
+            const flip = easeOut3(span(o.t, 0, 0.35));
+            moves.push(["svg", "scaleX(" + (2 * flip - 1) + ")"]);
+          } else if (o.card === "you-died") {
+            // The words grow slowly, as the game's do.
+            moves.push([
+              "div",
+              "scale(" + (1 + 0.06 * span(o.t, 0, 2.5)) + ")",
+            ]);
+          }
+        } else if (o.draw === "image") {
+          /*
+            The picture's crop (shares of the picture), kept whole in its
+            box at the crop's shape, standing on the board's edge in its
+            corner (centred in the margin).
+          */
+          const c = o.crop;
+          const shape = (c.w * o.pixels[0]) / (c.h * o.pixels[1]);
+          const bw = el.clientWidth;
+          const bh = el.clientHeight;
+          const w = Math.min(bw, bh * shape);
+          const pos = (start, share) =>
+            share >= 1 ? 0 : (start / (1 - share)) * 100;
+          const [v, h] =
+            p.where === "margin" || p.where === "caption"
+              ? ["center", "center"]
+              : p.where.split("-");
+          // On its own child, so no inline style stays on the overlay
+          // for the next one (a wasted card once kept an image's
+          // flex-end and overflowed its band).
+          el.innerHTML =
+            '<div class="pic" style="align-self:' +
+            (v === "top"
+              ? "flex-start"
+              : v === "bottom"
+                ? "flex-end"
+                : "center") +
+            ";margin:0 " +
+            (h === "left" ? "auto 0 0" : h === "right" ? "0 0 auto" : "auto") +
+            ";width:" +
+            w +
+            "px;height:" +
+            w / shape +
+            "px;background-image:url(&quot;" +
+            esc(o.src) +
+            "&quot;);background-size:" +
+            100 / c.w +
+            "% " +
+            100 / c.h +
+            "%;background-position:" +
+            pos(c.x, c.w) +
+            "% " +
+            pos(c.y, c.h) +
+            '%"></div>';
         } else if (o.draw === "reactor") {
           /*
             Each motion is a pure function of t, so a frame is the same
@@ -2139,7 +2383,7 @@
           } else {
             move = "scale(" + (1 + 0.35 * span(t, 0, 2)) + ")";
           }
-          faceMove = move;
+          moves.push([".face", move]);
           el.innerHTML =
             '<div class="face"><img src="' +
             esc(o.portrait) +
@@ -2191,7 +2435,9 @@
           needs: [el.scrollWidth, el.scrollHeight],
           has: [el.clientWidth, el.clientHeight],
         };
-        if (faceMove) el.querySelector(".face").style.transform = faceMove;
+        for (const [sel, move] of moves) {
+          el.querySelector(sel).style.transform = move;
+        }
       };
 
       /**

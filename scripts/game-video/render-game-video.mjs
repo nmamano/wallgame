@@ -106,8 +106,12 @@ import {
 } from "./race-replay.ts";
 import {
   OVERLAYS,
+  OFF_BOARD,
   PORTRAIT_DRAWS,
+  VISUAL_MEME_DIR,
   boxOnScreen,
+  offBoardPlace,
+  placesOf,
   reactorRole,
   coveredBy,
   loadingPercent,
@@ -2752,8 +2756,12 @@ const termBox = (term) => {
  * that position (Wall Game PM, 2026-10-26: the relief beat is "the cat
  * missed", so the bubble must never hide the cat). A side that would leave
  * the board is not a choice; on a tie the earlier side wins. A side in
- * `covered` (its mark covers a wall) is taken only when every side is
- * (Wall Game Director, 2026-10-29).
+ * `onPawn` (its mark, measured, hides another pawn) is taken only when every
+ * side is, and then the render stops (mark-covers-pawn); a side in `covered`
+ * (its mark covers a wall) only when every side left is (Wall Game
+ * Director, 2026-10-29). A pawn comes first: the vet of v-2026-10-30-5 found
+ * the "!" of the mouse on a1 over the cat on b1 for 1.1 s, because "up"
+ * covered a wall and a wall then outranked the cat.
  */
 const BUBBLE_SIDES = {
   up: [0, -1],
@@ -2761,7 +2769,12 @@ const BUBBLE_SIDES = {
   left: [-1, 0],
   down: [0, 1],
 };
-const bubbleSide = (boardIndex, at, covered = new Set()) => {
+const bubbleSide = (
+  boardIndex,
+  at,
+  covered = new Set(),
+  onPawn = new Set(),
+) => {
   // One cell in each axis, so a board with rows != cols measures true cells.
   const cellX = GRID.pitchX;
   const cellY = GRID.pitchY;
@@ -2769,20 +2782,25 @@ const bubbleSide = (boardIndex, at, covered = new Set()) => {
   const others = (pawnSpots.get(boardIndex) ?? []).filter(
     (p) => away(p, at.x, at.y) > 0.3,
   );
+  // Rank: hides no pawn, then covers no wall, then the most room.
   let best = "up";
-  let bestRoom = -1;
-  let bestFree = false;
+  let bestRank = [-1, -1, -1];
+  const better = (a, b) => {
+    for (let i = 0; i < a.length; i += 1) {
+      if (Math.abs(a[i] - b[i]) > 1e-9) return a[i] > b[i];
+    }
+    return false;
+  };
   for (const [side, [dx, dy]] of Object.entries(BUBBLE_SIDES)) {
     const x = at.x + dx * cellX;
     const y = at.y + dy * cellY;
     if (x < GRID.pad || x > 1 - GRID.pad || y < GRID.pad || y > 1 - GRID.pad)
       continue;
     const room = Math.min(Infinity, ...others.map((p) => away(p, x, y)));
-    const free = !covered.has(side);
-    if ((free && !bestFree) || (free === bestFree && room > bestRoom + 1e-9)) {
+    const rank = [onPawn.has(side) ? 0 : 1, covered.has(side) ? 0 : 1, room];
+    if (better(rank, bestRank)) {
       best = side;
-      bestRoom = room;
-      bestFree = free;
+      bestRank = rank;
     }
   }
   return best;
@@ -3351,10 +3369,31 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *   compare  the player whose steps rose most with the move: before, after.
  *   sequence the clip's frames as file URLs, checked against the hashes the
  *            registry pins (overlay-clips.mjs loadClip), and its fps.
+ *   image    the picture as a file URL, checked against the hash the
+ *            registry pins.
+ *   card     the player whose colour it takes, for a card with a seat.
  */
 const OVERLAY_FACTS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
   const draw = OVERLAYS[ev.asset].draw;
+  if (draw === "image") {
+    const { file, sha256 } = OVERLAYS[ev.asset].image;
+    const path = join(REPO, VISUAL_MEME_DIR, file);
+    const got = existsSync(path) ? sha256Of(path) : null;
+    if (got !== sha256) {
+      console.error(
+        `ply ${ev.ply}: the ${ev.asset} overlay's picture ${VISUAL_MEME_DIR}/${file} ${got === null ? "is missing here; copy it from the director's assets/visual-memes and sync the render kit" : `is ${got}, the registry pins ${sha256}`}`,
+      );
+      await browser.close();
+      process.exit(2);
+    }
+    OVERLAY_FACTS.set(ev, { src: fileUrl(path) });
+  }
+  if (draw === "card" && ev.seat !== undefined) {
+    OVERLAY_FACTS.set(ev, {
+      player: SEAT_COLORS(replay)[1] === ev.seat ? 1 : 2,
+    });
+  }
   if (draw === "sequence") {
     try {
       const clip = loadClip(ev.asset, OVERLAYS[ev.asset].sequence, REPO);
@@ -3525,8 +3564,9 @@ const zoomAt = (t, scale, hold) => {
   return scale + ZOOM_DRIFT - (scale + ZOOM_DRIFT - 1) * easeInOut(back);
 };
 
-const sha256Of = (file) =>
-  createHash("sha256").update(readFileSync(file)).digest("hex");
+function sha256Of(file) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
 
 /**
  * The contact sheet of a daily render: its stills side by side, each labelled
@@ -4124,6 +4164,21 @@ const renderStyle = async (styleName) => {
             after: facts.after,
           }
         : {}),
+      ...(w.asset.draw === "card"
+        ? {
+            card: w.asset.card,
+            text: overlayText(w.ev),
+            hex: facts ? side(facts.player).hex : null,
+          }
+        : {}),
+      ...(w.asset.draw === "image"
+        ? {
+            src: facts.src,
+            crop: w.asset.image.crop,
+            pixels: w.asset.image.pixels,
+          }
+        : {}),
+      ...(w.asset.tint ? { tint: w.asset.tint } : {}),
     };
     w.frames.push({ o, state, at: elapsed, image: timeline.length });
     return o;
@@ -4315,6 +4370,68 @@ const renderStyle = async (styleName) => {
     return (scale) => reaches.get(scale);
   };
 
+  /** What stops an off-board place, by the stage's room (paintOverlay). */
+  const ROOM_WORDS = {
+    "no-caption-line": "this look shows no caption line",
+    "no-room": "it does not fit between the safe area's top and the head row",
+    narrow: "the left margin beside this board is too narrow",
+    "no-text-fit": "its words do not fit there",
+  };
+  /**
+   * Whether `w` has room in each off-board place of its asset, as
+   * placeOverlay's offRoom: null when it has, else what stops it. The stage
+   * paints it there once for each different thing it shows, and every one
+   * must fit (the caption's place and the margin are measured in the frame,
+   * and the board's size is the video's).
+   */
+  const offBoardRoom = async (w) => {
+    const room = new Map();
+    for (const kind of placesOf(w.asset).filter((k) => OFF_BOARD.includes(k))) {
+      const place = offBoardPlace(w.asset, kind);
+      let stop = null;
+      for (const f of distinctFrames(w)) {
+        const fit = await stage.evaluate(
+          (st) => {
+            window.__stage(st);
+            return window.__overlayFit;
+          },
+          { ...f.state, overlay: { ...f.o, place } },
+        );
+        const why =
+          fit.room !== "ok" ? fit.room : fit.fits ? null : "no-text-fit";
+        if (why) {
+          stop = ROOM_WORDS[why] ?? why;
+          break;
+        }
+      }
+      room.set(kind, stop);
+    }
+    // null is "has room": not a missing kind.
+    return (kind) =>
+      room.has(kind) ? room.get(kind) : "not one of its places";
+  };
+  /**
+   * One frame of `w` for each different thing it shows, without its time,
+   * fade and place (Video Reviewer 1, review 29: the loading bar shows two
+   * texts in one window, so one frame is not enough).
+   */
+  const distinctFrames = (w) => {
+    const shown = new Map();
+    for (const f of w.frames) {
+      const key = JSON.stringify({
+        ...f.o,
+        t: 0,
+        alpha: 0,
+        place: 0,
+        error: Boolean(f.o.error),
+        // A clip's frames hold no text: one is enough.
+        src: 0,
+      });
+      if (!shown.has(key)) shown.set(key, f);
+    }
+    return [...shown.values()];
+  };
+
   /**
    * Once the video is composed: each overlay's place, where it hides nothing
    * in play on any frame it covered (or the render stops), its fade, the
@@ -4376,13 +4493,19 @@ const renderStyle = async (styleName) => {
               ...pawnBoxes(f.state),
             ]);
       const reach = await reachOf(w);
-      const place = placeOverlay(w.asset, busy, reach);
+      const offRoom = await offBoardRoom(w);
+      const place = placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
-        // What is under each place, each thing once: the director moves the
-        // overlay to a ply where one place is free.
-        const under = overlayPlaces(w.asset, reach).map(
-          (p) =>
-            `${placeName(p)}: ${[...new Set(coveredBy(p.full, busy).map((b) => b.what))].join(", ")}`,
+        // What is under each place, each thing once, and what stops each
+        // place off the board: the director moves the overlay to a ply
+        // where one place is free.
+        const under = placesOf(w.asset).flatMap((kind) =>
+          kind === "board"
+            ? overlayPlaces(w.asset, reach).map(
+                (p) =>
+                  `${placeName(p)}: ${[...new Set(coveredBy(p.full, busy).map((b) => b.what))].join(", ")}`,
+              )
+            : [`${kind}: ${offRoom(kind)}`],
         );
         fault(
           "overlay-place",
@@ -4423,25 +4546,9 @@ const renderStyle = async (styleName) => {
       /*
         Its lines fit its box (stage.html paintOverlay shrinks one, down to
         a floor): each different thing it shows painted once at its place,
-        as the shots will paint it. Video Reviewer 1 (review 29): the
-        loading bar shows two texts in one window, so one frame is not
-        enough.
+        as the shots will paint it.
       */
-      const shown = new Map();
-      for (const f of w.frames) {
-        // What it shows, without its time, fade and place.
-        const key = JSON.stringify({
-          ...f.o,
-          t: 0,
-          alpha: 0,
-          place: 0,
-          error: Boolean(f.o.error),
-          // A clip's frames hold no text: one is enough.
-          src: 0,
-        });
-        if (!shown.has(key)) shown.set(key, f);
-      }
-      for (const f of shown.values()) {
+      for (const f of distinctFrames(w)) {
         const fit = await stage.evaluate(
           (st) => {
             window.__stage(st);
@@ -4449,13 +4556,13 @@ const renderStyle = async (styleName) => {
           },
           { ...f.state, overlay: f.o },
         );
+        // An off-board place was measured before it was taken
+        // (offBoardRoom), so this is a bug.
         if (fit.room !== "ok") {
           fault(
             "overlay-place",
             w.ev.ply,
-            fit.room === "no-caption-line"
-              ? `${where}: no board place is free, and this look has no caption line for the bar; move the bar to a ply where a board place is free`
-              : `${where}: no board place is free, and in the caption's place it does not fit between the safe area's top and the head row; this is a bug`,
+            `${where}: in the ${place.where} place, ${ROOM_WORDS[fit.room] ?? fit.room}, after offBoardRoom found room there; this is a bug`,
             w.start,
           );
           break;
@@ -5166,15 +5273,32 @@ const renderStyle = async (styleName) => {
    * __cellFxBox), covers no wall of its board, when there is one (Wall
    * Game Director, 2026-10-29: the eyes on VX ply 8 covered half of a cage
    * wall's end for 1.2 s); else bubbleSide's, and the lint warns
-   * (fxCovers, as the event plays).
+   * (fxCovers, as the event plays). A side where the mark hides another
+   * pawn comes last, and the render stops if every side does (fxHides).
    */
   const fxSides = new Map();
   const fxCovers = new Map();
+  const fxHides = new Map();
   for (const ev of EVENTS) {
     if (!(ev.kind in MARK_SECONDS)) continue;
     const board = ev.ply + 1;
     const at = cellAtTerm(ev.cell);
     const walls = wallBoxes(board);
+    // The other pawns, as the page drew them: not the mark's own.
+    const pawns = (pawnSpots.get(board) ?? [])
+      .filter(
+        (p) =>
+          Math.hypot((p.x - at.x) / GRID.pitchX, (p.y - at.y) / GRID.pitchY) >
+          0.3,
+      )
+      .map((p) => ({
+        x0: p.x - p.w / 2,
+        y0: p.y - p.h / 2,
+        x1: p.x + p.w / 2,
+        y1: p.y + p.h / 2,
+        what: `pawn on ${cellUnder(p.x, p.y)}`,
+      }));
+    const hides = new Map();
     const covers = new Map();
     const ts = Array.from(
       { length: Math.round(MARK_SECONDS[ev.kind] * FPS) },
@@ -5190,17 +5314,30 @@ const renderStyle = async (styleName) => {
       );
       const hit = walls.find((k) => depthInto(box, k) > TOUCH_CELLS);
       if (hit) covers.set(side, hit.what);
+      const under = pawns.find((k) => depthInto(box, k) > TOUCH_CELLS);
+      if (under) hides.set(side, under.what);
     }
-    const side = bubbleSide(board, at, new Set(covers.keys()));
+    const side = bubbleSide(
+      board,
+      at,
+      new Set(covers.keys()),
+      new Set(hides.keys()),
+    );
     fxSides.set(ev, side);
+    if (hides.has(side)) {
+      fxHides.set(
+        ev,
+        `the ${ev.kind} mark on ${ev.cell} hides the ${hides.get(side)}: every side it can take hides a pawn; move the mark to another ply`,
+      );
+    }
     if (covers.has(side)) {
       fxCovers.set(
         ev,
-        `the ${ev.kind} mark on ${ev.cell} covers the ${covers.get(side)}: every side it can take covers a wall`,
+        `the ${ev.kind} mark on ${ev.cell} covers the ${covers.get(side)}: every side it can take ${hides.size > 0 ? "hides a pawn or " : ""}covers a wall`,
       );
     }
     log(
-      `${ev.kind} on ${ev.cell}, ply ${ev.ply}: ${side}${covers.size > 0 ? ` (covers a wall: ${[...covers].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}`,
+      `${ev.kind} on ${ev.cell}, ply ${ev.ply}: ${side}${hides.size > 0 ? ` (hides a pawn: ${[...hides].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}${covers.size > 0 ? ` (covers a wall: ${[...covers].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}`,
     );
   }
   if (wallz) {
@@ -5725,6 +5862,7 @@ const renderStyle = async (styleName) => {
       if (said?.flat) fault("stamp-flat", plyIndex, said.flat);
       if (fxCovers.has(ev))
         fault("mark-covers-wall", plyIndex, fxCovers.get(ev));
+      if (fxHides.has(ev)) fault("mark-covers-pawn", plyIndex, fxHides.get(ev));
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's sound lands with its word.

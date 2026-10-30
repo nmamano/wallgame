@@ -321,6 +321,7 @@ describe("the master", () => {
       { limitDbtp: -2, makeupDb: 1.1 },
       { limitDbtp: -2, makeupDb: 1.8 },
     ]);
+    expect(seen.length).toBeLessThanOrEqual(MASTER_ENCODES);
     expect(lines[0]).toContain("-15.1 LUFS");
     // A master that is done at once is encoded once.
     let n = 0;

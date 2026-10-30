@@ -85,6 +85,7 @@ import {
   FRAME,
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
+import { OVERLAYS, needsNilOk, riskLevel } from "../overlays.mjs";
 import { timelineOf } from "./strips.mjs";
 import { gridOf } from "./tools.mjs";
 import { lintNotes, lintRecapture, lintStops } from "./lint.mjs";
@@ -1654,6 +1655,30 @@ export const createDaily = ({
       // The renderer refuses the track too; direct says it while the list
       // is still being written.
       ...(edl.music ?? []).flatMap((cue) => blockedMusic(cue.track)),
+      // A daily video is posted: a MEDIUM or HIGH picture needs Nil's OK
+      // for it (overlays.mjs needsNilOk; Wall Game PM's risk rule,
+      // 2026-10-30). A preview is never posted and may show it.
+      ...[
+        ...new Set(
+          edl.events
+            .filter(
+              (e) => e.kind === "overlay" && needsNilOk(OVERLAYS[e.asset]),
+            )
+            .map((e) => e.asset),
+        ),
+      ].map(
+        (name) =>
+          `the ${name} overlay has ${["claim", "likeness"]
+            .filter(
+              (k) =>
+                riskLevel(OVERLAYS[name][k]) !== "LOW" &&
+                riskLevel(OVERLAYS[name][k]) !== "None",
+            )
+            .map((k) => `a ${riskLevel(OVERLAYS[name][k])} ${k} risk`)
+            .join(
+              " and ",
+            )}, and Nil has not OKed it for a posted video (overlays.mjs nilOk): ask Nil through the Director, or pick a LOW one`,
+      ),
       // The daily video has no cold open; edl.mjs keeps the field for a
       // hand render.
       ...(edl.coldOpenPly === null

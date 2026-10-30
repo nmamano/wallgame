@@ -27,11 +27,20 @@
  * inside the board, and the board inside SAFE_AREA, so an overlay never
  * covers the head row, the strip or an app's buttons.
  *
+ * Off the board, two places hide nothing at all (Nil, 2026-10-30: visual
+ * memes "can be carve outs outside the board or on parts of the board that
+ * don't cover the action"): the left margin beside the board (the right one
+ * is under the platforms' buttons) and the caption's place over the frame,
+ * the caption hidden while it shows. The stage measures whether an overlay
+ * has room there; `places` says which places an asset may take, in order.
+ *
  * Each asset records where it comes from and its risks, as meme-sounds.mjs
- * does for sounds: `claim` is the Content ID risk, `likeness` the risk of
- * showing a real person, `rating` Nil's rating (null until he rates it).
- * Every asset here is drawn by the stage (stage.html paintOverlay) from our
- * own art and the game's facts, so none has a risk.
+ * does for sounds: `claim` is the risk that an owner claims or takes down
+ * the post, `likeness` the risk of showing a real person, `rating` Nil's
+ * rating (null until he rates it). Risks are "None", or LOW, MEDIUM or HIGH
+ * and why (visual-memes.md in the director's repo). A MEDIUM or HIGH asset
+ * goes in a daily video only with Nil's OK for that asset (`nilOk`, Wall
+ * Game PM's risk rule, 2026-10-30; needsNilOk).
  *
  *   draw     how the stage draws it:
  *            toast    a game-chat toast: the EDL's `text`, with {red} and
@@ -55,10 +64,24 @@
  *                     its PNG sequence for each moment: frame floor(t *
  *                     fps) of `sequence`, in its corner, standing on the
  *                     board's edge there (overlay-clips.mjs).
+ *            card     a known meme's card, drawn by the stage in our own
+ *                     art (`card` names it; visual-memes.md Track A): the
+ *                     words in `shows`, and for "directed-by" the EDL's
+ *                     `text` (or its `line`) as the name.
+ *            image    a still picture, `image.file` in VISUAL_MEME_DIR
+ *                     (kept out of git, `pixels` wide and high), pinned
+ *                     by its sha256 and cut to `image.crop` (shares of the
+ *                     picture), kept whole in its box.
  *            The seat of a portrait is the EDL's `seat` ("red" or
  *            "blue"), which it must give: who reacts is the story, and a
  *            default once made the stopped hunter laugh at the save
- *            (Wall Game Director, 2026-10-28).
+ *            (Wall Game Director, 2026-10-28). So does a card with
+ *            `seat: true`, drawn in that seat's colour (who plays it).
+ *   places   where it may go, in the order they are tried: "board" (its
+ *            form's places on the board, overlayPlaces), "margin" (the
+ *            left margin, at its size's shape) and "caption" (the
+ *            caption's place, at the board bar's size). Default: board.
+ *   tint     "grey": the board turns grey under it while it shows.
  *   text     "required", "optional" (the asset's own line if absent) or
  *            "none".
  *   chars    the most characters its text may have, where the EDL gives
@@ -82,6 +105,28 @@
  */
 export const OVERLAY_FORMS = ["clip", "panel", "bar"];
 
+/** The places an asset may take (`places`). */
+export const PLACE_KINDS = ["board", "margin", "caption"];
+/** The places off the board: the stage measures their room. */
+export const OFF_BOARD = ["margin", "caption"];
+
+/** The cards the stage draws (stage.html paintOverlay, visual-memes.md). */
+export const CARDS = [
+  "wasted",
+  "you-died",
+  "eternity-later",
+  "mission-passed",
+  "uno-reverse",
+  "directed-by",
+];
+
+/**
+ * Where the image files are: in the ignored overlays folder, which the
+ * worktrees and the release checkout link to the main checkout's and the
+ * kit sync copies (sync-render-kit.sh).
+ */
+export const VISUAL_MEME_DIR = "assets/overlays/visual-memes";
+
 /**
  * @typedef {{
  *   form: "clip" | "panel" | "bar",
@@ -91,7 +136,15 @@ export const OVERLAY_FORMS = ["clip", "panel", "bar"];
  *     | "compare"
  *     | "reactor"
  *     | "whitebar"
- *     | "sequence",
+ *     | "sequence"
+ *     | "card"
+ *     | "image",
+ *   card?: string,
+ *   image?: { file: string, pixels: [number, number], sha256: string, crop: { x: number, y: number, w: number, h: number } },
+ *   seat?: true,
+ *   places?: ("board" | "margin" | "caption")[],
+ *   tint?: "grey",
+ *   nilOk?: string | null,
  *   motion?: "shock" | "laugh" | "stare",
  *   chars?: number,
  *   text: "required" | "optional" | "none",
@@ -192,6 +245,7 @@ export const OVERLAYS = {
     text: "required",
     chars: 34,
     seconds: null,
+    places: ["board", "caption"],
     source: "drawn by us (stage.html)",
     claim: "None",
     likeness: "None",
@@ -212,7 +266,206 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  /*
+    Visual memes, Track A (visual-memes.md, Wall Game Director,
+    2026-10-30): known memes' cards, drawn by the stage in our own art. The
+    look of a known meme is the joke, so the claim risk is LOW, not None.
+  */
+  wasted: {
+    form: "panel",
+    draw: "card",
+    card: "wasted",
+    text: "none",
+    shows: "WASTED",
+    seconds: 1.6,
+    size: { w: 0.95, h: 0.2 },
+    places: ["board", "caption"],
+    tint: "grey",
+    source: "drawn by us (stage.html), the look of GTA's death screen",
+    claim: "LOW: our own drawing of a known game screen",
+    likeness: "None",
+    rating: null,
+  },
+  "you-died": {
+    form: "panel",
+    draw: "card",
+    card: "you-died",
+    text: "none",
+    shows: "YOU DIED",
+    seconds: 1.8,
+    size: { w: 0.95, h: 0.2 },
+    places: ["board", "caption"],
+    tint: "grey",
+    source: "drawn by us (stage.html), the look of Dark Souls' death screen",
+    claim: "LOW: our own drawing of a known game screen",
+    likeness: "None",
+    rating: null,
+  },
+  "eternity-later": {
+    form: "panel",
+    draw: "card",
+    card: "eternity-later",
+    text: "none",
+    shows: "ONE ETERNITY LATER",
+    seconds: 2.1,
+    size: { w: 0.8, h: 0.2 },
+    places: ["caption", "board"],
+    source: "drawn by us (stage.html), the look of SpongeBob's time cards",
+    claim: "LOW: our own drawing of a known title card",
+    likeness: "None",
+    rating: null,
+  },
+  "mission-passed": {
+    form: "panel",
+    draw: "card",
+    card: "mission-passed",
+    text: "none",
+    shows: "MISSION PASSED RESPECT +",
+    seconds: 2.1,
+    size: { w: 0.9, h: 0.2 },
+    places: ["caption", "board"],
+    source: "drawn by us (stage.html), the look of GTA's mission screen",
+    claim: "LOW: our own drawing of a known game screen",
+    likeness: "None",
+    rating: null,
+  },
+  "uno-reverse": {
+    form: "clip",
+    draw: "card",
+    card: "uno-reverse",
+    seat: true,
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.28, h: 0.42 },
+    small: { w: 0.22, h: 0.33 },
+    places: ["margin", "board"],
+    source: "drawn by us (stage.html), a reverse card in the seat's colour",
+    claim: "LOW: our own drawing of a known card game's card",
+    likeness: "None",
+    rating: null,
+  },
+  "directed-by": {
+    form: "panel",
+    draw: "card",
+    card: "directed-by",
+    text: "optional",
+    chars: 24,
+    line: "ROBERT B. WEIDE",
+    shows: "Directed by",
+    seconds: 2.4,
+    size: { w: 0.95, h: 0.24 },
+    places: ["board", "caption"],
+    source: "drawn by us (stage.html), the look of a TV show's end credit",
+    claim: "LOW: our own drawing of a known credit",
+    likeness:
+      "LOW: its default line names a real person (the credit's director), in text, with no picture",
+    rating: null,
+  },
+  /*
+    Visual memes, Track B (visual-memes.md): pictures from the web, each
+    with its origin page and risks there. Only the preview's three are
+    here; a HIGH one gets our own redraw instead (Wall Game PM, 2026-10-30).
+  */
+  "the-scream": {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "the-scream.jpg",
+      pixels: [1280, 1589],
+      sha256:
+        "2fcbcc4554496812fe37c4bc9c6da2ee45da98ce9d5c21de271f7ef3b3431a34",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+    },
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.32, h: 0.4 },
+    small: { w: 0.25, h: 0.31 },
+    places: ["margin", "board"],
+    source:
+      "Edvard Munch, The Scream, 1893, National Gallery of Norway (Wikimedia Commons), public domain",
+    claim:
+      "LOW: public domain; some countries limit reuse of a photo of an artwork",
+    likeness: "LOW",
+    nilOk: null,
+    rating: null,
+  },
+  "smudge-cat": {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "smudge-cat.jpg",
+      pixels: [1080, 608],
+      sha256:
+        "72af31ff33298ce7a45003d07dc4f3e74c2b83f0eaf43e5c1328282accfc9a96",
+      // The table cat only: the file's right half (its left half is
+      // another photo of the cat).
+      crop: { x: 0.52, y: 0, w: 0.48, h: 1 },
+    },
+    text: "none",
+    seconds: 1.4,
+    size: { w: 0.34, h: 0.4 },
+    small: { w: 0.26, h: 0.31 },
+    places: ["margin", "board"],
+    source:
+      "Smudge the cat, first posted 2018-06-19 on Tumblr; owner probably @smudge_lord, not confirmed",
+    claim: "MEDIUM: a private owner's photo",
+    likeness: "LOW: the cat half only",
+    nilOk: null,
+    rating: null,
+  },
+  "monkey-puppet": {
+    form: "clip",
+    draw: "image",
+    image: {
+      file: "monkey-puppet.png",
+      pixels: [680, 450],
+      sha256:
+        "c0dd08960b30afb33f1a34f2528905d39fd492cc11d2362fcc3d666944972566",
+      crop: { x: 0, y: 0, w: 1, h: 1 },
+    },
+    text: "none",
+    seconds: 1.6,
+    size: { w: 0.5, h: 0.33 },
+    small: { w: 0.39, h: 0.26 },
+    places: ["margin", "board"],
+    source:
+      'the puppet Kento, Japanese children\'s TV "Ōkiku Naru Ko" (1959-1988); meme from 2016-05-05',
+    claim: "MEDIUM: a TV frame, owner unknown",
+    likeness: "LOW: a puppet",
+    nilOk: null,
+    rating: null,
+  },
 };
+
+/**
+ * The places `asset` may take, in order (`places`, board by default).
+ * @param {{ places?: ("board" | "margin" | "caption")[] }} asset
+ * @returns {("board" | "margin" | "caption")[]}
+ */
+export const placesOf = (asset) => asset.places ?? ["board"];
+
+/** Whether an EDL must name the seat of `asset` (`seat` in the EDL). */
+export const takesSeat = (asset) =>
+  PORTRAIT_DRAWS.includes(asset.draw) || asset.seat === true;
+
+/**
+ * The risk level of a risk line ("None", or "LOW", "MEDIUM", "HIGH" and
+ * why), as its first word.
+ * @param {string} risk
+ */
+export const riskLevel = (risk) => risk.split(/[\s:]/)[0];
+
+/**
+ * Whether a daily video may show `asset` only with Nil's OK for it (Wall
+ * Game PM's risk rule, 2026-10-30: MEDIUM and HIGH need Nil's explicit OK
+ * per image; a preview is never posted and may show it): its claim or
+ * likeness is MEDIUM or HIGH and `nilOk` records no OK.
+ * @param {{ claim: string, likeness: string, nilOk?: string | null }} asset
+ */
+export const needsNilOk = (asset) =>
+  [asset.claim, asset.likeness].some((r) =>
+    ["MEDIUM", "HIGH"].includes(riskLevel(r)),
+  ) && !asset.nilOk;
 
 /** The draws that show a seat's portrait, so an EDL may name the seat. */
 export const PORTRAIT_DRAWS = ["reactor"];
@@ -322,10 +575,11 @@ const INSET = 0.025;
  * @typedef {{ where: string, x: number, y: number, w: number, h: number, scale: number, full: { x: number, y: number, w: number, h: number } }} Place
  */
 /**
- * The bar's place off the board (placeOverlay): the board bar's width and
- * height, on the caption's line, which the stage measures; it hides nothing
- * on the board.
- * @typedef {{ where: "caption", x: number, w: number, h: number, scale: 1, full: null }} CaptionPlace
+ * A place off the board (placeOverlay), which hides nothing on the board:
+ * "caption", the board bar's width and height on the caption's line, or
+ * "margin", the left margin at the shape of the asset's size (w by h of
+ * the board). The stage measures both in the frame.
+ * @typedef {{ where: "caption" | "margin", x: number, w: number, h: number, scale: 1, full: null }} OffPlace
  */
 /** The reach of art that stays inside its box. */
 export const NO_REACH = () => ({ top: 0, right: 0, bottom: 0, left: 0 });
@@ -442,24 +696,47 @@ export const coveredBy = (p, boxes) =>
   );
 
 /**
- * The first place for `asset` whose whole art (`full`) overlaps none of
- * the `busy` boxes (in the board as shown, 0..1). When every place hides
- * something: a bar takes the caption's place, over the frame above the
- * board, and the caption hides while it shows (Wall Game Director,
- * 2026-10-30: the last line replaces the stale caption, and the credit
- * stays under it); anything else gets null.
+ * The off-board place `kind` of `asset`: the caption's at the board bar's
+ * size (the bar's first place), the margin at the shape of its size.
  * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
+ * @param {"caption" | "margin"} kind
+ * @returns {OffPlace}
+ */
+export const offBoardPlace = (asset, kind) => {
+  if (kind === "caption") {
+    const { x, w, h } = overlayPlaces({ form: "bar" }, NO_REACH)[0];
+    return { where: "caption", x, w, h, scale: 1, full: null };
+  }
+  const { w, h } = asset.size;
+  return { where: "margin", x: 0, w, h, scale: 1, full: null };
+};
+
+/**
+ * The first place for `asset`, in the order of its `places`: a board place
+ * whose whole art (`full`) overlaps none of the `busy` boxes (in the board
+ * as shown, 0..1), or an off-board place that has room (`offRoom(kind)` is
+ * null; else it says what stops it). A bar takes the caption's place when
+ * no board place is free, and the caption hides while it shows (Wall Game
+ * Director, 2026-10-30: the last line replaces the stale caption, and the
+ * credit stays under it). Null when no place is free.
+ * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, places?: string[] }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  * @param {(scale: number) => Reach} reach
- * @returns {Place | CaptionPlace | null}
+ * @param {(kind: "caption" | "margin") => string | null} offRoom
+ * @returns {Place | OffPlace | null}
  */
-export const placeOverlay = (asset, busy, reach) => {
-  const places = overlayPlaces(asset, reach);
-  const free = places.find((p) => coveredBy(p.full, busy).length === 0);
-  if (free) return free;
-  if (asset.form !== "bar") return null;
-  const { x, w, h } = places[0];
-  return { where: "caption", x, w, h, scale: 1, full: null };
+export const placeOverlay = (asset, busy, reach, offRoom) => {
+  for (const kind of placesOf(asset)) {
+    if (kind === "board") {
+      const free = overlayPlaces(asset, reach).find(
+        (p) => coveredBy(p.full, busy).length === 0,
+      );
+      if (free) return free;
+    } else if (offRoom(kind) === null) {
+      return offBoardPlace(asset, kind);
+    }
+  }
+  return null;
 };
 
 /**

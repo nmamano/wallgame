@@ -2821,6 +2821,15 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   expect(coldOpen.body.error).toContain(
     "coldOpenPly is cut from the daily video (Nil, 2026-10-26",
   );
+  // A MEDIUM picture is refused until Nil OKs it; a LOW one is not.
+  const picture = (asset: string) =>
+    told({ events: [{ ply: 22, kind: "overlay", form: "clip", asset }] });
+  const medium = await picture("smudge-cat");
+  expect(medium.status).toBe(409);
+  expect(medium.body.error).toContain(
+    "the smudge-cat overlay has a MEDIUM claim risk, and Nil has not OKed it",
+  );
+  expect((await picture("the-scream")).status).toBe(200);
   const offCounter = await told({ caption: "Ruby was 2 steps away" });
   expect(offCounter.status).toBe(409);
   expect(offCounter.body.error).toContain("the caption says 2");
