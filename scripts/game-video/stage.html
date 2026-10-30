@@ -2259,39 +2259,66 @@
         };
       };
 
+      /*
+        A trap's or an explain's glow (render-game-video.mjs): each wall is
+        ringed in yellow, and the glow is cut out of the wall's own groove
+        (tr.groove, measured from the page's grid), so the wall keeps its
+        owner's red or blue (Nil, 2026-10-30, C16: "a highlight that still
+        let the color through would help follow what's happening"). A
+        pawn's trail (tr.trails) is no wall: it glows whole.
+      */
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);
         if (!tr) return;
         const on = tr.lit ? 1 : easeOut3(span(tr.t, 0, 0.15));
         const pulse = 0.65 + 0.35 * Math.cos(tr.t * Math.PI * 4);
-        svg.innerHTML = tr.walls
-          .map(([x1, y1, x2, y2]) => {
-            const pts =
-              'x1="' +
-              x1 * 1000 +
-              '" y1="' +
-              y1 * 1000 +
-              '" x2="' +
-              x2 * 1000 +
-              '" y2="' +
-              y2 * 1000 +
-              '"';
-            return (
-              "<line " +
-              pts +
-              ' stroke="#facc15" stroke-opacity="' +
-              0.6 * on * pulse +
-              '" stroke-width="64" stroke-linecap="round"/>' +
-              "<line " +
-              pts +
-              ' stroke="#fef08a" stroke-opacity="' +
-              on +
-              '" stroke-width="22" stroke-linecap="round"/>'
-            );
-          })
-          .join("");
+        const pts = ([x1, y1, x2, y2]) =>
+          'x1="' +
+          x1 * 1000 +
+          '" y1="' +
+          y1 * 1000 +
+          '" x2="' +
+          x2 * 1000 +
+          '" y2="' +
+          y2 * 1000 +
+          '"';
+        // The groove's width in the svg's units, across the wall.
+        const across = ([x1, , x2]) =>
+          (x1 === x2 ? tr.groove.x : tr.groove.y) * 1000;
+        const glow = (line, core) =>
+          "<line " +
+          pts(line) +
+          ' stroke="#facc15" stroke-opacity="' +
+          0.6 * on * pulse +
+          '" stroke-width="64" stroke-linecap="round"/>' +
+          "<line " +
+          pts(line) +
+          ' stroke="#fef08a" stroke-opacity="' +
+          on +
+          '" stroke-width="' +
+          core +
+          '" stroke-linecap="round"/>';
+        svg.innerHTML =
+          '<defs><mask id="trapHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">' +
+          '<rect width="1000" height="1000" fill="#fff"/>' +
+          tr.walls
+            .map(
+              (w) =>
+                "<line " +
+                pts(w) +
+                ' stroke="#000" stroke-width="' +
+                across(w) +
+                '" stroke-linecap="butt"/>',
+            )
+            .join("") +
+          '</mask></defs><g mask="url(#trapHoles)">' +
+          tr.walls.map((w) => glow(w, across(w) + TRAP_RING * 2)).join("") +
+          "</g>" +
+          tr.trails.map((t) => glow(t, 22)).join("");
       };
+      // The bright ring's width each side of a lit wall, in the svg's units.
+      const TRAP_RING = 7;
 
       /**
        * The head row: the race counter, or the goal line while the VS

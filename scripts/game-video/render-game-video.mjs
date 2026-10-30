@@ -2846,13 +2846,18 @@ const cellUnder = (x, y) =>
     Math.floor((x - GRID.x(0)) / GRID.pitchX),
   ]);
 /**
+ * The width of a wall's groove, the gap between two cells, as fractions of
+ * the board image: `x` for a vertical wall, `y` for a horizontal one.
+ */
+const GROOVE = { x: GRID.pitchX - GRID.cellX, y: GRID.pitchY - GRID.cellX };
+/**
  * The walls the page drew on a board (wallSpots), each as the groove it
  * fills: the gap between two cells wide, a pitch long, named in notation.
  */
 const wallBoxes = (boardIndex) =>
   (wallSpots.get(boardIndex) ?? []).map((w) => {
-    const bw = w.vertical ? GRID.pitchX - GRID.cellX : GRID.pitchX;
-    const bh = w.vertical ? GRID.pitchY : GRID.pitchY - GRID.cellX;
+    const bw = w.vertical ? GROOVE.x : GRID.pitchX;
+    const bh = w.vertical ? GRID.pitchY : GROOVE.y;
     return {
       x0: w.x - bw / 2,
       y0: w.y - bh / 2,
@@ -3638,7 +3643,7 @@ const renderStyle = async (styleName) => {
   /**
    * The name the daily look shows for a player, wherever it shows one: the
    * strip, an overlay's {red}/{blue}, the ending (edl.mjs dailySeatNames:
-   * "Bot" or "Human", with the colour when both seats are one kind).
+   * "Bot" or "Human"; two bots "Red Bot" and "Blue Bot", two humans "Red" and "Blue").
    */
   const seatOf = (id) => {
     const seat = apiPlayers.find((p) => p.playerId === id);
@@ -4824,7 +4829,13 @@ const renderStyle = async (styleName) => {
         playState(coldPly + 1, {
           zoom: { ...z, scale: 1 + (z.scale - 1) * push },
           ...(walls.length > 0 && {
-            trap: { t, walls: coldLines, lit: true },
+            trap: {
+              t,
+              walls: coldLines,
+              trails: [],
+              groove: GROOVE,
+              lit: true,
+            },
           }),
         }),
         1 / FPS,
@@ -5354,7 +5365,12 @@ const renderStyle = async (styleName) => {
     }
     if (ev.kind === "trap") {
       return {
-        trap: { t, walls: ev.walls.map((w) => litWallLine(w, ply)) },
+        trap: {
+          t,
+          walls: ev.walls.map((w) => litWallLine(w, ply)),
+          trails: [],
+          groove: GROOVE,
+        },
         midStamp:
           t >= TRAP_STAMP_AT
             ? {
@@ -5426,6 +5442,9 @@ const renderStyle = async (styleName) => {
    * walk draws on the position before the move, with a tick a step; the
    * move lands with its walls and its pawns' steps glowing (the trap's
    * glow); the old walk stays as a ghost while the new one draws and holds.
+   * An old walk of 1 step (the hunter next to its prey) shows no line: a
+   * "1" badge does not read as a path (Nil, 2026-10-30, C17), so the move
+   * lands with its glow, and then the new walk draws.
    * The whole board stays in view. The ply's other events follow. Faults:
    * the script's `expect` against the game (explain-mismatch), and a change
    * too small to show (explain-flat).
@@ -5475,26 +5494,26 @@ const renderStyle = async (styleName) => {
     });
     const glow = (t) => ({
       t,
-      walls: [
-        ...f.walls.map((w) => litWallLine(w, ply)),
-        ...f.moved.map(([a, b]) => {
-          // The glow paints over the board image, pawns included: the
-          // trail stops EXPLAIN_TRAIL_GAP cells short of each end, so it
-          // runs between the two cells and covers neither pawn.
-          const [p, q] = [cellAt(a), cellAt(b)];
-          const [dx, dy] = [q.x - p.x, q.y - p.y];
-          const cells = Math.hypot(dx / GRID.pitchX, dy / GRID.pitchY);
-          const k = Math.min(0.5, EXPLAIN_TRAIL_GAP / cells);
-          return [p.x + k * dx, p.y + k * dy, q.x - k * dx, q.y - k * dy];
-        }),
-      ],
+      walls: f.walls.map((w) => litWallLine(w, ply)),
+      groove: GROOVE,
+      trails: f.moved.map(([a, b]) => {
+        // The glow paints over the board image, pawns included: the
+        // trail stops EXPLAIN_TRAIL_GAP cells short of each end, so it
+        // runs between the two cells and covers neither pawn.
+        const [p, q] = [cellAt(a), cellAt(b)];
+        const [dx, dy] = [q.x - p.x, q.y - p.y];
+        const cells = Math.hypot(dx / GRID.pitchX, dy / GRID.pitchY);
+        const k = Math.min(0.5, EXPLAIN_TRAIL_GAP / cells);
+        return [p.x + k * dx, p.y + k * dy, q.x - k * dx, q.y - k * dy];
+      }),
     });
+    const oldWalk = was > 1;
     // 1. The old walk, on the position before the move.
     const drawBefore = drawSeconds(f.before.points);
-    cueWalkTicks(f.before.points, start, { fromStart: true });
-    const beforeFrames = Math.round(
-      (drawBefore + EXPLAIN_BEFORE_REST_SECONDS) * FPS,
-    );
+    if (oldWalk) cueWalkTicks(f.before.points, start, { fromStart: true });
+    const beforeFrames = oldWalk
+      ? Math.round((drawBefore + EXPLAIN_BEFORE_REST_SECONDS) * FPS)
+      : 0;
     for (let i = 0; i < beforeFrames; i += 1) {
       if (i === beforeFrames - 1) {
         stillNext = { ply: plyIndex, kind: "explain-before", sound: null };
@@ -5537,7 +5556,7 @@ const renderStyle = async (styleName) => {
           trap: glow(i / FPS),
           path: {
             cell: GRID.pitchX,
-            lines: [line(f.before, 1, EXPLAIN_GHOST)],
+            lines: oldWalk ? [line(f.before, 1, EXPLAIN_GHOST)] : [],
           },
         }),
         1 / FPS,
@@ -5575,7 +5594,7 @@ const renderStyle = async (styleName) => {
           path: {
             cell: GRID.pitchX,
             lines: [
-              line(f.before, 1, EXPLAIN_GHOST * fade),
+              ...(oldWalk ? [line(f.before, 1, EXPLAIN_GHOST * fade)] : []),
               line(f.after, span01(t / drawAfter), fade),
             ],
           },

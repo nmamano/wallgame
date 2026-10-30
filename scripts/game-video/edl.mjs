@@ -226,9 +226,11 @@ export const ENDINGS = ["replay", "gg", "ko"];
  * (the players strip, a {red} or {blue} in an overlay's text, the ending):
  * "Bot" or "Human" by the seat's kind, never a bot's, a guest's or an
  * account's name (Nil, 2026-10-29: "we should never show "Normal Bot" or
- * "Guest Ibex". Bot and Human is less text and conveys the same"). When
- * both seats are the same kind, each name starts with its seat's colour:
- * "Red Bot" and "Blue Bot", "Red Human" and "Blue Human".
+ * "Guest Ibex". Bot and Human is less text and conveys the same"). Two
+ * bots are "Red Bot" and "Blue Bot". Two humans are only "Red" and "Blue"
+ * (Nil, 2026-10-30, C16: "blue human and red human sounds weird ... just
+ * Red vs Blue would work, human seems redundant"; the Director chose
+ * "Red" vs "Blue").
  * A seat whose kind is not "bot" or "human" stops the render.
  * @param {{ red: { configType?: string, displayName?: string }, blue: { configType?: string, displayName?: string } }} seats
  * @returns {{ red: string, blue: string }}
@@ -243,7 +245,10 @@ export const dailySeatNames = ({ red, blue }) => {
     );
   };
   const [r, b] = [kind(red), kind(blue)];
-  return r === b ? { red: `Red ${r}`, blue: `Blue ${b}` } : { red: r, blue: b };
+  if (r !== b) return { red: r, blue: b };
+  return r === "Human"
+    ? { red: "Red", blue: "Blue" }
+    : { red: `Red ${r}`, blue: `Blue ${b}` };
 };
 
 /**
