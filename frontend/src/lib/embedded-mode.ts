@@ -93,3 +93,6 @@ export const markEmbeddedDocument = (
 ): void => {
   if (embedded) body.setAttribute(EMBEDDED_BODY_ATTRIBUTE, "");
 };
+
+/** What a portal frame says wherever the site would offer rated play. */
+export const PORTAL_RATED_UNAVAILABLE = "Rated games are not available here.";

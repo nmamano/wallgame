@@ -8,6 +8,7 @@ import {
   type GameFinish,
 } from "@/lib/account-nudge";
 import { browserSendEvent } from "@/lib/analytics";
+import { isEmbedded } from "@/lib/embedded-mode";
 import type { IdStorage } from "@/lib/anonymous-id";
 
 /**
@@ -87,6 +88,7 @@ export function useAccountNudge({
       finish: { gameStatus, result, hasSeat, isReadOnly, isPuzzle },
       authSettled,
       isLoggedIn,
+      embedded: isEmbedded(),
       durable: browserStorage("local"),
       session: browserStorage("session"),
     });

@@ -17,7 +17,7 @@ import type {
   Variant,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
-import { isEmbedded } from "@/lib/embedded-mode";
+import { isEmbedded, PORTAL_RATED_UNAVAILABLE } from "@/lib/embedded-mode";
 
 const BOARD_SIZE_MIN = 4;
 const BOARD_SIZE_MAX = 20;
@@ -315,7 +315,7 @@ export function GameConfigurationPanel({
               <AlertDescription>
                 {/* Same reason as play.tsx: no login door in a portal frame. */}
                 {isEmbedded()
-                  ? "Rated games are not available here."
+                  ? PORTAL_RATED_UNAVAILABLE
                   : "You need to be logged in to play rated games."}
               </AlertDescription>
             </Alert>

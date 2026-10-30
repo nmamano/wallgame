@@ -4,6 +4,7 @@ import {
   markEmbeddedDocument,
   readEmbeddedFlag,
 } from "../frontend/src/lib/embedded-mode";
+import { ratedSeatPrompt } from "../frontend/src/lib/rated-seat-prompt";
 import type { IdStorage } from "../frontend/src/lib/anonymous-id";
 
 /**
@@ -140,5 +141,23 @@ describe("the body mark for portal-only CSS", () => {
       `body\\[${EMBEDDED_BODY_ATTRIBUTE}\\]\\s*\\{[^}]*user-select:\\s*none`,
     );
     expect(css).toMatch(rule);
+  });
+});
+
+describe("the rated seat of a waiting game", () => {
+  test("a portal frame offers no account, only the reason", () => {
+    expect(ratedSeatPrompt(true)).toEqual({
+      waitingMessage: "This game is rated. Rated games are not available here.",
+      action: null,
+    });
+  });
+
+  test("wallgame.io still offers an account", () => {
+    const prompt = ratedSeatPrompt(false);
+    expect(prompt.action?.href).toBe("/api/register");
+    expect(prompt.action?.label).toBe("Create an account");
+    expect(prompt.waitingMessage).toBe(
+      "This game is rated. Rated games are only played between logged-in players.",
+    );
   });
 });

@@ -110,6 +110,8 @@ import {
   type ControllerSelectorState,
 } from "@/game/controller-selectors";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
+import { isEmbedded } from "@/lib/embedded-mode";
+import { ratedSeatPrompt } from "@/lib/rated-seat-prompt";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -3767,40 +3769,50 @@ export function useGamePageController(gameId: string) {
   const matchingStatusForView = isReadOnlySession
     ? undefined
     : matchingStatusMessage;
-  const ratedGameNeedsAccount = waitingAccessReason === "rated-requires-login";
+  const ratedSeat =
+    waitingAccessReason === "rated-requires-login"
+      ? ratedSeatPrompt(isEmbedded())
+      : null;
+  const ratedSeatAction = ratedSeat?.action ?? null;
   const waitingMessage = isAuthoritativeWaiting
     ? waitingAccessReason === "host-aborted"
       ? "The creator aborted this game."
-      : ratedGameNeedsAccount
-        ? "This game is rated. Rated games are only played between logged-in players."
+      : ratedSeat
+        ? ratedSeat.waitingMessage
         : "Waiting for another player to join before the match starts."
     : undefined;
+  // A rated seat in a portal frame has no action at all: see ratedSeatPrompt.
   const matchingJoinAction =
-    !isReadOnlySession && access?.kind === "waiting"
-      ? {
-          label: ratedGameNeedsAccount
-            ? "Create an account"
-            : waitingAccessReason === "host-aborted"
-              ? "Join Game"
-              : isClaimingSeat
-                ? "Joining…"
-                : "Join Game",
-          description:
-            waitingAccessReason === "host-aborted"
-              ? "The creator aborted this game."
-              : ratedGameNeedsAccount
-                ? "This game is rated. Sign up or log in to take the seat - you can still watch as a spectator."
-                : waitingAccessReason === "seat-not-filled"
-                  ? "Seat is open. Join to start playing."
-                  : undefined,
-          onClick: ratedGameNeedsAccount
-            ? () => {
-                window.location.href = "/api/register";
-              }
-            : handleClaimSeat,
-          disabled: isClaimingSeat || waitingAccessReason === "host-aborted",
-        }
-      : undefined;
+    isReadOnlySession || access?.kind !== "waiting"
+      ? undefined
+      : ratedSeatAction
+        ? {
+            label: ratedSeatAction.label,
+            description: ratedSeatAction.description,
+            onClick: () => {
+              window.location.href = ratedSeatAction.href;
+            },
+            disabled: isClaimingSeat,
+          }
+        : ratedSeat
+          ? undefined
+          : {
+              label:
+                waitingAccessReason === "host-aborted"
+                  ? "Join Game"
+                  : isClaimingSeat
+                    ? "Joining…"
+                    : "Join Game",
+              description:
+                waitingAccessReason === "host-aborted"
+                  ? "The creator aborted this game."
+                  : waitingAccessReason === "seat-not-filled"
+                    ? "Seat is open. Join to start playing."
+                    : undefined,
+              onClick: handleClaimSeat,
+              disabled:
+                isClaimingSeat || waitingAccessReason === "host-aborted",
+            };
   const matchingAbortEnabled = !isReadOnlySession && matchingCanAbort;
   const matchingIsOpen = !isReadOnlySession && matchingPanelOpen;
 

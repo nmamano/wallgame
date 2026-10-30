@@ -143,7 +143,8 @@ export type NudgeSuppression =
   | "signed-in"
   | "not-first-game"
   | "already-shown-this-session"
-  | "storage-unavailable";
+  | "storage-unavailable"
+  | "portal-frame";
 
 export type NudgeDecision =
   | { show: true }
@@ -160,6 +161,11 @@ export interface AccountNudgeInput {
    */
   authSettled: boolean;
   isLoggedIn: boolean;
+  /**
+   * The page runs in a portal frame (lib/embedded-mode.ts). No account can be
+   * made there, so an offer of one would point at nothing.
+   */
+  embedded: boolean;
   /** Where the first-game marker lives. `localStorage` in a browser. */
   durable: IdStorage | undefined;
   /** Where the once-per-session mark lives. `sessionStorage` in a browser. */
@@ -183,6 +189,7 @@ export function recordFinishAndDecide(input: AccountNudgeInput): NudgeDecision {
   // this browser's first or it was not.
   const outcome = recordPlayedGame(input.gameId, input.durable);
 
+  if (input.embedded) return { show: false, because: "portal-frame" };
   if (!input.authSettled) return { show: false, because: "auth-unsettled" };
   if (input.isLoggedIn) return { show: false, because: "signed-in" };
   if (outcome === "unknown") {

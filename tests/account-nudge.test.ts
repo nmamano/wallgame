@@ -183,6 +183,7 @@ describe("recordFinishAndDecide", () => {
       finish?: GameFinish;
       authSettled?: boolean;
       isLoggedIn?: boolean;
+      embedded?: boolean;
       durable?: ReturnType<typeof workingStorage>;
       session?: ReturnType<typeof workingStorage>;
     } = {},
@@ -194,6 +195,7 @@ describe("recordFinishAndDecide", () => {
       finish: overrides.finish ?? playedFinish(),
       authSettled: overrides.authSettled ?? true,
       isLoggedIn: overrides.isLoggedIn ?? false,
+      embedded: overrides.embedded ?? false,
       durable,
       session,
     });
@@ -208,6 +210,16 @@ describe("recordFinishAndDecide", () => {
     // Marked BEFORE the caller shows anything, which is what makes React's
     // double-invoked effect harmless.
     expect(session.dump()[SHOWN_KEY]).toBe("1");
+  });
+
+  it("offers no account in a portal frame, where none can be made", () => {
+    const { decision, durable, session } = guestRun({ embedded: true });
+
+    expect(decision).toEqual({ show: false, because: "portal-frame" });
+    // The game still counts, so first-game bookkeeping stays true...
+    expect(durable.dump()[FIRST_GAME_KEY]).toBe("game-1");
+    // ...but no offer was made, so none is marked as shown.
+    expect(session.dump()[SHOWN_KEY]).toBeUndefined();
   });
 
   it("shows nothing twice in one session, even for the same game", () => {
@@ -293,6 +305,7 @@ describe("recordFinishAndDecide", () => {
       finish: playedFinish(),
       authSettled: true,
       isLoggedIn: false,
+      embedded: false,
       durable: undefined,
       session: workingStorage(),
     });
@@ -308,6 +321,7 @@ describe("recordFinishAndDecide", () => {
       finish: playedFinish(),
       authSettled: true,
       isLoggedIn: false,
+      embedded: false,
       durable: workingStorage(),
       session: throwingStorage(),
     });

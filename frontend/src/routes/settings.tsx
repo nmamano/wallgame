@@ -31,6 +31,7 @@ import {
 } from "@/lib/player-colors";
 import { BOARD_THEMES, BOARD_THEME_LABELS } from "@/lib/board-themes";
 import { assetUrl } from "@/lib/asset-url";
+import { isEmbedded } from "@/lib/embedded-mode";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -330,8 +331,10 @@ function Settings() {
           <p className="text-sm text-muted-foreground flex items-start gap-2">
             <Info className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
-              For guests, settings are saved locally in your web browser. If you
-              log in, settings are saved to your account.
+              For guests, settings are saved locally in your web browser.
+              {/* A portal frame has no login (lib/embedded-mode.ts). */}
+              {!isEmbedded() &&
+                " If you log in, settings are saved to your account."}
             </span>
           </p>
         </div>
