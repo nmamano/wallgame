@@ -1016,7 +1016,10 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
   const ev = (more: object, pace?: object[]) => ({
     ...base,
     ...(pace ? { pace } : {}),
-    events: [{ ply: 3, kind: "overlay", form: "clip", ...more }],
+    // A picture opens with a sound (C23); a test of no sound removes it.
+    events: [
+      { ply: 3, kind: "overlay", form: "clip", sound: "scared-2", ...more },
+    ],
   });
   test("names the seat and piece, required on a picture a pawn emotes", () => {
     expect(
@@ -1038,6 +1041,15 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
       validateEdl(ev({ asset: "chat-toast", text: "hi", pawn: "red cat" }))
         .errors,
     ).toEqual(["events[0]: chat-toast is tied to no pawn"]);
+  });
+  test("opens with a sound (Nil, 2026-10-30, C23)", () => {
+    expect(
+      validateEdl(
+        ev({ asset: "the-scream", pawn: "red mouse", sound: undefined }),
+      ).errors,
+    ).toEqual([
+      'events[0]: the-scream is a picture a pawn emotes; it needs a "sound" as it opens',
+    ]);
   });
   test("never in a fast-forward: it holds its ply", () => {
     expect(

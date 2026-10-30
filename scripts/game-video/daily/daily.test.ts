@@ -2903,7 +2903,14 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   const picture = (asset: string) =>
     told({
       events: [
-        { ply: 22, kind: "overlay", form: "clip", asset, pawn: "red mouse" },
+        {
+          ply: 22,
+          kind: "overlay",
+          form: "clip",
+          asset,
+          pawn: "red mouse",
+          sound: "scared-2",
+        },
       ],
     });
   const medium = await picture("smudge-cat");

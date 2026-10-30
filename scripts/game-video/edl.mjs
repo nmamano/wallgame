@@ -769,6 +769,13 @@ export const validateEdl = (raw) => {
           `${where}: ${ev.asset} is drawn for a ${asset.pieces.join(" or ")}, not a ${pawn.piece}`,
         );
       }
+      // Nil, 2026-10-30, C23: "the scream is fine but should be paired
+      // with some sound effect".
+      if (ev.sound == null) {
+        fail(
+          `${where}: ${ev.asset} is a picture a pawn emotes; it needs a "sound" as it opens`,
+        );
+      }
     }
     // null is "not set": validateEdl writes it for an overlay that the
     // asset or a fast-forward times, and the renderer validates that copy
