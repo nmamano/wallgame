@@ -1920,9 +1920,21 @@
               );
             };
             const side = sides.find(free) ?? sides.find(noPawn) ?? sides[0];
+            // Clear of the walk's own target too: its pawn as the page
+            // drew it (p.pawns' box), plus the disc and its ring, measured
+            // (render vet, 2026-10-30: at a fixed 0.55 cell, the ring cut
+            // the feet of the mouse below it by 7-8 px).
+            const target = p.pawns.find((q) => !away(tip)(q));
+            const reach = target
+              ? (side.x !== 0 ? target.w : target.h) / 2 +
+                0.3 * p.cell +
+                0.004 +
+                0.03 * p.cell
+              : 0;
+            const out = Math.max(0.55 * p.cell, reach);
             const end = {
-              x: tip.x + 0.55 * side.x * p.cell,
-              y: tip.y + 0.55 * side.y * p.cell,
+              x: tip.x + out * side.x,
+              y: tip.y + out * side.y,
             };
             const r = (0.3 * p.cell * 1000).toFixed(1);
             const disc =

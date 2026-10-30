@@ -4696,7 +4696,12 @@ const renderStyle = async (styleName) => {
     ...(extra.path && {
       path: {
         ...extra.path,
-        pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y }) => ({ x, y })),
+        pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y, w, h }) => ({
+          x,
+          y,
+          w,
+          h,
+        })),
       },
     }),
   });
