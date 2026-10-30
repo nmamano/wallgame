@@ -4441,11 +4441,13 @@ const renderStyle = async (styleName) => {
           },
           { ...f.state, overlay: f.o },
         );
-        if (!fit.room) {
+        if (fit.room !== "ok") {
           fault(
             "overlay-place",
             w.ev.ply,
-            `${where}: no board place is free, and in the caption's place it does not fit between the safe area's top and the head row; this is a bug`,
+            fit.room === "no-caption-line"
+              ? `${where}: no board place is free, and this look has no caption line for the bar; move the bar to a ply where a board place is free`
+              : `${where}: no board place is free, and in the caption's place it does not fit between the safe area's top and the head row; this is a bug`,
             w.start,
           );
           break;

@@ -2019,13 +2019,16 @@
         if (!o || o.place.where === undefined) return;
         const p = o.place;
         el.className = o.draw;
-        let room = true;
+        let room = "ok";
         if (frame) {
           /*
             The board bar's size, centred on the caption's last line (its
             text sits at the bottom of its box), MEASURED in #play, which
             the shake moves with it; kept in the safe area's top and over
-            the head row, or room is false and the renderer stops.
+            the head row, or room says why not and the renderer stops: a
+            look that shows no caption (only wallz does) has no line for
+            it (Video Reviewer 1, review 93 N1). The wallz caption's
+            line-height is a number, so the page gives it in px.
           */
           const board = $("boardWrap");
           const cap = $("caption");
@@ -2041,7 +2044,12 @@
           const floor = hud.offsetHeight > 0 ? hud.offsetTop : board.offsetTop;
           const mid = cap.offsetTop + cap.offsetHeight - line / 2;
           const top = Math.max(ceiling, Math.min(mid - h / 2, floor - h));
-          room = top >= ceiling && top + h <= floor;
+          room =
+            cap.offsetHeight === 0 || !Number.isFinite(line)
+              ? "no-caption-line"
+              : top >= ceiling && top + h <= floor
+                ? "ok"
+                : "no-room";
           el.style.left = board.offsetLeft + p.x * board.offsetWidth + "px";
           el.style.top = top + "px";
           el.style.width = w + "px";
