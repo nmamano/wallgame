@@ -1624,11 +1624,47 @@
       };
 
       /**
+       * The box of a picture's opaque pixels (alpha 128 or more), as
+       * shares of the picture: what an overlay must not cover of a pawn
+       * composed from its own art (render-game-video.mjs capturePicture).
+       */
+      window.__artBox = async (url) => {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const g = canvas.getContext("2d");
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, w, h).data;
+        let x0 = w;
+        let y0 = h;
+        let x1 = 0;
+        let y1 = 0;
+        for (let y = 0; y < h; y += 1) {
+          for (let x = 0; x < w; x += 1) {
+            if (d[(y * w + x) * 4 + 3] < 128) continue;
+            x0 = Math.min(x0, x);
+            y0 = Math.min(y0, y);
+            x1 = Math.max(x1, x + 1);
+            y1 = Math.max(y1, y + 1);
+          }
+        }
+        return { x0: x0 / w, y0: y0 / h, x1: x1 / w, y1: y1 / h };
+      };
+
+      /**
        * A pawn as a picture with a clear background: the board image's
        * `box` (0..1) with the colour `key` ("rgb(r,g,b)", its cell's colour
        * as __cellColour reads it) made clear, with a soft edge so the art
        * keeps its outline: { png: a PNG data: URL, art: the box of its
-       * opaque pixels, as shares of the picture }.
+       * opaque pixels, as shares of the picture }. The fallback of the
+       * capture picture for a capture with no pawn art: the box also takes
+       * what the page drew round the pawn (render-game-video.mjs
+       * capturePicture).
        */
       window.__pawnSprite = async (url, box, key) => {
         const img = new Image();
@@ -2825,12 +2861,18 @@
       };
 
       /*
-        A trap's or an explain's glow (render-game-video.mjs): each wall is
-        ringed in yellow, and the glow is cut out of the wall's own groove
-        (tr.groove, measured from the page's grid), so the wall keeps its
-        owner's red or blue (Nil, 2026-10-30, C16: "a highlight that still
-        let the color through would help follow what's happening"). A
-        pawn's trail (tr.trails) is no wall: it glows whole.
+        A trap's or an explain's glow (render-game-video.mjs): the lit walls
+        are ringed in yellow as one shape, and the glow is cut out of the
+        walls' own grooves (tr.groove, measured from the page's grid), so
+        each wall keeps its owner's red or blue (Nil, 2026-10-30, C16: "a
+        highlight that still let the color through would help follow
+        what's happening"). One shape, not a ring per wall (Nil,
+        2026-10-30, C21: "the wall highlights are unpolished on the
+        corners"): each layer is drawn opaque inside a group that has the
+        layer's opacity, so where two walls meet their glows join with no
+        brighter seam, and their round ends make a round join. A groove's
+        cut has square ends, so it also takes the corner square where two
+        walls meet.
       */
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
@@ -2851,36 +2893,33 @@
         // The groove's width in the svg's units, across the wall.
         const across = ([x1, , x2]) =>
           (x1 === x2 ? tr.groove.x : tr.groove.y) * 1000;
-        const glow = (line, core) =>
-          "<line " +
-          pts(line) +
-          ' stroke="#facc15" stroke-opacity="' +
-          0.6 * on * pulse +
-          '" stroke-width="64" stroke-linecap="round"/>' +
-          "<line " +
-          pts(line) +
-          ' stroke="#fef08a" stroke-opacity="' +
-          on +
-          '" stroke-width="' +
-          core +
-          '" stroke-linecap="round"/>';
-        svg.innerHTML =
-          '<defs><mask id="trapHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">' +
-          '<rect width="1000" height="1000" fill="#fff"/>' +
+        const layer = (opacity, color, width, cap) =>
+          '<g opacity="' +
+          opacity +
+          '">' +
           tr.walls
             .map(
               (w) =>
                 "<line " +
                 pts(w) +
-                ' stroke="#000" stroke-width="' +
-                across(w) +
-                '" stroke-linecap="butt"/>',
+                ' stroke="' +
+                color +
+                '" stroke-width="' +
+                width(w) +
+                '" stroke-linecap="' +
+                cap +
+                '"/>',
             )
             .join("") +
+          "</g>";
+        svg.innerHTML =
+          '<defs><mask id="trapHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">' +
+          '<rect width="1000" height="1000" fill="#fff"/>' +
+          layer(1, "#000", across, "square") +
           '</mask></defs><g mask="url(#trapHoles)">' +
-          tr.walls.map((w) => glow(w, across(w) + TRAP_RING * 2)).join("") +
-          "</g>" +
-          tr.trails.map((t) => glow(t, 22)).join("");
+          layer(0.6 * on * pulse, "#facc15", () => 64, "round") +
+          layer(on, "#fef08a", (w) => across(w) + TRAP_RING * 2, "round") +
+          "</g>";
       };
       // The bright ring's width each side of a lit wall, in the svg's units.
       const TRAP_RING = 7;

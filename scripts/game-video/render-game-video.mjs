@@ -922,8 +922,6 @@ const EXPLAIN_LAND_SECONDS = 0.8;
 const EXPLAIN_AFTER_HOLD_SECONDS = 1.2;
 const EXPLAIN_GHOST = 0.35;
 const EXPLAIN_MIN_CHANGE = 2;
-/** How far a moved pawn's glowing trail stops short of each cell centre. */
-const EXPLAIN_TRAIL_GAP = 0.4;
 /**
  * The opening walks (edl.mjs introPaths): each draws as a path event's
  * walk does and shows its steps INTRO_PATH_HOLD_SECONDS. The hold was 0.6
@@ -1642,8 +1640,9 @@ const inlineLayer = async (src) => {
 
 /**
  * Compose a pawn's layer stack ({src, filter}, as the page drew it) into a
- * PORTRAIT_PX PNG at `file`, on `page` (PORTRAIT_PX square). The seat cards
- * and a reactor's prey (REACTOR_ART) are composed the same way.
+ * PORTRAIT_PX PNG at `file`, on `page` (PORTRAIT_PX square). The seat cards,
+ * a reactor's prey (REACTOR_ART) and the capture picture's pawns are
+ * composed the same way.
  */
 const composeLayers = async (page, layers, file) => {
   const inlined = await Promise.all(
@@ -2300,12 +2299,23 @@ const fileUrl = (p) => `file://${resolve(p)}`;
  * (reactor-capture).
  * @type {Map<object, { url: string } | { stop: string } | { recapture: string }>}
  */
+/**
+ * The board's own art (pawnArt) for `player`'s pawn of `type`: every pawn of
+ * that type in the start position whose colour filter is the player's
+ * card's. One, unless the variant gives a seat two of a type.
+ */
+const seatPawnArt = (player, type) => {
+  const pawnFilter = (layers) =>
+    layers.find((l) => /\/pawns\//.test(l.src))?.filter ?? null;
+  const filter = pawnFilter(cardFor(player).layers);
+  return (pawnArt ?? []).filter(
+    (a) => a.type === type && pawnFilter(a.layers) === filter,
+  );
+};
 const REACTOR_ART = new Map();
 if (EDL) {
   const colourOf = SEAT_COLORS(replay);
   const playerOf = (seat) => (colourOf[1] === seat ? 1 : 2);
-  const pawnFilter = (layers) =>
-    layers.find((l) => /\/pawns\//.test(l.src))?.filter ?? null;
   /** @type {Map<string, { url: string } | { stop: string } | { recapture: string }>} */
   const prey = new Map();
   let page = null;
@@ -2315,10 +2325,7 @@ if (EDL) {
         recapture: `this game's capture was made before the board's pawn art was kept, so it has no ${type} to show: the render must capture the game live (one view; direct marks the list so)`,
       };
     }
-    const filter = pawnFilter(cardFor(player).layers);
-    const hits = pawnArt.filter(
-      (a) => a.type === type && pawnFilter(a.layers) === filter,
-    );
+    const hits = seatPawnArt(player, type);
     if (hits.length !== 1) {
       return {
         stop: `the start position shows ${hits.length} ${type} pawns in ${seat}'s colour, not one`,
@@ -3312,8 +3319,9 @@ const pathSeconds = (ev) =>
  * Each explain event's facts (edl.mjs "explain"), from the game record as
  * the race counter has them: the hunter (the EDL's, or the side whose steps
  * change most), its shortest walk before and after the move with their
- * steps, the walls the move placed, and the pawns it moved, as [from, to]
- * cells.
+ * steps, and the walls the move placed. (No glow on a moved pawn's step:
+ * Nil, 2026-10-30, C21: "the yellow highlight for the move arrow doesn't
+ * look good. probably unnecessary".)
  */
 const EXPLAINS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
@@ -3362,8 +3370,6 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
   };
   const before = REPLAYED.states[k0];
   const after = REPLAYED.states[k1];
-  const key = (p) => `${p.playerId}:${p.type}`;
-  const was = new Map(boardPawns(before.pawns).map((p) => [key(p), p.cell]));
   EXPLAINS.set(ev, {
     player,
     before: walkIn(before, k0),
@@ -3372,12 +3378,6 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
     walls: String(history[ev.ply].notation ?? "")
       .split(".")
       .filter((t) => t.startsWith(">") || t.startsWith("^")),
-    moved: boardPawns(after.pawns)
-      .filter((p) => {
-        const from = was.get(key(p));
-        return from && (from[0] !== p.cell[0] || from[1] !== p.cell[1]);
-      })
-      .map((p) => [was.get(key(p)), p.cell]),
   });
 }
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
@@ -4859,7 +4859,36 @@ const renderStyle = async (styleName) => {
         ([u, b]) => window.__cellColour(u, b),
         [url, { x0: x - s / 2, y0: y - s / 2, x1: x + s / 2, y1: y + s / 2 }],
       );
-    const sprite = async (p, file) => {
+    /*
+      Each pawn of the picture, composed from the board's own art for its
+      seat and type (seatPawnArt, as a reactor's prey), not cut from the
+      board image: the cut took what the page drew round the pawn (Nil,
+      2026-10-30, C21: "weird vertical edge" at v-2026-10-30-7's catch, the
+      yellow glow on the wall just placed, and the cell's rank label). A
+      capture made before the pawn art was kept falls back to the cut.
+    */
+    const endPawns = replay.state.pawns
+      ? boardPawns(replay.state.pawns).filter(
+          (q) => q.cell[0] === cell[0] && q.cell[1] === cell[1],
+        )
+      : [];
+    const winner = outcome?.winnerId ?? null;
+    let artPage = null;
+    const sprite = async (p, file, winners) => {
+      const own = endPawns.filter((q) => (q.playerId === winner) === winners);
+      const found =
+        own.length === 1 ? seatPawnArt(own[0].playerId, own[0].type) : [];
+      if (found.length === 1) {
+        artPage ??= await browser.newPage(portraitPageOptions);
+        const path = join(WORK, file);
+        await composeLayers(artPage, found[0].layers, path);
+        // As a data: URL: a file: one taints the stage's canvas.
+        const data = `data:image/png;base64,${readFileSync(path).toString("base64")}`;
+        return {
+          src: fileUrl(path),
+          art: await stage.evaluate((u) => window.__artBox(u), data),
+        };
+      }
       const url = boardUrl(L - 1);
       const { png, art } = await stage.evaluate(
         ([u, b, key]) => window.__pawnSprite(u, b, key),
@@ -4879,8 +4908,9 @@ const renderStyle = async (styleName) => {
       return { src: fileUrl(path), art };
     };
     const boxes = layoutOn(pounce ? CAPTURE_POUNCE : CAPTURE_INSIDE, mirrored);
-    const mouse = await sprite(caught[0], "capture-mouse.png");
-    const cat = await sprite(catcher[0], "capture-cat.png");
+    const mouse = await sprite(caught[0], "capture-mouse.png", false);
+    const cat = await sprite(catcher[0], "capture-cat.png", true);
+    await artPage?.close();
     // Where each pawn's art is drawn (its box less the picture's clear
     // margin): what an overlay avoids (pawnBoxes).
     const artIn = (b, a) => ({
@@ -5054,7 +5084,6 @@ const renderStyle = async (styleName) => {
             trap: {
               t,
               walls: coldLines,
-              trails: [],
               groove: GROOVE,
               lit: true,
             },
@@ -5620,7 +5649,6 @@ const renderStyle = async (styleName) => {
         trap: {
           t,
           walls: ev.walls.map((w) => litWallLine(w, ply)),
-          trails: [],
           groove: GROOVE,
         },
         midStamp:
@@ -5748,16 +5776,6 @@ const renderStyle = async (styleName) => {
       t,
       walls: f.walls.map((w) => litWallLine(w, ply)),
       groove: GROOVE,
-      trails: f.moved.map(([a, b]) => {
-        // The glow paints over the board image, pawns included: the
-        // trail stops EXPLAIN_TRAIL_GAP cells short of each end, so it
-        // runs between the two cells and covers neither pawn.
-        const [p, q] = [cellAt(a), cellAt(b)];
-        const [dx, dy] = [q.x - p.x, q.y - p.y];
-        const cells = Math.hypot(dx / GRID.pitchX, dy / GRID.pitchY);
-        const k = Math.min(0.5, EXPLAIN_TRAIL_GAP / cells);
-        return [p.x + k * dx, p.y + k * dy, q.x - k * dx, q.y - k * dy];
-      }),
     });
     const oldWalk = was > 1;
     // 1. The old walk, on the position before the move.
