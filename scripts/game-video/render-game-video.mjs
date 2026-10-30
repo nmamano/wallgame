@@ -5496,6 +5496,16 @@ const renderStyle = async (styleName) => {
         { kind: "explain", ply: plyIndex },
       );
     }
+    /*
+      Until the new walk is drawn, the counter keeps the old numbers, and
+      so does the caption: a payoff from this ply ("1 to 13") shows with
+      the counter's new number, not 1.5 s before it (Wall Game Director,
+      2026-10-30: a4wv and lQeZ).
+    */
+    const beforeNumbers = {
+      race: raceHud(ply - 1),
+      caption: wallz ? captionAt(ply - 1) : "",
+    };
     // 2. The move lands; its walls and its pawns' steps glow.
     land(plyIndex);
     const landed = elapsed;
@@ -5506,7 +5516,7 @@ const renderStyle = async (styleName) => {
           // The counter keeps the old numbers until the new walk draws, so
           // it never disagrees with the walk's own number (Wall Game PM,
           // 2026-10-29).
-          race: raceHud(ply - 1),
+          ...beforeNumbers,
           trap: glow(i / FPS),
           path: {
             cell: GRID.pitchX,
@@ -5541,7 +5551,9 @@ const renderStyle = async (styleName) => {
         playState(ply, {
           // The counter ticks as the new walk is drawn and shows its own
           // number, so the two never disagree.
-          race: t < drawAfter ? raceHud(ply - 1) : raceHud(ply, t - drawAfter),
+          ...(t < drawAfter
+            ? beforeNumbers
+            : { race: raceHud(ply, t - drawAfter) }),
           trap: glow(elapsed - landed),
           path: {
             cell: GRID.pitchX,
