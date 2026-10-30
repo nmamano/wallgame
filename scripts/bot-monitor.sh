@@ -21,8 +21,8 @@
 # It also times that check. A slow site makes the bot client's 30s ping go
 # unanswered, so the client drops its socket and a game in flight can be
 # forfeited (2026-10-25 and 2026-10-30: 40 drops while these checks took ~10s
-# instead of ~2.6s). It alerts on the change only: slow, still slow after
-# SLOW_REMIND_RUNS checks, normal again.
+# instead of ~2.6s). It alerts on the change only: slow (2 checks in a row),
+# still slow after SLOW_REMIND_RUNS checks, normal again (only after a "slow").
 #
 # Install as a systemd user timer: see scripts/wallgame-bot-monitor.{service,timer}
 set -uo pipefail
@@ -137,16 +137,24 @@ slow_s="$(awk -v ms="$SLOW_MS" 'BEGIN { printf "%.0f", ms / 1000 }')"
 # Speed alerts. A check where the site did not answer at all leaves the slow
 # count as it is: the outage alert below covers that case, and one dead check
 # inside a slow spell must not read as "normal again".
+#
+# "Slow" needs SLOW_CONFIRM_RUNS slow checks in a row, and "fast again" goes
+# out only after a "slow" did. The 2026-10-25/30 averages (8.7s, 11.8s) sit
+# on both sides of the 10s limit, so alerting on single checks would flap
+# slow/fast every 5 minutes and wake an agent each time.
+SLOW_CONFIRM_RUNS=2
 if [ "$reachable" = "1" ]; then
   if [ "$check_ms" -gt "$SLOW_MS" ]; then
     slow_runs=$((slow_runs + 1))
-    if [ "$slow_runs" -eq 1 ]; then
-      send_discord "🐢 **$API_BASE is slow**: the bot check took ${check_s}s (limit ${slow_s}s) (${now}). Bot games can lose their connection while this lasts."
+    if [ "$slow_runs" -eq "$SLOW_CONFIRM_RUNS" ]; then
+      send_discord "🐢 **$API_BASE is slow**: ${slow_runs} bot checks in a row took more than ${slow_s}s, the last one ${check_s}s (${now}). Bot games can lose their connection while this lasts."
     elif [ "$slow_runs" -eq "$SLOW_REMIND_RUNS" ]; then
       send_discord "🐢 **$API_BASE is still slow** after ${slow_runs} checks in a row: this check took ${check_s}s (${now})."
     fi
-  elif [ "$slow_runs" -gt 0 ]; then
-    send_discord "✅ **$API_BASE is fast again** after ${slow_runs} slow checks: this check took ${check_s}s (${now})."
+  else
+    if [ "$slow_runs" -ge "$SLOW_CONFIRM_RUNS" ]; then
+      send_discord "✅ **$API_BASE is fast again** after ${slow_runs} slow checks: this check took ${check_s}s (${now})."
+    fi
     slow_runs=0
   fi
 fi
