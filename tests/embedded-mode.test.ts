@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { readEmbeddedFlag } from "../frontend/src/lib/embedded-mode";
+import {
+  EMBEDDED_BODY_ATTRIBUTE,
+  markEmbeddedDocument,
+  readEmbeddedFlag,
+} from "../frontend/src/lib/embedded-mode";
 import type { IdStorage } from "../frontend/src/lib/anonymous-id";
 
 /**
@@ -101,5 +105,40 @@ describe("the portal case", () => {
   test("a storage that throws does not take the page down", () => {
     expect(readEmbeddedFlag("?embedded=1", hostileStorage())).toBe(true);
     expect(readEmbeddedFlag("", hostileStorage())).toBe(false);
+  });
+});
+
+describe("the body mark for portal-only CSS", () => {
+  const fakeBody = () => {
+    const attributes = new Map<string, string>();
+    return {
+      attributes,
+      setAttribute: (name: string, value: string) => {
+        attributes.set(name, value);
+      },
+    };
+  };
+
+  test("a plain visit leaves the body unmarked", () => {
+    const body = fakeBody();
+    markEmbeddedDocument(false, body);
+    expect(body.attributes.size).toBe(0);
+  });
+
+  test("a portal frame marks the body", () => {
+    const body = fakeBody();
+    markEmbeddedDocument(true, body);
+    expect(body.attributes.get(EMBEDDED_BODY_ATTRIBUTE)).toBe("");
+  });
+
+  test("index.css keys user-select on the same attribute", async () => {
+    // A rename on one side only would silently turn the rule off.
+    const css = await Bun.file(
+      new URL("../frontend/src/index.css", import.meta.url),
+    ).text();
+    const rule = new RegExp(
+      `body\\[${EMBEDDED_BODY_ATTRIBUTE}\\]\\s*\\{[^}]*user-select:\\s*none`,
+    );
+    expect(css).toMatch(rule);
   });
 });

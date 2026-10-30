@@ -190,6 +190,17 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+  /* Portal frames only (lib/embedded-mode.ts, EMBEDDED_BODY_ATTRIBUTE).
+     Fields stay selectable: iOS Safari can refuse typing in an input under a
+     user-select: none parent. */
+  body[data-embedded] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body[data-embedded] :is(input, textarea, [contenteditable="true"]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 @utility scrollbar-none {

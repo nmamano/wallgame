@@ -9,6 +9,7 @@ import { routeTree } from "./routeTree.gen";
 import { installNavigationReporting, browserReporter } from "./lib/analytics";
 import { resetStalePreferences } from "./lib/preference-reset";
 import { RESETTABLE_GAME_SETUP_KEYS } from "./hooks/use-settings";
+import { isEmbedded, markEmbeddedDocument } from "./lib/embedded-mode";
 
 /**
  * Retire a stored game setup that predates the current defaults, once per
@@ -34,6 +35,9 @@ resetStalePreferences(
   })(),
   RESETTABLE_GAME_SETUP_KEYS,
 );
+
+// Before the first render, so a portal frame never paints a selectable page.
+markEmbeddedDocument(isEmbedded(), document.body);
 
 // From https://tanstack.com/query/latest/docs/framework/react/quick-start
 const queryClient = new QueryClient();

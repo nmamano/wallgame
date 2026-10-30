@@ -24,6 +24,7 @@ import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { SharePuzzleButton } from "@/components/share-puzzle-button";
+import { isEmbedded } from "@/lib/embedded-mode";
 import { savedPuzzleSlug } from "../../../shared/domain/puzzle-links";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
@@ -256,8 +257,11 @@ function Puzzles() {
 
           Waiting on `isLoading` as well as the answer: logged-out is the
           resting state of this hook, so testing it alone flashed the
-          invitation at logged-in visitors for as long as /api/me took. */}
-      {!isLoading && !isLoggedIn && (
+          invitation at logged-in visitors for as long as /api/me took.
+
+          Absent in a portal frame: no login is possible there, so the
+          invitation would point at nothing. See lib/embedded-mode.ts. */}
+      {!isLoading && !isLoggedIn && !isEmbedded() && (
         <Alert className="mb-8 bg-card/50 border-border/50">
           <Info className="h-4 w-4" />
           <AlertDescription className="text-sm text-muted-foreground">

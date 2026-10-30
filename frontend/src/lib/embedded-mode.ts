@@ -76,3 +76,20 @@ export const isEmbedded = (): boolean => {
   latched ??= readEmbeddedFlag(window.location.search, browserStorage());
   return latched;
 };
+
+/**
+ * The body attribute that `index.css` keys the portal-only rules on.
+ *
+ * CrazyGames asks for `user-select: none` on the body on mobile, so a long
+ * press opens no magnifier and no context menu. wallgame.io keeps normal text
+ * selection, so the rule applies only to a marked body.
+ */
+export const EMBEDDED_BODY_ATTRIBUTE = "data-embedded";
+
+/** Marks the body for the portal-only CSS. Does nothing when not embedded. */
+export const markEmbeddedDocument = (
+  embedded: boolean,
+  body: Pick<HTMLElement, "setAttribute">,
+): void => {
+  if (embedded) body.setAttribute(EMBEDDED_BODY_ATTRIBUTE, "");
+};
