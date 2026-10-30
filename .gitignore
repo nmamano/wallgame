@@ -44,3 +44,14 @@ ops-private/
 # Overlay clips for the daily game videos (scripts/game-video/overlay-clips.mjs):
 # PNG sequences of reaction cut-outs, other people's clips like the sounds.
 /assets/overlays/
+# The director's docs for the daily game videos (Nil, 2026-10-30: keep the
+# director work local). They live in a separate local repo that is never
+# pushed; crew.mjs reads them from there.
+/scripts/game-video/daily/DIRECTOR.md
+/scripts/game-video/daily/CASES.md
+/scripts/game-video/daily/SCRIPT.md
+/scripts/game-video/daily/SCRIPT-REVIEW.md
+/scripts/game-video/daily/AFTER-RENDER.md
+/scripts/game-video/daily/IMPLEMENT.md
+/scripts/game-video/daily/VET-BRIEF.md
+/scripts/game-video/meme-list.md
