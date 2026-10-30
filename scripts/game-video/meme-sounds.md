@@ -279,12 +279,16 @@ short ones), not from listening:
 - buzzer-2: 110 Hz and 116 Hz square waves together (they beat 6 times a
   second), 0.7 s; buzzer-1 is a different, higher buzz.
 
-Four of them play quieter than the target: the true-peak ceiling (-10
-dBTP) holds back a clip whose peak is high for its loudness, so tick-1 and
-whoosh-1 play near -29 LUFS and chomp-1 and hit-1 near -25, against -21 for
-the others. In the 2026-10-30 proof render (item 13's game, every new key)
-each was still 7.5 to 23 LU over its bed. Nil judges by ear on the sounds
-page.
+Four of them were limited in the file (Wall Game Director, 2026-10-30:
+"bring them to the level of our usual hits"). Their peaks are high for
+their loudness, so the true-peak ceiling (-10 dBTP) held them near -29
+LUFS (tick-1, whoosh-1) and -25 (chomp-1, hit-1), against -21 for the
+others. Each cut is raised, then limited at -12 dBFS (`alimiter`, 1 ms
+attack, 50 ms release), so memeGain can bring it up: tick-1, chomp-1 and
+hit-1 now play at -21 LUFS, whoosh-1 at -23. whoosh-1 is 0.24 s, shorter
+than the 400 ms loudness window, so it reads low; to get it to -23 the
+limiter cuts its peak by about 16 dB, more than the others; a listener
+should check that it still sounds like a whoosh.
 
 | Key         | Made from         | Length | Command (ffmpeg, from the downloaded preview)                                                                                                |
 | ----------- | ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -297,8 +301,12 @@ page.
 | fightbell-1 | Freesound 520998  | 2.0 s  | `-af "atrim=0.05:2.0,asetpts=PTS-STARTPTS,afade=t=out:st=1.4:d=0.55"`                                                                        |
 | buzzer-2    | ffmpeg (no input) | 0.7 s  | `-f lavfi -i "aevalsrc='0.35*(sgn(sin(2*PI*110*t))+sgn(sin(2*PI*116*t)))':s=44100:d=0.7" -af "afade=t=in:d=0.01,afade=t=out:st=0.55:d=0.15"` |
 
+Then the limited four (after the cut above): tick-1 `volume=29.6dB`,
+whoosh-1 `volume=10.8dB`, chomp-1 `volume=5.6dB`, hit-1 `volume=2.1dB`,
+each followed by `alimiter=limit=0.251:attack=1:release=50:level=disabled`.
 Each is then written with `-c:a libmp3lame -b:a 128k -ar 44100 -ac 2`.
-slam-1, hit-1 and fall-1 are the previews as fetched.
+slam-1 and fall-1 are the previews as fetched; hit-1 is the preview,
+limited.
 
 ## Copyright risk
 

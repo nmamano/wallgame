@@ -104,14 +104,15 @@ export const MEME_SOUNDS = {
   "whistle-1": { lufs: -25.8, truePeak: -19.4 },
   // Meme list, cycle 2 (Director Rewriter, 2026-10-30), measured that day.
   // buzzer-2 is our own (ffmpeg); the rest are CC0 on freesound.org.
+  // tick-1, whoosh-1, chomp-1 and hit-1 are limited (meme-sounds.md).
   "buzzer-2": { lufs: -7.6, truePeak: -4.8 },
   "slam-1": { lufs: -15.2, truePeak: -3.3 },
   "tada-1": { lufs: -8.5, truePeak: -0.8 },
-  "tick-1": { lufs: -46.6, truePeak: -27.9 },
+  "tick-1": { lufs: -21.2, truePeak: -10.7 },
   "wind-1": { lufs: -32.0, truePeak: -21.2 },
-  "whoosh-1": { lufs: -25.8, truePeak: -7.1 },
-  "chomp-1": { lufs: -26.6, truePeak: -12.0 },
-  "hit-1": { lufs: -23.1, truePeak: -8.2 },
+  "whoosh-1": { lufs: -25.0, truePeak: -12.0 },
+  "chomp-1": { lufs: -22.5, truePeak: -12.2 },
+  "hit-1": { lufs: -24.8, truePeak: -15.1 },
   "uhoh-1": { lufs: -16.7, truePeak: -6.7 },
   "fall-1": { lufs: -6.5, truePeak: -7.3 },
   "fightbell-1": { lufs: -12.8, truePeak: -4.4 },
