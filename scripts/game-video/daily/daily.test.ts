@@ -45,6 +45,7 @@ import {
   stage,
   utcDay,
 } from "./store.mjs";
+import { SLOTS } from "./slots.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { FOLLOWER_PLATFORMS } from "./followers.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
@@ -4578,7 +4579,10 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(status).toBe(200);
     expect(body.counts).toMatchObject({ approved: 1, postedToday: 0 });
     expect(body.nextSlot.willPost).toBe(true);
-    expect(body.nextSlot.pacific).toMatch(/ (09|16):00 PT$/);
+    // One of the slot times, whatever the time of day the test runs.
+    expect(body.nextSlot.pacific).toMatch(
+      new RegExp(` (${SLOTS.join("|")}) PT$`),
+    );
     // No key in the test env: nothing is live, so a slot would skip.
     expect(body.livePlatforms).toEqual([]);
     expect(JSON.stringify(body)).not.toContain(dir);
