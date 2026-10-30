@@ -6,6 +6,10 @@ that `scripts/game-video/daily/` picks, the Director edits and
 six moment effects (blunder, brilliant, trap, race, freeze, react, added in
 824c3e34) and the new meme sounds (99cdf108).
 
+The director's docs this audit names (`DIRECTOR.md` and its siblings) are
+no longer in this repo: since 2026-10-30 they are in the director's own
+local repo, at the same paths.
+
 ## What was audited
 
 Three renders, each watched as stills (one per second, plus key frames):

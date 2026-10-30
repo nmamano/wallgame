@@ -1571,16 +1571,6 @@ describe("Growth's copy block", () => {
     );
   });
 
-  test("DIRECTOR.md names the caption style version that the posts carry", () => {
-    const director = readFileSync(
-      resolve(import.meta.dir, "DIRECTOR.md"),
-      "utf8",
-    );
-    expect(director).toContain(
-      `Style version: \`${CAPTION_STYLE_VERSION}\` (\`CAPTION_STYLE_VERSION\`)`,
-    );
-  });
-
   test("no game id in anything posted", () => {
     expect(
       copyProblems(withText("tiktok", "see testgame1 lol"), "TESTGAME1"),
@@ -2480,7 +2470,28 @@ const viewsToday = (dir: string) =>
     ) as Record<string, Record<string, number>>
   )[utcDay()];
 
-/** crew.mjs against the app at `base`. */
+/** DIRECTOR.md's line that names the caption style the posts carry. */
+const STYLE_LINE = `Style version: \`${CAPTION_STYLE_VERSION}\` (\`CAPTION_STYLE_VERSION\`)`;
+
+/**
+ * Stand-ins for the director's docs, which live in ~/nil/wallgame-director
+ * (local only; CI never has it): the files crew.mjs reads, with no more
+ * than it needs from each.
+ */
+const writeDocs = (
+  dir: string,
+  director = `# Directing\n\n${STYLE_LINE}\n`,
+) => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SCRIPT.md"), "## Checklist\n\n- [ ] stand-in\n");
+  writeFileSync(join(dir, "SCRIPT-REVIEW.md"), "# Script review stand-in\n");
+  writeFileSync(join(dir, "VET-BRIEF.md"), "# Vet brief stand-in\n");
+  writeFileSync(join(dir, "DIRECTOR.md"), director);
+};
+const DOCS = tempDir();
+writeDocs(DOCS);
+
+/** crew.mjs against the app at `base`, with the stand-in docs. */
 const crew = (base: string, ...args: string[]) => {
   const run = Bun.spawnSync(
     [
@@ -2490,7 +2501,7 @@ const crew = (base: string, ...args: string[]) => {
       "--app",
       base,
       "--docs",
-      import.meta.dir,
+      DOCS,
     ],
     { env: { PATH: process.env.PATH! } },
   );
@@ -4127,7 +4138,20 @@ describe("phase 1, the script (SCRIPT.md)", () => {
       timeline: null,
       timesNote: "no times",
       checklist: scriptChecklist(
-        readFileSync(join(import.meta.dir, "SCRIPT.md"), "utf8"),
+        [
+          "# Phase 1",
+          "",
+          "## Checklist (tick each before the review)",
+          "",
+          "- [ ] Every meme sits on a move whose label matches its meme-list line.",
+          "- [ ] Each beat names a moment the viewer sees and says why it is funny;",
+          "      its cause is on screen just before it. No moment, no meme.",
+          "- [ ] Dull plies are sped through, not filled.",
+          "",
+          "## After the checklist",
+          "",
+          "- [ ] not an item",
+        ].join("\n"),
       ),
     });
     expect(text).toContain(
@@ -4140,6 +4164,8 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(text).toContain(
       "\n[ ] Each beat names a moment the viewer sees and says why it is funny; its cause is on screen just before it. No moment, no meme.\n",
     );
+    // Only the checklist section's items.
+    expect(text).not.toContain("not an item");
     expect(() => scriptChecklist("# no checklist")).toThrow("## Checklist");
   });
 
@@ -4214,10 +4240,11 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(draft).toContain(
       '30 | <label> | ~18.0 | <sees> | trap + sting-1 | "NO EXIT"',
     );
-    // With no --docs, SCRIPT.md is main's committed text in ~/nil/wallgame,
-    // never its working tree; with no such checkout, a clear error.
+    // With no --docs, the docs are the director's repo's main, as
+    // committed in ~/nil/wallgame-director, never its working tree; with
+    // no such repo, a clear error.
     const home = join(dir, "home");
-    const repo = join(home, "nil/wallgame");
+    const repo = join(home, "nil/wallgame-director");
     const docs = join(repo, "scripts/game-video/daily");
     const noDocs = (file: string) =>
       Bun.spawnSync(
@@ -4237,9 +4264,8 @@ describe("phase 1, the script (SCRIPT.md)", () => {
         { env: { PATH: process.env.PATH!, HOME: home } },
       );
     expect(noDocs(join(dir, "s0.txt")).stderr.toString()).toContain(
-      `briefs not found at ${repo} (main:scripts/game-video/daily/SCRIPT.md): give --docs DIR`,
+      `briefs not found at ${repo} (main:scripts/game-video/daily/DIRECTOR.md): give --docs DIR`,
     );
-    mkdirSync(docs, { recursive: true });
     const git = (...args: string[]) =>
       Bun.spawnSync([
         "git",
@@ -4251,10 +4277,21 @@ describe("phase 1, the script (SCRIPT.md)", () => {
         "user.email=t@t",
         ...args,
       ]);
-    git("init", "-q", "-b", "main");
+    // A DIRECTOR.md that does not name the caption style the posts carry
+    // stops the script before it is written.
+    writeDocs(docs, "# Directing\n\nStyle version: `older-style`\n");
     writeFileSync(join(docs, "SCRIPT.md"), "## Checklist\n\n- [ ] committed\n");
+    git("init", "-q", "-b", "main");
     git("add", ".");
     git("commit", "-q", "-m", "docs");
+    const oldStyle = noDocs(join(dir, "s1.txt"));
+    expect(oldStyle.exitCode).not.toBe(0);
+    expect(oldStyle.stderr.toString()).toContain(
+      `DIRECTOR.md does not name the caption style ${CAPTION_STYLE_VERSION}`,
+    );
+    expect(existsSync(join(dir, "s1.txt"))).toBe(false);
+    writeFileSync(join(docs, "DIRECTOR.md"), `# Directing\n\n${STYLE_LINE}\n`);
+    git("commit", "-q", "-am", "the style");
     writeFileSync(join(docs, "SCRIPT.md"), "## Checklist\n\n- [ ] half done\n");
     const fromMain = join(dir, "s-main.txt");
     expect(noDocs(fromMain).exitCode).toBe(0);

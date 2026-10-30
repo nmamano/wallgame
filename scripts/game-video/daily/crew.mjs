@@ -214,8 +214,9 @@
  *                                  failure. It never pushes or merges
  *
  * The app is found through the office's app registry (name game-video), or
- * given with --app http://127.0.0.1:<port>. The briefs are read from the
- * main checkout's daily folder as main has them committed, or from --docs DIR.
+ * given with --app http://127.0.0.1:<port>. The briefs and DIRECTOR.md are
+ * read from the director's docs repo (~/nil/wallgame-director) as its main
+ * has them committed, or from --docs DIR.
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -228,7 +229,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { candidateFromReport } from "./candidate.mjs";
+import { CAPTION_STYLE_VERSION, candidateFromReport } from "./candidate.mjs";
 import { validateEdl } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
@@ -253,20 +254,22 @@ const STORYBOARD = resolve(HERE, "../storyboard.ts");
 /** By full path, as nightly-candidates.sh: a unit's PATH has no bun. */
 const BUN = join(homedir(), ".bun/bin/bun");
 /**
- * The main checkout, and its daily folder. The briefs crew.mjs prints
- * (SCRIPT.md's checklist, SCRIPT-REVIEW.md, VET-BRIEF.md) are docs: read
- * from main, a docs edit is live at once, where the release copy this runs
- * from lags main until a ship (Wall Game PM, 2026-10-29). They are read as
- * main has them committed (git show), never from its working tree, where
- * another agent's edit may be half done (Video Reviewer 1, review 75).
+ * The director's docs repo (~/nil/wallgame-director, local only, branch
+ * main), with the same paths as this repo had them. The briefs crew.mjs
+ * prints (SCRIPT.md's checklist, SCRIPT-REVIEW.md, VET-BRIEF.md) and
+ * DIRECTOR.md are read from it: a docs edit is live at once, where the
+ * release copy this runs from lags main until a ship (Wall Game PM,
+ * 2026-10-29). They are read as its main has them committed (git show),
+ * never from its working tree, where another agent's edit may be half done
+ * (Video Reviewer 1, review 75).
  */
-const MAIN = join(homedir(), "nil/wallgame");
+const DOCS_REPO = join(homedir(), "nil/wallgame-director");
 const DAILY_DIR = "scripts/game-video/daily";
-/** Where the briefs are for a reader: main's daily folder, or --docs DIR. */
-const docsDir = () => flag("docs") ?? join(MAIN, DAILY_DIR);
+/** Where the briefs are for a reader: the docs repo's daily folder, or --docs DIR. */
+const docsDir = () => flag("docs") ?? join(DOCS_REPO, DAILY_DIR);
 /**
  * A brief, its leading comment left out: from --docs DIR (the tests' own
- * copy), else as main has it committed.
+ * copy), else as the docs repo's main has it committed.
  */
 const brief = (name) => {
   const docs = flag("docs");
@@ -279,17 +282,32 @@ const brief = (name) => {
   } else {
     const show = spawnSync(
       "git",
-      ["-C", MAIN, "show", `main:${DAILY_DIR}/${name}`],
+      ["-C", DOCS_REPO, "show", `main:${DAILY_DIR}/${name}`],
       { encoding: "utf8" },
     );
     if (show.status !== 0) {
       die(
-        `briefs not found at ${MAIN} (main:${DAILY_DIR}/${name}): give --docs DIR`,
+        `briefs not found at ${DOCS_REPO} (main:${DAILY_DIR}/${name}): give --docs DIR`,
       );
     }
     text = show.stdout;
   }
   return text.replace(/^<!--[\s\S]*?-->\n+/, "").trimEnd();
+};
+/**
+ * DIRECTOR.md's path for a reader, once DIRECTOR.md names the caption
+ * style this code stamps on each pick (CAPTION_STYLE_VERSION): a script
+ * written to other rules would not match its posts. The docs live outside
+ * this repo, so the check runs here, not in a test.
+ */
+const rules = () => {
+  const line = `Style version: \`${CAPTION_STYLE_VERSION}\` (\`CAPTION_STYLE_VERSION\`)`;
+  if (!brief("DIRECTOR.md").includes(line)) {
+    die(
+      `DIRECTOR.md does not name the caption style ${CAPTION_STYLE_VERSION}: its line "${line}" is missing. Update DIRECTOR.md's "On-video caption" section, or CAPTION_STYLE_VERSION in candidate.mjs`,
+    );
+  }
+  return join(docsDir(), "DIRECTOR.md");
 };
 /** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
 const STORYBOARD_TIMEOUT_MS = 120_000;
@@ -1252,6 +1270,7 @@ const commands = {
             ? `no times: ${rec.skipped}`
             : "no times: the render kit's lint gives no timeline yet";
     }
+    rules();
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(
       out,
@@ -1296,7 +1315,7 @@ const commands = {
         `- SCRIPT: ${script}`,
         `- STORYBOARD: ${board.png} (${board.plies} plies)`,
         `- LIST: ${edl ?? "none yet (the script comes first)"}`,
-        `- RULES: ${join(docsDir(), "DIRECTOR.md")}`,
+        `- RULES: ${rules()}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- FACTS (plies 0-based in the director lines):",
         ...c.candidate.facts.map((f) => `  - ${f}`),
@@ -1384,7 +1403,7 @@ const commands = {
         script
           ? `- SCRIPT: ${scriptFile} (the approved script, ${script.verdict} by ${script.reviewer} at ${script.at}; its review notes: ${scriptNotes})`
           : "- SCRIPT: none recorded (this item rendered before phase 1)",
-        `- RULES: ${join(docsDir(), "DIRECTOR.md")}`,
+        `- RULES: ${rules()}`,
         `- SILENCE (the render's measure of the final track): ${c.render.quality?.silence?.note ?? "not measured (a render before the measure)"}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- THE GAME (the winner and how):",
