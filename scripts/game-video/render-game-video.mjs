@@ -113,7 +113,6 @@ import {
   offBoardPlace,
   placesOf,
   reactorRole,
-  coveredBy,
   loadingPercent,
   NO_REACH,
   overlayPlaces,
@@ -121,7 +120,7 @@ import {
   placeOverlay,
   placeNear,
   parsePawn,
-  tailHits,
+  nearFaults,
   tailOf,
   takesPawn,
   READ_BASE_SECONDS,
@@ -4594,8 +4593,33 @@ const renderStyle = async (styleName) => {
         );
         continue;
       }
+      // The other pawns' centres, for its tip (overlays.mjs nearFaults).
+      // Its ply holds, so they stand still while it shows: one each.
+      const others = pawnAt
+        ? [
+            ...new Map(
+              w.frames
+                .flatMap((f) => pawnBoxes(f.state))
+                .filter((b) => !b.capture)
+                .map((b) => [
+                  b.what,
+                  {
+                    x: (b.x0 + b.x1) / 2,
+                    y: (b.y0 + b.y1) / 2,
+                    what: b.what,
+                  },
+                ]),
+            ).values(),
+          ].filter(
+            (o) =>
+              Math.hypot(
+                (o.x - pawnAt.x) / PITCH.x,
+                (o.y - pawnAt.y) / PITCH.y,
+              ) > 0.5,
+          )
+        : [];
       const place = pawnAt
-        ? placeNear(w.asset, busy, reach, pawnAt, PITCH)
+        ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH)
         : placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
         // What is under each place, each thing once, and what stops each
@@ -4603,23 +4627,16 @@ const renderStyle = async (styleName) => {
         // where one place is free.
         const under = placesOf(w.asset).flatMap((kind) =>
           kind === "board"
-            ? overlayPlaces(w.asset, reach).map((p) => {
-                const under = coveredBy(p.full, busy);
-                // A free place of a picture a pawn emotes: what its tail
-                // to the pawn crosses.
-                const tail =
-                  pawnAt && under.length === 0
-                    ? tailOf(p.full, pawnAt, PITCH)
-                    : null;
-                const crossed = tail ? tailHits(tail, p.full, busy, PITCH) : [];
-                return `${placeName(p)}: ${[...new Set(under.map((b) => b.what))].join(", ")}${crossed.length > 0 ? `its tail crosses ${[...new Set(crossed.map((b) => b.what))].join(", ")}` : ""}`;
-              })
+            ? overlayPlaces(w.asset, reach).map(
+                (p) =>
+                  `${placeName(p)}: ${nearFaults(p, pawnAt ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
+              )
             : [`${kind}: ${offRoom(kind)}`],
         );
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear` : ""}; under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;
@@ -4889,6 +4906,16 @@ const renderStyle = async (styleName) => {
           art: await stage.evaluate((u) => window.__artBox(u), data),
         };
       }
+      // Which path made the picture, for the vet (review 102 N1).
+      log(
+        `capture picture: ${file} cut from the board, ${
+          !pawnArt
+            ? "this capture has no pawn art"
+            : own.length === 1
+              ? `${found.length} pawn arts for ${SEAT_COLORS(replay)[own[0].playerId]} ${own[0].type}, not one`
+              : `${own.length} ${winners ? "winning" : "losing"} pawns on the cell, not one`
+        }`,
+      );
       const url = boardUrl(L - 1);
       const { png, art } = await stage.evaluate(
         ([u, b, key]) => window.__pawnSprite(u, b, key),

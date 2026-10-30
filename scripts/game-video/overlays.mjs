@@ -994,39 +994,84 @@ export const tailHits = (tail, full, boxes, pitch) => {
 };
 
 /**
+ * How near another pawn's centre a tail's tip may end, in cells: nearer,
+ * the tip points at two pawns (VR1 and Wall Game PM, 2026-10-30, review
+ * 102 N2: a tip between the red mouse and the blue cat).
+ */
+export const TIP_CLEAR = 1;
+
+/**
+ * Why a place of a picture tied to a pawn cannot take it: what its whole
+ * art overlaps of the `busy` boxes, what its tail overlaps, and each other
+ * pawn (`others`) whose centre is under TIP_CLEAR cells from the tail's
+ * tip. Empty when the place is free.
+ * @param {Place} p
+ * @param {{ from: { x: number, y: number }, to: { x: number, y: number } } | null} tail
+ * @param {{ x0: number, y0: number, x1: number, y1: number, what: string }[]} busy
+ * @param {{ x: number, y: number, what: string }[]} others
+ * @param {{ x: number, y: number }} pitch
+ * @returns {string[]}
+ */
+export const nearFaults = (p, tail, busy, others, pitch) => {
+  const under = coveredBy(p.full, busy);
+  if (under.length > 0) return [...new Set(under.map((b) => b.what))];
+  if (!tail) return [];
+  const crossed = tailHits(tail, p.full, busy, pitch);
+  if (crossed.length > 0)
+    return [
+      `its tail crosses ${[...new Set(crossed.map((b) => b.what))].join(", ")}`,
+    ];
+  return others
+    .filter(
+      (o) =>
+        Math.hypot((o.x - tail.to.x) / pitch.x, (o.y - tail.to.y) / pitch.y) <
+        TIP_CLEAR,
+    )
+    .map((o) => `its tip is next to the ${o.what}`);
+};
+
+/**
+ * The length of a tail past its art, in cells; 0 for no tail (the pawn is
+ * next to the art).
+ * @param {{ from: { x: number, y: number }, to: { x: number, y: number } } | null} tail
+ * @param {{ x: number, y: number }} pitch
+ */
+export const tailLength = (tail, pitch) =>
+  tail
+    ? Math.max(
+        0,
+        Math.hypot(
+          (tail.to.x - tail.from.x) / pitch.x,
+          (tail.to.y - tail.from.y) / pitch.y,
+        ) - TAIL_TUCK,
+      )
+    : 0;
+
+/**
  * The place of a picture tied to a pawn (`pawn`; Nil, 2026-10-30, C20:
- * "it should be clear who is emoting"): of its board places whose whole
- * art overlaps none of the `busy` boxes and whose tail overlaps none
- * either, the one nearest the pawn, at its big size first, then at its
- * small size. With its tail (null when the pawn is too near for one), or
- * null when no place is free.
+ * "it should be clear who is emoting"): of its board places at either
+ * size that nearFaults finds free, the one with the shortest tail, the
+ * big size first when two are as short (review 102 N2: a small place
+ * near the pawn before a big place far from it). With its tail (null when
+ * the pawn is too near for one), or null when no place is free.
  * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
- * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
+ * @param {{ x0: number, y0: number, x1: number, y1: number, what: string }[]} busy
  * @param {(scale: number) => Reach} reach
  * @param {{ x: number, y: number }} pawn its centre in the board as shown
+ * @param {{ x: number, y: number, what: string }[]} others the centres of the other pawns
  * @param {{ x: number, y: number }} pitch a cell's size in the board
  * @returns {(Place & { tail: { from: { x: number, y: number }, to: { x: number, y: number }, points: [number, number][] } | null }) | null}
  */
-export const placeNear = (asset, busy, reach, pawn, pitch) => {
-  const places = overlayPlaces(asset, reach);
-  const far = (/** @type {Place} */ p) =>
-    Math.hypot(
-      (p.full.x + p.full.w / 2 - pawn.x) / pitch.x,
-      (p.full.y + p.full.h / 2 - pawn.y) / pitch.y,
-    );
-  for (const size of [1, "small"]) {
-    const group = places
-      .filter((p) => (size === 1 ? p.scale === 1 : p.scale < 1))
-      .sort((a, b) => far(a) - far(b));
-    for (const p of group) {
-      if (coveredBy(p.full, busy).length > 0) continue;
+export const placeNear = (asset, busy, reach, pawn, others, pitch) => {
+  const ranked = overlayPlaces(asset, reach)
+    .map((p) => {
       const tail = tailOf(p.full, pawn, pitch);
-      if (tail && tailHits(tail, p.full, busy, pitch).length > 0) continue;
-      return {
-        ...p,
-        tail: tail && { ...tail, points: tailPoints(tail, pitch) },
-      };
-    }
+      return { p, tail, length: tailLength(tail, pitch) };
+    })
+    .sort((a, b) => a.length - b.length || b.p.scale - a.p.scale);
+  for (const { p, tail } of ranked) {
+    if (nearFaults(p, tail, busy, others, pitch).length > 0) continue;
+    return { ...p, tail: tail && { ...tail, points: tailPoints(tail, pitch) } };
   }
   return null;
 };
