@@ -24,6 +24,11 @@
  * Retries are by hand (Growth, POST /api/daily/post): a post-failed item
  * leaves the queue and a retry does not use a slot (Wall Game PM,
  * 2026-10-28). The timer only ever posts approved items.
+ *
+ * A slot by hand (fireNow; Nil through Growth, 2026-10-30: "one could go
+ * out now") is a timed slot fired now: the same fire() step, so the same
+ * item, checks, platforms, message and 6 h gap. It leaves lastSlotAt, so
+ * the timed slots come as before.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
@@ -34,6 +39,7 @@ import {
   pacificDay,
   pacificLabel,
   LATE_AFTER_MS,
+  MIN_GAP_MS,
 } from "./slots.mjs";
 
 export const TICK_MS = 30 * 1000;
@@ -228,7 +234,7 @@ export const createScheduler = ({
   const slotHead = (slot, firedAt, folded) => {
     const late = firedAt - slot.at > LATE_AFTER_MS;
     return [
-      `Slot ${pacificLabel(slot.at)}`,
+      `Slot ${slot.byHand ? "by hand " : ""}${pacificLabel(slot.at)}`,
       late ? `, LATE: fired ${pacificLabel(firedAt)}` : "",
       folded.length
         ? `, ${folded.length} older missed slot${folded.length > 1 ? "s" : ""} folded in`
@@ -365,6 +371,55 @@ export const createScheduler = ({
     }
   };
 
+  /**
+   * A slot now, by hand: the oldest approved item through the same fire()
+   * as a timed slot. It takes the tick's turn (running), and refuses
+   * (nothing written, nothing sent) while a slot or a post runs, before
+   * the timer's first tick, when no item is approved, or while the 6 h gap
+   * since the last post holds. lastSlotAt
+   * stays: no timed slot is used up; the gap from this post may push the
+   * next one. Returns { ok: true, lastSlot } or { ok: false, reason }.
+   */
+  const fireNow = async () => {
+    if (running || busy()) {
+      return {
+        ok: false,
+        reason: "a slot or a post is running: try again in a minute",
+      };
+    }
+    running = true;
+    try {
+      await flush();
+      const state = read();
+      const t = now();
+      if (!state.lastSlotAt) {
+        return {
+          ok: false,
+          reason: "the slot timer has not run its first tick yet",
+        };
+      }
+      if (store.approvedQueue().length === 0) {
+        return { ok: false, reason: "the approved queue is empty" };
+      }
+      const lastPostAt = state.lastPostAt ? Date.parse(state.lastPostAt) : null;
+      if (lastPostAt !== null && t < lastPostAt + MIN_GAP_MS) {
+        return {
+          ok: false,
+          reason: `the 6 h gap after the last post (${state.lastPostAt}) holds until ${pacificLabel(lastPostAt + MIN_GAP_MS)}`,
+        };
+      }
+      await fire({
+        slot: { at: t, byHand: true },
+        folded: [],
+        through: Date.parse(state.lastSlotAt),
+      });
+      await flush();
+      return { ok: true, lastSlot: read().lastSlot };
+    } finally {
+      running = false;
+    }
+  };
+
   /** Close a post that a stop cut off, then start the ticks. */
   const start = (everyMs = TICK_MS) => {
     for (const item of recover()) {
@@ -438,5 +493,5 @@ export const createScheduler = ({
     return () => clearInterval(timer);
   };
 
-  return { tick, start, status, read };
+  return { tick, fireNow, start, status, read };
 };

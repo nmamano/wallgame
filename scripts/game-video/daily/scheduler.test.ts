@@ -51,6 +51,10 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
   }));
   const sent: string[] = [];
   const posted: string[] = [];
+  // The slot time each post was given (recover() matches it).
+  const slotAts: string[] = [];
+  // While set, a post waits for it (a post in flight).
+  let hold: Promise<void> | null = null;
   let officeUp = true;
   let live = opts.liveNow ?? LIVE;
   let outcome: (id: string) => object = () => ({
@@ -90,9 +94,11 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
       },
       livePlatforms: () => live,
       busy: () => false,
-      postItem: () => {
+      postItem: async ({ slotAt }: { slotAt: string }) => {
+        slotAts.push(slotAt);
+        if (hold) await hold;
         const next = items.find((i) => i.state === "approved");
-        if (!next) return Promise.resolve({ kind: "empty" });
+        if (!next) return { kind: "empty" };
         const id = next.id;
         posted.push(id);
         const r = outcome(id) as { kind: string };
@@ -104,7 +110,7 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
               ? "approved"
               : "post-failed";
         item.posting = { at: new Date(t).toISOString() };
-        return Promise.resolve({ itemId: id, ...r });
+        return { itemId: id, ...r };
       },
       recover: () => {
         const out = leftPosting;
@@ -124,6 +130,10 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
     items,
     sent,
     posted,
+    slotAts,
+    setHold: (p: Promise<void> | null) => {
+      hold = p;
+    },
     setTime: (ms: number) => (t = ms),
     setOffice: (up: boolean) => (officeUp = up),
     setLive: (p: string[]) => (live = p),
@@ -497,5 +507,97 @@ describe("scheduler", () => {
       "The app stopped while v-2026-10-28-1 was posting",
     );
     expect(w.sent[0]).toContain("- x: UNCERTAIN");
+  });
+});
+
+describe("a slot by hand (fireNow)", () => {
+  test("posts the oldest approved item now, says so, and the 6 h gap counts from it; the timed slot is not used up", async () => {
+    const w = world({ ready: 2 });
+    const s = w.make();
+    await s.tick(); // first run: records 08:00 PT
+    const before = readState(w.statePath);
+    const r = await s.fireNow();
+    expect(r).toMatchObject({
+      ok: true,
+      lastSlot: { itemId: "v-2026-10-28-1", outcome: "posted" },
+    });
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
+    expect(w.sent).toHaveLength(1);
+    expect(w.sent[0]).toContain(
+      "Slot by hand Thu 2026-10-29 08:00 PT: POSTED v-2026-10-28-1.",
+    );
+    expect(w.sent[0]).toContain("- x: posted https://x.example/1");
+    const state = readState(w.statePath) as State & {
+      lastSlot: { slotAt: string };
+    };
+    const at = new Date(OCT29_0900 - HOUR).toISOString();
+    expect(state.lastSlotAt).toBe(before.lastSlotAt);
+    expect(state.lastPostAt).toBe(at);
+    // The post was given the slot's own time: recover() finds the item.
+    expect(state.lastSlot.slotAt).toBe(at);
+    expect(w.slotAts).toEqual([at]);
+
+    // Within 6 h: refused, nothing posted, written or sent.
+    w.setTime(OCT29_0900 - HOUR + 5 * HOUR);
+    const raw = readFileSync(w.statePath, "utf8");
+    const again = await s.fireNow();
+    expect(again.ok).toBe(false);
+    expect((again as { reason: string }).reason).toContain(
+      "the 6 h gap after the last post",
+    );
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
+    expect(w.sent).toHaveLength(1);
+    expect(readFileSync(w.statePath, "utf8")).toBe(raw);
+
+    // The 09:00 slot came during the gap: it waits, then posts late.
+    w.setTime(OCT29_0900);
+    await s.tick();
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
+    w.setTime(OCT29_0900 - HOUR + 6 * HOUR);
+    await s.tick();
+    expect(w.posted).toEqual(["v-2026-10-28-1", "v-2026-10-28-2"]);
+    expect(w.sent[1]).toContain("Slot Thu 2026-10-29 09:00 PT, LATE");
+  });
+
+  test("refused before the first tick and with no approved item: nothing written or sent", async () => {
+    const empty = world({ ready: 0 });
+    const s = empty.make();
+    expect(await s.fireNow()).toEqual({
+      ok: false,
+      reason: "the slot timer has not run its first tick yet",
+    });
+    await s.tick();
+    const raw = readFileSync(empty.statePath, "utf8");
+    expect(await s.fireNow()).toEqual({
+      ok: false,
+      reason: "the approved queue is empty",
+    });
+    expect(readFileSync(empty.statePath, "utf8")).toBe(raw);
+    expect(empty.sent).toEqual([]);
+    expect(empty.posted).toEqual([]);
+  });
+
+  test("it holds the tick's turn: no tick and no second slot by hand while it posts", async () => {
+    const w = world({ ready: 2 });
+    const s = w.make();
+    await s.tick();
+    let release = () => undefined as void;
+    w.setHold(new Promise<void>((r) => (release = r)));
+    const first = s.fireNow();
+    // The 09:00 slot is due while the post by hand runs.
+    w.setTime(OCT29_0900);
+    await s.tick();
+    expect(await s.fireNow()).toEqual({
+      ok: false,
+      reason: "a slot or a post is running: try again in a minute",
+    });
+    expect(w.slotAts).toHaveLength(1);
+    w.setHold(null);
+    release();
+    expect((await first).ok).toBe(true);
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
+    // After it, the 09:00 slot waits for the gap; nothing else posted.
+    await s.tick();
+    expect(w.posted).toEqual(["v-2026-10-28-1"]);
   });
 });

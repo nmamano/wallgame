@@ -1668,6 +1668,19 @@ export const createDaily = ({
     },
 
     /**
+     * A slot now, by hand (Growth, `crew.mjs slot --now`): the scheduler's
+     * own slot step (scheduler.mjs fireNow), so the oldest approved item,
+     * its checks and platforms, the slot message and the 6 h gap are a
+     * timed slot's. A refusal (a post runs, no item approved, the gap
+     * holds) is a 409 with its reason; nothing was written or sent.
+     */
+    "POST /api/daily/slot-now": async (req, res) => {
+      const r = await scheduler.fireNow();
+      if (!r.ok) throw new StepRefused(`slot --now: ${r.reason}`);
+      json(res, 200, r.lastSlot);
+    },
+
+    /**
      * What a restart would cut: every render queued or running (on the 4090)
      * and a post in flight. `crew.mjs ship` refuses to restart while any is
      * busy.

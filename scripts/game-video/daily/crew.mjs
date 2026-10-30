@@ -196,6 +196,12 @@
  *                                  account, then --confirm-not-posted. Slots
  *                                  post approved items on their own; a retry
  *                                  uses no slot
+ *   slot --now                     (Growth) fire a slot now: the oldest
+ *                                  approved item through the timer's own
+ *                                  slot step (same checks, platforms, slot
+ *                                  message and 6 h gap). Refused while a
+ *                                  post runs, with no approved item, or
+ *                                  within 6 h of the last post
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
@@ -1032,6 +1038,18 @@ const commands = {
     for (const [p, why] of Object.entries(r.notApplicable ?? {})) {
       console.log(`  ${p}: not applicable (${why})`);
     }
+  },
+
+  async slot() {
+    if (!has("now")) die("slot needs --now (a slot now, by hand)");
+    const r = await app("POST", "/api/daily/slot-now", {});
+    console.log(
+      `slot by hand: ${r.itemId ?? "no item"} ${r.outcome}${r.platforms ? ` (${r.platforms.join(", ")})` : ""}`,
+    );
+    console.log(
+      "  Wall Game Growth gets the slot message, as for a timed slot",
+    );
+    if (r.outcome !== "posted") process.exitCode = 1;
   },
 
   async drop() {

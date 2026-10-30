@@ -4456,6 +4456,47 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     ).toBeString();
   });
 
+  test("slot --now: the timer's own slot step; refused with its reason", async () => {
+    const waitFirstTick = async (root: string) => {
+      const schedule = join(root, "schedule.json");
+      for (let i = 0; i < 50 && !existsSync(schedule); i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      return schedule;
+    };
+    // No approved item: a 409 with the reason; crew says it and fails.
+    const emptyDir = tempDir();
+    // crew blocks this process while it runs: the app runs in its own.
+    const emptyBase = await serve(emptyDir, "unused");
+    await waitFirstTick(openStore(emptyDir).dirs.root);
+    const refused = await call(emptyBase, "/api/daily/slot-now", {});
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe("slot --now: the approved queue is empty");
+    const said = crew(emptyBase, "slot", "--now");
+    expect(said.code).toBe(1);
+    expect(said.err).toContain("slot --now: the approved queue is empty");
+    expect(crew(emptyBase, "slot").err).toContain("slot needs --now");
+
+    // An approved item, and no platform live in the test env: the slot
+    // runs and skips, the item stays approved, and the gap does not hold.
+    const dir = tempDir();
+    const store = openStore(dir);
+    const id = finishItem(store);
+    approveItem(store, id);
+    const base = await serve(dir, "unused");
+    const schedule = await waitFirstTick(store.dirs.root);
+    const ran = crew(base, "slot", "--now");
+    expect(ran.out).toContain("slot by hand: no item no-live");
+    expect(ran.code).toBe(1);
+    const state = JSON.parse(readFileSync(schedule, "utf8")) as {
+      lastPostAt: string | null;
+      lastSlot: { outcome: string };
+    };
+    expect(state.lastSlot.outcome).toBe("no-live");
+    expect(state.lastPostAt).toBeNull();
+    expect(itemOf(openStore(dir), id).state).toBe("approved");
+  });
+
   test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {
     const dir = tempDir();
     const path = join(dir, "v.mp4");
