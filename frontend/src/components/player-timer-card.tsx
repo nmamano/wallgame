@@ -3,6 +3,7 @@ import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
 import { resolveBoardPawnSrc } from "@/lib/pawn-style";
 import { PawnImage } from "@/components/pawn-image";
+import { formatClock, isLowOnTime } from "@/lib/clock-display";
 import type { BoardPawn } from "@/components/board";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
@@ -30,6 +31,8 @@ interface PlayerTimerCardProps {
   isActive: boolean;
   /** Seconds left; null when this game's clock was never recorded. */
   timeLeft: number | null;
+  /** True only while this clock ticks (live play, current position). */
+  clockLive: boolean;
   goalDistance?: number | null;
   minWidthRem?: number;
   score?: number | null;
@@ -39,19 +42,12 @@ interface PlayerTimerCardProps {
   compact?: boolean;
 }
 
-function formatTime(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const whole = Math.max(0, Math.round(seconds));
-  const mins = Math.floor(whole / 60);
-  const secs = whole % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
 export function PlayerTimerCard({
   player,
   avatarPawn,
   isActive,
   timeLeft,
+  clockLive,
   goalDistance,
   minWidthRem = 0,
   score = null,
@@ -76,7 +72,7 @@ export function PlayerTimerCard({
 
   // Suppress active highlighting when game is finished (nobody's turn)
   const shouldShowActiveState = gameStatus !== "finished" && isActive;
-  const isLowOnTime = !isUnlimited && timeLeft !== null && timeLeft < 30;
+  const lowOnTime = isLowOnTime({ timeLeft, clockLive, isUnlimited });
   const goalDistanceLabel =
     goalDistance == null
       ? "--"
@@ -151,9 +147,9 @@ export function PlayerTimerCard({
               shouldShowActiveState
                 ? "text-foreground"
                 : "text-muted-foreground/50"
-            } ${isLowOnTime ? "text-red-500 animate-pulse" : ""}`}
+            } ${lowOnTime ? "text-red-500 animate-pulse" : ""}`}
           >
-            {isUnlimited ? "∞" : formatTime(timeLeft)}
+            {isUnlimited ? "∞" : formatClock(timeLeft)}
           </span>
         </div>
       </div>
@@ -263,12 +259,12 @@ export function PlayerTimerCard({
             shouldShowActiveState
               ? "text-foreground"
               : "text-muted-foreground/50"
-          } ${isLowOnTime ? "text-red-500 animate-pulse" : ""}`}
+          } ${lowOnTime ? "text-red-500 animate-pulse" : ""}`}
         >
           {isUnlimited ? (
             <span className="text-xl lg:text-2xl">∞</span>
           ) : (
-            formatTime(timeLeft)
+            formatClock(timeLeft)
           )}
         </div>
       </div>

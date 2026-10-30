@@ -18,16 +18,27 @@ import {
   isCountedResult,
 } from "../../shared/domain/game-utils";
 
-/** The clocks a finished live game writes to game_details.clocks. */
-export const buildStoredGameClocks = (state: GameState): StoredGameClocks => ({
-  afterMove: state.history.map((entry) => {
+/**
+ * The clocks a finished live game writes to game_details.clocks, or null (the
+ * replay then shows no time) if a move lacks its clock. Never throws: a
+ * display column must not cost the game its record, rating or match score.
+ */
+export const buildStoredGameClocks = (
+  gameId: string,
+  state: GameState,
+): StoredGameClocks | null => {
+  const afterMove: StoredGameClocks["afterMove"] = [];
+  for (const entry of state.history) {
     if (!entry.timeLeftSeconds) {
-      throw new Error(`Live move ${entry.index} has no clock`);
+      console.error(
+        `Game ${gameId}: move ${entry.index} has no clock; storing no clocks`,
+      );
+      return null;
     }
-    return entry.timeLeftSeconds;
-  }),
-  final: [state.timeLeft[1], state.timeLeft[2]],
-});
+    afterMove.push(entry.timeLeftSeconds);
+  }
+  return { afterMove, final: [state.timeLeft[1], state.timeLeft[2]] };
+};
 
 const resolveUserId = async (
   authUserId: string | undefined,
@@ -176,7 +187,7 @@ export const persistCompletedGame = async (
   const moveNotations = state.history.map((entry) =>
     moveToStandardNotation(entry.move, session.config.boardHeight),
   );
-  const clocks = buildStoredGameClocks(state);
+  const clocks = buildStoredGameClocks(session.id, state);
 
   await db.transaction(async (tx) => {
     const [insertedGame] = await tx

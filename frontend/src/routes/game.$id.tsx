@@ -422,6 +422,7 @@ function GamePageContent() {
                       player={timers.topPlayer}
                       avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
+                      clockLive={timers.clockLive}
                       timeLeft={
                         timers.displayedTimeLeft?.[timers.topPlayer.playerId] ??
                         null
@@ -521,6 +522,7 @@ function GamePageContent() {
                       isActive={
                         timers.gameTurn === timers.bottomPlayer.playerId
                       }
+                      clockLive={timers.clockLive}
                       timeLeft={
                         timers.displayedTimeLeft?.[
                           timers.bottomPlayer.playerId
@@ -678,6 +680,7 @@ function GamePageContent() {
                     player={timers.topPlayer}
                     avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                     isActive={timers.gameTurn === timers.topPlayer.playerId}
+                    clockLive={timers.clockLive}
                     timeLeft={
                       timers.displayedTimeLeft?.[timers.topPlayer.playerId] ??
                       null
@@ -760,6 +763,7 @@ function GamePageContent() {
                     player={timers.bottomPlayer}
                     avatarPawn={avatarPawns[timers.bottomPlayer.playerId]}
                     isActive={timers.gameTurn === timers.bottomPlayer.playerId}
+                    clockLive={timers.clockLive}
                     timeLeft={
                       timers.displayedTimeLeft?.[
                         timers.bottomPlayer.playerId

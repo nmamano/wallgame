@@ -109,3 +109,36 @@ export const hydrateGameStateFromSerialized = (
  */
 export const hasRecordedClocks = (state: GameState): boolean =>
   state.history.every((entry) => entry.timeLeftSeconds !== null);
+
+/**
+ * Which clocks the timer cards show:
+ * - "none": this game's clocks were never recorded.
+ * - "past": the clocks right after the move at the history cursor.
+ * - "current": the game's own clocks (running while it is on).
+ */
+export type ClockView = "none" | "past" | "current";
+
+export const clockViewFor = (args: {
+  gameState: GameState | null;
+  historyState: GameState | null;
+  isReadOnlySession: boolean;
+}): ClockView => {
+  const { gameState, historyState, isReadOnlySession } = args;
+  if (gameState && !hasRecordedClocks(gameState)) {
+    return "none";
+  }
+  // A player looking back during their own game keeps the running clocks: in
+  // time trouble a past clock would mislead. Spectators and replays follow the
+  // cursor.
+  const playingOwnGame = !isReadOnlySession && gameState?.status === "playing";
+  if (historyState && !playingOwnGame) {
+    return "past";
+  }
+  return "current";
+};
+
+/** Whether the clocks shown are ticking: only then may low time be flagged. */
+export const isClockLive = (
+  view: ClockView,
+  gameState: GameState | null,
+): boolean => view === "current" && gameState?.status === "playing";

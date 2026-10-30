@@ -180,6 +180,27 @@ describe("replay clocks", () => {
     });
   });
 
+  it("still stores the game when a move lacks its clock", async () => {
+    // Cannot happen in live play today. If it ever does, a display column must
+    // not cost the game its record: the row is written with no clocks.
+    const session = playTimedOutGame();
+    session.gameState.history[1].timeLeftSeconds = null;
+    await persistCompletedGame(session);
+
+    const games = await db
+      .select({ gameId: gamesTable.gameId })
+      .from(gamesTable);
+    expect(games).toEqual([{ gameId: session.id }]);
+    const [details] = await db
+      .select({ clocks: gameDetailsTable.clocks })
+      .from(gameDetailsTable);
+    expect(details?.clocks).toBeNull();
+    const players = await db
+      .select({ order: gamePlayersTable.playerOrder })
+      .from(gamePlayersTable);
+    expect(players).toHaveLength(2);
+  });
+
   it("shows no clock for a game stored before clocks were recorded", async () => {
     const gameId = "replay-clocks-old-row";
     await db.insert(gamesTable).values({
