@@ -1,11 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
-import {
-  Board,
-  type BoardProps,
-  type BoardPawn,
-  type LastWall,
-} from "@/components/board";
+import { Board, type BoardProps } from "@/components/board";
 import { EvaluationBar } from "@/components/evaluation-bar";
 import type {
   PlayerId,
@@ -13,8 +8,6 @@ import type {
 } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { Annotation } from "@/hooks/use-annotations";
-
-type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];
 
 export interface EvalBarProps {
   evaluation: number | null;
@@ -39,34 +32,12 @@ interface BoardPanelProps {
 
   primaryLocalPlayerId: PlayerId | null;
 
-  // Board props
-  rows: number;
-  cols: number;
-  boardPawns: BoardPawn[];
-  boardWalls: WallPositionWithState[];
-  stagedArrows: BoardProps["arrows"];
-  playerColorsForBoard: Record<PlayerId, PlayerColor>;
-  interactionLocked: boolean;
-  lastMove: BoardProps["lastMove"] | BoardProps["lastMoves"];
-  lastWalls?: LastWall[];
-  draggingPawnId: string | null;
-  selectedPawnId: string | null;
-  disableMousePawnInteraction: boolean;
-  actionablePlayerId: PlayerId | null;
-
-  // Board handlers
-  onCellClick: (row: number, col: number) => void;
-  onWallClick: (row: number, col: number, orientation: WallOrientation) => void;
-  onPawnClick: (pawnId: string) => void;
-  onPawnDragStart: (pawnId: string) => void;
-  onPawnDragEnd: () => void;
-  onCellDrop: (pawnId: string, targetRow: number, targetCol: number) => void;
-  isCellDropValid: NonNullable<BoardProps["isCellDropValid"]>;
+  /** The game board's props, shared with the phone layout's board. */
+  boardProps: BoardProps;
 
   // Staged actions
   stagedActions: unknown[];
   premovedActions: unknown[];
-  pendingActionsCount: number;
   activeLocalPlayerId: PlayerId | null;
   hasActionMessage: boolean;
   actionError: string | null;
@@ -108,29 +79,9 @@ export function BoardPanel({
   isLoadingConfig,
   loadError,
   primaryLocalPlayerId,
-  rows,
-  cols,
-  boardPawns,
-  boardWalls,
-  stagedArrows,
-  playerColorsForBoard,
-  interactionLocked,
-  lastMove,
-  lastWalls,
-  draggingPawnId,
-  selectedPawnId,
-  disableMousePawnInteraction,
-  actionablePlayerId,
-  onCellClick,
-  onWallClick,
-  onPawnClick,
-  onPawnDragStart,
-  onPawnDragEnd,
-  onCellDrop,
-  isCellDropValid,
+  boardProps,
   stagedActions,
   premovedActions,
-  pendingActionsCount,
   activeLocalPlayerId,
   hasActionMessage,
   actionError,
@@ -153,7 +104,6 @@ export function BoardPanel({
 }: BoardPanelProps) {
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const showStagedActionControls = hasLocalPlayer;
-  const forceReadOnlyBoard = !hasLocalPlayer;
   const hasPendingActions =
     stagedActions.length > 0 || premovedActions.length > 0;
 
@@ -200,30 +150,9 @@ export function BoardPanel({
       )}
 
       <Board
-        rows={rows}
-        cols={cols}
-        pawns={boardPawns}
-        walls={boardWalls}
-        arrows={stagedArrows}
+        {...boardProps}
         className="p-0"
         maxWidth="max-w-full"
-        playerColors={playerColorsForBoard}
-        onCellClick={onCellClick}
-        onWallClick={onWallClick}
-        onPawnClick={onPawnClick}
-        onPawnDragStart={interactionLocked ? undefined : onPawnDragStart}
-        onPawnDragEnd={onPawnDragEnd}
-        onCellDrop={interactionLocked ? undefined : onCellDrop}
-        isCellDropValid={interactionLocked ? undefined : isCellDropValid}
-        lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
-        lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
-        lastWalls={lastWalls}
-        draggingPawnId={draggingPawnId}
-        selectedPawnId={selectedPawnId}
-        disableMousePawnInteraction={disableMousePawnInteraction}
-        stagedActionsCount={pendingActionsCount}
-        controllablePlayerId={actionablePlayerId ?? undefined}
-        forceReadOnly={forceReadOnlyBoard}
         annotations={annotations}
         previewAnnotation={previewAnnotation}
         arrowDragStateRef={arrowDragStateRef}

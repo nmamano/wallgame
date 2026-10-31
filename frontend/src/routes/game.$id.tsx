@@ -5,7 +5,7 @@ import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
 import { BoardPanel, type EvalBarProps } from "@/components/board-panel";
-import { Board } from "@/components/board";
+import { Board, type BoardProps } from "@/components/board";
 import { EvaluationBar } from "@/components/evaluation-bar";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
@@ -168,6 +168,42 @@ function GamePageContent() {
   // ============================================================================
   const rows = board.rows ?? 8;
   const cols = board.cols ?? 8;
+
+  // The game board's props. The phone layout and the desktop BoardPanel draw
+  // the same board from this one object, so a board prop reaches both.
+  const gameBoardProps = {
+    rows,
+    cols,
+    pawns: board.boardPawns,
+    walls: bestMoveOverlay
+      ? [...board.boardWalls, ...bestMoveOverlay.walls]
+      : board.boardWalls,
+    arrows: bestMoveOverlay
+      ? [...board.stagedArrows, ...bestMoveOverlay.arrows]
+      : board.stagedArrows,
+    playerColors: board.playerColorsForBoard,
+    onCellClick: board.onCellClick,
+    onWallClick: board.onWallClick,
+    onPawnClick: board.onPawnClick,
+    onPawnDragStart: board.interactionLocked
+      ? undefined
+      : board.onPawnDragStart,
+    onPawnDragEnd: board.onPawnDragEnd,
+    onCellDrop: board.interactionLocked ? undefined : board.onCellDrop,
+    isCellDropValid: board.interactionLocked
+      ? undefined
+      : board.isCellDropValid,
+    lastMove: !Array.isArray(board.lastMove) ? board.lastMove : undefined,
+    lastMoves: Array.isArray(board.lastMove) ? board.lastMove : undefined,
+    lastWalls: board.lastWalls,
+    walks: board.boardWalks,
+    draggingPawnId: board.draggingPawnId,
+    selectedPawnId: board.selectedPawnId,
+    disableMousePawnInteraction: board.disableMousePawnInteraction,
+    stagedActionsCount: board.pendingActionsCount,
+    controllablePlayerId: board.actionablePlayerId ?? undefined,
+    forceReadOnly: board.primaryLocalPlayerId == null,
+  } satisfies BoardProps;
 
   // Board sizing constants - responsive based on screen size
   const maxCellSize = 3;
@@ -356,8 +392,6 @@ function GamePageContent() {
     const mobileGapSizeRem = mobileGapSizePx / 16;
     const mobileCellSizeRem = mobileCellSizePx / 16;
 
-    const hasLocalPlayer = board.primaryLocalPlayerId != null;
-
     return (
       <>
         {/* Matching panel renders above everything */}
@@ -457,56 +491,9 @@ function GamePageContent() {
                 {/* Board — flush, edge-to-edge, naturally sized */}
                 <div className="flex items-center justify-center w-full shrink-0">
                   <Board
-                    rows={rows}
-                    cols={cols}
-                    pawns={board.boardPawns}
-                    walls={
-                      bestMoveOverlay
-                        ? [...board.boardWalls, ...bestMoveOverlay.walls]
-                        : board.boardWalls
-                    }
-                    arrows={
-                      bestMoveOverlay
-                        ? [...board.stagedArrows, ...bestMoveOverlay.arrows]
-                        : board.stagedArrows
-                    }
+                    {...gameBoardProps}
                     className="p-0"
                     maxWidth="max-w-full"
-                    playerColors={board.playerColorsForBoard}
-                    onCellClick={board.onCellClick}
-                    onWallClick={board.onWallClick}
-                    onPawnClick={board.onPawnClick}
-                    onPawnDragStart={
-                      board.interactionLocked
-                        ? undefined
-                        : board.onPawnDragStart
-                    }
-                    onPawnDragEnd={board.onPawnDragEnd}
-                    onCellDrop={
-                      board.interactionLocked ? undefined : board.onCellDrop
-                    }
-                    isCellDropValid={
-                      board.interactionLocked
-                        ? undefined
-                        : board.isCellDropValid
-                    }
-                    lastMove={
-                      !Array.isArray(board.lastMove)
-                        ? board.lastMove
-                        : undefined
-                    }
-                    lastMoves={
-                      Array.isArray(board.lastMove) ? board.lastMove : undefined
-                    }
-                    lastWalls={board.lastWalls}
-                    draggingPawnId={board.draggingPawnId}
-                    selectedPawnId={board.selectedPawnId}
-                    disableMousePawnInteraction={
-                      board.disableMousePawnInteraction
-                    }
-                    stagedActionsCount={board.pendingActionsCount}
-                    controllablePlayerId={board.actionablePlayerId ?? undefined}
-                    forceReadOnly={!hasLocalPlayer}
                     gapSizeRem={mobileGapSizeRem}
                     maxCellSizeRem={mobileCellSizeRem}
                     flush
@@ -706,39 +693,9 @@ function GamePageContent() {
                   isLoadingConfig={board.isLoadingConfig}
                   loadError={board.loadError}
                   primaryLocalPlayerId={board.primaryLocalPlayerId}
-                  rows={board.rows}
-                  cols={board.cols}
-                  boardPawns={board.boardPawns}
-                  boardWalls={
-                    bestMoveOverlay
-                      ? [...board.boardWalls, ...bestMoveOverlay.walls]
-                      : board.boardWalls
-                  }
-                  stagedArrows={
-                    bestMoveOverlay
-                      ? [...board.stagedArrows, ...bestMoveOverlay.arrows]
-                      : board.stagedArrows
-                  }
-                  playerColorsForBoard={board.playerColorsForBoard}
-                  interactionLocked={board.interactionLocked}
-                  lastMove={board.lastMove}
-                  lastWalls={board.lastWalls}
-                  draggingPawnId={board.draggingPawnId}
-                  selectedPawnId={board.selectedPawnId}
-                  disableMousePawnInteraction={
-                    board.disableMousePawnInteraction
-                  }
-                  actionablePlayerId={board.actionablePlayerId}
-                  onCellClick={board.onCellClick}
-                  onWallClick={board.onWallClick}
-                  onPawnClick={board.onPawnClick}
-                  onPawnDragStart={board.onPawnDragStart}
-                  onPawnDragEnd={board.onPawnDragEnd}
-                  onCellDrop={board.onCellDrop}
-                  isCellDropValid={board.isCellDropValid}
+                  boardProps={gameBoardProps}
                   stagedActions={board.stagedActions}
                   premovedActions={board.premovedActions}
-                  pendingActionsCount={board.pendingActionsCount}
                   activeLocalPlayerId={board.activeLocalPlayerId}
                   hasActionMessage={board.hasActionMessage}
                   actionError={board.actionError}

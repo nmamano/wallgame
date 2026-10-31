@@ -33,6 +33,7 @@ import {
   ANNOTATION_PREVIEW_OPACITY,
 } from "@/hooks/use-annotations";
 import type { Pawn } from "../../../shared/domain/game-types";
+import { walkDots, type PlayerWalk } from "../../../shared/domain/walks";
 import { isMovablePawnType } from "../../../shared/domain/pawns";
 import { pawnId } from "../../../shared/domain/game-utils";
 
@@ -85,6 +86,8 @@ export interface BoardProps {
   lastMove?: LastMove;
   lastMoves?: LastMove[];
   lastWalls?: LastWall[];
+  /** Each player's shortest walk, drawn as dots (walks.ts playerWalks). */
+  walks?: PlayerWalk[];
   maxWidth?: string;
   playerColors?: Record<PlayerId, PlayerColor>;
   onCellClick?: (row: number, col: number) => void;
@@ -171,7 +174,10 @@ const buildWallMaps = (walls: WallPositionWithState[]): WallMaps => {
   return { vertical, horizontal };
 };
 
-const NEUTRAL_WALL_COLOR = "#92400e";
+// The walls a game starts with belong to nobody: grey, so the players'
+// red and blue are the only wall colours with a meaning (as in the daily
+// videos; Nil, 2026-10-30, picks 2026-10-31).
+const NEUTRAL_WALL_COLOR = "#64748b";
 
 const getWallColor = (
   wall: WallPositionWithState,
@@ -262,6 +268,7 @@ export function Board({
   lastMove,
   lastMoves,
   lastWalls = [],
+  walks = [],
   maxWidth = "max-w-4xl",
   playerColors = { 1: "red", 2: "blue" },
   onCellClick,
@@ -575,6 +582,78 @@ export function Board({
       start: { x: start.x + offsetX / 3, y: start.y + offsetY / 3 },
       end: { x: end.x - offsetX, y: end.y - offsetY },
     };
+  };
+
+  // Each walk as dots in its player's colour with a dark rim (walkDots
+  // places them). A dot on both walks is split in two colours, so neither
+  // walk hides the other.
+  const renderWalks = () => {
+    if (
+      walks.length === 0 ||
+      gridMetrics.width === 0 ||
+      gridMetrics.height === 0
+    ) {
+      return null;
+    }
+    const radius = Math.min(cellWidthPx, cellHeightPx) * 0.11;
+    // A half step is halfway between the centres of the cells on each side.
+    const dotPosition = (halfRow: number, halfCol: number) => {
+      const a = getCellCenterPosition(
+        Math.floor(halfRow / 2),
+        Math.floor(halfCol / 2),
+      );
+      const b = getCellCenterPosition(
+        Math.ceil(halfRow / 2),
+        Math.ceil(halfCol / 2),
+      );
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    };
+    const dots = walkDots(
+      walks,
+      pawns.map((p) => p.cell),
+    ).map(({ halfRow, halfCol, playerIds }) => ({
+      key: `${halfRow}:${halfCol}`,
+      ...dotPosition(halfRow, halfCol),
+      fills: playerIds.map((id) => colorHexMap[playerColors[id]] ?? "#94a3b8"),
+    }));
+    return (
+      <svg
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 6 }}
+        viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
+          gridMetrics.height,
+          1,
+        )}`}
+        preserveAspectRatio="none"
+      >
+        {dots.map(({ key, x, y, fills }) => (
+          <g key={key}>
+            {fills.length === 1 ? (
+              <circle cx={x} cy={y} r={radius} fill={fills[0]} />
+            ) : (
+              <>
+                <path
+                  d={`M ${x} ${y - radius} A ${radius} ${radius} 0 0 0 ${x} ${y + radius} Z`}
+                  fill={fills[0]}
+                />
+                <path
+                  d={`M ${x} ${y - radius} A ${radius} ${radius} 0 0 1 ${x} ${y + radius} Z`}
+                  fill={fills[1]}
+                />
+              </>
+            )}
+            <circle
+              cx={x}
+              cy={y}
+              r={radius}
+              fill="none"
+              stroke="#0b0f1c"
+              strokeWidth={radius * 0.45}
+            />
+          </g>
+        ))}
+      </svg>
+    );
   };
 
   // Render last move arrows (subtle)
@@ -1598,6 +1677,8 @@ export function Board({
             {renderAnnotations()}
             {/* Render move targets */}
             {renderMoveHighlights()}
+            {/* Render each player's shortest walk */}
+            {renderWalks()}
 
             {/* Render walls */}
             {walls.map((pWall, index) => {

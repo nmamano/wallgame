@@ -30,6 +30,7 @@ import {
 } from "../../../shared/domain/standard-notation";
 import type { MoveHistoryRow } from "@/components/move-list-panel";
 import { pawnId } from "../../../shared/domain/game-utils";
+import { playerWalks, type PlayerWalk } from "../../../shared/domain/walks";
 import {
   isMovablePawnType,
   requirePawnCell,
@@ -2220,6 +2221,23 @@ export function useGamePageController(gameId: string) {
     viewingHistory,
   ]);
 
+  // Each player's shortest walk, drawn as dots at the start position only
+  // (Nil, 2026-10-30: "the dots that show the shortest path from each cat
+  // at the beginning of the game"; picks 2026-10-31), live or in the
+  // history. A staged or premoved action already leaves the start position
+  // on the board, so the dots go with it.
+  const boardWalks = useMemo<PlayerWalk[]>(() => {
+    const walkSource = historyState ?? gameState;
+    if (walkSource?.moveCount !== 0) return [];
+    if (
+      !viewingHistory &&
+      (stagedActions.length > 0 || premovedActions.length > 0)
+    ) {
+      return [];
+    }
+    return playerWalks(walkSource);
+  }, [gameState, historyState, viewingHistory, stagedActions, premovedActions]);
+
   const boardPawns = useMemo((): BoardPawn[] => {
     const boardState = historyState ?? gameState;
     const sourceState =
@@ -3897,6 +3915,7 @@ export function useGamePageController(gameId: string) {
     cols,
     boardPawns,
     boardWalls,
+    boardWalks,
     stagedArrows: boardArrows,
     playerColorsForBoard,
     interactionLocked,

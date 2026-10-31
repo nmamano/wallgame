@@ -154,6 +154,58 @@ export class Grid {
     return -1;
   }
 
+  /**
+   * One shortest walk from `start` to `target`, as its cells with both ends
+   * included, or null when `target` cannot be reached. It is the search
+   * `distance` runs (same neighbours, same order), keeping each cell's
+   * parent, so its length less one is `distance(start, target)` and a
+   * position always gives the same walk. Of the shortest walks it takes one
+   * through the fewest `avoid` cells (the other pawns: a walk drawn through
+   * a pawn hides it); a cell's parent changes only for a walk through fewer
+   * of them.
+   */
+  public shortestPath(
+    start: Cell,
+    target: Cell,
+    avoid: readonly Cell[] = [],
+  ): Cell[] | null {
+    const C = this.width;
+    const posToKey = (pos: Cell): number => pos[0] * C + pos[1];
+    const avoided = new Set(avoid.map(posToKey));
+    const parent = new Map<number, Cell | null>([[posToKey(start), null]]);
+    const steps = new Map<number, number>([[posToKey(start), 0]]);
+    // How many avoided cells the walk to a cell passes through.
+    const through = new Map<number, number>([[posToKey(start), 0]]);
+    const queue: Cell[] = [start];
+    // A cell is taken from the queue after every cell one step nearer, so
+    // its parent is final by then.
+    for (const pos of queue) {
+      if (cellEq(pos, target)) {
+        const path: Cell[] = [];
+        for (let c: Cell | null = pos; c; c = parent.get(posToKey(c))!) {
+          path.unshift(c);
+        }
+        return path;
+      }
+      const posKey = posToKey(pos);
+      const step = steps.get(posKey)! + 1;
+      for (const nbr of this.accessibleNeighbors(pos)) {
+        const key = posToKey(nbr);
+        const count = through.get(posKey)! + (avoided.has(key) ? 1 : 0);
+        if (!parent.has(key)) {
+          parent.set(key, pos);
+          steps.set(key, step);
+          through.set(key, count);
+          queue.push(nbr);
+        } else if (steps.get(key) === step && count < through.get(key)!) {
+          parent.set(key, pos);
+          through.set(key, count);
+        }
+      }
+    }
+    return null;
+  }
+
   hasWall(wall: WallPosition): boolean {
     const [r, c] = wall.cell;
     if (!this.inBounds([r, c])) return false;
