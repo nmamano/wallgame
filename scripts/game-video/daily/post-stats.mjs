@@ -2,40 +2,45 @@
  * The numbers of each posted video on each platform, for the stats tracker
  * on the app's "/" (Nil, 2026-10-31: "this app can be restructured into
  * social media stats tracker"; Wall Game PM's task). READ-ONLY: nothing
- * here posts or reconnects. Each post gets up to four numbers, null where
- * the platform does not give one: views, likes, comments, shares. A reason
+ * here posts or reconnects. Each post gets up to seven numbers, null where
+ * the platform does not give one: views, likes, comments, shares, saves,
+ * reach, quotes (Wall Game Growth asked for the last three). A reason
  * names a step, an HTTP status or a code, never a token or a reply body
  * (followers.mjs rule).
  *
  * Read 2026-10-31 (the platform docs, and one public Bluesky read):
  * - X: GET /2/tweets?ids=<up to 100>&tweet.fields=public_metrics ->
- *   impression_count, like_count, reply_count, retweet_count, quote_count.
+ *   impression_count, like_count, reply_count, retweet_count, quote_count,
+ *   bookmark_count.
  *   "Posts: Read | $0.005 per resource", charged per resource returned, so
- *   X is read at most once in 24 h, one request for all posts.
+ *   X posts are read only at their checkpoints, one request for the due posts.
  * - Bluesky: app.bsky.feed.getPosts on the public AppView, no auth, up to
- *   25 uris -> likeCount, replyCount, repostCount, quoteCount (no views).
+ *   25 uris -> likeCount, replyCount, repostCount, quoteCount,
+ *   bookmarkCount (no views).
  * - YouTube: videos.list part=statistics, up to 50 ids, youtube.readonly ->
  *   viewCount, likeCount, commentCount (no shares).
  * - Threads: GET /<media-id>/insights?metric=views,likes,replies,reposts,
  *   quotes,shares, threads_manage_insights -> data[].values[0].value.
  * - Instagram Reel: GET /<media-id>/insights?metric=views,likes,comments,
- *   shares, instagram_manage_insights -> data[].values[0].value. Without
+ *   shares,saved,reach, instagram_manage_insights -> data[].values[0].value. Without
  *   that permission, like_count and comments_count of the media node
  *   (instagram_basic), and views show "needs reconnect".
- * - Instagram Story: the same edge, metric=views,replies,shares; a Story's
+ * - Instagram Story: the same edge, metric=views,replies,shares,reach; a Story's
  *   numbers can be read only while it is up (24 h), so it is read for a
  *   day and keeps its last numbers.
  * - Facebook Reel: GET /<video-id>/video_insights?metric=
  *   blue_reels_play_count,post_video_likes_by_reaction_type,
  *   post_video_social_actions with the Page token (read_insights). Without
  *   that permission, the likes and comments summaries of the video node,
- *   and views show "needs reconnect".
+ *   and views show "needs reconnect". No saves or reach: no Reel metric for
+ *   them could be checked without read_insights.
  * - TikTok: a post is an inbox draft (post-tiktok.mjs), so the app has no
  *   video id, and video.query needs the video.list scope, which the
  *   connection lacks: no numbers, "needs reconnect".
  *
- * Shares are the platform's re-shares: X retweets and quotes, Bluesky
- * reposts and quotes, Threads reposts, quotes and shares.
+ * Shares are the platform's re-shares, quotes not included: X retweets,
+ * Bluesky reposts, Threads reposts and shares. Saves are X and Bluesky
+ * bookmarks and Instagram saves.
  */
 import { X_API, X_SECRETS, oauth1Header, xCreds } from "./post-x.mjs";
 import { FB_GRAPH } from "./post-facebook.mjs";
@@ -105,7 +110,27 @@ export const YOUTUBE_VIDEOS_STATS_URL =
 
 export const TIKTOK_NO_STATS = `${NEEDS_RECONNECT}: a TikTok post is an inbox draft with no video id, and video stats need the video.list scope`;
 
-/** @typedef {{ views: number | null, likes: number | null, comments: number | null, shares: number | null }} Numbers */
+/**
+ * @typedef {{ views: number | null, likes: number | null,
+ *   comments: number | null, shares: number | null, saves: number | null,
+ *   reach: number | null, quotes: number | null }} Numbers
+ */
+
+/**
+ * A post's numbers: the ones given, null for the rest.
+ * @param {Partial<Numbers>} given
+ * @returns {Numbers}
+ */
+const numbers = (given) => ({
+  views: null,
+  likes: null,
+  comments: null,
+  shares: null,
+  saves: null,
+  reach: null,
+  quotes: null,
+  ...given,
+});
 /** @typedef {{ platform: string, postId: string, utc: string }} Post */
 
 /** A number the platform gave, or null when it gave none. */
@@ -195,12 +220,14 @@ const READERS = {
       );
       for (const t of Array.isArray(json?.data) ? json.data : []) {
         const m = t?.public_metrics ?? {};
-        out[t.id] = {
+        out[t.id] = numbers({
           views: num(m.impression_count, "x"),
           likes: num(m.like_count, "x"),
           comments: num(m.reply_count, "x"),
-          shares: sum(num(m.retweet_count, "x"), num(m.quote_count, "x")),
-        };
+          shares: num(m.retweet_count, "x"),
+          saves: num(m.bookmark_count, "x"),
+          quotes: num(m.quote_count, "x"),
+        });
       }
     }
     return out;
@@ -216,15 +243,13 @@ const READERS = {
         url: `${BLUESKY_POSTS_URL}?${query}`,
       });
       for (const p of Array.isArray(json?.posts) ? json.posts : []) {
-        out[p.uri] = {
-          views: null,
+        out[p.uri] = numbers({
           likes: num(p.likeCount, "bluesky"),
           comments: num(p.replyCount, "bluesky"),
-          shares: sum(
-            num(p.repostCount, "bluesky"),
-            num(p.quoteCount, "bluesky"),
-          ),
-        };
+          shares: num(p.repostCount, "bluesky"),
+          saves: num(p.bookmarkCount, "bluesky"),
+          quotes: num(p.quoteCount, "bluesky"),
+        });
       }
     }
     return out;
@@ -253,12 +278,11 @@ const READERS = {
       });
       for (const v of Array.isArray(json?.items) ? json.items : []) {
         const st = v?.statistics ?? {};
-        out[v.id] = {
+        out[v.id] = numbers({
           views: num(st.viewCount, "youtube"),
           likes: num(st.likeCount, "youtube"),
           comments: num(st.commentCount, "youtube"),
-          shares: null,
-        };
+        });
       }
     }
     return out;
@@ -277,16 +301,13 @@ const READERS = {
           THREADS_INSIGHTS_SCOPE,
         ),
       );
-      out[p.postId] = {
+      out[p.postId] = numbers({
         views: num(m.views, "threads"),
         likes: num(m.likes, "threads"),
         comments: num(m.replies, "threads"),
-        shares: sum(
-          num(m.reposts, "threads"),
-          num(m.quotes, "threads"),
-          num(m.shares, "threads"),
-        ),
-      };
+        shares: sum(num(m.reposts, "threads"), num(m.shares, "threads")),
+        quotes: num(m.quotes, "threads"),
+      });
     }
     return out;
   },
@@ -301,17 +322,19 @@ const READERS = {
           await graph(
             transport,
             "instagram insights",
-            `${FB_GRAPH}/${p.postId}/insights?metric=views,likes,comments,shares`,
+            `${FB_GRAPH}/${p.postId}/insights?metric=views,likes,comments,shares,saved,reach`,
             token,
             "instagram_manage_insights",
           ),
         );
-        out[p.postId] = {
+        out[p.postId] = numbers({
           views: num(m.views, "instagram"),
           likes: num(m.likes, "instagram"),
           comments: num(m.comments, "instagram"),
           shares: num(m.shares, "instagram"),
-        };
+          saves: num(m.saved, "instagram"),
+          reach: num(m.reach, "instagram"),
+        });
       } catch (err) {
         if (!(err instanceof NeedsPermission)) throw err;
         // The media node's counts need only instagram_basic.
@@ -320,11 +343,11 @@ const READERS = {
           headers: bearer(token),
         });
         out[p.postId] = {
-          views: null,
-          likes: num(json?.like_count, "instagram"),
-          comments: num(json?.comments_count, "instagram"),
-          shares: null,
-          note: `views, shares: ${err.message}`,
+          ...numbers({
+            likes: num(json?.like_count, "instagram"),
+            comments: num(json?.comments_count, "instagram"),
+          }),
+          note: `views, shares, saves, reach: ${err.message}`,
         };
       }
     }
@@ -339,17 +362,17 @@ const READERS = {
         await graph(
           transport,
           "instagram story insights",
-          `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares`,
+          `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares,reach`,
           env.META_SYSTEM_USER_TOKEN,
           "instagram_manage_insights",
         ),
       );
-      out[p.postId] = {
+      out[p.postId] = numbers({
         views: num(m.views, "instagram story"),
-        likes: null,
         comments: num(m.replies, "instagram story"),
         shares: num(m.shares, "instagram story"),
-      };
+        reach: num(m.reach, "instagram story"),
+      });
     }
     return out;
   },
@@ -373,12 +396,12 @@ const READERS = {
           ),
         );
         const social = m.post_video_social_actions;
-        out[p.postId] = {
+        out[p.postId] = numbers({
           views: num(m.blue_reels_play_count, "facebook"),
           likes: total(m.post_video_likes_by_reaction_type, "facebook"),
           comments: keyed(social, "comment", "facebook"),
           shares: keyed(social, "share", "facebook"),
-        };
+        });
       } catch (err) {
         if (!(err instanceof NeedsPermission)) throw err;
         // The video node's likes and comments: pages_read_engagement.
@@ -387,10 +410,10 @@ const READERS = {
           headers: bearer(meta.pageToken),
         });
         out[p.postId] = {
-          views: null,
-          likes: num(json?.likes?.summary?.total_count, "facebook"),
-          comments: num(json?.comments?.summary?.total_count, "facebook"),
-          shares: null,
+          ...numbers({
+            likes: num(json?.likes?.summary?.total_count, "facebook"),
+            comments: num(json?.comments?.summary?.total_count, "facebook"),
+          }),
           note: `views, shares: ${err.message}`,
         };
       }

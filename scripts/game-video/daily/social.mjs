@@ -287,17 +287,27 @@ export const socialView = ({
   };
 };
 
-const METRICS = /** @type {const} */ (["views", "likes", "comments", "shares"]);
+const METRICS = /** @type {const} */ ([
+  "views",
+  "likes",
+  "comments",
+  "shares",
+  "saves",
+  "reach",
+  "quotes",
+]);
 
 /**
- * @typedef {{ day: string, key: string, views: number | null,
- *   likes: number | null, comments: number | null, shares: number | null,
- *   at: string }} PostStatsRow
+ * @typedef {{ views: number | null, likes: number | null,
+ *   comments: number | null, shares: number | null, saves: number | null,
+ *   reach: number | null, quotes: number | null }} PostNumbers
  */
 
+/** @typedef {{ day: string, key: string, at: string } & PostNumbers} PostStatsRow */
+
 /**
- * The per-post history (post-stats.mjs): one row {day, key, views, likes,
- * comments, shares, at} per post per UTC day, the first numbers read that
+ * The per-post history (post-stats.mjs): one row {day, key, the METRICS,
+ * at} per post per UTC day, the first numbers read that
  * day, in a JSONL file, as the follower history. `key` is
  * "<platform> <postId>".
  */
@@ -328,11 +338,7 @@ export const createPostStatsHistory = (path) => {
   return { read, record };
 };
 
-/**
- * @typedef {{ key: string, checkpoint: string, views: number | null,
- *   likes: number | null, comments: number | null, shares: number | null,
- *   at: string }} CheckpointRow
- */
+/** @typedef {{ key: string, checkpoint: string, at: string } & PostNumbers} CheckpointRow */
 
 /**
  * Each post's numbers at each checkpoint (post-stats.mjs CHECKPOINTS: 1 h,
@@ -370,11 +376,6 @@ export const createPostCheckpoints = (path) => {
   };
   return { read, record };
 };
-
-/**
- * @typedef {{ views: number | null, likes: number | null,
- *   comments: number | null, shares: number | null }} PostNumbers
- */
 
 /**
  * A video's name from its post text: the first line, up to " · " (the
@@ -420,12 +421,12 @@ export const postStatsView = ({
 }) => {
   const keyOf = (p) => `${p.platform} ${p.postId}`;
   /** @returns {PostNumbers} */
-  const totals = (rows) => ({
-    views: sumOf(rows.map((r) => r?.views)),
-    likes: sumOf(rows.map((r) => r?.likes)),
-    comments: sumOf(rows.map((r) => r?.comments)),
-    shares: sumOf(rows.map((r) => r?.shares)),
-  });
+  const totals = (rows) =>
+    /** @type {PostNumbers} */ (
+      Object.fromEntries(
+        METRICS.map((m) => [m, sumOf(rows.map((r) => r?.[m]))]),
+      )
+    );
   // A platform's read error is in its row of "Posts by platform"; a
   // video's row only points there.
   const noteOf = (p) => {

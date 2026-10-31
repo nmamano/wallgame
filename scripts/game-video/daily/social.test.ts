@@ -177,12 +177,22 @@ describe("socialView", () => {
 describe("the per-post stats", () => {
   const NOW = Date.parse("2026-10-31T18:00:00Z");
   const at = (day: string) => `${day}T10:00:00.000Z`;
+  /** The numbers Growth asked for later, none given here. */
+  const MORE = { saves: null, reach: null, quotes: null };
   const n = (
     day: string,
     views: number | null,
     likes: number | null,
     extra: object = {},
-  ) => ({ views, likes, comments: null, shares: null, at: at(day), ...extra });
+  ) => ({
+    views,
+    likes,
+    comments: null,
+    shares: null,
+    ...MORE,
+    at: at(day),
+    ...extra,
+  });
 
   test("the history keeps the first numbers of each post each UTC day", () => {
     const path = join(mkdtempSync(join(tmpdir(), "post-stats-")), "h.jsonl");
@@ -236,8 +246,8 @@ describe("the per-post stats", () => {
     const v = postStatsView({
       posts,
       numbers: {
-        "x X1": n("2026-10-31", 100, 5),
-        "x X2": n("2026-10-31", 40, 2),
+        "x X1": n("2026-10-31", 100, 5, { saves: 2, quotes: 1 }),
+        "x X2": n("2026-10-31", 40, 2, { saves: 1 }),
         "bluesky at://b": n("2026-10-31", null, 3),
       },
       reads: {
@@ -255,6 +265,7 @@ describe("the per-post stats", () => {
         likes: likes as number,
         comments: null,
         shares: null,
+        ...MORE,
         at: at("2026-10-31"),
       })),
       history: [
@@ -266,6 +277,7 @@ describe("the per-post stats", () => {
           likes: 4,
           comments: null,
           shares: null,
+          ...MORE,
           at: at("2026-10-24"),
         },
         {
@@ -275,6 +287,7 @@ describe("the per-post stats", () => {
           likes: 5,
           comments: null,
           shares: null,
+          ...MORE,
           at: at("2026-10-30"),
         },
       ],
@@ -326,6 +339,8 @@ describe("the per-post stats", () => {
         likes: 2,
         comments: null,
         shares: null,
+        ...MORE,
+        saves: 1,
         at: at("2026-10-31"),
         ages: "10 / - / -",
         note: "",
@@ -338,6 +353,7 @@ describe("the per-post stats", () => {
         likes: 3,
         comments: null,
         shares: null,
+        ...MORE,
         at: at("2026-10-31"),
         ages: "1 / - / - likes",
         note: "",
@@ -350,6 +366,7 @@ describe("the per-post stats", () => {
         likes: null,
         comments: null,
         shares: null,
+        ...MORE,
         at: null,
         ages: "- / - / -",
         note: "no numbers: see Posts by platform",
@@ -360,11 +377,15 @@ describe("the per-post stats", () => {
       likes: 5,
       comments: null,
       shares: null,
+      ...MORE,
+      saves: 1,
     });
     const x = v.platforms[0];
     // X2 was posted today: all of it is growth. X1: 100 - 90 a day, 100 -
     // 60 a week.
     expect(x).toMatchObject({ platform: "X", posts: 2, views: 140, likes: 7 });
+    // Saves, reach and quotes add up as the others; none given: null.
+    expect([x.saves, x.reach, x.quotes]).toEqual([3, null, 1]);
     expect(x.day).toBe("+50 views, +2 likes");
     expect(x.week).toBe("+80 views, +3 likes");
     expect(x.note).toBe("read Oct 31, 3:00 AM PT");
@@ -384,6 +405,9 @@ describe("the per-post stats", () => {
       likes: 10,
       comments: null,
       shares: null,
+      ...MORE,
+      saves: 3,
+      quotes: 1,
     });
     expect(v.note).toBe(
       'Read every 6 h. History: one row a day (UTC) per post since 2026-10-24. "-": the platform gives no such number.',

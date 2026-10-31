@@ -171,8 +171,11 @@ export const STATS_PAGE = `<!doctype html>
     }
     return t;
   };
-  const M = [{ h: "Views", n: 1 }, { h: "Likes", n: 1 }, { h: "Comments", n: 1, cls: "wide" }, { h: "Shares", n: 1, cls: "wide" }];
-  const nums = (x) => [fmt(x.views), fmt(x.likes), fmt(x.comments), fmt(x.shares)];
+  // Saves (X and Bluesky bookmarks too), reach and quotes: asked for by
+  // Wall Game Growth; on a phone, views and likes only.
+  const M = [{ h: "Views", n: 1 }, { h: "Likes", n: 1 }, { h: "Comments", n: 1, cls: "wide" }, { h: "Shares", n: 1, cls: "wide" },
+    { h: "Saves", n: 1, cls: "wide" }, { h: "Reach", n: 1, cls: "wide" }, { h: "Quotes", n: 1, cls: "wide" }];
+  const nums = (x) => [fmt(x.views), fmt(x.likes), fmt(x.comments), fmt(x.shares), fmt(x.saves), fmt(x.reach), fmt(x.quotes)];
   const postStats = (p) => {
     if (!p) return [];
     const byPlatform = box("Posts by platform",

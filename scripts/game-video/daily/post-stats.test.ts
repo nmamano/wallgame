@@ -134,6 +134,7 @@ const answers = (req: Req): Reply => {
               reply_count: 2,
               retweet_count: 3,
               quote_count: 1,
+              bookmark_count: 5,
             },
           },
           {
@@ -154,7 +155,8 @@ const answers = (req: Req): Reply => {
             likeCount: 4,
             replyCount: 1,
             repostCount: 2,
-            quoteCount: 0,
+            quoteCount: 1,
+            bookmarkCount: 3,
           },
         ],
       },
@@ -196,13 +198,20 @@ const answers = (req: Req): Reply => {
   if (u.includes("/IG-R1/insights")) {
     return {
       status: 200,
-      json: insights({ views: 800, likes: 40, comments: 5, shares: 6 }),
+      json: insights({
+        views: 800,
+        likes: 40,
+        comments: 5,
+        shares: 6,
+        saved: 7,
+        reach: 650,
+      }),
     };
   }
   if (u.includes("/IG-S1/insights")) {
     return {
       status: 200,
-      json: insights({ views: 120, replies: 1, shares: 2 }),
+      json: insights({ views: 120, replies: 1, shares: 2, reach: 100 }),
     };
   }
   if (u.includes("/FB-V1/video_insights")) {
@@ -279,33 +288,27 @@ describe("readPostStats", () => {
   test("each platform's numbers; '-' (null) where a platform gives none", async () => {
     const { numbers, reads } = await run();
     const at = new Date(NOW).toISOString();
+    // Each post's seven numbers; null where the platform gives none.
+    const n = (
+      views: number | null,
+      likes: number | null,
+      comments: number | null,
+      shares: number | null,
+      saves: number | null = null,
+      reach: number | null = null,
+      quotes: number | null = null,
+    ) => ({ views, likes, comments, shares, saves, reach, quotes, at });
     expect(numbers).toEqual({
-      "x X1": { views: 500, likes: 7, comments: 2, shares: 4, at },
-      "x X2": { views: 90, likes: 1, comments: null, shares: null, at },
-      [`bluesky ${BSKY}`]: {
-        views: null,
-        likes: 4,
-        comments: 1,
-        shares: 2,
-        at,
-      },
-      "youtube YT1": {
-        views: 1200,
-        likes: 30,
-        comments: 4,
-        shares: null,
-        at,
-      },
-      "threads TH-P1": { views: 300, likes: 9, comments: 2, shares: 5, at },
-      "instagram IG-R1": { views: 800, likes: 40, comments: 5, shares: 6, at },
-      "instagram-story IG-S1": {
-        views: 120,
-        likes: null,
-        comments: 1,
-        shares: 2,
-        at,
-      },
-      "facebook FB-V1": { views: 650, likes: 12, comments: 3, shares: 4, at },
+      // Shares leave quotes out: X 3 retweets, 1 quote, 5 bookmarks.
+      "x X1": n(500, 7, 2, 3, 5, null, 1),
+      "x X2": n(90, 1, null, null),
+      [`bluesky ${BSKY}`]: n(null, 4, 1, 2, 3, null, 1),
+      "youtube YT1": n(1200, 30, 4, null),
+      // Threads: 1 repost + 3 shares; 1 quote.
+      "threads TH-P1": n(300, 9, 2, 4, null, null, 1),
+      "instagram IG-R1": n(800, 40, 5, 6, 7, 650),
+      "instagram-story IG-S1": n(120, null, 1, 2, null, 100),
+      "facebook FB-V1": n(650, 12, 3, 4),
     });
     expect(reads.x).toEqual({ at, error: null, posts: 2 });
     expect(reads.tiktok).toEqual({ at, error: TIKTOK_NO_STATS, posts: 0 });
@@ -339,19 +342,20 @@ describe("readPostStats", () => {
       "facebook",
     ]);
     const at = new Date(NOW).toISOString();
+    const none = { views: null, shares: null, saves: null, reach: null };
     expect(numbers["instagram IG-R1"]).toEqual({
-      views: null,
+      ...none,
       likes: 41,
       comments: 6,
-      shares: null,
-      note: "views, shares: needs reconnect (instagram_manage_insights)",
+      quotes: null,
+      note: "views, shares, saves, reach: needs reconnect (instagram_manage_insights)",
       at,
     });
     expect(numbers["facebook FB-V1"]).toEqual({
-      views: null,
+      ...none,
       likes: 11,
       comments: 3,
-      shares: null,
+      quotes: null,
       note: "views, shares: needs reconnect (read_insights)",
       at,
     });
