@@ -51,7 +51,9 @@ export type Tag =
   | "missed-wall"
   | "missed-punish"
   | "kept-gain"
-  | "engine-losing";
+  | "engine-losing"
+  | "own-wall"
+  | "dodge";
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -127,6 +129,16 @@ export interface Focus {
   after: number;
 }
 
+/**
+ * The race as the counters show it (Director, 2026-10-31, C36): each side's
+ * shortest walk and the side to move. Null walks: a variant where a side
+ * hunts nothing.
+ */
+export interface RaceState {
+  walks: Record<PlayerId, number | null>;
+  toMove: PlayerId;
+}
+
 export interface PlyLabel {
   ply: number;
   moveNumber: number;
@@ -136,11 +148,109 @@ export interface PlyLabel {
   /** Every label that fits, and the sub-kinds; includes `label`. */
   tags: Tag[];
   focus: Focus;
+  race: { before: RaceState; after: RaceState };
+  /**
+   * The mover's race gain against a plain two-step move (raceGain): 0 for a
+   * step, +2 for walls that add 4 to the other side's walk.
+   */
+  raceGain: number;
+  /** With the own-wall tag: the wall between the cat and the mouse, and when its owner placed it. */
+  ownWall?: { wall: string; ply: number };
 }
+
+/** The race before move `ply` (or after the last when ply = length). */
+const raceAt = (plies: PlyFacts[], ply: number): RaceState => {
+  const walkOf = (f: PlyFacts, p: PlayerId, when: "before" | "after") => {
+    const ws = f.hunts.filter((h) => h.hunter.player === p).map((h) => h[when]);
+    return ws.length === 0 ? null : Math.min(...ws);
+  };
+  if (ply < plies.length) {
+    const f = plies[ply];
+    return {
+      walks: { 1: walkOf(f, 1, "before"), 2: walkOf(f, 2, "before") },
+      toMove: f.mover,
+    };
+  }
+  const f = plies[ply - 1];
+  return {
+    walks: { 1: walkOf(f, 1, "after"), 2: walkOf(f, 2, "after") },
+    toMove: f.mover === 1 ? 2 : 1,
+  };
+};
+
+/**
+ * The race from P1's side in moves, not steps: a move takes up to two steps,
+ * and the side to move goes first, so a tie belongs to it. A plain step keeps
+ * this value; a wall that adds 4 to the other walk moves it by 2.
+ */
+const tempo = (r: RaceState): number | null => {
+  const { 1: a, 2: b } = r.walks;
+  if (a === null || b === null) return null;
+  return b - a + (r.toMove === 1 ? 1 : -1);
+};
+
+/** The race in words, as the counters show it. */
+export const raceWords = (
+  r: RaceState,
+  names: Record<PlayerId, string>,
+): string => {
+  const { 1: a, 2: b } = r.walks;
+  if (a === null || b === null) return "no race";
+  if (a === b) return `tied ${a}-${b}, ${names[r.toMove]} to move`;
+  const lead: PlayerId = a < b ? 1 : 2;
+  return `${names[lead]} leads by ${Math.abs(a - b)} (${a}-${b}, ${names[r.toMove]} to move)`;
+};
+
+/** Who leads on the counters (the lower walk); null for a tie or no race. */
+const counterLeader = (r: RaceState): PlayerId | null => {
+  const { 1: a, 2: b } = r.walks;
+  if (a === null || b === null || a === b) return null;
+  return a < b ? 1 : 2;
+};
+
+/**
+ * The counters show the move (C36 D): it flips who leads, or turns a tie into
+ * a lead for the mover. The image check counts this as seen.
+ */
+export const countersShow = (l: PlyLabel): boolean => {
+  const was = counterLeader(l.race.before);
+  const now = counterLeader(l.race.after);
+  if (now === null) return false;
+  return was === null ? now === l.mover : was !== now;
+};
+
+/** The wall that would stand between two adjacent cells, in notation. */
+const wallBetween = (a: string, b: string): string => {
+  const [fa, ra] = [a.charCodeAt(0), Number(a.slice(1))];
+  const [fb, rb] = [b.charCodeAt(0), Number(b.slice(1))];
+  if (ra === rb) return `>${String.fromCharCode(Math.min(fa, fb))}${ra}`;
+  return `^${a[0]}${Math.min(ra, rb)}`;
+};
+
+const manhattan = (a: string, b: string) =>
+  Math.abs(a.charCodeAt(0) - b.charCodeAt(0)) +
+  Math.abs(Number(a.slice(1)) - Number(b.slice(1)));
+
+/**
+ * A move worth a row and a seen check: any label but quiet, or a quiet move
+ * with a board beat a viewer sees (a dodge, a cat stopped by its own wall).
+ */
+export const isMoment = (l: Pick<PlyLabel, "label" | "tags">): boolean =>
+  l.label !== "quiet" ||
+  l.tags.includes("dodge") ||
+  l.tags.includes("own-wall");
+
+/** A race gain this large makes a move a moment (C36 B). */
+export const MOMENT_GAIN = 2;
 
 export interface GameLabels {
   plies: PlyLabel[];
   links: Link[];
+  /**
+   * The game's turning point in a newcomer's words (C36 F), from the engine
+   * curve (or the counters with no engine). Plies, 0-based.
+   */
+  turningPoint: string;
 }
 
 const clamp01 = (x: number) =>
@@ -197,8 +307,38 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     ),
   );
   const threats = new Map<number, HuntChange>();
+  const races = plies.map((_, k) => raceAt(plies, k));
+  races.push(raceAt(plies, plies.length));
+  /** The mover's tempo change across plies [from, to], 0 when there is no race. */
+  const gainOver = (from: number, to: number, mover: PlayerId) => {
+    const a = tempo(races[from]);
+    const b = tempo(races[to + 1]);
+    if (a === null || b === null) return 0;
+    return (mover === 1 ? 1 : -1) * (b - a);
+  };
+  const gains = plies.map((f, k) => gainOver(k, k, f.mover));
+  /**
+   * A wall in a wall war (C36 B): the reply gives the gain back, or the move
+   * only gives back the reply before it. Both leave the race within 2 over two
+   * plies, so the move is no moment.
+   */
+  const answered = (ply: number) => {
+    const m = plies[ply].mover;
+    const back =
+      ply + 1 < plies.length &&
+      Math.abs(gainOver(ply, ply + 1, m)) < MOMENT_GAIN;
+    const answers =
+      ply > 0 &&
+      gains[ply - 1] <= -MOMENT_GAIN &&
+      Math.abs(gainOver(ply - 1, ply, m)) < MOMENT_GAIN;
+    return back || answers;
+  };
+  /** Who placed each wall, and when. */
+  const wallOwner = new Map<string, { player: PlayerId; ply: number }>();
+  const ownWalls = new Map<number, { wall: string; ply: number }>();
 
   plies.forEach((f, ply) => {
+    for (const w of f.walls) wallOwner.set(w, { player: f.mover, ply });
     if (f.hunts.length === 0) {
       throw new Error(
         `ply ${ply}: the variant ${variant} has no hunt, so no move has a focus`,
@@ -255,8 +395,12 @@ export const labelGame = (facts: GameFacts): GameLabels => {
               h.after <= THREAT_WALK &&
               h.after < h.before,
           );
+          // C36 C: a wall punish must show its cost on the board
+          // (costShown); a punish of a blunder no viewer sees is no punish.
           const seen =
-            (theirRise !== null && rise(theirRise) >= minJump) ||
+            (theirRise !== null &&
+              rise(theirRise) >= minJump &&
+              costShownAt(plies, ply)) ||
             reach !== undefined;
           if (seen) {
             const drop = prev.engine ? -prev.engine.delta : 0;
@@ -353,7 +497,10 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       const ownRise =
         ownBefore === null || ownAfter === null ? 0 : ownAfter - ownBefore;
       if (theirRise >= minJump && theirRise >= ownRise) {
-        fit(ply, "detour", theirRise / 12, largest(yours, rise) ?? moved);
+        // C36 B: a detour must move the race, and not be a wall-war answer.
+        if (gains[ply] >= MOMENT_GAIN && !answered(ply)) {
+          fit(ply, "detour", theirRise / 12, largest(yours, rise) ?? moved);
+        } else tags[ply].push("detour");
       }
     }
     if (f.walls.length > 0) {
@@ -374,6 +521,24 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       if (h.after > 1 && adjacent(h.hunterTo, h.targetTo)) {
         const was = h.before > 1 && adjacent(h.hunterFrom, h.targetFrom);
         if (!was) fit(ply, "standoff", 0.3, h);
+        // C36 E: the wall that stops the cat is its own side's.
+        const wall = wallBetween(h.hunterTo, h.targetTo);
+        const owner = wallOwner.get(wall);
+        if (!was && owner?.player === h.hunter.player) {
+          tags[ply].push("own-wall");
+          ownWalls.set(ply, { wall, ply: owner.ply });
+        }
+      }
+    }
+
+    // C36 E: the mover's mouse steps away, or behind a wall.
+    for (const h of yours.filter(isAnimal)) {
+      if (h.targetFrom === h.targetTo || h.after === 0) continue;
+      const behindWall =
+        h.after - manhattan(h.hunterTo, h.targetTo) >
+        h.before - manhattan(h.hunterFrom, h.targetFrom);
+      if (rise(h) >= 2 || (rise(h) >= 1 && behindWall)) {
+        if (!tags[ply].includes("dodge")) tags[ply].push("dodge");
       }
     }
 
@@ -414,6 +579,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
         .map((x) => x.label),
       ...tags[ply],
     ]);
+    const ownWall = ownWalls.get(ply);
     return {
       ply,
       moveNumber: f.moveNumber,
@@ -422,7 +588,77 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       strength: top.strength,
       tags: [...all],
       focus: focusOf(f, top.hunt),
+      race: { before: races[ply], after: races[ply + 1] },
+      raceGain: gains[ply],
+      ...(ownWall ? { ownWall } : {}),
     };
   });
-  return { plies: labels, links };
+  return {
+    plies: labels,
+    links,
+    turningPoint: turningPointOf(facts, labels, links),
+  };
+};
+
+/** The seat names, "P1"/"P2" when a seat is missing. */
+const seatNames = (facts: GameFacts): Record<PlayerId, string> => ({
+  1: facts.game.seats.find((s) => s.playerOrder === 1)?.name ?? "P1",
+  2: facts.game.seats.find((s) => s.playerOrder === 2)?.name ?? "P2",
+});
+
+/**
+ * The ply after which the winner stays ahead to the end: on the engine's
+ * curve (50% or more) when every move is scored, else on the counters. Then
+ * the sealing move and the end.
+ */
+const turningPointOf = (
+  facts: GameFacts,
+  labels: PlyLabel[],
+  links: Link[],
+): string => {
+  const winner = facts.winner;
+  const names = seatNames(facts);
+  const n = facts.plies.length;
+  if (winner === null || n === 0) return "No winner: the game is a draw.";
+  const W = names[winner];
+  const scored = facts.plies.every((f) => f.engine);
+  const aheadAfter = (k: number): boolean => {
+    if (scored) {
+      const f = facts.plies[k];
+      const c = f.mover === winner ? f.engine!.after : 1 - f.engine!.after;
+      return c >= 0.5;
+    }
+    return counterLeader(labels[k].race.after) === winner;
+  };
+  let from = n - 1;
+  while (from > 0 && aheadAfter(from - 1)) from--;
+  const startAhead = scored
+    ? (facts.plies[0].mover === winner
+        ? facts.plies[0].engine!.before
+        : 1 - facts.plies[0].engine!.before) >= 0.5
+    : counterLeader(labels[0].race.before) === winner;
+  const at = (k: number) => {
+    const l = labels[k];
+    const what = l.label === "quiet" ? "" : `, ${l.label}`;
+    return `ply ${k} (move ${k + 1}, ${names[l.mover]}${what})`;
+  };
+  const how = scored ? "on the engine's count" : "on the counters";
+  const parts = [
+    from === 0 && startAhead
+      ? `${W} is ahead from the start ${how} and never falls behind`
+      : `${W} is ahead ${how} from ${at(from)} to the end`,
+  ];
+  const sealed = links.find((k) => k.kind === "sealed-capture");
+  if (sealed && sealed.from !== from) {
+    parts.push(
+      `${at(sealed.from)} seals it (the engine keeps ${W} at 90% or more)`,
+    );
+  }
+  const last = labels[n - 1];
+  parts.push(
+    last.label === "capture" || last.label === "home"
+      ? `${last.label === "home" ? "home" : "the capture"} at ply ${n - 1}`
+      : `the game ends at ply ${n - 1} (${facts.game.result.reason})`,
+  );
+  return `${parts.join("; ")}.`;
 };

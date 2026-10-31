@@ -45,7 +45,7 @@ import {
   type HuntChange,
   type PlyFacts,
 } from "./facts";
-import type { GameLabels, Link } from "./labels";
+import { isMoment, raceWords, type GameLabels, type Link } from "./labels";
 import type { PlySeen } from "./vision";
 
 export const MODEL = "claude-opus-5-5";
@@ -206,6 +206,16 @@ export const factsOf = (
     add(
       "box",
       `The ${f.walls.length === 1 ? "wall" : "walls"} ${f.walls.join(" and ")} box in ${names[room.target.player]}'s ${room.target.type}: the cells it reaches before ${cats} fall from ${room.before} to ${room.after}.`,
+    );
+  }
+  add(
+    "race",
+    `The race before this move: ${raceWords(l.race.before, names)}; after it: ${raceWords(l.race.after, names)}.`,
+  );
+  if (l.ownWall) {
+    add(
+      "ownwall",
+      `The wall ${l.ownWall.wall} between ${names[f.mover]}'s cat and the mouse is ${names[f.mover]}'s own, placed on move ${l.ownWall.ply + 1}.`,
     );
   }
   const tagText = l.tags.filter((t) => t !== l.label);
@@ -703,17 +713,21 @@ export const renderTable = (s: GameSemantics): string => {
   const lines = [
     `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} moves, ${result}`,
     "",
+    `Turning point: ${s.labels.turningPoint}`,
+    "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = ply + 1 (the replay page's count)`,
     "",
     s.seen
-      ? "| move | ply | by | label | strength | seen | sentence |"
-      : "| move | ply | by | label | strength | sentence |",
-    s.seen ? "|---|---|---|---|---|---|---|" : "|---|---|---|---|---|---|",
+      ? "| move | ply | by | label | strength | race after | seen | sentence |"
+      : "| move | ply | by | label | strength | race after | sentence |",
+    s.seen
+      ? "|---|---|---|---|---|---|---|---|"
+      : "|---|---|---|---|---|---|---|",
   ];
   const seen = new Map((s.seen ?? []).map((x) => [x.ply, x]));
   const quiet: number[] = [];
   for (const l of s.labels.plies) {
-    if (l.label === "quiet") {
+    if (!isMoment(l)) {
       quiet.push(l.moveNumber);
       continue;
     }
@@ -723,7 +737,7 @@ export const renderTable = (s: GameSemantics): string => {
       : "";
     const tags = l.tags.filter((t) => t !== l.label);
     lines.push(
-      `| ${l.moveNumber} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""} | ${l.strength.toFixed(2)} |${s.seen ? ` ${seenCell(seen.get(l.ply))} |` : ""} ${text} |`,
+      `| ${l.moveNumber} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""}${l.ownWall ? ` [own wall ${l.ownWall.wall}, ply ${l.ownWall.ply}]` : ""} | ${l.strength.toFixed(2)} | ${raceWords(l.race.after, names)} |${s.seen ? ` ${seenCell(seen.get(l.ply))} |` : ""} ${text} |`,
     );
   }
   lines.push("", `Quiet moves (${quiet.length}): ${quiet.join(", ")}.`);

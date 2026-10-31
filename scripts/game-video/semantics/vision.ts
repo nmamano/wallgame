@@ -18,6 +18,7 @@
 import type { PlayerId } from "../../../shared/domain/game-types";
 import { dailySeatColors } from "../edl.mjs";
 import { boxedRoom } from "./facts";
+import { countersShow, isMoment } from "./labels";
 import { MODEL, type GameSemantics } from "./sentences";
 
 export interface PlySeen {
@@ -214,28 +215,35 @@ export const askVision = (
 
 /**
  * The seen mark of every labelled (not quiet) ply. A ply the model left
- * out is not seen, with that as its reason.
+ * out is not seen, with that as its reason. A move whose counters flip the
+ * lead, or turn a tie into the mover's lead, is seen whatever the model says
+ * (Director, 2026-10-31, C36 D: the viewer reads the counters).
  */
 export const checkSeen = (
   s: GameSemantics,
   tilesDir: string,
   ask: typeof askVision = askVision,
 ): PlySeen[] => {
-  const plies = s.labels.plies
-    .filter((l) => l.label !== "quiet")
-    .map((l) => l.ply);
+  const plies = s.labels.plies.filter(isMoment).map((l) => l.ply);
   if (plies.length === 0) return [];
   const { plies: answers, costUsd } = ask(prompt(s, plies), tilesDir);
   console.error(
     `vision call: $${costUsd.toFixed(2)} for ${plies.length} plies`,
   );
   const byPly = new Map(answers.map((a) => [a.ply, a]));
-  return plies.map(
-    (ply) =>
-      byPly.get(ply) ?? {
+  return plies.map((ply) => {
+    const answer = byPly.get(ply) ?? {
+      ply,
+      seen: false,
+      reason: "the model gave no answer",
+    };
+    if (!answer.seen && countersShow(s.labels.plies[ply])) {
+      return {
         ply,
-        seen: false,
-        reason: "the model gave no answer",
-      },
-  );
+        seen: true,
+        reason: `the counters show it (the lead changes). Model: ${answer.reason}`,
+      };
+    }
+    return answer;
+  });
 };

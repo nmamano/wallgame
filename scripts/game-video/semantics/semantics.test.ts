@@ -3,7 +3,7 @@ import type { PlayerId } from "../../../shared/domain/game-types";
 import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
 import { readFileSync } from "node:fs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
-import { labelGame } from "./labels";
+import { countersShow, isMoment, labelGame, raceWords } from "./labels";
 import {
   checkSentence,
   factsOf,
@@ -173,7 +173,7 @@ describe("labelGame", () => {
         best: ">c4.^c3",
         bestWalls: [">c4", "^c3"],
       },
-      { w1: [6, 9], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
+      { w1: [6, 11], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
     ]);
     expect(l.plies[0].label).toBe("turn");
     expect(l.plies[0].tags).toContain("missed-wall");
@@ -183,8 +183,24 @@ describe("labelGame", () => {
       kind: "blunder-punish",
       from: 0,
       to: 1,
-      costShown: false,
+      costShown: true,
     });
+  });
+
+  test("a wall punish whose cost the board does not show is no punish (C36 C)", () => {
+    const l = labels([
+      {
+        w1: [6, 6],
+        w2: [6, 4],
+        wc: [0.7, 0.2],
+        best: ">c4.^c3",
+        bestWalls: [">c4", "^c3"],
+      },
+      { w1: [6, 9], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
+    ]);
+    expect(l.plies[1].label).not.toBe("punish");
+    expect(l.plies[1].tags).toContain("kept-gain");
+    expect(l.links.filter((k) => k.kind === "blunder-punish")).toEqual([]);
   });
 
   test("a reply that keeps the gain but shows nothing is no punish (VR1 B1)", () => {
@@ -602,6 +618,56 @@ describe("a box-in told by its walls", () => {
   });
 });
 
+describe("the race and its moments (2Xnv0iiY, engine of 2026-10-31; C36)", () => {
+  const l = fixtureLabels("2Xnv0iiY");
+  const names = { 1: "P1", 2: "P2" } as const;
+
+  test("every ply carries the race before and after it, in words", () => {
+    expect(l.plies[26].race.before).toEqual({
+      walks: { 1: 9, 2: 9 },
+      toMove: 1,
+    });
+    expect(raceWords(l.plies[26].race.before, names)).toBe(
+      "tied 9-9, P1 to move",
+    );
+    expect(raceWords(l.plies[26].race.after, names)).toBe(
+      "P1 leads by 2 (9-11, P2 to move)",
+    );
+    // A plain cat step keeps the race; walls that add 4 gain 2.
+    expect(l.plies[28].raceGain).toBe(0);
+    expect(l.plies[10].raceGain).toBe(2);
+  });
+
+  test("the counters show a tie turned into the mover's lead", () => {
+    expect(countersShow(l.plies[26])).toBe(true);
+    // A cat step from a lead to a bigger lead flips nothing.
+    expect(countersShow(l.plies[38])).toBe(false);
+  });
+
+  test("a wall-war answer is quiet with a detour tag", () => {
+    // Ply 9: the bot's +4 on P1's cat, given back by P1's +4 at once.
+    expect(l.plies[9].label).toBe("quiet");
+    expect(l.plies[9].tags).toContain("detour");
+  });
+
+  test("own-wall: the bot's cat stops at its own wall >b2 of ply 7", () => {
+    expect(l.plies[37].tags).toContain("own-wall");
+    expect(l.plies[37].ownWall).toEqual({ wall: ">b2", ply: 7 });
+    expect(isMoment(l.plies[37])).toBe(true);
+  });
+
+  test("dodge: P1's mouse steps behind a wall (b3 -> b2)", () => {
+    expect(l.plies[34].tags).toContain("dodge");
+    expect(isMoment(l.plies[34])).toBe(true);
+    expect(l.plies[33].tags).not.toContain("dodge");
+  });
+
+  test("the turning point names the sealing ply and the capture", () => {
+    expect(l.turningPoint).toContain("ply 26 (move 27");
+    expect(l.turningPoint).toContain("the capture at ply 40");
+  });
+});
+
 describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
   test("a punish that a wall undoes next move shows no cost; 2 -> 16 does", () => {
     const fixture = JSON.parse(
@@ -626,7 +692,7 @@ describe("checkSentence", () => {
       best: ">c4.^c3",
       bestWalls: [">c4", "^c3"],
     },
-    { w1: [6, 9], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
+    { w1: [6, 11], w2: [4, 4], wc: [0.8, 0.82], walls: ["^a3"] },
   ]);
   const l = labelGame(game);
   const facts = [...factsOf(game, l, 0), ...factsOf(game, l, 1)];
