@@ -77,8 +77,6 @@ export interface MoveInHistory {
    * stored before clocks were recorded; live play always has it.
    */
   timeLeftSeconds: [number, number] | null;
-  distances: [number, number];
-  wallCounts: [number, number];
 }
 
 /**
@@ -692,8 +690,6 @@ export class GameState {
       // Deep copy: the snapshot must not share cells with the live state.
       pawns: clonePawns(nextPawns),
       timeLeftSeconds: [nextTimeLeft[1], nextTimeLeft[2]],
-      distances: [0, 0],
-      wallCounts: [0, 0],
     };
     this.history.push(moveInHistory);
 

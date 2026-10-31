@@ -92,8 +92,6 @@ export const hydrateGameStateFromSerialized = (
         // From the server, not from this walk: the walk runs on made-up
         // timestamps, so its clocks are meaningless.
         timeLeftSeconds: entry.timeLeftSeconds,
-        distances: [0, 0],
-        wallCounts: [0, 0],
       };
     });
   } catch {
