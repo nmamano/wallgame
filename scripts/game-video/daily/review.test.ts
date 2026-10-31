@@ -14,7 +14,7 @@ import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
 import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
-import { feedbackLines, storyWarning, timingLines } from "./crew.mjs";
+import { feedbackLines, holdLine, storyWarning, timingLines } from "./crew.mjs";
 import { noStoryLine, STORY_MAX_BYTES } from "./post-instagram.mjs";
 import { quoteLines } from "./quote.mjs";
 import {
@@ -1385,6 +1385,34 @@ const adopted = (
     adoptedAt: "2026-10-31T11:20:00.000Z",
   });
 
+/** A new vetted render of the item, with a block for it, in `state`. */
+const rerender = (
+  store: ReturnType<typeof openStore>,
+  dir: string,
+  bytes: string,
+  state: string,
+) => {
+  const file = join(store.dirs.items, `${ID}.json`);
+  const it = JSON.parse(readFileSync(file, "utf8")) as {
+    state: string;
+    render: { finishedAt: string; video: { path: string; sha256: string } };
+    copy: { forVideoSha256: string; storedAt: string };
+    vets: { videoSha256: string }[];
+  };
+  const path = join(dir, `${sha(bytes)}.mp4`);
+  writeFileSync(path, bytes);
+  const video = sha(bytes);
+  it.state = state;
+  it.render.video = { ...it.render.video, path, sha256: video };
+  it.copy.forVideoSha256 = video;
+  it.vets.push({ ...it.vets[0], videoSha256: video });
+  // After any revise: a render and a block that come after it.
+  const later = new Date(Date.now() + 60_000).toISOString();
+  it.render.finishedAt = later;
+  it.copy.storedAt = later;
+  writeFileSync(file, JSON.stringify(it));
+};
+
 describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
   test("his words read as one action, or as none", () => {
     expect(parseAnswer("Approve")).toEqual({ action: "approve", notes: "" });
@@ -1578,6 +1606,45 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     expect(office.bodies.at(-1)!.readFiles).toEqual([newPath]);
   });
 
+  test("an ask after Nil's Revise names it first, his notes word for word (C15)", async () => {
+    const { store, office, sync, dir } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: "Revise: the sound at 00:31 sucks.\nand the wave",
+    });
+    await sync();
+    const revisedAt = itemOf(store).reviews.at(-1)!.at;
+    rerender(store, dir, "the revised render", "finished");
+    expect((await sync()).opened).toEqual([ID]);
+    const lines = String(office.bodies.at(-1)!.text).split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      `Revision after your Revise of ${revisedAt.slice(0, 16).replace("T", " ")} UTC:`,
+      "> the sound at 00:31 sucks.",
+      "> and the wave",
+      "Post this video?",
+    ]);
+    // The first ask of an item says nothing of a revision.
+    expect(String(office.bodies[0].text).split("\n")[0]).toBe(
+      "Post this video?",
+    );
+  });
+
+  test("an ask for a new video says which ask it replaces when the old one was withdrawn unanswered", async () => {
+    const { office, sync, records, store, dir } = withAsks();
+    await sync();
+    const sentAt = (records.get(ID) as { openedAt: string }).openedAt;
+    rerender(store, dir, "a new render", "finished");
+    const did = await sync();
+    expect(did.withdrawn).toEqual([ID]);
+    expect(did.opened).toEqual([ID]);
+    expect(String(office.bodies.at(-1)!.text).split("\n")[0]).toBe(
+      `This video replaces the one sent to you at ${sentAt.slice(0, 16).replace("T", " ")} UTC (that ask was withdrawn before your answer).`,
+    );
+  });
+
   test("an open ask whose item left review is withdrawn (an action on the page)", async () => {
     const { store, office, sync, video, block } = withAsks();
     await sync();
@@ -1644,5 +1711,32 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     await sync();
     expect(itemOf(store).state).toBe("finished");
     expect(records.get(ID)).toMatchObject({ status: "ignored" });
+  });
+});
+
+describe("a held item shows its age (VR1 review 117 N1)", () => {
+  const held = (at: string) => ({
+    state: "approved",
+    approval: { videoSha256: "v1" },
+    hold: { videoSha256: "v1", why: "ghost fault", by: "the director", at },
+  });
+  const now = Date.parse("2026-10-31T20:00:00.000Z");
+  test("hours, then days; none when not held", () => {
+    expect(holdLine(held("2026-10-31T16:27:00.000Z"), now)).toBe(
+      "HELD 3.5 h (since 2026-10-31 16:27 UTC, by the director): ghost fault. It does not post: re-render it, release it or discard it.",
+    );
+    expect(holdLine(held("2026-10-28T19:00:00.000Z"), now)).toMatch(
+      /^HELD 3 days /,
+    );
+    // A new approved video is not held by the old hold.
+    expect(
+      holdLine(
+        {
+          ...held("2026-10-31T16:27:00.000Z"),
+          approval: { videoSha256: "v2" },
+        },
+        now,
+      ),
+    ).toBeNull();
   });
 });

@@ -283,6 +283,7 @@ import { lintReport, lintStops } from "./lint.mjs";
 import * as tools from "./tools.mjs";
 import {
   currentScriptReview,
+  isHeld,
   renderScriptReview,
   scriptAfterRender,
   scriptText,
@@ -527,11 +528,27 @@ export const timingLines = (t) => {
 };
 
 /** One item, in lines: its game, list, render, check, block and reviews. */
+/**
+ * The line of a held item (store.hold): how long it has been held, so it
+ * is re-rendered or discarded, not held for ever (VR1 review 117 N1), or
+ * null when it is not held.
+ * @param {any} item
+ * @param {number} [now] ms since the epoch
+ */
+export const holdLine = (item, now = Date.now()) => {
+  if (!isHeld(item)) return null;
+  const hours = (now - Date.parse(item.hold.at)) / 3_600_000;
+  const age =
+    hours >= 48 ? `${Math.floor(hours / 24)} days` : `${hours.toFixed(1)} h`;
+  return `HELD ${age} (since ${item.hold.at.slice(0, 16).replace("T", " ")} UTC, by ${item.hold.by}): ${item.hold.why.replace(/[.\s]+$/, "")}. It does not post: re-render it, release it or discard it.`;
+};
+
 const itemLines = (k, progress = null) => {
   const g = k.candidate;
   const lines = [
     "",
     `ITEM ${k.id}: ${k.state}${k.reviewState ? ` (${k.reviewState})` : ""}, ${k.stage ?? ""}`,
+    ...(isHeld(k) ? [holdLine(k)] : []),
     `game ${g.gameId}: ${g.seats.map((x) => x.name).join(" vs ")}, ${g.movesCount} plies`,
     resultLine(g),
     ...g.facts,
@@ -598,6 +615,7 @@ const summary = (s) => {
       .map(([p, m]) => `${p}=${m}`)
       .join(" ")}`,
     `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview} (target ${s.reviewTarget}), waiting for copy ${c.waitingCopy}, approved ${c.approved}${c.held ? ` (held ${c.held}: they do not post)` : ""}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
+    ...s.items.filter(isHeld).map((k) => `${k.id}: ${holdLine(k)}`),
     `default ending ${s.suggestedEnding}${s.suggestedEnding === "ko" ? " (it takes no ending bar: with a bar, use gg or replay)" : ""}; last posted music ${s.lastMusic?.length ? s.lastMusic.join(", ") : "none"}`,
     ...s.items.flatMap((k) => itemLines(k, k.renderProgress)),
   ].join("\n");

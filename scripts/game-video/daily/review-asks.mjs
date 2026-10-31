@@ -62,14 +62,55 @@ export const ASK_OPTIONS = [
 /** How often the app syncs its asks with no crew call (app/server.mjs). */
 export const ASK_SYNC_MS = 60_000;
 
+/** An ISO time as Nil reads it: "2026-10-31 14:52 UTC". */
+const utcMinute = (iso) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+
+/**
+ * The first lines of an ask for a video that replaces one Nil was sent
+ * (Nil, CASES.md C15: tell him when he sees two versions of one game;
+ * Wall Game Director, 2026-10-31: asks 6deedba1 and e7458d6d read like new
+ * videos). After his Revise: the time of it and his notes word for word,
+ * so he can check each note against the video. After an ask of an older
+ * video that he did not answer with a Revise (withdrawn, dismissed): the
+ * time it was sent.
+ * @param {any} item the store item
+ * @param {any} previous the item's last ask record (openAskRecords), if any
+ * @returns {string[]}
+ */
+export const revisionLines = (item, previous) => {
+  const last = item.reviews.at(-1);
+  const revise = last?.action === "revise" ? last : null;
+  const lines = revise
+    ? [
+        `Revision after your Revise of ${utcMinute(revise.at)}:`,
+        ...quoteLines(revise.notes),
+      ]
+    : [];
+  const sentAt = previous?.openedAt ?? previous?.adoptedAt;
+  if (
+    previous?.askId &&
+    sentAt &&
+    previous.videoSha256 !== item.render.video.sha256 &&
+    (!revise || sentAt > revise.at)
+  ) {
+    lines.push(
+      `This video replaces the one sent to you at ${utcMinute(sentAt)}${previous.status === "withdrawn" ? " (that ask was withdrawn before your answer)" : ""}.`,
+    );
+  }
+  return lines;
+};
+
 /**
  * The ask's text: what Nil must decide, then what the review page shows
- * him. `card` is one item of reviewView.
+ * him. `card` is one item of reviewView; `previous` is the item's last ask
+ * record, if any (revisionLines).
  * @param {any} item the store item
  * @param {ReturnType<typeof reviewView>["items"][number]} card
+ * @param {any} [previous]
  */
-export const askPrompt = (item, card) =>
+export const askPrompt = (item, card, previous) =>
   [
+    ...revisionLines(item, previous),
     "Post this video?",
     `On the video: "${item.caption}"${item.payoff?.text ? ` then "${item.payoff.text}"` : ""}`,
     `Post: ${card.caption}`,
@@ -358,7 +399,7 @@ export const syncReviewAsks = async ({
     let ask;
     try {
       ask = await office.open({
-        text: askPrompt(item, card),
+        text: askPrompt(item, card, record),
         member: REVIEWER_USERNAME,
         priority: ASK_PRIORITY,
         options: ASK_OPTIONS,
