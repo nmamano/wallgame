@@ -4,7 +4,12 @@ import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
 import { readFileSync } from "node:fs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
-import { checkSentence, factsOf, writeSentences } from "./sentences";
+import {
+  checkSentence,
+  factsOf,
+  renderTable,
+  writeSentences,
+} from "./sentences";
 import { checkSeen } from "./vision";
 
 /*
@@ -460,6 +465,42 @@ const fixtureLabels = (gameId: string) => {
   ) as { game: SemanticGame; engine: EngineData };
   return labelGame(gameFacts(fixture.game, fixture.engine));
 };
+
+describe("the stored result over the replay's", () => {
+  // A capture by P1 that the one-move rule (before 2026-09-01) made a draw:
+  // the replay under today's rules calls it a win.
+  const fixture = JSON.parse(
+    readFileSync(new URL("fixtures/VX-IPenv.json", import.meta.url), "utf8"),
+  ) as { game: SemanticGame; engine: EngineData };
+  const draw = gameFacts(
+    { ...fixture.game, result: { reason: "one-move-rule" } },
+    fixture.engine,
+  );
+
+  test("a stored draw has no winner, and its last move says the rule", () => {
+    expect(gameFacts(fixture.game, fixture.engine).winner).toBe(1);
+    expect(draw.winner).toBeNull();
+    const last = draw.plies.at(-1)!;
+    expect(last.end).toEqual({ winner: null, reason: "one-move-rule" });
+    const labels = labelGame(draw);
+    expect(labels.plies.at(-1)!.label).toBe("capture");
+    const end = factsOf(draw, labels, last.ply).find((f) =>
+      f.id.endsWith(".end"),
+    )!.text;
+    expect(end).toContain("(a capture), but the other cat could catch");
+    expect(end).not.toContain("wins");
+  });
+
+  test("the table's title says the draw", () => {
+    const title = renderTable({
+      facts: draw,
+      labels: labelGame(draw),
+      sentences: null,
+      seen: null,
+    }).split("\n")[0];
+    expect(title).toEndWith("moves, a draw (one-move-rule)");
+  });
+});
 
 /*
  * Regression fixtures: what a move of a real game means, by game id and ply

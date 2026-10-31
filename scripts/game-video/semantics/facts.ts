@@ -16,6 +16,7 @@
 import type { GameState } from "../../../shared/domain/game-state";
 import type { Grid } from "../../../shared/domain/grid";
 import type {
+  GameResult,
   Cell,
   GamePawns,
   GameInitialState,
@@ -50,6 +51,13 @@ export interface SemanticGame {
   /** Every ply's standard notation, 0-based. */
   moves: string[];
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
+  /**
+   * The stored result, when the source has it (candidate reports from
+   * 2026-10-31 on). It overrides the replay's: the replay applies today's
+   * rules, and a game before 2026-09-01 that the one-move rule made a draw
+   * replays as a capture win.
+   */
+  result?: GameResult;
 }
 
 /** The engine's numbers for one game (engine-eval.ts scoreGame). */
@@ -145,14 +153,20 @@ export interface PlyFacts {
   /** The room of each animal the mover hunts. */
   rooms: MouseRoom[];
   engine: EngineFacts | null;
-  /** Set on the move that ends the game on the board. */
+  /**
+   * Set on the move that ends the game on the board. The winner and reason
+   * are the stored result's when the game has one (SemanticGame.result).
+   */
   end: { winner: PlayerId | null; reason: string } | null;
 }
 
 export interface GameFacts {
   game: SemanticGame;
   plies: PlyFacts[];
-  /** The winner on the board, or null (a draw, or a game not ended there). */
+  /**
+   * The stored winner when the game has a result; else the winner on the
+   * board. Null for a draw, or a game not ended on the board.
+   */
   winner: PlayerId | null;
   engineBotId: string | null;
 }
@@ -338,10 +352,12 @@ export const gameFacts = (
       rooms: roomsOf(hunts, before, after, mover),
       engine: engineFacts,
       end: ended
-        ? {
-            winner: after.result?.winner ?? null,
-            reason: after.result?.reason ?? "unknown",
-          }
+        ? game.result
+          ? { winner: game.result.winner ?? null, reason: game.result.reason }
+          : {
+              winner: after.result?.winner ?? null,
+              reason: after.result?.reason ?? "unknown",
+            }
         : null,
     };
   });
@@ -349,7 +365,11 @@ export const gameFacts = (
   return {
     game,
     plies,
-    winner: last.status === "finished" ? (last.result?.winner ?? null) : null,
+    winner: game.result
+      ? (game.result.winner ?? null)
+      : last.status === "finished"
+        ? (last.result?.winner ?? null)
+        : null,
     engineBotId: engine?.botId ?? null,
   };
 };

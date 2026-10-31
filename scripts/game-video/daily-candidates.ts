@@ -34,9 +34,11 @@
  * The engine's evaluation (swingsOf below) is kept as a debug column only.
  */
 import { classifyPastGamePlayer } from "../../server/db/past-game-player-kind";
+import { resolveResultFromPlayers } from "../../server/db/replay-match-score";
 import { botCapabilityVariant } from "../../shared/domain/bot-capability";
 import type {
   Cell,
+  GameResult,
   PawnType,
   PlayerId,
   Variant,
@@ -112,7 +114,12 @@ export type SeatVerdict =
   | { ok: false; reason: string };
 
 export type GameVerdict =
-  | { eligible: true; seatKinds: SeatKind[] }
+  | {
+      eligible: true;
+      seatKinds: SeatKind[];
+      /** The stored result, as the replay page reads it; it has a winner. */
+      result: GameResult & { winner: PlayerId };
+    }
   | { eligible: false; reason: string };
 
 /**
@@ -148,6 +155,16 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
   if (ending) {
     return { eligible: false, reason: `ended by ${ending.outcomeReason}` };
   }
+  // The stored result, not today's rules: before 2026-09-01 a capture by the
+  // first mover was a draw when the other cat could catch on its next move
+  // (the one-move rule). A replay under today's rules calls that a win.
+  const result = resolveResultFromPlayers(game.seats);
+  if (!result?.winner) {
+    return {
+      eligible: false,
+      reason: `no winner (${result?.reason ?? "no result"})`,
+    };
+  }
   if (game.seats.length !== 2) {
     return { eligible: false, reason: `${game.seats.length} seats, not 2` };
   }
@@ -162,7 +179,11 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
   if (seatKinds.every((kind) => kind === "official bot")) {
     return { eligible: false, reason: "bot vs bot" };
   }
-  return { eligible: true, seatKinds };
+  return {
+    eligible: true,
+    seatKinds,
+    result: { winner: result.winner, reason: result.reason },
+  };
 };
 
 /**

@@ -222,14 +222,18 @@ export const factsOf = (
     const caught =
       f.hunts.find((h) => h.after === 0 && h.hunter.player === f.mover) ??
       f.hunts.find((h) => h.after === 0);
-    const wins = f.end.winner ? `${names[f.end.winner]} wins` : "the game ends";
+    const wins = f.end.winner
+      ? `: ${names[f.end.winner]} wins`
+      : f.end.reason === "one-move-rule"
+        ? ", but the other cat could catch on its next move, so the one-move rule of that time makes the game a draw"
+        : ": the game ends with no winner";
     add(
       "end",
       !caught
         ? `The game ends: ${f.end.winner ? `${names[f.end.winner]} wins` : "no winner"}.`
         : caught.hunter.player === f.mover
-          ? `${names[f.mover]}'s ${caught.hunter.type} reaches ${caught.target.type === "home" ? "its home" : `${names[caught.target.player]}'s ${caught.target.type}`} (a capture): ${wins}.`
-          : `${names[f.mover]}'s ${caught.target.type} steps onto ${names[caught.hunter.player]}'s ${caught.hunter.type} (a capture): ${wins}.`,
+          ? `${names[f.mover]}'s ${caught.hunter.type} reaches ${caught.target.type === "home" ? "its home" : `${names[caught.target.player]}'s ${caught.target.type}`} (a capture)${wins}.`
+          : `${names[f.mover]}'s ${caught.target.type} steps onto ${names[caught.hunter.player]}'s ${caught.hunter.type} (a capture)${wins}.`,
     );
   }
   return out;
@@ -667,11 +671,13 @@ const seenCell = (x: PlySeen | undefined) =>
 export const renderTable = (s: GameSemantics): string => {
   const { game } = s.facts;
   const names = namesOf(s.facts);
-  const winner = s.facts.winner
-    ? names[s.facts.winner]
-    : "no winner on the board";
+  const result = s.facts.winner
+    ? `${names[s.facts.winner]} wins`
+    : game.result
+      ? `a draw (${game.result.reason})`
+      : "no winner on the board";
   const lines = [
-    `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} moves, ${winner} wins`,
+    `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} moves, ${result}`,
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = ply + 1 (the replay page's count)`,
     "",

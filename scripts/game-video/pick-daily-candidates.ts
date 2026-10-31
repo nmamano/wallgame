@@ -32,6 +32,7 @@ import { writeFileSync } from "node:fs";
 import type { ConfigFile } from "../../official-custom-bot-client/src/config-schema";
 import type {
   GameInitialState,
+  GameResult,
   PlayerId,
   Variant,
 } from "../../shared/domain/game-types";
@@ -212,6 +213,11 @@ interface Candidate {
    */
   initialState: GameInitialState;
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
+  /**
+   * The stored result (game_players outcome_rank and outcome_reason). A game
+   * with no winner is not a candidate, so `winner` is always set.
+   */
+  result: GameResult & { winner: PlayerId };
   /** Before each move, and after the last: movesCount + 1 entries. */
   distances: RaceDistances[];
   /** The smallest jump that is a pick in this variant (minJumpFor). */
@@ -319,6 +325,7 @@ const main = async () => {
           movesCount: game.movesCount,
           moves,
           initialState,
+          result: verdict.result,
           seats: [...game.seats]
             .sort((a, b) => a.playerOrder - b.playerOrder)
             .map((s, i) => ({
@@ -351,6 +358,7 @@ const main = async () => {
             links,
             game,
             movers,
+            verdict.result.winner,
           ).catch((error: unknown) => ({
             error: error instanceof Error ? error.message : String(error),
           }));
@@ -405,16 +413,6 @@ const main = async () => {
   console.log(`\nfull report: ${args.out}`);
 };
 
-/** The seat ranked first over a seat ranked lower, or null (a draw). */
-const winnerOf = (game: StoredGame): PlayerId | null => {
-  const order = game.seats.find(
-    (s) =>
-      s.outcomeRank === 1 &&
-      game.seats.some((o) => o !== s && o.outcomeRank > 1),
-  )?.playerOrder;
-  return order === 1 || order === 2 ? order : null;
-};
-
 /** The --engine debug column for one game, on the evaluation bar's engine. */
 const engineColumn = async (
   botConfig: ConfigFile,
@@ -422,6 +420,7 @@ const engineColumn = async (
   links: Map<string, EngineLink>,
   game: StoredGame,
   movers: PlayerId[],
+  winner: PlayerId,
 ): Promise<EngineColumn> => {
   const engine = evalBarEngineFor(
     botConfig,
@@ -448,7 +447,7 @@ const engineColumn = async (
     boardHeight: game.boardHeight,
     initialState: game.configParameters.initialState,
     moves: game.moves.map(String),
-    winner: winnerOf(game),
+    winner,
   });
   const scoreSeconds = (performance.now() - t0) / 1000;
   console.error(

@@ -107,6 +107,7 @@ const asGame = (c: StoredCandidate): SemanticGame => ({
     kind: s.kind,
     name: s.name,
   })),
+  ...(c.result ? { result: c.result } : {}),
 });
 
 const readGames = (args: Args): ReadGame[] => {
@@ -152,8 +153,12 @@ const scoreOnGpu = async (games: SemanticGame[], dir: string) => {
       const t0 = performance.now();
       const scored = await scoreGame(link, {
         ...game,
-        winner:
-          last.status === "finished" ? (last.result?.winner ?? null) : null,
+        // The stored result first: a one-move-rule draw replays as a win.
+        winner: game.result
+          ? (game.result.winner ?? null)
+          : last.status === "finished"
+            ? (last.result?.winner ?? null)
+            : null,
       });
       const data: EngineData = {
         botId: engine.botId,

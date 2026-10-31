@@ -15,8 +15,8 @@
 # Writes OUT_DIR/<UTC day>.json (the candidate report) or OUT_DIR/<UTC day>.skip
 # (one line: why there is no report today). The crew lead reads one of the two.
 # A by-hand run writes <UTC day>.manual-<STAMP>[-days<N>][-nil].json or .skip,
-# so it never touches the timer's two names; give it the timer's OUT_DIR, so
-# the lock there keeps the two runs apart.
+# so it never touches the timer's two names. Every run, with any OUT_DIR,
+# takes the same lock file (LOCK below), so two runs never overlap.
 #
 # Run by the user timer wallgame-daily-candidates.timer at 11:30 UTC, after
 # the 10:20 UTC backup. THE BACKUP OWNER'S TERMS (Lead SRE, standing OK of
@@ -98,8 +98,11 @@ skip() {
 
 mkdir -p "$OUT_DIR"
 # One run at a time: the leftover sweep below would remove the database of a
-# run that is still restoring. The lock is in OUT_DIR, never in the backup store.
-exec 9>"$OUT_DIR/.lock"
+# run that is still restoring. The lock has one fixed path for every OUT_DIR
+# (review 110 N1), and it is never in the backup store.
+LOCK=$HOME/.local/state/wallgame-daily-candidates.lock
+mkdir -p "$(dirname "$LOCK")"
+exec 9>"$LOCK"
 flock -n 9 || { say "another run is going; this one stops"; exit 0; }
 [ ! -e "$REPORT" ] || { say "$REPORT exists; nothing to do"; exit 0; }
 
@@ -109,6 +112,7 @@ flock -n 9 || { say "another run is going; this one stops"; exit 0; }
 PICK_PATH=(scripts/game-video/pick-daily-candidates.ts scripts/game-video/daily-candidates.ts
   scripts/game-video/race-replay.ts scripts/game-video/engine-eval.ts
   scripts/game-video/daily shared server/db/past-game-player-kind.ts
+  server/db/replay-match-score.ts
   official-custom-bot-client/src official-custom-bot-client/transformer.prod.config.json
   package.json bun.lock)
 # --no-optional-locks: never rewrite the shared checkout's index. The reader

@@ -40,7 +40,7 @@ const seat = (over: Partial<StoredSeat>): StoredSeat => ({
   botId: null,
   botIsOfficial: null,
   outcomeRank: 1,
-  outcomeReason: "knockout",
+  outcomeReason: "capture",
   ...over,
 });
 
@@ -105,6 +105,7 @@ describe("seat eligibility", () => {
     expect(gameEligibility(game(guest, officialBot))).toEqual({
       eligible: true,
       seatKinds: ["guest", "official bot"],
+      result: { winner: 1, reason: "capture" },
     });
     expect(gameEligibility(game(officialBot, nil)).eligible).toBe(true);
     expect(gameEligibility(game(member, officialBot)).eligible).toBe(false);
@@ -115,6 +116,7 @@ describe("seat eligibility", () => {
     expect(gameEligibility(game(nil, guest))).toEqual({
       eligible: true,
       seatKinds: ["nil", "guest"],
+      result: { winner: 1, reason: "capture" },
     });
     expect(gameEligibility(game(guest, guest)).eligible).toBe(true);
     expect(gameEligibility(game(officialBot, officialBot))).toEqual({
@@ -127,6 +129,7 @@ describe("seat eligibility", () => {
     expect(nilGameEligibility(game(nil, officialBot))).toEqual({
       eligible: true,
       seatKinds: ["nil", "official bot"],
+      result: { winner: 1, reason: "capture" },
     });
     expect(nilGameEligibility(game(guest, nil)).eligible).toBe(true);
     expect(nilGameEligibility(game(guest, officialBot))).toEqual({
@@ -136,6 +139,52 @@ describe("seat eligibility", () => {
     expect(nilGameEligibility(game(nil, member))).toEqual({
       eligible: false,
       reason: "signed-in member seat",
+    });
+  });
+
+  test("a game with no stored winner is out: a one-move-rule draw too", () => {
+    const draw = game(nil, officialBot, {
+      seats: [
+        {
+          ...nil,
+          playerOrder: 1,
+          outcomeRank: 1,
+          outcomeReason: "one-move-rule",
+        },
+        {
+          ...officialBot,
+          playerOrder: 2,
+          outcomeRank: 1,
+          outcomeReason: "one-move-rule",
+        },
+      ],
+    });
+    expect(gameEligibility(draw)).toEqual({
+      eligible: false,
+      reason: "no winner (one-move-rule)",
+    });
+    expect(
+      gameEligibility(
+        game(guest, officialBot, {
+          seats: [
+            {
+              ...guest,
+              playerOrder: 1,
+              outcomeRank: 2,
+              outcomeReason: "resignation",
+            },
+            {
+              ...officialBot,
+              playerOrder: 2,
+              outcomeRank: 1,
+              outcomeReason: "resignation",
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      eligible: true,
+      result: { winner: 2, reason: "resignation" },
     });
   });
 
