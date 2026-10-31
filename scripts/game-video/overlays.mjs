@@ -902,10 +902,10 @@ export const OVERLAYS = {
       fps: 30,
       frames: 120,
       sha256:
-        "2dd3c3d270f574400eb448f6b2191fc7be27f83b4f2ab1d0f659476f48e9124b",
+        "486a572afcec23862cb49469256b7562b7666ff767cb6b2b13a5e3d5041a8156",
     },
     source:
-      "Nil's meme pack: Green Screen/Camera Hud REC More Complex.mp4 (8.8 s, 1280x720, sha256 cf699c8ca4ed5c31), 0-4 s; made square for the board: its left and right 360 px side by side (the corner brackets, REC and its dot, the battery), its bottom line (ISO 200 ... 30 FPS) scaled to 600 px under them; silent",
+      "Nil's meme pack: Green Screen/Camera Hud REC More Complex.mp4 (8.8 s, 1280x720, sha256 cf699c8ca4ed5c31), 0-4 s; made square for the board: its left and right 360 px side by side (the corner brackets, REC and its dot, the battery); its bottom line (ISO 200 ... 30 FPS) left out, as a cover clip stays inside the board and the line lay over row 1 and its letters (Wall Game Director, 2026-10-31); silent",
     claim: "LOW: a generic camera HUD (Director Rewriter, cc298af)",
     likeness: "None",
     rating: null,
