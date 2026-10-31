@@ -121,7 +121,11 @@ export const parseAnswer = (answer) => {
  */
 export const askProblem = (ask, record) => {
   if (!ask || ask.id !== record.askId) return "the office returned another ask";
-  if (ask.app?.name !== APP_NAME) return "the ask was not opened by this app";
+  // An adopted ask is the Director's own (adoptAsk): the Director named it
+  // for this item; every other check is the same.
+  if (record.status !== "adopted" && ask.app?.name !== APP_NAME) {
+    return "the ask was not opened by this app";
+  }
   if (ask.memberUserId !== REVIEWER_MEMBER_ID) return "the ask was not for Nil";
   if (!ask.closed) return "the ask is still open";
   return null;
@@ -157,6 +161,45 @@ export const openAskRecords = (root) => {
         JSON.stringify({ ...all(), [itemId]: record }, null, 1),
       ),
   };
+};
+
+/**
+ * Adopt an ask that the Director opened by hand for an item (Wall Game
+ * Director, 2026-10-31: the cut-over ask of v-2026-10-31-2): the sync then
+ * applies Nil's reply to it with the checks of the app's own asks, bound to
+ * the item's video, block and round NOW. Refused when the item is not in
+ * review or the app has an open ask for it (withdraw that one first in
+ * the office, or wait for it).
+ * @param {{ store: ReturnType<import("./store.mjs").openStore>,
+ *   records: ReturnType<typeof openAskRecords>, itemId: string,
+ *   askId: string, now?: () => Date }} deps
+ */
+export const adoptAsk = ({
+  store,
+  records,
+  itemId,
+  askId,
+  now = () => new Date(),
+}) => {
+  if (!/^[\w-]{1,64}$/.test(askId)) throw new StepRefused("not an ask id");
+  const item = store.item(itemId);
+  if (!item || !store.inReview().some((it) => it.id === itemId)) {
+    throw new StepRefused(`${itemId} is not in review`);
+  }
+  const record = records.get(itemId);
+  if (record?.status === "open") {
+    throw new StepRefused(
+      `${itemId} has the app's open ask ${record.askId}; the app applies that one`,
+    );
+  }
+  const adopted = {
+    ...keyOf(item),
+    askId,
+    status: "adopted",
+    adoptedAt: now().toISOString(),
+  };
+  records.put(itemId, adopted);
+  return adopted;
 };
 
 /**
@@ -212,9 +255,11 @@ export const syncReviewAsks = async ({
     return out;
   }
 
-  // 1. The asks that closed since the last sync.
+  // 1. The asks that closed since the last sync. An adopted ask is not in
+  // the app's open list: it is read each sync until it closes.
   for (const [itemId, record] of Object.entries(records.all())) {
-    if (record.status !== "open" || openIds.has(record.askId)) continue;
+    if (!["open", "adopted"].includes(record.status)) continue;
+    if (openIds.has(record.askId)) continue;
     let ask;
     try {
       ask = await office.read(record.askId);
@@ -227,6 +272,13 @@ export const syncReviewAsks = async ({
           `ASK: the app cannot read Nil's answer to ask ${record.askId} (${itemId}) from the office: ${err.message}. Nothing changed; it tries again each minute. Nil can use the review page.`,
         );
       }
+      continue;
+    }
+    if (
+      record.status === "adopted" &&
+      ask?.id === record.askId &&
+      !ask.closed
+    ) {
       continue;
     }
     const problem = askProblem(ask, record);

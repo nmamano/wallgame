@@ -32,6 +32,7 @@ import {
   ASK_OPTIONS,
   openAskRecords,
   parseAnswer,
+  adoptAsk,
   syncReviewAsks,
 } from "./review-asks.mjs";
 
@@ -1273,6 +1274,8 @@ const fakeOffice = () => {
   const open = new Map<string, OfficeAsk>();
   const closed = new Map<string, OfficeAsk>();
   const bodies: Record<string, unknown>[] = [];
+  // The Director's own asks: the app reads them, but they are not its own.
+  const hand = new Map<string, OfficeAsk>();
   let n = 0;
   return {
     bodies,
@@ -1307,7 +1310,7 @@ const fakeOffice = () => {
       return Promise.resolve(null);
     },
     read(id: string) {
-      return Promise.resolve(closed.get(id) ?? open.get(id));
+      return Promise.resolve(closed.get(id) ?? open.get(id) ?? hand.get(id));
     },
     answer(
       id: string,
@@ -1319,6 +1322,14 @@ const fakeOffice = () => {
       closed.set(id, { ...ask, ...change, closed: part });
     },
     openIds: () => [...open.keys()],
+    handAsk(id: string, closedPart?: OfficeAsk["closed"]) {
+      hand.set(id, {
+        id,
+        memberUserId: REVIEWER_MEMBER_ID,
+        member: "Nil",
+        ...(closedPart ? { closed: closedPart } : {}),
+      });
+    },
   };
 };
 
@@ -1565,5 +1576,63 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
       told: [],
     });
     expect(itemOf(store).state).toBe("finished");
+  });
+
+  test("an adopted hand ask: applied with the same checks once Nil replies", async () => {
+    const { store, office, records, sync, video, block } = withAsks();
+    office.handAsk("214bf6df");
+    adoptAsk({ store, records, itemId: ID, askId: "214bf6df" });
+    // Still open: nothing happens, the app opens no ask of its own.
+    const first = await sync();
+    expect(first).toMatchObject({ opened: [], applied: [] });
+    expect(records.get(ID)).toMatchObject({
+      status: "adopted",
+      videoSha256: video,
+    });
+    office.handAsk("214bf6df", {
+      outcome: "replied",
+      by: "Nil",
+      answer: "Approve",
+    });
+    expect((await sync()).applied).toEqual([ID]);
+    const item = itemOf(store);
+    expect(item.approval).toMatchObject({
+      videoSha256: video,
+      copySha256: block,
+    });
+    expect(item.reviews.at(-1)!.askId).toBe("214bf6df");
+    expect((await sync()).applied).toEqual([]);
+  });
+
+  test("an adopted ask answered by another member changes nothing", async () => {
+    const { store, office, records, sync } = withAsks();
+    office.handAsk("hand1", {
+      outcome: "replied",
+      by: "Isomuxer 3",
+      answer: "Approve",
+    });
+    adoptAsk({ store, records, itemId: ID, askId: "hand1" });
+    await sync();
+    expect(itemOf(store).state).toBe("finished");
+    expect(records.get(ID)).toMatchObject({ status: "ignored" });
+  });
+
+  test("adopt is refused for an item not in review, or while the app's own ask is open", async () => {
+    const { store, records, sync, video, block } = withAsks();
+    await sync();
+    expect(() => adoptAsk({ store, records, itemId: ID, askId: "x1" })).toThrow(
+      /the app's open ask/,
+    );
+    store.review(ID, {
+      action: "approve",
+      notes: "",
+      videoSha256: video,
+      copySha256: block,
+      by: "Nil",
+      memberId: REVIEWER_MEMBER_ID,
+    });
+    expect(() => adoptAsk({ store, records, itemId: ID, askId: "x1" })).toThrow(
+      /not in review/,
+    );
   });
 });
