@@ -510,3 +510,49 @@ describe("the checkpoint numbers", () => {
     ]);
   });
 });
+
+describe("a refused saves or reach", () => {
+  test("keeps the views in every sum, no '(no views)', its reason shown", () => {
+    const at = "2026-10-31T10:00:00.000Z";
+    const v = postStatsView({
+      posts: [
+        {
+          itemId: "I1",
+          day: "2026-10-31",
+          utc: at,
+          platform: "instagram",
+          postId: "I1",
+          url: null,
+        },
+      ],
+      numbers: {
+        "instagram I1": {
+          views: 800,
+          likes: 40,
+          comments: 5,
+          shares: 6,
+          saves: null,
+          reach: null,
+          quotes: null,
+          partial: "saves, reach: needs reconnect (instagram_manage_insights)",
+          at,
+        },
+      },
+      reads: { instagram: { at, error: null, posts: 1 } },
+      history: [],
+      checkpoints: [],
+      names: { instagram: "Instagram" },
+      nowMs: Date.parse("2026-10-31T18:00:00.000Z"),
+      platforms: ["instagram"],
+      note: "",
+    });
+    const [row] = v.videos[0].rows;
+    expect(row.platform).toBe("Instagram");
+    expect(row.note).toBe(
+      "saves, reach: needs reconnect (instagram_manage_insights)",
+    );
+    expect(v.platforms[0].note).toBe(row.note);
+    expect(v.total.views).toBe(800);
+    expect(v.headline.views).toBe(800);
+  });
+});

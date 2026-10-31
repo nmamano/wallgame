@@ -22,10 +22,13 @@
  * - Threads: GET /<media-id>/insights?metric=views,likes,replies,reposts,
  *   quotes,shares, threads_manage_insights -> data[].values[0].value.
  * - Instagram Reel: GET /<media-id>/insights?metric=views,likes,comments,
- *   shares,saved,reach, instagram_manage_insights -> data[].values[0].value. Without
+ *   shares, then metric=saved,reach in a second request (a refused metric
+ *   fails its whole request), instagram_manage_insights ->
+ *   data[].values[0].value. Without
  *   that permission, like_count and comments_count of the media node
  *   (instagram_basic), and views show "needs reconnect".
- * - Instagram Story: the same edge, metric=views,replies,shares,reach; a Story's
+ * - Instagram Story: the same edge, metric=views,replies,shares, then
+ *   metric=reach apart; a Story's
  *   numbers can be read only while it is up (24 h), so it is read for a
  *   day and keeps its last numbers.
  * - Facebook Reel: GET /<video-id>/video_insights?metric=
@@ -206,7 +209,24 @@ const keyed = (value, part, step) => {
 };
 
 /**
- * One reader per platform: (ctx, posts) -> {postId: Numbers & {note?}}, or
+ * Insights a post may not give (saved, reach), asked in their own request:
+ * Graph fails a whole request on one metric it refuses, so a refused one
+ * costs only its own columns, never the views (VR1 and Wall Game PM,
+ * review 122). A refusal is kept as `partial`, a safe reason.
+ */
+const optionalInsights = async (transport, step, url, token, names) => {
+  try {
+    const m = insightValues(
+      await graph(transport, step, url, token, "instagram_manage_insights"),
+    );
+    return { m, partial: null };
+  } catch (err) {
+    return { m: {}, partial: `${names}: ${reasonOf(err)}` };
+  }
+};
+
+/**
+ * One reader per platform: (ctx, posts) -> {postId: Numbers & {note?, partial?}}, or
  * a throw for the whole platform. A post the platform does not return is
  * left out (it shows no numbers yet).
  */
@@ -334,19 +354,29 @@ const READERS = {
           await graph(
             transport,
             "instagram insights",
-            `${FB_GRAPH}/${p.postId}/insights?metric=views,likes,comments,shares,saved,reach`,
+            `${FB_GRAPH}/${p.postId}/insights?metric=views,likes,comments,shares`,
             token,
             "instagram_manage_insights",
           ),
         );
-        out[p.postId] = numbers({
-          views: num(m.views, "instagram"),
-          likes: num(m.likes, "instagram"),
-          comments: num(m.comments, "instagram"),
-          shares: num(m.shares, "instagram"),
-          saves: num(m.saved, "instagram"),
-          reach: num(m.reach, "instagram"),
-        });
+        const more = await optionalInsights(
+          transport,
+          "instagram saves and reach",
+          `${FB_GRAPH}/${p.postId}/insights?metric=saved,reach`,
+          token,
+          "saves, reach",
+        );
+        out[p.postId] = {
+          ...numbers({
+            views: num(m.views, "instagram"),
+            likes: num(m.likes, "instagram"),
+            comments: num(m.comments, "instagram"),
+            shares: num(m.shares, "instagram"),
+            saves: num(more.m.saved, "instagram"),
+            reach: num(more.m.reach, "instagram"),
+          }),
+          ...(more.partial && { partial: more.partial }),
+        };
       } catch (err) {
         if (!(err instanceof NeedsPermission)) throw err;
         // The media node's counts need only instagram_basic.
@@ -374,17 +404,27 @@ const READERS = {
         await graph(
           transport,
           "instagram story insights",
-          `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares,reach`,
+          `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares`,
           token,
           "instagram_manage_insights",
         ),
       );
-      out[p.postId] = numbers({
-        views: num(m.views, "instagram story"),
-        comments: num(m.replies, "instagram story"),
-        shares: num(m.shares, "instagram story"),
-        reach: num(m.reach, "instagram story"),
-      });
+      const more = await optionalInsights(
+        transport,
+        "instagram story reach",
+        `${FB_GRAPH}/${p.postId}/insights?metric=reach`,
+        token,
+        "reach",
+      );
+      out[p.postId] = {
+        ...numbers({
+          views: num(m.views, "instagram story"),
+          comments: num(m.replies, "instagram story"),
+          shares: num(m.shares, "instagram story"),
+          reach: num(more.m.reach, "instagram story"),
+        }),
+        ...(more.partial && { partial: more.partial }),
+      };
     }
     return out;
   },
@@ -493,7 +533,7 @@ export const postsDue = (posts, cache, nowMs) => {
  * @param {object} ctx {transport, env, tokens, keepRefreshToken, now?}
  * @param {Record<string, Post[]>} due
  * @returns {Promise<{ reads: Record<string, { at: string, error: string | null, posts: number }>,
- *   numbers: Record<string, Numbers & { at: string, note?: string }> }>}
+ *   numbers: Record<string, Numbers & { at: string, note?: string, partial?: string }> }>}
  *   numbers is keyed "<platform> <postId>"
  */
 export const readPostStats = async (ctx, due) => {

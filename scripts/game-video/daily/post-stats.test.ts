@@ -197,23 +197,23 @@ const answers = (req: Req): Reply => {
       }),
     };
   }
+  // Saves and reach come in their own request.
+  if (u.includes("/IG-R1/insights?metric=saved,reach")) {
+    return { status: 200, json: insights({ saved: 7, reach: 650 }) };
+  }
   if (u.includes("/IG-R1/insights")) {
     return {
       status: 200,
-      json: insights({
-        views: 800,
-        likes: 40,
-        comments: 5,
-        shares: 6,
-        saved: 7,
-        reach: 650,
-      }),
+      json: insights({ views: 800, likes: 40, comments: 5, shares: 6 }),
     };
+  }
+  if (u.includes("/IG-S1/insights?metric=reach")) {
+    return { status: 200, json: insights({ reach: 100 }) };
   }
   if (u.includes("/IG-S1/insights")) {
     return {
       status: 200,
-      json: insights({ views: 120, replies: 1, shares: 2, reach: 100 }),
+      json: insights({ views: 120, replies: 1, shares: 2 }),
     };
   }
   if (u.includes("/FB-V1/video_insights")) {
@@ -342,6 +342,8 @@ describe("readPostStats", () => {
     });
     expect(withIt.sent.map((r) => [r.url.split("?")[0], bearerOf(r)])).toEqual([
       [expect.stringContaining("/IG-R1/insights"), "Bearer SECRET-INSIGHTS"],
+      [expect.stringContaining("/IG-R1/insights"), "Bearer SECRET-INSIGHTS"],
+      [expect.stringContaining("/IG-S1/insights"), "Bearer SECRET-INSIGHTS"],
       [expect.stringContaining("/IG-S1/insights"), "Bearer SECRET-INSIGHTS"],
       [META_ACCOUNTS_URL.split("?")[0], "Bearer SECRET-INSIGHTS"],
       [expect.stringContaining("/FB-V1/video_insights"), "Bearer SECRET-PAGE"],
@@ -353,6 +355,8 @@ describe("readPostStats", () => {
       "Bearer SECRET-SU",
       "Bearer SECRET-SU",
       "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
       "Bearer SECRET-PAGE",
     ]);
     // Only the insights token: the read needs no posting token.
@@ -360,6 +364,38 @@ describe("readPostStats", () => {
       [META_INSIGHTS_SECRET]: "SECRET-INSIGHTS",
     });
     expect(only.reads.instagram.error).toBeNull();
+  });
+
+  test("Instagram: a refused saves or reach costs only its own columns, never the views", async () => {
+    // Graph refuses one metric (code 100): only the second request fails.
+    const refused = (req: Req): Reply =>
+      /insights\?metric=(saved,reach|reach)$/.test(req.url)
+        ? {
+            status: 400,
+            json: { error: { code: 100, message: "SECRET-SU bad metric" } },
+          }
+        : answers(req);
+    const { numbers, reads } = await run(refused, [
+      "instagram",
+      "instagram-story",
+    ]);
+    expect(numbers["instagram IG-R1"]).toMatchObject({
+      views: 800,
+      likes: 40,
+      saves: null,
+      reach: null,
+      partial: "saves, reach: instagram saves and reach: HTTP 400 code 100",
+    });
+    expect(numbers["instagram IG-R1"].note).toBeUndefined();
+    expect(numbers["instagram-story IG-S1"]).toMatchObject({
+      views: 120,
+      reach: null,
+      partial: "reach: instagram story reach: HTTP 400 code 100",
+    });
+    expect(reads.instagram.error).toBeNull();
+    // A full read has no partial.
+    const full = await run(answers, ["instagram"]);
+    expect(full.numbers["instagram IG-R1"].partial).toBeUndefined();
   });
 
   test("a platform with no post to read is not asked (no X bill)", async () => {

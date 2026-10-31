@@ -432,6 +432,8 @@ export const postStatsView = ({
   const noteOf = (p) => {
     const n = numbers[keyOf(p)];
     if (n?.note) return n.note;
+    // Views read, but saves or reach refused: their own reason.
+    if (n?.partial) return n.partial;
     if (n) return "";
     return reads[p.platform]?.error
       ? "no numbers: see Posts by platform"
@@ -555,10 +557,11 @@ export const postStatsView = ({
       ),
       weekNumbers: week,
       // A read error; else a post's fallback note (no views: needs
-      // reconnect); else when it was read.
+      // reconnect); else a refused saves or reach; else when it was read.
       note:
         r?.error ??
         ps.map((p) => numbers[keyOf(p)]?.note).find(Boolean) ??
+        ps.map((p) => numbers[keyOf(p)]?.partial).find(Boolean) ??
         (r ? `read ${ptMinute(r.at)}` : "not read yet"),
     };
   });
