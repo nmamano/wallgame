@@ -3094,10 +3094,14 @@
        */
       const paintHud = (r, goal, c, ff) => {
         if (ff) $("raceFast").textContent = "▶\uFE0E▶\uFE0E " + ff;
-        $("raceFast").style.visibility = ff ? "visible" : "hidden";
+        // "inherit", never "visible": a child set visible shows through
+        // its hidden parent, and #race is hidden while the goal line shows
+        // in the same place (render vet, 2026-10-31: v-2026-10-31-6's
+        // opening drew "VS STEPS TO CATCH" over the goal line).
+        $("raceFast").style.visibility = ff ? "inherit" : "hidden";
         $("race").querySelector(".vs .words").style.visibility = ff
           ? "hidden"
-          : "visible";
+          : "inherit";
         const inn = c ? c.a : 0;
         $("race").style.visibility = r && !goal ? "visible" : "hidden";
         $("goal").style.visibility = goal ? "visible" : "hidden";
