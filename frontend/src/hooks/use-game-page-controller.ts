@@ -52,6 +52,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { useAccountNudge } from "@/hooks/use-account-nudge";
+import { useGameFirstMove } from "@/hooks/use-game-first-move";
 import { sounds, play } from "@/lib/sounds";
 import { assetUrl } from "@/lib/asset-url";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
@@ -3320,6 +3321,23 @@ export function useGamePageController(gameId: string) {
     isPuzzle: isPuzzleGame,
     authSettled: !userPending,
     isLoggedIn,
+  });
+
+  /**
+   * Count a game this player started (game_first_move, task 8ec46ee4), from
+   * the live state for the same reason as the nudge above. The opponent is
+   * the other seat's type in the server's snapshot; a local game has none
+   * and its other seat is a person.
+   */
+  useGameFirstMove({
+    gameId,
+    state: gameState,
+    playerId: primaryLocalPlayerId,
+    isReadOnly: isReadOnlySession,
+    isPuzzle: isPuzzleGame,
+    opponent:
+      matchSnapshot?.players.find((p) => p.playerId !== primaryLocalPlayerId)
+        ?.configType ?? "human",
   });
 
   // Clear annotations when turn changes (move is committed)

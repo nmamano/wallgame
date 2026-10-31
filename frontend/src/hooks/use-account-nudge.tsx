@@ -9,7 +9,7 @@ import {
 } from "@/lib/account-nudge";
 import { browserSendEvent } from "@/lib/analytics";
 import { isEmbedded } from "@/lib/embedded-mode";
-import type { IdStorage } from "@/lib/anonymous-id";
+import { browserStorage } from "@/lib/browser-storage";
 
 /**
  * Offers a guest an account once they have actually played a game.
@@ -50,20 +50,6 @@ const REGISTER_URL = "/api/register";
  */
 const NUDGE_DURATION_MS = 20_000;
 const NUDGE_SELECTOR = ".account-nudge";
-
-/**
- * Reading `window.localStorage` can itself throw - some privacy modes make the
- * property access fail, not just the read - so even obtaining it is guarded.
- * These live here rather than in the rules module so that module never touches
- * `window` at all and runs anywhere.
- */
-function browserStorage(kind: "local" | "session"): IdStorage | undefined {
-  try {
-    return kind === "local" ? window.localStorage : window.sessionStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 export interface UseAccountNudgeInput extends GameFinish {
   gameId: string;
