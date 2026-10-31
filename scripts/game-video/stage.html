@@ -929,15 +929,17 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: calc(var(--board) * 0.02);
-        padding: calc(var(--board) * 0.05) calc(var(--board) * 0.04);
+        /* Compact, so the call to action's badge (below) adds no height
+           that pushes the ending's bar off the board (2026-10-31). */
+        gap: calc(var(--board) * 0.012);
+        padding: calc(var(--board) * 0.035) calc(var(--board) * 0.04);
         border-radius: 26px;
         background: rgba(18, 26, 46, 0.94);
         border: 2px solid rgba(148, 163, 184, 0.16);
         box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
       }
       #ggCard .gg {
-        font-size: calc(var(--board) * 0.2);
+        font-size: calc(var(--board) * 0.16);
         line-height: 1;
       }
       #ggCard .gg span {
@@ -978,18 +980,30 @@
         color: #cbd5e1;
         letter-spacing: 0.02em;
       }
+      /*
+        The call to action as the strip's badge, bigger, and it pops as the
+        card lands (Nil, 2026-10-31: "make it pop at the end"; its scale and
+        glow are set per frame in the gg ending). A call to action too long
+        for one line at this size takes two balanced lines, not a smaller
+        size: on one line it shrank to the old size (measured, 2026-10-31).
+      */
       #ggCard .cta {
-        margin-top: 2%;
+        margin-top: 1%;
         max-width: 100%;
-        white-space: nowrap;
-        overflow: hidden;
-        font-size: calc(var(--board) * 0.055);
+        box-sizing: border-box;
+        text-align: center;
+        text-wrap: balance;
+        line-height: 1.15;
+        padding: 0.22em 0.8em;
+        border-radius: 0.7em;
+        background: linear-gradient(180deg, #ffb24d, #ff7a1a);
+        color: #0b0f1c;
+        font-size: calc(var(--board) * 0.045);
         font-weight: 900;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.04em;
+        box-shadow: 0 0 calc(var(--board) * 0.03) rgba(255, 140, 66, 0.5);
       }
-      #ggCard .cta .dot {
-        color: #ff8c42;
-      }
+
       #koPawn {
         position: absolute;
         left: 0;
@@ -1121,21 +1135,25 @@
         color: #94a3b8;
       }
       /*
-        The site as a badge: dark on white, so a phone reads it at a glance
-        for the whole video (Nil, 2026-10-30: "url needs to be more
-        visible"; it was small light grey). __fitWallz holds the strip,
-        badge included, to STRIP_AREA.
+        The call to action as a badge, so a phone reads it at a glance for
+        the whole video (Nil, 2026-10-30: "url needs to be more visible").
+        Nil, 2026-10-31: "the CTA is a bit too close to the text above. and
+        can be bigger i think or more interesting colors": more room under
+        the players' row, a bigger badge, the site's orange with a glow.
+        __fitWallz holds the strip, badge included, to STRIP_AREA.
       */
       #strip .site {
-        margin-top: 0.3em;
-        padding: 0.12em 0.7em;
+        margin-top: 0.8em;
+        padding: 0.18em 0.85em;
         border-radius: 999px;
-        background: #f8fafc;
+        background: linear-gradient(180deg, #ffb24d, #ff7a1a);
         color: #0b0f1c;
-        font-size: 0.86em;
+        font-size: 1em;
         font-weight: 900;
         letter-spacing: 0.04em;
-        box-shadow: 0 0.15em 0.6em rgba(0, 0, 0, 0.45);
+        box-shadow:
+          0 0 0.7em rgba(255, 140, 66, 0.5),
+          0 0.15em 0.6em rgba(0, 0, 0, 0.45);
       }
 
       /* ---------- persistent branding ---------- */
@@ -3492,6 +3510,17 @@
             $("ggHow").textContent = e.how;
             fitName($("ggName"));
             fitName($("ggCta"));
+            // The call to action pops as the card lands: it swells and
+            // glows once, and is at rest before the ending's last frame,
+            // which the hold shows (Nil, 2026-10-31: "make it pop").
+            const pop = Math.sin(Math.PI * span(t, 0.62, 0.93));
+            $("ggCta").style.transform = "scale(" + (1 + 0.2 * pop) + ")";
+            $("ggCta").style.boxShadow =
+              "0 0 " +
+              (0.3 + 0.9 * pop) +
+              "em rgba(255, 140, 66, " +
+              (0.5 + 0.4 * pop) +
+              ")";
           }
         }
 
