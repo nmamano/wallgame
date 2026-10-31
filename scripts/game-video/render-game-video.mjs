@@ -1978,36 +1978,25 @@ log(
 );
 
 /*
-  The daily look draws the walls that were on the board at the start in a
-  muted grey (audit item 7): with Red vs Blue the only story, a third colour
-  is noise. The site paints them SITE_START_WALL (frontend board.tsx,
-  NEUTRAL_WALL_COLOR) inline - a wall's background, a pillar's fill - so a
-  stylesheet rule with !important repaints them on the capture page only;
-  the site does not change. The rule is page-wide (brown off the board turns
-  grey too), but only the board clip goes into the video. One capture serves
-  every style of a run, so with --style current,daily the current look gets
-  the grey walls too.
+  The walls that were on the board at the start are a muted grey (audit
+  item 7): with Red vs Blue the only story, a third colour is noise. The
+  site paints them START_WALL itself since a63de775 (frontend board.tsx,
+  NEUTRAL_WALL_COLOR, on wallgame.io 2026-10-31) - a wall's background, a
+  pillar's fill - so the capture keeps them as they are; before, it
+  repainted the site's brown #92400e. A capture of a game with start walls
+  stops if nothing on the board is that grey: the site changed them again.
 */
-const SITE_START_WALL = "#92400e";
-const DAILY_START_WALL = "#64748b";
-/**
- * On the board, count the parts painted the site's start-wall colour and
- * the parts painted the daily grey.
- */
-const countWallPaint = () =>
+const START_WALL = "#64748b";
+/** On the board, count the parts painted START_WALL. */
+const countStartWallPaint = () =>
   game.evaluate(
-    ([c, site, grey]) => {
-      const norm = (color) => {
-        const d = document.createElement("div");
-        d.style.color = color;
-        document.body.append(d);
-        const v = getComputedStyle(d).color;
-        d.remove();
-        return v;
-      };
-      const [siteRgb, greyRgb] = [norm(site), norm(grey)];
-      let siteParts = 0;
-      let greyParts = 0;
+    ([c, grey]) => {
+      const d = document.createElement("div");
+      d.style.color = grey;
+      document.body.append(d);
+      const greyRgb = getComputedStyle(d).color;
+      d.remove();
+      let parts = 0;
       for (const el of document.querySelectorAll("body *")) {
         const r = el.getBoundingClientRect();
         const x = r.x + r.width / 2;
@@ -2015,37 +2004,61 @@ const countWallPaint = () =>
         if (x < c.x || x > c.x + c.width || y < c.y || y > c.y + c.height)
           continue;
         const cs = getComputedStyle(el);
-        const paints = [cs.backgroundColor, cs.fill];
-        if (paints.includes(siteRgb)) siteParts += 1;
-        if (paints.includes(greyRgb)) greyParts += 1;
+        if ([cs.backgroundColor, cs.fill].includes(greyRgb)) parts += 1;
       }
-      return { site: siteParts, grey: greyParts };
+      return parts;
     },
-    [clip, SITE_START_WALL, DAILY_START_WALL],
+    [clip, START_WALL],
   );
+/*
+  Since a63de775 (on wallgame.io 2026-10-31) the site draws each player's
+  shortest walk as dots on the start position (board.tsx renderWalks). The
+  video draws its own (edl.mjs introPaths), so the capture hides the site's
+  in every style, as the captures before it had none. Their svg is the only
+  one on the board whose circles have the dark rim #0b0f1c.
+*/
+const SITE_WALK_DOTS = 'svg:has(> g > circle[stroke="#0b0f1c"])';
+if (!cached) {
+  await game.addStyleTag({
+    content: `${SITE_WALK_DOTS} { display: none !important; }`,
+  });
+}
+/**
+ * At the start position: the site's walk dots are on the page and none
+ * shows. A variant with a hunt draws them, so none found there stops the
+ * capture: the site changed how it draws them.
+ */
+const checkWalkDotsHidden = async () => {
+  const dots = await game.evaluate(
+    (sel) =>
+      [...document.querySelectorAll(sel)].map(
+        (el) => getComputedStyle(el).display,
+      ),
+    SITE_WALK_DOTS,
+  );
+  if (huntsFor(replay.state.config.variant).length > 0 && dots.length === 0) {
+    throw new Error(
+      `the start position shows no site walk dots (${SITE_WALK_DOTS}): the site changed how it draws them`,
+    );
+  }
+  const shown = dots.filter((d) => d !== "none").length;
+  if (shown > 0) {
+    throw new Error(
+      `${shown} of the site's ${dots.length} walk dot layers still show at the start position`,
+    );
+  }
+};
 // A cached capture was taken with them (CAPTURE_INPUTS.greyStartWalls).
 if (!cached && STYLE_NAMES.includes("daily")) {
   // Every position shows the start walls: no move removes one.
   const startWalls = replay.state.initialState.walls.length;
-  const before = await countWallPaint();
-  if (startWalls > 0 && before.site === 0) {
+  const grey = await countStartWallPaint();
+  if (startWalls > 0 && grey === 0) {
     throw new Error(
-      `the game has ${startWalls} start walls, but nothing on the board is ${SITE_START_WALL}: the site changed how it paints them`,
+      `the game has ${startWalls} start walls, but nothing on the board is ${START_WALL}: the site changed how it paints them`,
     );
   }
-  await game.addStyleTag({
-    content:
-      // The browser writes an inline colour as rgb(r, g, b).
-      `[style*="background-color: rgb(${[1, 3, 5].map((i) => parseInt(SITE_START_WALL.slice(i, i + 2), 16)).join(", ")})"] { background-color: ${DAILY_START_WALL} !important; }\n` +
-      `[fill="${SITE_START_WALL}" i] { fill: ${DAILY_START_WALL} !important; }`,
-  });
-  const after = await countWallPaint();
-  if (after.site > 0 || after.grey < before.grey + before.site) {
-    throw new Error(
-      `the start walls did not all turn grey: ${before.site} parts were ${SITE_START_WALL}, and after the repaint ${after.site} still are, ${after.grey} are grey (${before.grey} were before)`,
-    );
-  }
-  log(`start walls: ${startWalls}, ${before.site} parts repainted grey`);
+  log(`start walls: ${startWalls}, ${grey} board parts ${START_WALL}`);
   // The site's glow on the last placed wall (board.tsx, a box-shadow in
   // --wall-highlight-glow) is off (CAPTURE_INPUTS.siteWallGlow). If the
   // site renames the variable, the old one is no longer set: the render
@@ -2152,6 +2165,7 @@ const captureResult = cached
           );
           return button?.disabled === true;
         });
+        await checkWalkDotsHidden();
       },
       selectPly: async (ply) => {
         const button = moveButtons.nth(ply);
