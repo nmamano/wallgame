@@ -352,6 +352,38 @@ describe("post(itemId)", () => {
     expect(w2.logged).toEqual(["instagram-story"]);
   });
 
+  test("TikTok posts at the 09:00 PT slot only: at another slot or slot --now it is not applicable, never retried", async () => {
+    const why = "not in this slot; TikTok posts at 09:00 PT only";
+    const w = world(["x", "tiktok"]);
+    const r = await w.post(SLOT); // 09:00 PDT
+    expect(r).toMatchObject({ kind: "posted", platforms: ["x", "tiktok"] });
+    expect(w.logged).toEqual(["x", "tiktok"]);
+
+    for (const slot of [
+      { slotAt: "2026-10-29T22:00:00.000Z" }, // 15:00 PDT
+      { ...SLOT, firedBy: "Nil" }, // slot --now: no slot time
+    ]) {
+      const w2 = world(["x", "tiktok"]);
+      w2.replies.x = () => ({
+        ok: false,
+        uncertain: false,
+        mode: "live",
+        at: "t",
+        error: "x: HTTP 503",
+      });
+      expect(await w2.post(slot)).toMatchObject({
+        kind: "post-failed",
+        platforms: ["x"],
+        notApplicable: { tiktok: why },
+      });
+      expect(w2.get().posts).not.toHaveProperty("tiktok");
+      // A retry of another failure never tries TikTok.
+      delete w2.replies.x;
+      expect((await w2.retry("v-2026-10-28-1")).kind).toBe("posted");
+      expect(w2.logged).toEqual(["x"]);
+    }
+  });
+
   test("a video outside the Story limits posts no Story: not applicable, not a failure, never retried", async () => {
     const w = world(["instagram", "instagram-story"]);
     w.get().render.video.durationSeconds = 72;

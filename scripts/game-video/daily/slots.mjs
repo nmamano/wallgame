@@ -33,6 +33,48 @@ export const SLOT_ZONE = "America/Los_Angeles";
 export const SLOTS = ["03:00", "09:00", "15:00", "21:00"];
 
 /**
+ * The SLOTS entry that a slot instant is, or null for an instant at no slot
+ * time (a slot fired by hand).
+ * @param {string} slotAt
+ */
+export const slotTimeOf = (slotAt) => {
+  const w = wallClock(Date.parse(slotAt));
+  return SLOTS.find((t) => t === `${w.hour}:${w.minute}`) ?? null;
+};
+
+/**
+ * The platforms that post at some SLOTS entries only (Nil through Growth,
+ * ask 90e25f57, 2026-10-31: "TikTok once a day (09:00 PT slot only)"). At
+ * the other slots, and at a slot fired by hand (slot --now), they leave the
+ * slot's platform set as not applicable: no failure and no retry. When the
+ * 09:00 slot is skipped, TikTok gets nothing that day. Each time must be a
+ * SLOTS entry: a change of SLOTS that drops it fails here at load, never
+ * silently stops the platform.
+ */
+export const PLATFORM_SLOTS = {
+  tiktok: { name: "TikTok", times: ["09:00"] },
+};
+for (const [platform, { times }] of Object.entries(PLATFORM_SLOTS)) {
+  const stray = times.filter((t) => !SLOTS.includes(t));
+  if (stray.length) {
+    throw new Error(`${platform} posts at ${stray.join(", ")}, not in SLOTS`);
+  }
+}
+
+/**
+ * Why `platform` does not post at this slot (PLATFORM_SLOTS), or null. A
+ * late slot keeps its own slot time, so a late 09:00 slot still posts.
+ * @param {string} platform
+ * @param {{ slotAt: string, firedBy?: string }} slot
+ */
+export const notInSlot = (platform, { slotAt, firedBy }) => {
+  const only = PLATFORM_SLOTS[platform];
+  if (!only) return null;
+  if (!firedBy && only.times.includes(slotTimeOf(slotAt))) return null;
+  return `not in this slot; ${only.name} posts at ${only.times.join(", ")} PT only`;
+};
+
+/**
  * Whether a state's recorded slot list is SLOTS. It compares the times
  * only: a change of SLOT_ZONE or of the gap rule does not start the timer
  * again, so such a change must reset the recorded list too (VR1, review 98).

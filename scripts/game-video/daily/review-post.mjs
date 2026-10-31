@@ -10,9 +10,10 @@
  *   and that set is fixed on the item (posting.platforms). A platform that
  *   goes live later never gets an old item (Wall Game PM, 2026-10-28).
  * - A platform that does not apply to the video (an Instagram Story of a
- *   video over 60 s) leaves the set at slot time, with its reason in
- *   posting.notApplicable: no failure and no retry (Wall Game Director and
- *   Wall Game Growth, 2026-10-29).
+ *   video over 60 s) or does not post at this slot (TikTok outside 09:00
+ *   PT, slots.mjs PLATFORM_SLOTS) leaves the set at slot time, with its
+ *   reason in posting.notApplicable: no failure and no retry (Wall Game
+ *   Director and Wall Game Growth, 2026-10-29 and 2026-10-31).
  * - A retry is by hand (Growth): it posts only the platforms of the set that
  *   did not post. A platform whose last attempt may have made the post
  *   (pending: the app stopped during its final request; uncertain: no clear
@@ -27,6 +28,7 @@ import { StepRefused, blockedMusic } from "./store.mjs";
 import { copySha256 } from "./copy.mjs";
 import { sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
+import { notInSlot } from "./slots.mjs";
 
 /**
  * Why a platform does not apply to an item's video, or null. Nil wants every
@@ -42,11 +44,14 @@ const NOT_APPLICABLE = {
     }),
 };
 
-/** {platform: reason} of the platforms that do not apply to the video. */
-const notApplicableTo = (item, video, platforms) =>
+/**
+ * {platform: reason} of the platforms that do not apply to the video or do
+ * not post at this slot (slots.mjs PLATFORM_SLOTS).
+ */
+const notApplicableTo = (item, video, platforms, slot) =>
   Object.fromEntries(
     platforms
-      .map((p) => [p, NOT_APPLICABLE[p]?.(item, video) ?? null])
+      .map((p) => [p, NOT_APPLICABLE[p]?.(item, video) ?? notInSlot(p, slot)])
       .filter(([, why]) => why),
   );
 
@@ -214,7 +219,9 @@ export const createItemPoster = ({
             problem = video
               ? contentProblem(i, video)
               : "the approved video file cannot be read";
-            const skipped = problem ? {} : notApplicableTo(i, video, platforms);
+            const skipped = problem
+              ? {}
+              : notApplicableTo(i, video, platforms, { slotAt, firedBy });
             i.posts ??= {};
             i.posting = {
               slotAt,

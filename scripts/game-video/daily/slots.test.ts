@@ -10,6 +10,9 @@ import {
   gapFrom,
   heldWhy,
   nextSlot,
+  notInSlot,
+  PLATFORM_SLOTS,
+  slotTimeOf,
   pacificDay,
   pacificLabel,
   SLOTS,
@@ -390,5 +393,57 @@ describe("nextSlot", () => {
     expect(
       nextSlot({ lastSlotAt: null, lastPostAt: null }, OCT29_0900 - HOUR, 1),
     ).toMatchObject({ slotAt: iso(OCT29_0900), willPost: true, why: null });
+  });
+});
+
+describe("platforms that post at some slots only", () => {
+  const why = "not in this slot; TikTok posts at 09:00 PT only";
+  const slotAt = (day: string, hhmm: string) =>
+    new Date(zonedInstant(day, hhmm)).toISOString();
+  // PDT, the day clocks go back, PST, and the day clocks go forward.
+  const DAYS = ["2026-10-31", "2026-11-01", "2026-11-02", "2027-03-14"];
+
+  test("each platform's times are SLOTS entries", () => {
+    for (const { times } of Object.values(PLATFORM_SLOTS)) {
+      for (const t of times) expect(SLOTS).toContain(t);
+    }
+  });
+
+  test("a slot instant is its SLOTS entry, across daylight saving time", () => {
+    for (const day of DAYS) {
+      for (const t of SLOTS) expect(slotTimeOf(slotAt(day, t))).toBe(t);
+    }
+    expect(slotTimeOf("2026-10-31T16:07:00.000Z")).toBe(null);
+    // 09:00 PDT and 09:00 PST are different UTC hours.
+    expect(slotAt("2026-10-31", "09:00")).toBe("2026-10-31T16:00:00.000Z");
+    expect(slotAt("2026-11-01", "09:00")).toBe("2026-11-01T17:00:00.000Z");
+    expect(slotAt("2027-03-14", "09:00")).toBe("2027-03-14T16:00:00.000Z");
+  });
+
+  test("TikTok posts at 09:00 PT only, on every day incl. the DST days", () => {
+    for (const day of DAYS) {
+      for (const t of SLOTS) {
+        expect(notInSlot("tiktok", { slotAt: slotAt(day, t) })).toBe(
+          t === "09:00" ? null : why,
+        );
+      }
+    }
+  });
+
+  test("TikTok leaves a slot fired by hand, even at 09:00", () => {
+    expect(
+      notInSlot("tiktok", {
+        slotAt: slotAt("2026-10-31", "09:00"),
+        firedBy: "Nil",
+      }),
+    ).toBe(why);
+  });
+
+  test("other platforms post at every slot", () => {
+    for (const p of ["x", "bluesky", "youtube", "instagram", "facebook"]) {
+      for (const t of SLOTS) {
+        expect(notInSlot(p, { slotAt: slotAt("2026-11-01", t) })).toBe(null);
+      }
+    }
   });
 });
