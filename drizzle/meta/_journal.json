@@ -211,6 +211,13 @@
       "when": 1793392838680,
       "tag": "0029_game_clocks",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793488584361,
+      "tag": "0030_bot_move_refusals",
+      "breakpoints": true
     }
   ]
 }

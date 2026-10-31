@@ -63,6 +63,7 @@ let db: typeof import("../../server/db").db;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let globalRatingsTable: typeof import("../../server/db/schema/global-ratings").globalRatingsTable;
+let botMoveRefusalsTable: typeof import("../../server/db/schema/bot-move-refusals").botMoveRefusalsTable;
 
 async function importServerModules() {
   const serverModule = await import("../../server/app");
@@ -73,6 +74,9 @@ async function importServerModules() {
   userAuthTable = users.userAuthTable;
   globalRatingsTable = (await import("../../server/db/schema/global-ratings"))
     .globalRatingsTable;
+  botMoveRefusalsTable = (
+    await import("../../server/db/schema/bot-move-refusals")
+  ).botMoveRefusalsTable;
 }
 
 function startTestServer() {
@@ -1468,4 +1472,94 @@ describe("custom bot WebSocket integration V3", () => {
       botSocket?.close();
     }
   }, 60_000);
+
+  /**
+   * A bot move the game refuses must leave a record (board task 4073422e).
+   * Before, the parse or the rules threw inside executeBotTurnV3, every caller
+   * dropped the rejection, and nothing at all was written. The record keeps the
+   * exact wire string, which game_details.moves cannot: it is re-serialised
+   * from the applied state. The game is NOT ended - that is a separate question.
+   */
+  it.each([
+    ["does not parse", "Zz99"],
+    ["leaves the board", "C`3"],
+  ])(
+    "records a bot move the game refuses because it %s",
+    async (_label, wireMove) => {
+      const clientId = `test-client-refused-${wireMove.length}`;
+      const botId = "refused-move-bot";
+      const compositeId = `${clientId}:${botId}`;
+      let botSocket: BotSocket | null = null;
+      let humanSocket: HumanSocket | null = null;
+
+      try {
+        botSocket = await openBotSocket();
+        botSocket.sendAttach(clientId, [
+          createTestBotConfig(botId, "Refused Move Bot"),
+        ]);
+        await botSocket.waitForMessage("attached");
+        await waitForBotRegistration(compositeId, { variant: "standard" });
+
+        // The human is player 2, so the bot moves first.
+        const { gameId, socketToken } = await createGameVsBot(
+          "host-refused-move",
+          compositeId,
+          {
+            timeControl: {
+              initialSeconds: 600,
+              incrementSeconds: 0,
+              preset: "rapid",
+            },
+            variant: "standard",
+            randomStart: false,
+            rated: false,
+            boardWidth: 3,
+            boardHeight: 3,
+            variantConfig: buildStandardInitialState(3, 3),
+          },
+          false,
+        );
+        humanSocket = await openHumanSocket(
+          "host-refused-move",
+          gameId,
+          socketToken,
+        );
+
+        const start = await botSocket.waitForMessage("start_game_session");
+        botSocket.sendGameSessionStarted(start.bgsId, true);
+        const evaluate = await botSocket.waitForMessage("evaluate_position");
+        expect(evaluate.expectedPly).toBe(0);
+        botSocket.sendEvaluateResponse(start.bgsId, 0, wireMove, 0);
+
+        const { eq } = await import("drizzle-orm");
+        const readRows = () =>
+          db
+            .select()
+            .from(botMoveRefusalsTable)
+            .where(eq(botMoveRefusalsTable.gameId, gameId));
+        let rows = await readRows();
+        for (let i = 0; i < 40 && rows.length === 0; i++) {
+          await sleep(50);
+          rows = await readRows();
+        }
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          gameId,
+          botCompositeId: compositeId,
+          ply: 0,
+          wireMove,
+        });
+        expect(rows[0].reason.length).toBeGreaterThan(0);
+
+        const { getSession } = await import("../../server/games/store");
+        expect(getSession(gameId).gameState.status).toBe("playing");
+        expect(getSession(gameId).gameState.history).toHaveLength(0);
+      } finally {
+        humanSocket?.close();
+        botSocket?.close();
+      }
+    },
+    60_000,
+  );
 });

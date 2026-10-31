@@ -40,11 +40,13 @@ import {
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
+import { recordBotMoveRefusal } from "../games/bot-move-refusals";
 import { resolveOptionalUser, type Env as KindeEnv } from "../kinde";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import { persistThenBroadcastFinish } from "../games/finish-sequence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
+import type { GameState } from "../../shared/domain/game-state";
 import type {
   InboundClientMessage,
   InboundActionRequestMessage,
@@ -421,14 +423,30 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
   const bestMoveNotation = latestEntry.bestMove;
   const totalRows = session.config.boardHeight;
 
-  // Parse the move and apply to game state
-  const move = moveFromStandardNotation(bestMoveNotation, totalRows);
-  const newState = applyPlayerMove({
-    id: sessionId,
-    playerId: activePlayer.playerId,
-    move,
-    timestamp: Date.now(),
-  });
+  // Parse the move and apply to game state. Both steps refuse a move by
+  // throwing, and nothing above us catches it (every caller is `void`), so a
+  // refused bot move used to vanish as an unhandled rejection. Record it.
+  // Whether a refused move should also end the game is a separate product
+  // question; the turn is left unplayed, as it was before.
+  let newState: GameState;
+  try {
+    const move = moveFromStandardNotation(bestMoveNotation, totalRows);
+    newState = applyPlayerMove({
+      id: sessionId,
+      playerId: activePlayer.playerId,
+      move,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    await recordBotMoveRefusal({
+      gameId: sessionId,
+      botCompositeId: activePlayer.botCompositeId,
+      ply: bgs.currentPly,
+      wireMove: bestMoveNotation,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
 
   console.info("[ws] bot move applied", {
     sessionId,
