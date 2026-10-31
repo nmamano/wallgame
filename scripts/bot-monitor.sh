@@ -24,6 +24,10 @@
 # instead of ~2.6s). It alerts on the change only: slow (2 checks in a row),
 # still slow after SLOW_REMIND_RUNS checks, normal again (only after a "slow").
 #
+# It also alarms when a bot engine process crashes, so that an agent
+# investigates it (task 8a81a189). Each crash is alerted once: a state file
+# beside STATE_FILE remembers the log position already read.
+#
 # Install as a systemd user timer: see scripts/wallgame-bot-monitor.{service,timer}
 set -uo pipefail
 
@@ -50,6 +54,10 @@ API_BASE="${WALLGAME_API_BASE:-https://wallgame.io}"
 # the monitor can restart the bot over ssh without a sudoers rule.
 BOT_HOST="${WALLGAME_BOT_HOST:-}"
 BOT_RESTART_CMD="${WALLGAME_BOT_RESTART_CMD:-systemctl --user restart wallgame-bot}"
+# The bot client's log on BOT_HOST, relative to the login directory.
+BOT_LOG="${WALLGAME_BOT_LOG:-logs/bot-client-transformer.log}"
+# The ssh command (without the host). Tests replace it with a local stand-in.
+read -r -a BOT_SSH <<< "${WALLGAME_MONITOR_SSH:-ssh -o BatchMode=yes -o ConnectTimeout=10}"
 
 STATE_FILE="${WALLGAME_MONITOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/wallgame-bot-monitor.state}"
 
@@ -72,11 +80,14 @@ BOTS=(
 # --- Helpers -----------------------------------------------------------------
 
 send_discord() {
-  local msg="$1"
+  # Discord refuses a message longer than 2000 characters.
+  local msg="${1:0:1900}"
   send_isomux "$msg"
   if [ -z "$WEBHOOK" ]; then echo "[warn] no webhook; would send: $msg"; return; fi
-  curl -s -m 15 -H "Content-Type: application/json" \
-    -d "{\"content\":\"$msg\"}" "$WEBHOOK" >/dev/null
+  # jq builds the body: an alert can now quote engine output, and a quote or a
+  # backslash in it must not break the JSON.
+  jq -cn --arg content "$msg" '{content: $content}' |
+    curl -s -m 15 -H "Content-Type: application/json" -d @- "$WEBHOOK" >/dev/null
 }
 
 # Every alert also wakes an agent through an Isomux webhook (HMAC-SHA256 over
@@ -202,8 +213,7 @@ else
     # every few minutes indefinitely.
     since_restart=$(( now_epoch - last_restart ))
     if [ -n "$BOT_HOST" ] && [ "$since_restart" -ge "$RESTART_COOLDOWN" ]; then
-      if ssh -o BatchMode=yes -o ConnectTimeout=10 \
-             "$BOT_HOST" "$BOT_RESTART_CMD" >/dev/null 2>&1; then
+      if "${BOT_SSH[@]}" "$BOT_HOST" "$BOT_RESTART_CMD" >/dev/null 2>&1; then
         send_discord "🔧 Restarted the bot client. The next check will confirm whether it worked."
       else
         # ssh failing usually means the bot host itself is down, which is a
@@ -214,6 +224,52 @@ else
     fi
   fi
 fi
+
+# --- Engine crashes ---------------------------------------------------------------
+# The bot client logs "Bot <id> will NOT be advertised: <reason>" when it
+# withdraws a bot - an engine that exited, at startup or in a game - followed by
+# the engine's last stderr lines ("<id> said: ..."). Read only what the log
+# gained since the last run, so each crash is alerted once.
+CRASH_OFFSET_FILE="$STATE_FILE.crash-offset"
+
+# Runs on BOT_HOST with the offset and log path as arguments. Prints the log
+# size on line 1, then the last withdrawal of each of up to 5 bots and the last
+# 3 engine lines. The output stays under 1 KB:
+# larger ssh output from the 4090 desktop can stall. The client's startup line
+# carries --official-token in the clear; nothing selected here should, but it
+# is redacted anyway.
+# shellcheck disable=SC2016
+CRASH_SCAN='off="$1"; log="$2"
+size="$(stat -c %s "$log")" || exit 1
+[ "$off" -le "$size" ] 2>/dev/null || off=0
+echo "$size"
+found="$(tail -c +"$((off + 1))" "$log" |
+  grep -aE "will NOT be advertised: | said: " |
+  sed -E "s/(--official-token[= ])[^ ]+/\1<redacted>/g; s/^\[[^]]*\] \[[A-Z]+\] *//" |
+  cut -c1-110)"
+grep "will NOT be advertised: " <<< "$found" | tail -n 5
+grep " said: " <<< "$found" | tail -n 3'
+
+check_crashes() {
+  [ -n "$BOT_HOST" ] || return
+  local off out size lines
+  off="$(cat "$CRASH_OFFSET_FILE" 2>/dev/null)"
+  out="$("${BOT_SSH[@]}" "$BOT_HOST" "bash -s -- ${off:-0} $BOT_LOG" <<< "$CRASH_SCAN" 2>/dev/null)" || return
+  size="$(head -n 1 <<< "$out")"
+  [[ "$size" =~ ^[0-9]+$ ]] || return
+  echo "$size" > "$CRASH_OFFSET_FILE"
+  # No offset yet: start from the end of the log; history is not news.
+  [ -n "$off" ] || return
+  lines="$(tail -n +2 <<< "$out")"
+  grep -q "will NOT be advertised: " <<< "$lines" || return
+  send_discord "💥 **A bot engine crashed** (seen ${now}). The bot client withdrew it:
+\`\`\`
+${lines:0:900}
+\`\`\`
+Any game it was playing was forfeited. Investigate the crash."
+}
+
+check_crashes
 
 printf '%s\n%s\n%s\n%s\n' "$state" "$fails" "$last_restart" "$slow_runs" > "$STATE_FILE"
 echo "${now} reachable=${reachable} missing=[${missing# }] prev=${prev} -> state=${state} fails=${fails} check=${check_s}s slow_runs=${slow_runs}"
