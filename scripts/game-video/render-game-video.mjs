@@ -6788,19 +6788,19 @@ const renderStyle = async (styleName) => {
           v-2026-10-30-8 it was fully shown 1.85 s, and "GG Bot wins by
           resignation" needs 2.7 s; on a resignation it is the hook's
           payoff). The card's last line, the call to action, is read too
-          (VR1, review 115 N1; Nil: it must be read). With a bar, the
-          viewer reads the bar first, so the card's time comes after it.
+          (VR1, review 115 N1; Nil: it must be read). With a bar, both
+          are on screen together, and the ending holds for the longer of
+          the two.
         */
         const cardMore =
           style.ending === "gg"
             ? Math.ceil(
                 Math.max(
                   0,
-                  barRead +
-                    readingSeconds(
-                      {},
-                      `GG ${dailyName(winnerId)} ${how} ${EDL?.cta ?? DEFAULT_CTA}`,
-                    ) -
+                  readingSeconds(
+                    {},
+                    `GG ${dailyName(winnerId)} ${how} ${EDL?.cta ?? DEFAULT_CTA}`,
+                  ) -
                     (timing.seconds - timing.cardIn + timing.hold),
                 ) * FPS,
               ) / FPS
