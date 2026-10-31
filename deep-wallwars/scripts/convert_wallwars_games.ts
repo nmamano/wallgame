@@ -18,6 +18,7 @@
 //     ~/nil/wallwars_games/games_raw.jsonl ~/nil/wallwars_games/games_converted.jsonl
 
 import type { Action, Move } from "../../shared/domain/game-types";
+import { requirePawnCell } from "../../shared/domain/pawns";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import {
   importEngineGame,
@@ -142,8 +143,8 @@ function convert(raw: RawGame): ConvertedGame {
     // Final cat-to-goal graph distances (classic goal = player's own home).
     const st = imported.finalState;
     finalDistsReplayed = [
-      st.grid.distance(st.pawns[1].cat, st.goalCell(1)),
-      st.grid.distance(st.pawns[2].cat, st.goalCell(2)),
+      st.grid.distance(requirePawnCell(st.pawns, 1, "cat"), st.goalCell(1)),
+      st.grid.distance(requirePawnCell(st.pawns, 2, "cat"), st.goalCell(2)),
     ];
   } catch (e) {
     replayError = e instanceof Error ? e.message : String(e);

@@ -27,6 +27,7 @@
 
 import type { Action, Cell, Move, PlayerId } from "../../shared/domain/game-types";
 import { importEngineGame } from "../../frontend/src/lib/engine-game-import";
+import { requirePawnCell } from "../../shared/domain/pawns";
 
 /** Engine kRowLabels: index = internal row, value = printed label. */
 const ROW_LABELS = "123456789X";
@@ -266,7 +267,10 @@ async function main() {
     };
     const catPos: [Cell, Cell] =
       prev >= 0
-        ? hist[prev].catPos
+        ? [
+            requirePawnCell(hist[prev].pawns, 1, "cat"),
+            requirePawnCell(hist[prev].pawns, 2, "cat"),
+          ]
         : [initial.pawns.p1.cat, initial.pawns.p2.cat];
     const walls = prev >= 0 ? hist[prev].grid.getWalls() : initial.walls;
 

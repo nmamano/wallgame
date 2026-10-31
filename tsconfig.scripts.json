@@ -14,6 +14,11 @@
 // there is 0 errors; one project with DOM for everything is 1, and the only way
 // to silence it is a cast at a line that is already correct.
 //
+// deep-wallwars/scripts/ is in this project too: its .ts files are the same
+// kind of terminal Bun tooling (puzzle builders, training-state generators, the
+// head-to-head benchmark, the policy-Elo window). Before 2026-10-31 they were in
+// no project at all, so nothing type-checked them.
+//
 // scripts/**/*.mjs is not listed. Those are plain-JS harnesses with no types
 // to check; eslint covers them for syntax and unused bindings.
 //
@@ -24,6 +29,10 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo"
   },
-  "include": ["scripts/**/*.ts", "scripts/**/*.mts"],
+  "include": [
+    "scripts/**/*.ts",
+    "scripts/**/*.mts",
+    "deep-wallwars/scripts/**/*.ts"
+  ],
   "exclude": ["scripts/browser-harness/**"]
 }
