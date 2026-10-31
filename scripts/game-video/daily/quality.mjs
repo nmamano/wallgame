@@ -16,7 +16,9 @@
  *   captionLines
  *              each caption beat (the caption and the payoff) is one line as
  *              the page wraps it (stage.html __captionText): a two-line beat
- *              makes the board smaller for the whole video (DIRECTOR.md,
+ *              makes the board smaller for the whole video, because the
+ *              board gets the height the caption leaves and the caption
+ *              keeps its taller beat's height (stage.html __fitWallz;
  *              measured 2026-10-26: 720 px against 785 px).
  *   silence    the gaps over the silence rules in the final track, as the
  *              render measured it (mix-loudness.mjs). A report for the
