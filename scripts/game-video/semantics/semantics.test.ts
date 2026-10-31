@@ -116,9 +116,11 @@ describe("labelGame", () => {
     const losing = labels([{ w1: [4, 2], w2: [8, 8], wc: [0.4, 0.3] }]);
     expect(losing.plies[0].label).toBe("threat");
     expect(losing.plies[0].strength).toBe(0.2);
+    expect(losing.plies[0].tags).toContain("engine-losing");
     const real = labels([{ w1: [4, 2], w2: [8, 8], wc: [0.5, 0.8] }]);
     expect(real.plies[0].label).toBe("threat");
     expect(real.plies[0].focus).toMatchObject({ before: 4, after: 2 });
+    expect(real.plies[0].tags).not.toContain("engine-losing");
     const far = labels([{ w1: [5, 3], w2: [8, 8], wc: [0.5, 0.8] }]);
     expect(far.plies[0].label).toBe("quiet");
   });

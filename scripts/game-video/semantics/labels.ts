@@ -41,7 +41,17 @@ export const LABELS = [
 /** In priority order: when several fit a move, the first is its label. */
 export type Label = (typeof LABELS)[number];
 
-export type Tag = Label | "missed-wall" | "missed-punish" | "kept-gain";
+/**
+ * engine-losing: a threat after which the engine gives the mover under 50%
+ * (review 114 N1). The danger is real on the board, but the move is no
+ * feat: a meme may show the defender's fear, never cheer the threat.
+ */
+export type Tag =
+  | Label
+  | "missed-wall"
+  | "missed-punish"
+  | "kept-gain"
+  | "engine-losing";
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -283,6 +293,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
         continue;
       threats.set(ply, h);
       fit(ply, "threat", e ? Math.max(0.2, (e.after - 0.5) * 2) : 0.5, h);
+      if (e && e.after < 0.5) tags[ply].push("engine-losing");
     }
 
     // The defender's answer to the threat just before.
