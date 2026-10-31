@@ -445,20 +445,28 @@
         board and as wide as their row: red's share under the red name on
         the left, blue's under the blue name, so the names say whose part
         is whose (Wall Game Director, 2026-10-31: under the steps counter it
-        read as part of the counter). It sits in the middle of the gap
-        between the names and the call to action, out of the flow, so the
-        strip keeps its size. A thin line marks the even split.
+        read as part of the counter). It is out of the flow, so the strip
+        keeps its size; with it, the strip gets the class "eval", and the
+        call to action moves down to make the room for it. Nil, 2026-10-31,
+        the revise of v-2026-10-31-11: "EVal bar is too close to the names
+        and to the CTA. that whole part is too crowded": a clear gap on both
+        sides (more under it, where the badge's glow takes some), and it
+        spans the names, not the pawns. A thin line marks the even split.
       */
       #strip .row {
         position: relative;
       }
+      #strip.eval .site {
+        margin-top: calc(1.3em + 12px);
+        line-height: 1.1;
+      }
       #evalStrip {
         position: absolute;
-        left: 0;
-        right: 0;
-        top: calc(100% + (0.8em - 14px) / 2);
-        height: 14px;
-        border-radius: 7px;
+        left: 1.85em;
+        right: 1.85em;
+        top: calc(100% + 0.55em);
+        height: 12px;
+        border-radius: 6px;
         overflow: hidden;
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
       }
@@ -3050,7 +3058,7 @@
           el.innerHTML =
             "<div>" +
             (o.error
-              ? "ERROR: CAPTURE FAILED"
+              ? esc(o.error.text)
               : "CAPTURE LOADING " + o.percent + "%") +
             '</div><div class="bar"><div class="fill" style="width:' +
             o.percent * (1 - easeOut3(hit)) +
@@ -3377,6 +3385,7 @@
         credit,
         strip,
         cta,
+        evalStrip,
         ending,
         fastForward,
       }) => {
@@ -3471,11 +3480,14 @@
         );
         /*
           The players strip: one gap under the board, as the head row is one
-          gap over it, and not above STRIP_AREA (--strip-area-top). It shrinks from three quarters of the caption size until its line
-          fits STRIP_AREA's width, measured; at its floor, `stripFits` says
+          gap over it, and not above STRIP_AREA (--strip-area-top). It
+          shrinks from three quarters of the caption size until its lines
+          fit STRIP_AREA's width and its bottom STRIP_AREA's
+          (--strip-area-bottom), measured; at its floor, `stripFits` says
           whether it did.
         */
         $("strip").classList.toggle("on", !!strip);
+        $("strip").classList.toggle("eval", !!evalStrip);
         if (strip) {
           for (const [k, p] of [
             ["A", strip.a],
@@ -3488,11 +3500,12 @@
           await Promise.all(
             [$("stripImgA"), $("stripImgB")].map((img) => img.decode()),
           );
-          const areaTop = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue(
-              "--strip-area-top",
-            ),
-          );
+          const areaPx = (name) =>
+            parseFloat(
+              getComputedStyle(document.documentElement).getPropertyValue(name),
+            );
+          const areaTop = areaPx("--strip-area-top");
+          const areaBottom = areaPx("--strip-area-bottom");
           root.setProperty(
             "--strip-top",
             Math.max(r.bottom + gap, areaTop) + "px",
@@ -3502,13 +3515,14 @@
           root.setProperty("--strip-size", stripSize + "px");
           // The players' row and the call to action's badge.
           const lines = [$("strip").querySelector(".row"), $("stripSite")];
-          const tooWide = () =>
-            lines.some((el) => el.scrollWidth > $("strip").clientWidth);
-          while (tooWide() && stripSize > stripFloor) {
+          const tooBig = () =>
+            lines.some((el) => el.scrollWidth > $("strip").clientWidth) ||
+            $("strip").getBoundingClientRect().bottom > areaBottom;
+          while (tooBig() && stripSize > stripFloor) {
             stripSize = Math.max(stripFloor, stripSize - 1);
             root.setProperty("--strip-size", stripSize + "px");
           }
-          stripFits = !tooWide();
+          stripFits = !tooBig();
         }
         return board;
       };

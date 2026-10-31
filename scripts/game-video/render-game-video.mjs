@@ -1003,10 +1003,18 @@ const SETTLE_AT = 0.45;
 const INTRO_WALK_GAP_SECONDS = 0.5;
 /**
  * An overlay (edl.mjs "overlay") fades out over its last
- * TEXT_TIMING.overlayFade (overlays.mjs); the capture loading bar holds its
- * ERROR for LOADING_ERROR_SECONDS after the save lands, then closes.
+ * TEXT_TIMING.overlayFade (overlays.mjs); the capture loading bar shows
+ * LOADING_ERROR_LINE after the save lands, for LOADING_ERROR_SECONDS: the
+ * save's hit on the panel (stage.html ERROR_HIT_SECONDS), the line's
+ * reading time and the fade, then it closes. It was 0.9 s, and its 3 words
+ * need 2.1 s (vet of v-2026-10-31-16: shown fully for 0.7 s).
  */
-const LOADING_ERROR_SECONDS = 0.9;
+const LOADING_ERROR_LINE = "ERROR: CAPTURE FAILED";
+const LOADING_ERROR_HIT_SECONDS = 0.3;
+const LOADING_ERROR_SECONDS =
+  LOADING_ERROR_HIT_SECONDS +
+  readingSeconds({}, LOADING_ERROR_LINE) +
+  TEXT_TIMING.overlayFade;
 const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
 const FREEZE_SCALE = 1.6;
@@ -2950,7 +2958,12 @@ const termBox = (term) => {
  * Director, 2026-10-29). A pawn comes first: the vet of v-2026-10-30-5 found
  * the "!" of the mouse on a1 over the cat on b1 for 1.1 s, because "up"
  * covered a wall and a wall then outranked the cat.
+ * A side as near another pawn as to its own (a cell) reads as that pawn's
+ * mark: it ranks under a side that covers a wall (vet of v-2026-10-31-16:
+ * the scared "!" of the mouse on g3 went to g2, right of the cat on f2,
+ * because "up" covered ^f3, and it read as the cat's).
  */
+const OWN_MARK_CELLS = 1;
 const BUBBLE_SIDES = {
   up: [0, -1],
   right: [1, 0],
@@ -2970,9 +2983,10 @@ const bubbleSide = (
   const others = (pawnSpots.get(boardIndex) ?? []).filter(
     (p) => away(p, at.x, at.y) > 0.3,
   );
-  // Rank: hides no pawn, then covers no wall, then the most room.
+  // Rank: hides no pawn, then reads as no other pawn's, then covers no
+  // wall, then the most room.
   let best = "up";
-  let bestRank = [-1, -1, -1];
+  let bestRank = [-1, -1, -1, -1];
   const better = (a, b) => {
     for (let i = 0; i < a.length; i += 1) {
       if (Math.abs(a[i] - b[i]) > 1e-9) return a[i] > b[i];
@@ -2985,7 +2999,12 @@ const bubbleSide = (
     if (x < GRID.pad || x > 1 - GRID.pad || y < GRID.pad || y > 1 - GRID.pad)
       continue;
     const room = Math.min(Infinity, ...others.map((p) => away(p, x, y)));
-    const rank = [onPawn.has(side) ? 0 : 1, covered.has(side) ? 0 : 1, room];
+    const rank = [
+      onPawn.has(side) ? 0 : 1,
+      room > OWN_MARK_CELLS + 1e-6 ? 1 : 0,
+      covered.has(side) ? 0 : 1,
+      room,
+    ];
     if (better(rank, bestRank)) {
       best = side;
       bestRank = rank;
@@ -4093,6 +4112,7 @@ const WALLZ_LAYOUT = {
     "--safe-bottom": `${DAILY_FRAME.h - SAFE_AREA.y - SAFE_AREA.h}px`,
     "--strip-w": `${STRIP_AREA.w}px`,
     "--strip-area-top": `${STRIP_AREA.y}px`,
+    "--strip-area-bottom": `${STRIP_AREA.y + STRIP_AREA.h}px`,
   },
 };
 
@@ -4302,6 +4322,7 @@ const renderStyle = async (styleName) => {
           credit: CREDIT_LINES,
           strip,
           cta: EDL?.cta ?? null,
+          evalStrip: Boolean(EDL?.evalStrip),
           ending: style.ending,
           // The widest speed tag, for the counter's middle (stage.html).
           fastForward:
@@ -4791,7 +4812,10 @@ const renderStyle = async (styleName) => {
             percent: loadingPercent(
               RACE_DISTANCES[Math.min(b, facts.rise - 1)][facts.player],
             ),
-            error: b >= facts.rise ? { t: elapsed - w.errorAt } : null,
+            error:
+              b >= facts.rise
+                ? { t: elapsed - w.errorAt, text: LOADING_ERROR_LINE }
+                : null,
           }
         : {}),
       ...(w.asset.draw === "sequence"
@@ -6073,7 +6097,7 @@ const renderStyle = async (styleName) => {
       fault(
         "text-fit",
         null,
-        `the players strip (or its call to action) does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? DEFAULT_CTA}`,
+        `the players strip (or its call to action) does not fit STRIP_AREA on one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? DEFAULT_CTA}`,
       );
     }
     log(
