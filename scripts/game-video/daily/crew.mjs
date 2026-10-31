@@ -109,6 +109,12 @@
  *                                  the still shows what the cue is for (a FAHHH
  *                                  or zoom shows the save wall). Every still
  *                                  ok (and every measure) finishes the item
+ *   asks                           sync Nil's review asks now: each item
+ *                                  in review gets one ask in his Inbox, and
+ *                                  his answer is applied as on /review
+ *                                  (review-asks.mjs). Run it when Nil
+ *                                  answers one; the app also syncs each
+ *                                  minute
  *   vet --item ID --video SHA --reviewer "<who>" --verdict pass|fail
  *       (--notes "<text>" | --notes-file F)
  *                                  the independent review of the item's
@@ -765,6 +771,21 @@ const runTool = async (fn, options, source) => {
   }
 };
 
+/**
+ * What one ask sync did, and each item's last ask (review-asks.mjs).
+ * @param {{ opened: string[], applied: string[], withdrawn: string[],
+ *   told: string[], asks: Record<string, any> }} did
+ */
+export const askLines = (did) => [
+  `asks: opened ${did.opened.join(", ") || "-"}; applied ${did.applied.join(", ") || "-"}; withdrawn ${did.withdrawn.join(", ") || "-"}; director told about ${did.told.join(", ") || "-"}`,
+  ...Object.entries(did.asks)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([id, r]) =>
+        `  ${id}: ask ${r.askId ?? "-"} ${r.status}${r.note ? ` (${r.note})` : ""}, video ${String(r.videoSha256).slice(0, 12)}`,
+    ),
+];
+
 const commands = {
   async status() {
     if (flag("item")) return console.log(await itemSummary(flag("item")));
@@ -897,6 +918,17 @@ const commands = {
       notes,
     });
     console.log(vetLines(item).join("\n"));
+  },
+
+  /**
+   * Sync Nil's review asks now (review-asks.mjs): the Director runs it when
+   * Nil answers an ask, so the app reads and applies his answer at once
+   * (the app also syncs each minute). Prints what it did and each item's
+   * last ask.
+   */
+  async asks() {
+    const did = await app("POST", "/api/daily/asks/sync", {});
+    console.log(askLines(did).join("\n"));
   },
 
   /** Run by Wall Game Growth: its copy block for an item's video. */

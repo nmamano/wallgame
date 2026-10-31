@@ -103,7 +103,8 @@ import {
   reviewAction,
   reviewView,
 } from "./review.mjs";
-import { appMessenger } from "./office.mjs";
+import { appAsks, appMessenger } from "./office.mjs";
+import { openAskRecords, syncReviewAsks } from "./review-asks.mjs";
 import { createItemPoster } from "./review-post.mjs";
 import { createScheduler, GROWTH_AGENT_ID } from "./scheduler.mjs";
 import {
@@ -373,6 +374,12 @@ export const createDaily = ({
   ),
   // The slot timer (scheduler.mjs); a test that drives it by hand sets false.
   schedule = true,
+  // The office's ask routes for Nil's review asks (office.mjs appAsks); a
+  // test gives its own.
+  asks = /** @type {ReturnType<typeof appAsks> | null} */ (null),
+  // How often the review asks sync with no crew call (review-asks.mjs). The
+  // app server sets it; null syncs only on POST /api/daily/asks/sync.
+  askSyncMs = /** @type {number | null} */ (null),
   // How often the follower history is recorded with no visitor
   // (social.mjs). The app server sets it (app/server.mjs); null records only
   // when the Social tab is opened, so a test reads no live count.
@@ -1454,6 +1461,34 @@ export const createDaily = ({
   followerTimer?.unref();
   if (followerTimer) void recordFollowers();
 
+  // Nil's review asks (review-asks.mjs): one sync at a time, so a crew call
+  // and the timer never apply one answer twice or open two asks.
+  const askRecords = openAskRecords(dirs.root);
+  const askOffice = asks ?? appAsks({ env: rawEnv });
+  let askSync = null;
+  const syncAsks = () => {
+    askSync ??= syncReviewAsks({
+      store,
+      records: askRecords,
+      office: askOffice,
+      send: sendMessage,
+      nextSlot: scheduler.status().nextSlot,
+    }).finally(() => {
+      askSync = null;
+    });
+    return askSync;
+  };
+  const askTimer = askSyncMs
+    ? setInterval(
+        () =>
+          void syncAsks().catch((err) =>
+            console.warn(`review asks: the sync failed: ${err.message}`),
+          ),
+        askSyncMs,
+      )
+    : null;
+  askTimer?.unref();
+
   /* ------------------------------------------------------------ routes -- */
 
   const json = (res, code, body) => {
@@ -1965,6 +2000,16 @@ export const createDaily = ({
      * {item, videoSha256, reviewer, verdict, notes}: the independent review
      * of the item's final video (store.recordVet). It sends no message.
      */
+    /**
+     * One sync of Nil's review asks now (review-asks.mjs): crew.mjs asks,
+     * for the Director after Nil answers. The app also syncs on its timer.
+     * Returns what it did and each item's last ask.
+     */
+    "POST /api/daily/asks/sync": async (req, res) => {
+      const did = await syncAsks();
+      json(res, 200, { ...did, asks: askRecords.all() });
+    },
+
     "POST /api/daily/vet": async (req, res) => {
       const body = await readJson(req);
       json(
@@ -2565,6 +2610,10 @@ export const createDaily = ({
       send: sendMessage,
     });
     json(res, 200, { id: item.id, state: item.state, directorTold });
+    // His ask for this item no longer matches it: withdraw it now.
+    void syncAsks().catch((err) =>
+      console.warn(`review asks: the sync failed: ${err.message}`),
+    );
   };
 
   const handle = async (req, res, url) => {
@@ -2590,6 +2639,7 @@ export const createDaily = ({
   const stop = () => {
     if (threadsTimer) clearInterval(threadsTimer);
     if (followerTimer) clearInterval(followerTimer);
+    if (askTimer) clearInterval(askTimer);
     stopSchedule();
     budget.stop();
     for (const child of children) {

@@ -64,3 +64,66 @@ export const appMessenger = ({ env, fetch = globalThis.fetch }) => {
     }
   };
 };
+
+/**
+ * The app's asks to a member (review-asks.mjs; the Isomux apps and asks
+ * references). `open` (POST /api/app/asks) opens one in the name of the
+ * app's message target, `listOpen` (GET /api/app/asks) lists the app's
+ * open ones and `remove` (DELETE /api/app/asks/:askId) withdraws one. A
+ * closed ask is 404 on those routes, so `read` uses GET /api/asks/:askId,
+ * which returns an ask open or closed to a caller that may read its
+ * agent's logs: the app token has its live owner agent's reach, and the
+ * owner (the Director) is also the target whose asks these are. Each
+ * throws an Error with the HTTP status and the office's error code only.
+ * @param {{ env: Record<string, string | undefined>,
+ *   fetch?: typeof globalThis.fetch }} deps
+ */
+export const appAsks = ({ env, fetch = globalThis.fetch }) => {
+  const call = async (method, path, body) => {
+    const token = env.ISOMUX_APP_TOKEN;
+    if (!token) throw new Error("the app has no ISOMUX_APP_TOKEN");
+    let res;
+    try {
+      res = await fetch(`${OFFICE}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...(body ? { "content-type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (err) {
+      throw new Error(
+        `the office did not answer (${err?.cause?.code ?? err?.name ?? "error"})`,
+      );
+    }
+    if (!res.ok) {
+      let code = "";
+      try {
+        const error = (await res.json())?.error;
+        code = String(typeof error === "string" ? error : (error?.code ?? ""));
+      } catch {
+        /* no JSON */
+      }
+      throw new Error(
+        `the office refused ${method} ${path.replace(/[^/]+$/, (s) => (/^[\w-]{1,64}$/.test(s) ? s : "?"))}: HTTP ${res.status}${/^[\w.-]{1,64}$/.test(code) ? ` ${code}` : ""}`,
+      );
+    }
+    return res.status === 204 ? null : res.json();
+  };
+  const id = (askId) => {
+    if (!/^[\w-]{1,64}$/.test(askId)) throw new Error("not an ask id");
+    return encodeURIComponent(askId);
+  };
+  return {
+    open: (body) => call("POST", "/api/app/asks", body),
+    listOpen: async () => {
+      const asks = await call("GET", "/api/app/asks");
+      if (!Array.isArray(asks))
+        throw new Error("the office's list is not a list");
+      return asks;
+    },
+    remove: (askId) => call("DELETE", `/api/app/asks/${id(askId)}`),
+    read: (askId) => call("GET", `/api/asks/${id(askId)}`),
+  };
+};

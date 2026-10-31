@@ -719,7 +719,10 @@ export const openStore = (dataDir) => {
      * approved, discarded and draft are written here; the poster's states
      * and posts{} never are.
      */
-    review(id, { action, notes, videoSha256, copySha256, by, memberId }) {
+    review(
+      id,
+      { action, notes, videoSha256, copySha256, by, memberId, askId = null },
+    ) {
       if (!REVIEW_ACTIONS.includes(action)) {
         refuse(`a review action is ${REVIEW_ACTIONS.join(", ")}`);
       }
@@ -768,7 +771,18 @@ export const openStore = (dataDir) => {
           const at = new Date().toISOString();
           it.reviews = [
             ...it.reviews,
-            { action, notes, by, memberId, at, videoSha256, copySha256 },
+            {
+              action,
+              notes,
+              by,
+              memberId,
+              at,
+              videoSha256,
+              copySha256,
+              // His answer to the app's ask (review-asks.mjs), or null for
+              // the review page.
+              ...(askId ? { askId } : {}),
+            },
           ];
           it.state = AFTER_REVIEW[action];
           if (action === "approve") {
@@ -784,9 +798,10 @@ export const openStore = (dataDir) => {
             action,
             notes,
             by,
+            ...(askId ? { askId } : {}),
           };
         },
-        `${action} by ${by}`,
+        `${action} by ${by}${askId ? ` (ask ${askId})` : ""}`,
       );
       appendFileSync(feedbackLog, JSON.stringify(row) + "\n");
       return item;

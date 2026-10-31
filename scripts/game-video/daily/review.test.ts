@@ -27,6 +27,13 @@ import {
   approvedLine,
   carriedScriptLine,
 } from "./review.mjs";
+import {
+  APP_NAME,
+  ASK_OPTIONS,
+  openAskRecords,
+  parseAnswer,
+  syncReviewAsks,
+} from "./review-asks.mjs";
 
 const BLOCK = [
   "X: bro thought he could just walk home 😭🙏 #wallgame",
@@ -47,7 +54,13 @@ interface Item {
   gameId: string;
   render: { finishedAt: string; video: { path: string; sha256: string } };
   copy: { sha256: string; storedAt: string };
-  reviews: { action: string; notes: string; by: string; at: string }[];
+  reviews: {
+    action: string;
+    notes: string;
+    by: string;
+    at: string;
+    askId?: string;
+  }[];
   approval: {
     videoSha256: string;
     copySha256: string;
@@ -1234,5 +1247,298 @@ describe("what the director reads", () => {
     expect(viewOf(store).items[0].approveProblem).toBe(
       "another video of this game is approved (v-2026-10-28-2): withdraw it, or discard this one",
     );
+  });
+});
+
+/** An ask as the office returns it (GET /api/asks/:askId). */
+interface OfficeAsk {
+  id: string;
+  app?: { name: string };
+  memberUserId?: string;
+  member: string | null;
+  text?: string;
+  options?: string[];
+  recommended?: string;
+  priority?: string;
+  readFiles?: string[];
+  closed?: { outcome: string; by: string | null; answer?: string };
+}
+
+/**
+ * The office's ask routes as the app sees them (office.mjs appAsks): the
+ * app's open asks, and every ask by id, open or closed. `answer` closes one
+ * as a member would.
+ */
+const fakeOffice = () => {
+  const open = new Map<string, OfficeAsk>();
+  const closed = new Map<string, OfficeAsk>();
+  const bodies: Record<string, unknown>[] = [];
+  let n = 0;
+  return {
+    bodies,
+    down: false,
+    open(body: Record<string, unknown>) {
+      bodies.push(body);
+      // The office names the member as they are now (the body has the
+      // username).
+      const ask: OfficeAsk = {
+        ...body,
+        id: `ask-${++n}`,
+        app: { name: APP_NAME },
+        memberUserId: REVIEWER_MEMBER_ID,
+        member: "Nil",
+      };
+      open.set(ask.id, ask);
+      return Promise.resolve(ask);
+    },
+    listOpen() {
+      if (this.down) {
+        return Promise.reject(
+          new Error("the office did not answer (ECONNREFUSED)"),
+        );
+      }
+      return Promise.resolve([...open.values()]);
+    },
+    remove(id: string) {
+      const ask = open.get(id);
+      if (!ask) return Promise.reject(new Error("HTTP 404 not_found"));
+      open.delete(id);
+      closed.set(id, { ...ask, closed: { outcome: "withdrawn", by: null } });
+      return Promise.resolve(null);
+    },
+    read(id: string) {
+      return Promise.resolve(closed.get(id) ?? open.get(id));
+    },
+    answer(
+      id: string,
+      part: OfficeAsk["closed"],
+      change: Partial<OfficeAsk> = {},
+    ) {
+      const ask = open.get(id)!;
+      open.delete(id);
+      closed.set(id, { ...ask, ...change, closed: part });
+    },
+    openIds: () => [...open.keys()],
+  };
+};
+
+/** One app with one item in review, its fake office and the director's inbox. */
+const withAsks = () => {
+  const base = withItemInReview();
+  const office = fakeOffice();
+  const records = openAskRecords(base.store.dirs.root);
+  const told: string[] = [];
+  const sync = () =>
+    syncReviewAsks({
+      store: base.store,
+      records,
+      office: office as never,
+      send: (_to: string, text: string) => {
+        told.push(text);
+        return Promise.resolve();
+      },
+      nextSlot: NEXT_SLOT,
+      log: { warn: () => undefined },
+    });
+  return { ...base, office, records, told, sync };
+};
+
+const ID = "v-2026-10-28-1";
+const itemOf = (store: ReturnType<typeof openStore>) =>
+  store.item(ID) as unknown as Item;
+
+describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
+  test("his words read as one action, or as none", () => {
+    expect(parseAnswer("Approve")).toEqual({ action: "approve", notes: "" });
+    expect(parseAnswer("approve - nice")).toEqual({
+      action: "approve",
+      notes: "nice",
+    });
+    expect(parseAnswer("Revise: shorter caption")).toEqual({
+      action: "revise",
+      notes: "shorter caption",
+    });
+    expect(parseAnswer("DISCARD:bad pick")).toEqual({
+      action: "discard",
+      notes: "bad pick",
+    });
+    // Revise and discard need notes; other words are no action.
+    expect(parseAnswer("Revise:")).toBeNull();
+    expect(parseAnswer("Discard")).toBeNull();
+    expect(parseAnswer("approved it yesterday")).toBeNull();
+    expect(parseAnswer("yes")).toBeNull();
+    expect(parseAnswer(undefined)).toBeNull();
+  });
+
+  test("one ask for an item in review: Nil, P3, the video, Approve recommended; a second sync opens none", async () => {
+    const { office, sync, path } = withAsks();
+    expect((await sync()).opened).toEqual([ID]);
+    expect(office.bodies).toHaveLength(1);
+    expect(office.bodies[0]).toMatchObject({
+      member: "nil",
+      priority: "P3",
+      options: ASK_OPTIONS,
+      recommended: "Approve",
+      readFiles: [path],
+    });
+    const text = String(office.bodies[0].text);
+    expect(text).toContain(
+      'On the video: "bro thought he was safe" then "he was not"',
+    );
+    expect(text).toContain(`Post: ${postCaption(COPY)}`);
+    expect((await sync()).opened).toEqual([]);
+    expect(office.bodies).toHaveLength(1);
+  });
+
+  test("Nil's Approve is applied once, bound to the video and block of his ask", async () => {
+    const { store, office, sync, told, video, block } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, { outcome: "replied", by: "Nil", answer: "Approve" });
+    expect((await sync()).applied).toEqual([ID]);
+    const item = itemOf(store);
+    expect(item.state).toBe("approved");
+    expect(item.approval).toMatchObject({
+      videoSha256: video,
+      copySha256: block,
+    });
+    expect(item.reviews.at(-1)!.askId).toBe(askId);
+    expect(
+      feedbackOf(store).map((r) => [r.action, (r as { askId?: string }).askId]),
+    ).toEqual([["approve", askId]]);
+    expect(told.at(-1)).toContain(`REVIEW: Nil chose APPROVE on ${ID}`);
+    expect(told.at(-1)).toContain(`ask ${askId}`);
+    // Idempotent: the next syncs apply nothing more and open no ask.
+    const again = await sync();
+    expect(again.applied).toEqual([]);
+    expect(again.opened).toEqual([]);
+    expect(feedbackOf(store)).toHaveLength(1);
+    expect(told).toHaveLength(1);
+  });
+
+  test("Revise: goes back to the director as a draft with his notes", async () => {
+    const { store, office, sync } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: "Revise: the wave makes no sense",
+    });
+    await sync();
+    const item = itemOf(store);
+    expect(item.state).toBe("draft");
+    expect(item.reviews.at(-1)).toMatchObject({
+      action: "revise",
+      notes: "the wave makes no sense",
+      askId,
+    });
+  });
+
+  test("a dismiss changes nothing, and no second ask opens for the same video", async () => {
+    const { store, office, sync, told } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, { outcome: "dismissed", by: "Nil", answer: "later" });
+    const did = await sync();
+    expect(did.applied).toEqual([]);
+    expect(did.opened).toEqual([]);
+    expect(itemOf(store).state).toBe("finished");
+    expect(feedbackOf(store)).toHaveLength(0);
+    expect(told.at(-1)).toContain(
+      "closed as dismissed by Nil: nothing changed",
+    );
+  });
+
+  test("a reply by another member, or to an ask not for Nil or not the app's, changes nothing", async () => {
+    for (const [part, change] of [
+      [{ outcome: "replied", by: "Isomuxer 3", answer: "Approve" }, {}],
+      [
+        { outcome: "replied", by: "Nil", answer: "Approve" },
+        { memberUserId: "someone" },
+      ],
+      [
+        { outcome: "replied", by: "Nil", answer: "Approve" },
+        { app: { name: "other-app" } },
+      ],
+    ] as const) {
+      const { store, office, sync, told } = withAsks();
+      await sync();
+      const [askId] = office.openIds();
+      office.answer(askId, part, change as Partial<OfficeAsk>);
+      expect((await sync()).applied).toEqual([]);
+      expect(itemOf(store).state).toBe("finished");
+      expect(feedbackOf(store)).toHaveLength(0);
+      expect(told.at(-1)).toMatch(/nothing changed/i);
+    }
+  });
+
+  test("words that are not an action change nothing; the director gets them verbatim", async () => {
+    const { store, office, sync, told } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: "hmm, not sure",
+    });
+    await sync();
+    expect(itemOf(store).state).toBe("finished");
+    expect(told.at(-1)).toContain("> hmm, not sure");
+  });
+
+  test("a reply to an old ask is not applied after the video changed; a new ask opens", async () => {
+    const { store, office, sync, told, dir } = withAsks();
+    await sync();
+    const [oldAsk] = office.openIds();
+    // A new render and a new block, vetted: in review with another video.
+    const file = join(store.dirs.items, `${ID}.json`);
+    const it = JSON.parse(readFileSync(file, "utf8")) as {
+      render: { video: { path: string; sha256: string } };
+      copy: { forVideoSha256: string };
+      vets: { videoSha256: string }[];
+    };
+    const newPath = join(dir, "new.mp4");
+    writeFileSync(newPath, "a new render");
+    const newVideo = sha("a new render");
+    it.render.video = { ...it.render.video, path: newPath, sha256: newVideo };
+    it.copy.forVideoSha256 = newVideo;
+    it.vets.push({ ...it.vets[0], videoSha256: newVideo });
+    writeFileSync(file, JSON.stringify(it));
+    office.answer(oldAsk, { outcome: "replied", by: "Nil", answer: "Approve" });
+    const did = await sync();
+    expect(did.applied).toEqual([]);
+    expect(itemOf(store).state).toBe("finished");
+    expect(told.at(-1)).toContain("not applied");
+    // The item gets one ask for its new video.
+    expect(did.opened).toEqual([ID]);
+    expect(office.bodies.at(-1)!.readFiles).toEqual([newPath]);
+  });
+
+  test("an open ask whose item left review is withdrawn (an action on the page)", async () => {
+    const { store, office, sync, video, block } = withAsks();
+    await sync();
+    store.review(ID, {
+      action: "approve",
+      notes: "",
+      videoSha256: video,
+      copySha256: block,
+      by: "Nil",
+      memberId: REVIEWER_MEMBER_ID,
+    });
+    expect((await sync()).withdrawn).toEqual([ID]);
+    expect(office.openIds()).toEqual([]);
+  });
+
+  test("the office down: no item changes and no ask opens", async () => {
+    const { store, office, sync } = withAsks();
+    office.down = true;
+    expect(await sync()).toEqual({
+      opened: [],
+      applied: [],
+      withdrawn: [],
+      told: [],
+    });
+    expect(itemOf(store).state).toBe("finished");
   });
 });

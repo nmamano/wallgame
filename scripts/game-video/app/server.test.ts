@@ -42,14 +42,17 @@ afterEach(() => {
 const startApp = async () => {
   const port = await freePort();
   // No live follower read in a test (the hourly follower record).
-  const child = Bun.spawn(["node", SERVER, "--daily-no-follower-record"], {
-    env: testEnv({
-      PORT: String(port),
-      ISOMUX_APP_DATA_DIR: mkdtempSync(join(tmpdir(), "game-video-test-")),
-    }),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    ["node", SERVER, "--daily-no-follower-record", "--daily-no-ask-sync"],
+    {
+      env: testEnv({
+        PORT: String(port),
+        ISOMUX_APP_DATA_DIR: mkdtempSync(join(tmpdir(), "game-video-test-")),
+      }),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   stops.push(() => child.kill());
   const base = `http://127.0.0.1:${port}`;
   // Wait for the listener rather than sleeping a guessed amount.

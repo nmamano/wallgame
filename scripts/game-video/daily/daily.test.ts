@@ -2484,6 +2484,7 @@ const serve = async (dir: string, renderer: string): Promise<string> => {
       stubStatus(dir),
       "--daily-no-backup-window",
       "--daily-no-follower-record",
+      "--daily-no-ask-sync",
     ],
     {
       env: {

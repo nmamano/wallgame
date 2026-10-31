@@ -25,6 +25,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDaily } from "../daily/routes.mjs";
 import { FOLLOWER_RECORD_MS } from "../daily/social.mjs";
+import { ASK_SYNC_MS } from "../daily/review-asks.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -76,6 +77,10 @@ const daily = createDaily({
   // The follower history, hourly; a test reads no live count.
   ...(!process.argv.includes("--daily-no-follower-record") && {
     followerRecordMs: FOLLOWER_RECORD_MS,
+  }),
+  // Nil's review asks, each minute; a test opens no ask in the office.
+  ...(!process.argv.includes("--daily-no-ask-sync") && {
+    askSyncMs: ASK_SYNC_MS,
   }),
   ...(plumbing("daily-desktop-status") && {
     desktopStatus: [
