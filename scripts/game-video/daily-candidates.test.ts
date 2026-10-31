@@ -19,6 +19,7 @@ import {
   gameEligibility,
   jumpsOf,
   MIN_PLIES,
+  nilGameEligibility,
   NIL_USER_ID,
   pickBoard,
   pickJumps,
@@ -119,6 +120,22 @@ describe("seat eligibility", () => {
     expect(gameEligibility(game(officialBot, officialBot))).toEqual({
       eligible: false,
       reason: "bot vs bot",
+    });
+  });
+
+  test("--nil-seat keeps only games with a Nil seat, never Nil vs a member", () => {
+    expect(nilGameEligibility(game(nil, officialBot))).toEqual({
+      eligible: true,
+      seatKinds: ["nil", "official bot"],
+    });
+    expect(nilGameEligibility(game(guest, nil)).eligible).toBe(true);
+    expect(nilGameEligibility(game(guest, officialBot))).toEqual({
+      eligible: false,
+      reason: "no Nil seat",
+    });
+    expect(nilGameEligibility(game(nil, member))).toEqual({
+      eligible: false,
+      reason: "signed-in member seat",
     });
   });
 

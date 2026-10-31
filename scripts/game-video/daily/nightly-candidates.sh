@@ -3,14 +3,20 @@
 # a throwaway database, pick the day's candidates from it, and remove the
 # database again. Board task e8d26610, step 3.
 #
-#   scripts/game-video/daily/nightly-candidates.sh OUT_DIR [--manual-stamp STAMP]
+#   scripts/game-video/daily/nightly-candidates.sh OUT_DIR
+#       [--manual-stamp STAMP [--days N] [--nil-seat]]
 #
 # --manual-stamp is for a person testing by hand, never for the timer: it lets
 # a stamp that is not today's through the day check below, and only when it is
 # exactly the stamp that `fresh` verified. Every other term still applies.
+# Only with it, --days N picks from the N days before the snapshot (not 1) and
+# --nil-seat keeps only games with a Nil seat: a report of Nil's own games.
 #
 # Writes OUT_DIR/<UTC day>.json (the candidate report) or OUT_DIR/<UTC day>.skip
 # (one line: why there is no report today). The crew lead reads one of the two.
+# A by-hand run writes <UTC day>.manual-<STAMP>[-days<N>][-nil].json or .skip,
+# so it never touches the timer's two names; give it the timer's OUT_DIR, so
+# the lock there keeps the two runs apart.
 #
 # Run by the user timer wallgame-daily-candidates.timer at 11:30 UTC, after
 # the 10:20 UTC backup. THE BACKUP OWNER'S TERMS (Lead SRE, standing OK of
@@ -32,21 +38,50 @@
 # can replace restore_source() and the trap without touching the rest.
 set -euo pipefail
 
-OUT_DIR=${1:?usage: nightly-candidates.sh OUT_DIR [--manual-stamp STAMP]}
+usage() {
+  echo "usage: nightly-candidates.sh OUT_DIR [--manual-stamp STAMP [--days N] [--nil-seat]]" >&2
+  exit 64
+}
+[ $# -ge 1 ] || usage
+OUT_DIR=$1
+shift
 MANUAL_STAMP=""
-if [ $# -gt 1 ]; then
-  [ "$2" = --manual-stamp ] && [[ "${3:-}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] ||
-    { echo "usage: nightly-candidates.sh OUT_DIR [--manual-stamp STAMP]" >&2; exit 64; }
-  MANUAL_STAMP=$3
-fi
+DAYS=1
+NIL_SEAT=""
+while [ $# -gt 0 ]; do
+  case $1 in
+  --manual-stamp)
+    [[ "${2:-}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || usage
+    MANUAL_STAMP=$2
+    shift 2
+    ;;
+  --days)
+    [[ "${2:-}" =~ ^[1-9][0-9]{0,4}$ ]] || usage
+    DAYS=$2
+    shift 2
+    ;;
+  --nil-seat)
+    NIL_SEAT=1
+    shift
+    ;;
+  *) usage ;;
+  esac
+done
+[ -n "$MANUAL_STAMP" ] || { [ "$DAYS" = 1 ] && [ -z "$NIL_SEAT" ]; } || usage
 BACKUP=$HOME/nil/vps-ops/vps-backup
 IDENTITY=$BACKUP/keys/wallgame/age-identity.txt
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 DAY=$(date -u +%F)
-# A by-hand run never writes the name the timer's run looks for, so it can
-# never make that run stop with "a report exists".
-REPORT=$OUT_DIR/$DAY.json
-[ -z "$MANUAL_STAMP" ] || REPORT=$OUT_DIR/$DAY.manual-$MANUAL_STAMP.json
+# A by-hand run never writes the names the timer's run looks for, so it can
+# never make that run stop with "a report exists", or remove its skip line.
+NAME=$DAY
+if [ -n "$MANUAL_STAMP" ]; then
+  NAME=$DAY.manual-$MANUAL_STAMP
+  [ "$DAYS" = 1 ] || NAME=$NAME-days$DAYS
+  [ -z "$NIL_SEAT" ] || NAME=$NAME-nil
+fi
+REPORT=$OUT_DIR/$NAME.json
+SKIP=$OUT_DIR/$NAME.skip
 RUN=$(date -u +%Y%m%dT%H%M%SZ)-$$
 SOURCE=wgvideo-daily-$RUN
 VOLUME=$SOURCE-pgdata
@@ -56,8 +91,8 @@ ERRORS=""
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 skip() {
   say "SKIP $*"
-  printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >"$OUT_DIR/$DAY.skip.part"
-  mv "$OUT_DIR/$DAY.skip.part" "$OUT_DIR/$DAY.skip"
+  printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >"$SKIP.part"
+  mv "$SKIP.part" "$SKIP"
   exit 0
 }
 
@@ -82,19 +117,19 @@ status=$(git --no-optional-locks -C "$REPO" status --porcelain --untracked-files
   status="?? (git status failed)"
 dirty=$(printf '%s\n' "$status" | cut -c4- | sed -n 1,5p | tr '\n' ' ' | sed 's/ *$//')
 if [ -n "$dirty" ]; then
-  printf '%s the pick code has uncommitted changes: %s\n' "$(date -u +%FT%TZ)" "$dirty" >"$OUT_DIR/$DAY.skip"
+  printf '%s the pick code has uncommitted changes: %s\n' "$(date -u +%FT%TZ)" "$dirty" >"$SKIP"
   say "SKIP the pick code has uncommitted changes: $dirty"
   exit 0
 fi
 say "code: HEAD $(git -C "$REPO" rev-parse --short=12 HEAD), pick path clean"
-rm -f "$OUT_DIR/$DAY.skip"
+rm -f "$SKIP"
 
 cleanup() {
   local code=$?
   # A run that stopped early still leaves the crew lead a reason.
-  if [ ! -e "$REPORT" ] && [ ! -e "$OUT_DIR/$DAY.skip" ]; then
+  if [ ! -e "$REPORT" ] && [ ! -e "$SKIP" ]; then
     printf '%s the run failed (exit %s); see journalctl --user -u wallgame-daily-candidates\n' \
-      "$(date -u +%FT%TZ)" "$code" >"$OUT_DIR/$DAY.skip"
+      "$(date -u +%FT%TZ)" "$code" >"$SKIP"
   fi
   rm -f "$REPORT.part"
   if [ -n "$SCRATCH" ]; then
@@ -192,7 +227,7 @@ restore_source() {
 pick() {
   local out=$REPORT.part
   (cd "$REPO" && "$HOME/.bun/bin/bun" scripts/game-video/pick-daily-candidates.ts \
-    --container "$SOURCE" --until "$UNTIL" --days 1 --top 5 --out "$out")
+    --container "$SOURCE" --until "$UNTIL" --days "$DAYS" --top 5 ${NIL_SEAT:+--nil-seat} --out "$out")
   # Name the snapshot in the report, so the crew lead can see which day's
   # backup the games came from.
   python3 -I -c 'import json,sys

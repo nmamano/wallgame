@@ -165,6 +165,17 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
   return { eligible: true, seatKinds };
 };
 
+/**
+ * gameEligibility with one more term, for the by-hand report of Nil's own
+ * games (--nil-seat; Nil, 2026-10-31): a game with no Nil seat is out. Nil
+ * against another signed-in member stays out, as gameEligibility says.
+ */
+export const nilGameEligibility = (game: StoredGameSummary): GameVerdict => {
+  const verdict = gameEligibility(game);
+  if (!verdict.eligible || verdict.seatKinds.includes("nil")) return verdict;
+  return { eligible: false, reason: "no Nil seat" };
+};
+
 /* ------------------------------------------------- engine (debug column) -- */
 
 /*

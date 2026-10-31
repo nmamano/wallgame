@@ -7,7 +7,10 @@
  *
  *   bun scripts/game-video/pick-daily-candidates.ts --container wgvideo-restore \
  *     --until 2026-10-25T10:20:48Z [--days 7] [--top 5] [--game ID ...] [--out F]
- *     [--engine]
+ *     [--engine] [--nil-seat]
+ *
+ * --nil-seat keeps only games with a Nil seat (nilGameEligibility), for a
+ * by-hand report of Nil's own games over a long --days window.
  *
  * THE GAMES COME FROM A RESTORED COPY, NEVER FROM PRODUCTION. --container names
  * a local PostgreSQL container that holds a restored nightly dump; the script
@@ -42,6 +45,7 @@ import {
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
+  nilGameEligibility,
   pickJumps,
   PICKS_PER_GAME,
   rankCandidates,
@@ -73,6 +77,8 @@ interface Args {
   days: number;
   top: number;
   games: string[];
+  /** --nil-seat: only games with a Nil seat. */
+  nilSeat: boolean;
   out: string;
 }
 
@@ -102,6 +108,7 @@ const parseArgs = (argv: string[]): Args => {
     days: Number(value("days") ?? 7),
     top: Number(value("top") ?? 5),
     games,
+    nilSeat: argv.includes("--nil-seat"),
     out: value("out") ?? `/tmp/daily-candidates-${stamp}Z.json`,
   };
 };
@@ -276,7 +283,9 @@ const main = async () => {
 
   try {
     for (const game of all) {
-      const verdict = gameEligibility(game);
+      const verdict = (args.nilSeat ? nilGameEligibility : gameEligibility)(
+        game,
+      );
       if (!verdict.eligible) {
         excluded.push({ gameId: game.gameId, reason: verdict.reason });
         continue;
@@ -370,6 +379,7 @@ const main = async () => {
       until: args.until.toISOString(),
     },
     source: { container: args.container, database: args.database },
+    nilSeatOnly: args.nilSeat,
     engineCommands: [...links.keys()],
     counts: {
       games: all.length,
