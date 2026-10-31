@@ -1024,6 +1024,18 @@ const LOOP_SECONDS = 0.5;
 const END_FADE_SECONDS = 0.3;
 const FINISH_CUT_SECONDS = 1;
 /**
+ * Two meme sounds (an event's, a clip's own, the VS or the finish sound)
+ * whose loud parts start less than SOUNDS_APART_SECONDS apart are heard as
+ * one noise: a lint warning (sounds-together). Wall Game Director,
+ * 2026-10-31: on -8 v2 the lint let letsgo-1 on the ending bar start with
+ * the finish sound, at 42.57 s. A sound's loud part starts at its first
+ * sample within SOUND_BODY_DB of its own peak. A sound that starts under
+ * the quiet end of another is not a fault: -9 v3's trombone-1 starts under
+ * the end of airhorn-1, and the Director passed it (2026-10-31).
+ */
+const SOUNDS_APART_SECONDS = 0.5;
+const SOUND_BODY_DB = -20;
+/**
  * The music under the daily ending: it fades to this share of its level as
  * the ending starts and holds there to the end, instead of to silence
  * (audit item 6: every daily mix was below -40 dB for 1.5-1.8 s before its
@@ -7034,6 +7046,7 @@ const renderStyle = async (styleName) => {
   };
   const floor = 32768 * 10 ** (SOUND_FLOOR_DB / 20);
   const heard = [];
+  const memeStarts = [];
   for (const c of cues) {
     const x = pcm(c.file);
     if (!x) {
@@ -7054,6 +7067,15 @@ const renderStyle = async (styleName) => {
         c.at + (last + 1) / 8000 / c.rate,
       ]);
     }
+    if (c.meme && first >= 0) {
+      let peak = 0;
+      for (let i = first; i <= last; i += 1)
+        peak = Math.max(peak, Math.abs(x[i]));
+      const body = peak * 10 ** (SOUND_BODY_DB / 20);
+      let i = first;
+      while (Math.abs(x[i]) < body) i += 1;
+      memeStarts.push({ name: c.name, at: c.at + i / 8000 / c.rate });
+    }
     // The video's end cuts a long finish sound: the end fade only softens
     // the cut (Wall Game Director, 2026-10-29: VX's trombone-1 was cut
     // 1.6 s before its end).
@@ -7067,6 +7089,18 @@ const renderStyle = async (styleName) => {
       );
     }
   }
+  memeStarts.sort((a, b) => a.at - b.at);
+  memeStarts.forEach((n, i) => {
+    const m = memeStarts[i - 1];
+    if (m && n.at - m.at < SOUNDS_APART_SECONDS) {
+      fault(
+        "sounds-together",
+        plyAt(n.at),
+        `${m.name} and ${n.name} start together (${(n.at - m.at).toFixed(2)} s apart, at ${m.at.toFixed(1)} s; ${SOUNDS_APART_SECONDS} s at least): move one of them, or drop one`,
+        m.at,
+      );
+    }
+  });
   const composedMusic = musicParts({
     beatStartAt,
     musicStart,
