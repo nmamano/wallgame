@@ -2062,7 +2062,7 @@
        */
       /**
        * A hunter's walk (edl.mjs "path"): p = { cell, pawns, lines: [{
-       * hex, points, holes, steps, drawn, alpha }] }, points, holes (the
+       * hex, points, holes, steps, drawn, alpha, cut }] }, points, holes (the
        * cells on the walk where another pawn stands) and the cell's size as
        * fractions of the board, from the hunter to its target. p.pawns is
        * every pawn the board shows, as the page drew it ({x, y, w, h}):
@@ -2076,7 +2076,9 @@
        * the first side that is on the board, off the walk and off every
        * pawn, so the disc covers neither the target nor the walk. Returns
        * the whole walks whose number found no such side (the lint's
-       * walk-number-crowded), as { steps, hex }.
+       * walk-number-crowded), as { steps, hex }. A `cut` line (a walk
+       * from before a move, stopped by the move's wall) ends short of the
+       * wall and shows no number.
        */
       const DOT_GAP = 52;
       /** The number's disc: its radius in cells, its dark ring in board units (1000 a board). */
@@ -2108,9 +2110,11 @@
             // a dash of 0 with round caps drew them; none on a cell where a
             // pawn stands: the hunter's, the target's and the holes (the
             // cells' centres), so the walk starts and ends at their edges.
+            // A cut walk (l.cut: render-game-video.mjs onBoard) ends
+            // short of a wall, on no pawn.
             const holes = [
               l.points[0],
-              l.points[l.points.length - 1],
+              ...(l.cut ? [] : [l.points[l.points.length - 1]]),
               ...(l.holes ?? []),
             ];
             const dots = [];
@@ -2191,7 +2195,7 @@
               );
             };
             const freeSide = sides.find(free);
-            if (!freeSide && l.drawn >= 1) {
+            if (!freeSide && l.drawn >= 1 && !l.cut) {
               crowded.push({ steps: l.steps, hex: l.hex });
             }
             const side = freeSide ?? sides.find(noPawn) ?? sides[0];
@@ -2213,8 +2217,9 @@
               y: inside(tip.y + out * side.y),
             };
             const r = (DISC_R * p.cell * 1000).toFixed(1);
+            // A cut walk has no number: the walk it counted is gone.
             const disc =
-              l.drawn < 1
+              l.drawn < 1 || l.cut
                 ? ""
                 : '<circle cx="' +
                   k(end.x) +

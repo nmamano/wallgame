@@ -118,6 +118,26 @@ export const huntPath = (grid: Grid, pawns: GamePawns, hunt: Hunt): Cell[] => {
 };
 
 /**
+ * The first step of a run of cells that the board's walls block, as the
+ * index of the cell it leaves, or -1 when every step is open. A step is
+ * open when it goes to a cell that grid.accessibleNeighbors gives: the
+ * walls the board draws, and the board's edge. A walk drawn on a board
+ * must not cross a wall that the board shows (Nil, 2026-10-31, the revise
+ * of v-2026-10-31-9: "the path you drew at 0:11 goes right throw a wall"),
+ * so the renderer cuts a walk from an earlier position here, and its frame
+ * check reads the drawn dots against the same rule.
+ */
+export const firstBlockedStep = (grid: Grid, cells: Cell[]): number =>
+  cells
+    .slice(1)
+    .findIndex(
+      (to, i) =>
+        !grid
+          .accessibleNeighbors(cells[i])
+          .some((n) => n[0] === to[0] && n[1] === to[1]),
+    );
+
+/**
  * The cells of a walk (huntPath) that another pawn stands on: the walk
  * draws no dot there.
  */

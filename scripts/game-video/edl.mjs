@@ -393,6 +393,7 @@ export const LINT_KINDS = {
   "finish-cut": "warns",
   "race-small": "warns",
   "explain-mismatch": "stops",
+  "path-through-wall": "stops",
   "reactor-pawn": "stops",
   "reactor-capture": "stops",
   "explain-flat": "warns",

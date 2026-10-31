@@ -99,6 +99,7 @@ import {
   parsePlyWindow,
 } from "./edl.mjs";
 import {
+  firstBlockedStep,
   huntPath,
   huntsFor,
   pawnCellsOn,
@@ -3343,9 +3344,40 @@ const RACE_DISTANCES =
  * walk that teaches "cat -> the other mouse" must not dot the other cat).
  */
 const drawnWalk = (pawns, walk) => ({
+  cells: walk,
   points: walk.map(([r, c]) => cellAt([r, c])),
   holes: pawnCellsOn(pawns, walk).map((i) => cellAt(walk[i])),
 });
+/**
+ * How far into the blocked step a cut walk's line goes, as a part of the
+ * step: its last dot stays clear of the wall (a dot's radius is about a
+ * sixth of a cell, the wall is at half the step).
+ */
+const CUT_REACH = 0.25;
+/**
+ * A walk (drawnWalk, or a line made from one) as it may be drawn on a board
+ * whose walls are `grid`'s: whole when the board blocks none of its steps,
+ * else cut at the first blocked step, its line ending a little way into
+ * that step, towards the wall, with `cut` set (the page draws no number
+ * on it: the walk it counted is gone). A walk from an earlier position,
+ * drawn after a move put a wall across it (a path's compared walk, an
+ * explain's ghost), so shows where the new wall stops it, and never
+ * crosses it (Nil, 2026-10-31, the revise of v-2026-10-31-9).
+ */
+const onBoard = (walk, grid) => {
+  const k = firstBlockedStep(grid, walk.cells);
+  if (k < 0) return walk;
+  const [a, b] = [walk.points[k], walk.points[k + 1]];
+  return {
+    ...walk,
+    cells: walk.cells.slice(0, k + 1),
+    points: [
+      ...walk.points.slice(0, k + 1),
+      { x: a.x + (b.x - a.x) * CUT_REACH, y: a.y + (b.y - a.y) * CUT_REACH },
+    ],
+    cut: true,
+  };
+};
 /**
  * The opening walks (edl.mjs introPaths), in the order they play: each
  * side's hunter to its target in the start position, the first mover's
@@ -3423,7 +3455,11 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
   PATHS.set(ev, {
     player: hunt.hunter.player,
     walks: [
-      ...(ev.compare ? [walk(REPLAYED.states[ev.ply])] : []),
+      // Drawn after the move, on its board: cut where the move's walls
+      // stop it, so its draw time and its ticks are the cut walk's.
+      ...(ev.compare
+        ? [onBoard(walk(REPLAYED.states[ev.ply]), after.grid)]
+        : []),
       walk(after),
     ],
   });
@@ -4973,8 +5009,77 @@ const renderStyle = async (styleName) => {
   };
 
   /** When the last move landed (land), for the capture picture's pounce. */
+  /*
+    No dot line crosses a wall that its frame shows (Nil, 2026-10-31, the
+    revise of v-2026-10-31-9: "such editing blunders shouldn't reach me").
+    Each line is read back from what the page draws: the part of it drawn
+    so far, sampled along its points and turned into the grid's cells, and
+    each step from cell to cell must be open on the frame's board
+    (firstBlockedStep). onBoard cuts the walks, so a hit means the cut
+    failed: it stops the render, once a line and ply.
+  */
+  const wallHits = new Set();
+  const PATH_SAMPLES_A_CELL = 8;
+  const drawnCells = (l) => {
+    const seg = l.points
+      .slice(1)
+      .map((q, i) => Math.hypot(q.x - l.points[i].x, q.y - l.points[i].y));
+    let left = seg.reduce((a, b) => a + b, 0) * Math.min(1, l.drawn);
+    const cells = [];
+    const add = ({ x, y }) => {
+      const cell = [
+        Math.floor((y - GRID.y(0)) / GRID.pitchY),
+        Math.floor((x - GRID.x(0)) / GRID.pitchX),
+      ];
+      const last = cells.at(-1);
+      if (!last || last[0] !== cell[0] || last[1] !== cell[1]) {
+        cells.push(cell);
+      }
+    };
+    add(l.points[0]);
+    for (let i = 0; i < seg.length && left > 0; i += 1) {
+      const [a, b] = [l.points[i], l.points[i + 1]];
+      const f = Math.min(1, left / seg[i]);
+      const n = Math.max(
+        1,
+        Math.ceil((seg[i] / GRID.pitchX) * PATH_SAMPLES_A_CELL),
+      );
+      for (let j = 1; j <= n; j += 1) {
+        const u = (f * j) / n;
+        add({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+      }
+      left -= seg[i];
+    }
+    return cells;
+  };
+  const checkPathWalls = (state, meta) => {
+    const lines = state.path?.lines ?? [];
+    if (lines.length === 0) return;
+    const index = boardIndexOf.get(state.board);
+    if (index === undefined) {
+      throw new Error(
+        `a frame draws a walk on a board that is not a position (${state.board})`,
+      );
+    }
+    const grid = REPLAYED.states[index].grid;
+    const name = ([r, c]) => `${String.fromCharCode(97 + c)}${GRID.rows - r}`;
+    lines.forEach((l, n) => {
+      if (!(l.alpha > 0 && l.drawn > 0)) return;
+      const cells = drawnCells(l);
+      const k = firstBlockedStep(grid, cells);
+      const key = `${meta.kind}|${meta.ply}|${n}`;
+      if (k < 0 || wallHits.has(key)) return;
+      wallHits.add(key);
+      fault(
+        "path-through-wall",
+        meta.ply ?? null,
+        `a walk drawn on ply ${meta.ply} (${meta.kind}, line ${n + 1}${l.alpha < 1 ? `, alpha ${l.alpha.toFixed(2)}` : ""}) crosses a wall the frame shows, from ${name(cells[k])} to ${name(cells[k + 1])}`,
+      );
+    });
+  };
   let captureLandAt = null;
   const emit = async (state, seconds, meta = {}) => {
+    checkPathWalls(state, meta);
     const vs = () => overlay && state.segment === "play" && inOverlay();
     const overlaid = () => state.segment === "play" && liveOverlay() !== null;
     const pouncing = () =>
@@ -5265,9 +5370,18 @@ const renderStyle = async (styleName) => {
     // A walk's number keeps off the pawns this board shows (stage.html
     // path; render vet, 2026-10-30: since walks go around the other pawns,
     // the "6" of v-2026-10-28-3's opening walks sat on a cat and a mouse).
+    /*
+      Each line is drawn on this board, so it is cut where this board's
+      walls stop it (onBoard): an explain's ghost, the walk before the
+      move, stays on after the move put its walls down (Wall Game
+      Director, 2026-10-31: -8's ghost ran through >b5).
+    */
     ...(extra.path && {
       path: {
         ...extra.path,
+        lines: extra.path.lines.map((l) =>
+          onBoard(l, REPLAYED.states[boardIndex].grid),
+        ),
         pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y, w, h }) => ({
           x,
           y,
@@ -5907,14 +6021,16 @@ const renderStyle = async (styleName) => {
       return {
         path: {
           cell: GRID.pitchX,
-          lines: walks.map(({ points, holes }, k) => {
+          lines: walks.map(({ cells, points, holes, cut }, k) => {
             const last = k === walks.length - 1;
             const from = last ? lastFrom : 0;
             const fadeAt = last ? seconds - PATH_FADE_SECONDS : lastFrom;
             return {
               hex: side(player).hex,
+              cells,
               points,
               holes,
+              cut,
               steps: points.length - 1,
               drawn: span01((t - from) / drawSeconds(points)),
               alpha: 1 - span01((t - fadeAt) / PATH_FADE_SECONDS),
@@ -6041,6 +6157,7 @@ const renderStyle = async (styleName) => {
     const span01 = (x) => Math.max(0, Math.min(1, x));
     const line = (walk, drawn, alpha) => ({
       hex,
+      cells: walk.cells,
       points: walk.points,
       holes: walk.holes,
       steps: walk.points.length - 1,
@@ -6480,6 +6597,7 @@ const renderStyle = async (styleName) => {
           cell: GRID.pitchX,
           lines: INTRO_PLAN.filter((w) => t >= w.start).map((w) => ({
             hex: side(w.player).hex,
+            cells: w.cells,
             points: w.points,
             holes: w.holes,
             steps: w.points.length - 1,

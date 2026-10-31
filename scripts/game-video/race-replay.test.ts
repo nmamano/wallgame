@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import {
+  firstBlockedStep,
   huntPath,
   huntWalks,
   huntsFor,
@@ -150,5 +151,80 @@ describe("preyTypeOf: the one pawn of a seat that the other side hunts", () => {
     // Animal Cycle: player 2's mouse and dog are both hunted.
     const cycle = preyTypeOf("animal-cycle", 2);
     expect("reason" in cycle && cycle.reason).toContain("2 of player 2's");
+  });
+});
+
+describe("firstBlockedStep", () => {
+  // v-2026-10-31-9 (game PnGQWON1), ply 7: the path's compared walk, the
+  // cat's walk before >e2.>f3, was drawn after those walls landed and
+  // crossed one (Nil, 2026-10-31: "the path you drew at 0:11 goes right
+  // throw a wall").
+  const PNG: CustomSetupStandardInitialState = {
+    pawns: {
+      p1: { cat: [1, 1], mouse: [4, 0] },
+      p2: { cat: [1, 6], mouse: [4, 7] },
+    },
+    walls: [
+      { cell: [0, 2], orientation: "vertical" },
+      { cell: [0, 4], orientation: "vertical" },
+      { cell: [3, 3], orientation: "horizontal" },
+      { cell: [3, 4], orientation: "horizontal" },
+      { cell: [4, 1], orientation: "horizontal" },
+      { cell: [4, 6], orientation: "horizontal" },
+      { cell: [6, 2], orientation: "horizontal" },
+      { cell: [6, 5], orientation: "horizontal" },
+      { cell: [7, 3], orientation: "horizontal" },
+      { cell: [7, 4], orientation: "horizontal" },
+    ],
+    turn: { playerId: 1, actionsTaken: [] },
+  };
+  const { states } = replayDistances({
+    variant: "standard",
+    boardWidth: 8,
+    boardHeight: 8,
+    initialState: PNG,
+    moves: [
+      ">f7.^g6",
+      ">f4.^h4",
+      ">f6.^f7",
+      "Ch6",
+      ">e5.^f5",
+      "Cg5",
+      "Cb5",
+      ">e2.>f3",
+    ],
+  });
+  const [before, after] = [states[7], states[8]];
+
+  test("the -9 case: the walk before the walls crosses one of them", () => {
+    const blocked = huntsFor("standard").flatMap((hunt) => {
+      const walk = huntPath(before.grid, before.pawns, hunt);
+      const k = firstBlockedStep(after.grid, walk);
+      return k < 0 ? [] : [{ hunter: hunt.hunter.player, k, walk }];
+    });
+    expect(blocked.length).toBeGreaterThan(0);
+    for (const { k, walk } of blocked) {
+      // Open on its own board, blocked on the board after the move.
+      expect(firstBlockedStep(before.grid, walk)).toBe(-1);
+      expect(firstBlockedStep(after.grid, walk.slice(0, k + 1))).toBe(-1);
+      expect(firstBlockedStep(after.grid, walk.slice(k, k + 2))).toBe(0);
+    }
+  });
+
+  test("a walk on its own board has no blocked step; a jump is not a step", () => {
+    for (const state of states) {
+      for (const hunt of huntsFor("standard")) {
+        expect(
+          firstBlockedStep(state.grid, huntPath(state.grid, state.pawns, hunt)),
+        ).toBe(-1);
+      }
+    }
+    expect(
+      firstBlockedStep(states[0].grid, [
+        [0, 0],
+        [0, 2],
+      ]),
+    ).toBe(0);
+    expect(firstBlockedStep(states[0].grid, [[0, 0]])).toBe(-1);
   });
 });
