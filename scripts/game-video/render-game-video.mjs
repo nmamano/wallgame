@@ -81,6 +81,7 @@ import { captureFeedbackPlan } from "./capture-feedback.mjs";
 import {
   validateEdl,
   checkEdlAgainstGame,
+  DEFAULT_CTA,
   DEFAULT_SECONDS_PER_MOVE,
   fastForwardTag,
   areaOf,
@@ -5559,7 +5560,7 @@ const renderStyle = async (styleName) => {
       fault(
         "text-fit",
         null,
-        `the players strip (or its call to action) does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? "wallgame.io"}`,
+        `the players strip (or its call to action) does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? DEFAULT_CTA}`,
       );
     }
     log(
@@ -6664,18 +6665,24 @@ const renderStyle = async (styleName) => {
         }
         const barShows = (endingFrames - impactFrame) / FPS + timing.hold;
         /*
-          With no bar, the GG card is the last line: it holds for its
-          words' reading time ("GG", the winner, how), fully shown from
-          cardIn (Wall Game Director, 2026-10-30: on v-2026-10-30-8 it was
-          fully shown 1.85 s, and "GG Bot wins by resignation" needs 2.7 s;
-          on a resignation it is the hook's payoff).
+          The GG card holds for its words' reading time ("GG", the winner,
+          how), fully shown from cardIn (Wall Game Director, 2026-10-30: on
+          v-2026-10-30-8 it was fully shown 1.85 s, and "GG Bot wins by
+          resignation" needs 2.7 s; on a resignation it is the hook's
+          payoff). The card's last line, the call to action, is read too
+          (VR1, review 115 N1; Nil: it must be read). With a bar, the
+          viewer reads the bar first, so the card's time comes after it.
         */
         const cardMore =
-          !bar && style.ending === "gg"
+          style.ending === "gg"
             ? Math.ceil(
                 Math.max(
                   0,
-                  readingSeconds({}, `GG ${dailyName(winnerId)} ${how}`) -
+                  barRead +
+                    readingSeconds(
+                      {},
+                      `GG ${dailyName(winnerId)} ${how} ${EDL?.cta ?? DEFAULT_CTA}`,
+                    ) -
                     (timing.seconds - timing.cardIn + timing.hold),
                 ) * FPS,
               ) / FPS
@@ -6688,7 +6695,8 @@ const renderStyle = async (styleName) => {
             ending: ending(timing.seconds),
             credit: creditAt(timing.seconds),
           }),
-          timing.hold + (bar ? holdFor(barShows, timing.flash) : cardMore),
+          timing.hold +
+            Math.max(bar ? holdFor(barShows, timing.flash) : 0, cardMore),
           { kind: "ending-hold", ply: plyIndex },
         );
       } else if (creditText) {
