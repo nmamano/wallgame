@@ -227,6 +227,14 @@ const plainStep = (r: RaceState): RaceState => {
  */
 export const RACE_SAVE_WALK = 6;
 
+/**
+ * The engine's noise on a CHANGE across one move: each position can be off by
+ * 0.035 in win chance (KEEP_DROP's measurement), so a difference by up to
+ * twice that. A detour the engine moves by no more than this changed nothing
+ * that the engine can tell (the opening wall wars of -11, -12, -14, -15).
+ */
+export const ENGINE_NOISE = 0.07;
+
 /** A win-chance swing this large makes a move a moment (C36 B). */
 export const MOMENT_CHANCE = 0.15;
 
@@ -548,8 +556,10 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       const ownRise =
         ownBefore === null || ownAfter === null ? 0 : ownAfter - ownBefore;
       if (theirRise >= minJump && theirRise >= ownRise) {
-        // C36 B: a detour must move the race, and not be a wall-war answer.
-        if (gains[ply] >= MOMENT_GAIN && !answered(ply)) {
+        // C36 B: a detour must move the race, not be a wall-war answer, and
+        // move the engine by more than its noise (when there is an engine).
+        const engineAgrees = !f.engine || f.engine.delta > ENGINE_NOISE;
+        if (gains[ply] >= MOMENT_GAIN && !answered(ply) && engineAgrees) {
           fit(ply, "detour", theirRise / 12, largest(yours, rise) ?? moved);
         } else tags[ply].push("detour");
       }

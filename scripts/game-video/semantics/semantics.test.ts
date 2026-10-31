@@ -151,9 +151,16 @@ describe("labelGame", () => {
   test("the same wall with no threat before it is a detour", () => {
     const l = labels([
       { w1: [10, 8], w2: [8, 8], wc: [0.5, 0.5] },
-      { w1: [8, 13], w2: [8, 8], wc: [0.5, 0.5], walls: ["^a1"] },
+      { w1: [8, 13], w2: [8, 8], wc: [0.5, 0.6], walls: ["^a1"] },
     ]);
     expect(l.plies[1].label).toBe("detour");
+    // The same wall that the engine does not move beyond its noise: quiet.
+    const flat = labels([
+      { w1: [10, 8], w2: [8, 8], wc: [0.5, 0.5] },
+      { w1: [8, 13], w2: [8, 8], wc: [0.5, 0.55], walls: ["^a1"] },
+    ]);
+    expect(flat.plies[1].label).toBe("quiet");
+    expect(flat.plies[1].tags).toContain("detour");
   });
 
   test("an escape: the mouse runs from next to the cat to 4 or more", () => {
@@ -956,7 +963,7 @@ describe("checkSeen (the image check)", () => {
         ).find((x) => x.ply === 1)?.seen,
       };
     };
-    expect(run([0.5, 0.52])).toEqual({ label: "detour", seen: true });
+    expect(run([0.5, 0.6])).toEqual({ label: "detour", seen: true });
     expect(run([0.7, 0.4])).toEqual({ label: "blunder", seen: false });
   });
 });
