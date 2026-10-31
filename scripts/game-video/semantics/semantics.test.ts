@@ -24,6 +24,7 @@ interface PlySpec {
   walls?: string[];
   best?: string;
   bestWalls?: string[];
+  bestSteps?: { pawn: "cat" | "mouse"; to: string }[];
   bestWalks?: [number, number];
   mouseRan?: boolean;
   /** The other side's mouse room before and after (default 40 -> 40). */
@@ -75,6 +76,7 @@ const gameOf = (
           bestMove: s.best ?? "Ca2",
           playedBest: !s.best,
           bestWalls: s.bestWalls ?? [],
+          bestSteps: s.bestSteps ?? (s.best ? [] : [{ pawn: "cat", to: "a2" }]),
           bestWalks: s.bestWalks ?? null,
         }
       : null;
@@ -670,6 +672,36 @@ describe("checkSentence", () => {
     expect(
       checkSentence("Normal Bot skips a wall.", top, facts, seats),
     ).toEqual(['"skips" needs a cited fact that says preferred']);
+  });
+
+  test("engine notation is refused; the preferred move is told in words", () => {
+    expect(
+      checkSentence(
+        "Guest Ferret misses Cg5 with >c4.",
+        ["0.best", "0.play"],
+        facts,
+        seats,
+      ),
+    ).toContain("uses engine notation Cg5; say the pawn step in words");
+    const game = gameOf([
+      {
+        w1: [6, 6],
+        w2: [6, 6],
+        wc: [0.7, 0.2],
+        best: "Cg5.Mh4.>e7",
+        bestWalls: [">e7"],
+        bestSteps: [
+          { pawn: "cat", to: "g5" },
+          { pawn: "mouse", to: "h4" },
+        ],
+      },
+    ]);
+    const best = factsOf(game, labelGame(game), 0).find(
+      (f) => f.id === "0.best",
+    )!.text;
+    expect(best).toBe(
+      "Instead of this move, the engine preferred a cat step to g5 and a mouse step to h4 and the wall >e7.",
+    );
   });
 
   test('number words are checked, "one" before a unit too (VR1 B3)', () => {

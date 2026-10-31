@@ -40,6 +40,7 @@
 import type { PlayerId } from "../../../shared/domain/game-types";
 import {
   boxedRoom,
+  type EngineFacts,
   type GameFacts,
   type HuntChange,
   type PlyFacts,
@@ -173,10 +174,7 @@ export const factsOf = (
     if (e.playedBest) {
       add("best", "This move is the engine's top choice.");
     } else if (e.bestMove) {
-      const walls = e.bestWalls.length
-        ? `, with ${e.bestWalls.length === 1 ? "the wall" : "the walls"} ${e.bestWalls.join(" and ")}`
-        : ", with no wall";
-      let what = `The engine preferred ${e.bestMove}${walls} to this move.`;
+      let what = `Instead of this move, the engine preferred ${bestInWords(e)}.`;
       if (e.bestWalks) {
         // Only a walk the best move makes better FOR THE MOVER says why it
         // is best: the other side's walk longer, or the mover's own shorter.
@@ -256,6 +254,32 @@ TENS.forEach((w, i) => (NUMBER_WORDS[w] = String(20 + 10 * i)));
  */
 const ONE_COUNT =
   /\bone\s+(?:more\s+|extra\s+)?(?:step|move|wall|square|cell|turn|ply)s?\b/gi;
+
+/**
+ * The engine's best move in words, never its notation (Director, 2026-10-31:
+ * "Cg5.>e7" reached a script): "a cat step to g5 and the wall >e7".
+ */
+const bestInWords = (e: EngineFacts): string => {
+  const parts: string[] = [];
+  const pawns = [...new Set(e.bestSteps.map((s) => s.pawn))];
+  for (const pawn of pawns) {
+    const cells = e.bestSteps.filter((s) => s.pawn === pawn).map((s) => s.to);
+    parts.push(
+      cells.length === 1
+        ? `a ${pawn} step to ${cells[0]}`
+        : `${pawn} steps to ${cells.join(" and ")}`,
+    );
+  }
+  if (e.bestWalls.length > 0) {
+    parts.push(
+      `${e.bestWalls.length === 1 ? "the wall" : "the walls"} ${e.bestWalls.join(" and ")}`,
+    );
+  }
+  return `${parts.join(" and ")}${e.bestWalls.length === 0 ? ", with no wall" : ""}`;
+};
+
+/** A pawn step in engine notation ("Cg5", "Md4"); a sentence says it in words. */
+const PAWN_NOTATION = /\b[CMDE][a-l](?:1[0-2]|[1-9])\b/g;
 
 /** A judgment word, and the stem a cited fact must hold for it. */
 const JUDGMENTS: [RegExp, string][] = [
@@ -358,6 +382,8 @@ export const checkSentence = (
     reasons.push(`has ${words.length} words; at most ${MAX_WORDS}`);
   if (/[.!?]\s+\S/.test(sentence.trim()))
     reasons.push("is more than one sentence");
+  for (const m of sentence.matchAll(PAWN_NOTATION))
+    reasons.push(`uses engine notation ${m[0]}; say the pawn step in words`);
   // Numbers: digits, percents and number words.
   // A cell's digits ("a1") are no number.
   const citedNumbers = new Set(cited.replace(CELL, " ").match(/\d+/g) ?? []);

@@ -103,6 +103,8 @@ export interface EngineFacts {
   playedBest: boolean;
   /** The walls of the best move, in standard notation. */
   bestWalls: string[];
+  /** The pawn steps of the best move: the pawn and the cell it ends on. */
+  bestSteps: { pawn: GamePawnType; to: string }[];
   /**
    * Each hunt's walk had the best move been played (huntsFor order), or
    * null when the best move is missing or cannot be played here.
@@ -184,6 +186,16 @@ const wallsOf = (notation: string, height: number): string[] =>
           ),
         ]
       : [],
+  );
+
+const pawnStepsOf = (
+  notation: string,
+  height: number,
+): { pawn: GamePawnType; to: string }[] =>
+  moveFromStandardNotation(notation, height).actions.flatMap((a) =>
+    a.type === "wall"
+      ? []
+      : [{ pawn: a.type, to: cellToStandardNotation(a.target, height) }],
   );
 
 /** Each hunt's walk after `notation` is played in `state`; null if illegal. */
@@ -329,6 +341,7 @@ export const gameFacts = (
         bestMove,
         playedBest: bestMove !== null && sameActions(bestMove, notation),
         bestWalls: bestMove ? wallsOf(bestMove, height) : [],
+        bestSteps: bestMove ? pawnStepsOf(bestMove, height) : [],
         bestWalks: bestMove ? walksAfter(before, bestMove) : null,
       };
     }
