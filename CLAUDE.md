@@ -303,4 +303,4 @@ See `/info/` for detailed design docs including:
 - **Database:** PostgreSQL
 - **Config:** `Dockerfile`; runtime configuration is in the private VPS runbook
 - **Operations:** Read `ops-private/wallgame-vps-production-20261005.md` before deployment or database work. Run `bun run migrate` only against the approved target.
-- **Rollback only:** `ops-private/OBSOLETE-fly-neon-rollback/README.md`
+- **History:** Production moved from Fly/Neon to the VPS on 2026-10-05; Fly and Neon were deleted on 2026-10-25.

@@ -70,7 +70,8 @@ export const createAnonymousWriteLimiter = ({
 /**
  * Caddy replaces X-Forwarded-For with the connection address. The app must
  * remain reachable only through Caddy, with no trusted upstream proxies.
- * Fly-Client-IP passes through unchanged and must never select a bucket.
+ * A client can still send Fly-Client-IP (set by the former Fly host). Caddy
+ * passes it through unchanged, so it must never select a bucket.
  * Missing or blank addresses share one bucket rather than bypassing the limit.
  */
 export const clientIpKey = (headers: Headers): string => {

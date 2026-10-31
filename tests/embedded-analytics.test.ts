@@ -97,7 +97,7 @@ describe("the analytics tag in index.html", () => {
   });
 
   test("never loads off the production host", () => {
-    for (const hostname of ["localhost", "127.0.0.1", "wallgame.fly.dev"]) {
+    for (const hostname of ["localhost", "127.0.0.1", "wallgame.example"]) {
       expect(run({ hostname }).appended).toEqual([]);
     }
   });

@@ -59,7 +59,7 @@ describe("WebSocket origins", () => {
     for (const setting of [undefined, ""]) {
       const production = createWsOriginCheck("production", setting);
       expect(production("https://wallgame.io")).toBe(true);
-      expect(production("https://wallgame.fly.dev")).toBe(false);
+      expect(production("https://wallgame.example")).toBe(false);
       expect(production("http://localhost:5173")).toBe(false);
       expect(production(staging)).toBe(false);
       expect(production(undefined)).toBe(true);

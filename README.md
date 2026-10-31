@@ -60,8 +60,6 @@ database work. Deploys and production writes require explicit approval.
 
 Use a separate local database for development and tests. `bun run migrate` applies
 migrations to the database selected by `DATABASE_URL`; check the target first.
-Previous platform procedures are kept only in
-`ops-private/OBSOLETE-fly-neon-rollback/`.
 
 ### Verify the database schema
 

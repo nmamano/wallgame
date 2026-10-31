@@ -8,6 +8,4 @@ runbook for access, logs, drain, migration and restart rules. Deployment and
 production writes require Nil's explicit approval. Run `bun run migrate` only
 with the intended database selected and the applicable approval.
 
-The private `ops-private/OBSOLETE-fly-neon-rollback/` directory holds the previous
-platform procedures. It is for rollback only; copy current production data back
-before starting the previous platform.
+Production moved from Fly/Neon to the VPS on 2026-10-05; Fly and Neon were deleted on 2026-10-25.
