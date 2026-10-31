@@ -4,18 +4,19 @@
 # database again. Board task e8d26610, step 3.
 #
 #   scripts/game-video/daily/nightly-candidates.sh OUT_DIR
-#       [--manual-stamp STAMP [--days N] [--nil-seat]]
+#       [--manual-stamp STAMP [--days N] [--nil-seat] [--members]]
 #
 # --manual-stamp is for a person testing by hand, never for the timer: it lets
 # a stamp that is not today's through the day check below, and only when it is
 # exactly the stamp that `fresh` verified. Every other term still applies.
 # Only with it, --days N picks from the N days before the snapshot (not 1) and
 # --nil-seat keeps only games with a Nil seat: a report of Nil's own games.
+# --members adds the games that only a member's seat keeps out (no names).
 #
 # Writes OUT_DIR/<UTC day>.json (the candidate report) or OUT_DIR/<UTC day>.skip
 # (one line: why there is no report today). The crew lead reads one of the two.
-# A by-hand run writes <UTC day>.manual-<STAMP>[-days<N>][-nil].json or .skip,
-# so it never touches the timer's two names. Every run, with any OUT_DIR,
+# A by-hand run writes <UTC day>.manual-<STAMP>[-days<N>][-nil][-members].json
+# or .skip, so it never touches the timer's two names. Every run, with any OUT_DIR,
 # takes the same lock file (LOCK below), so two runs never overlap.
 #
 # Run by the user timer wallgame-daily-candidates.timer at 11:30 UTC, after
@@ -39,7 +40,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: nightly-candidates.sh OUT_DIR [--manual-stamp STAMP [--days N] [--nil-seat]]" >&2
+  echo "usage: nightly-candidates.sh OUT_DIR [--manual-stamp STAMP [--days N] [--nil-seat] [--members]]" >&2
   exit 64
 }
 [ $# -ge 1 ] || usage
@@ -48,6 +49,7 @@ shift
 MANUAL_STAMP=""
 DAYS=1
 NIL_SEAT=""
+MEMBERS=""
 while [ $# -gt 0 ]; do
   case $1 in
   --manual-stamp)
@@ -64,10 +66,14 @@ while [ $# -gt 0 ]; do
     NIL_SEAT=1
     shift
     ;;
+  --members)
+    MEMBERS=1
+    shift
+    ;;
   *) usage ;;
   esac
 done
-[ -n "$MANUAL_STAMP" ] || { [ "$DAYS" = 1 ] && [ -z "$NIL_SEAT" ]; } || usage
+[ -n "$MANUAL_STAMP" ] || { [ "$DAYS" = 1 ] && [ -z "$NIL_SEAT" ] && [ -z "$MEMBERS" ]; } || usage
 BACKUP=$HOME/nil/vps-ops/vps-backup
 IDENTITY=$BACKUP/keys/wallgame/age-identity.txt
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -79,6 +85,7 @@ if [ -n "$MANUAL_STAMP" ]; then
   NAME=$DAY.manual-$MANUAL_STAMP
   [ "$DAYS" = 1 ] || NAME=$NAME-days$DAYS
   [ -z "$NIL_SEAT" ] || NAME=$NAME-nil
+  [ -z "$MEMBERS" ] || NAME=$NAME-members
 fi
 REPORT=$OUT_DIR/$NAME.json
 SKIP=$OUT_DIR/$NAME.skip
@@ -231,7 +238,7 @@ restore_source() {
 pick() {
   local out=$REPORT.part
   (cd "$REPO" && "$HOME/.bun/bin/bun" scripts/game-video/pick-daily-candidates.ts \
-    --container "$SOURCE" --until "$UNTIL" --days "$DAYS" --top 5 ${NIL_SEAT:+--nil-seat} --out "$out")
+    --container "$SOURCE" --until "$UNTIL" --days "$DAYS" --top 5 ${NIL_SEAT:+--nil-seat} ${MEMBERS:+--members} --out "$out")
   # Name the snapshot in the report, so the crew lead can see which day's
   # backup the games came from.
   python3 -I -c 'import json,sys

@@ -7,7 +7,11 @@
  *
  *   bun scripts/game-video/pick-daily-candidates.ts --container wgvideo-restore \
  *     --until 2026-10-25T10:20:48Z [--days 7] [--top 5] [--game ID ...] [--out F]
- *     [--engine] [--nil-seat]
+ *     [--engine] [--nil-seat] [--members]
+ *
+ * --members adds `memberGames`: the games that only another member's seat
+ * keeps out (excludedOnlyByMembers), with ratings and no member names, for a
+ * person to judge; they are not candidates.
  *
  * --nil-seat keeps only games with a Nil seat (nilGameEligibility), for a
  * by-hand report of Nil's own games over a long --days window.
@@ -29,6 +33,7 @@
  * it never touches: engine-eval.ts.
  */
 import { writeFileSync } from "node:fs";
+import { resolveResultFromPlayers } from "../../server/db/replay-match-score";
 import type { ConfigFile } from "../../official-custom-bot-client/src/config-schema";
 import type {
   GameInitialState,
@@ -37,6 +42,7 @@ import type {
   Variant,
 } from "../../shared/domain/game-types";
 import {
+  classifySeat,
   closeCallsOf,
   describeCloseCall,
   describeEscape,
@@ -44,6 +50,7 @@ import {
   escapesOf,
   pickBoard,
   evalBarEngineFor,
+  excludedOnlyByMembers,
   gameEligibility,
   jumpsOf,
   nilGameEligibility,
@@ -80,6 +87,8 @@ interface Args {
   games: string[];
   /** --nil-seat: only games with a Nil seat. */
   nilSeat: boolean;
+  /** --members: list the games only a member seat keeps out. */
+  members: boolean;
   out: string;
 }
 
@@ -110,6 +119,7 @@ const parseArgs = (argv: string[]): Args => {
     top: Number(value("top") ?? 5),
     games,
     nilSeat: argv.includes("--nil-seat"),
+    members: argv.includes("--members"),
     out: value("out") ?? `/tmp/daily-candidates-${stamp}Z.json`,
   };
 };
@@ -130,7 +140,7 @@ const GAMES_SQL = `
 select coalesce(json_agg(g order by g."startedAt"), '[]'::json) from (
   select ga.game_id as "gameId", ga.variant, ga.board_width as "boardWidth",
     ga.board_height as "boardHeight", ga.moves_count as "movesCount",
-    ga.puzzle_id as "puzzleId", ga.started_at as "startedAt",
+    ga.puzzle_id as "puzzleId", ga.started_at as "startedAt", ga.rated,
     coalesce(gd.moves, '[]'::jsonb) as moves,
     coalesce(gd.config_parameters, '{}'::jsonb) as "configParameters",
     (select coalesce(json_agg(json_build_object(
@@ -141,7 +151,8 @@ select coalesce(json_agg(g order by g."startedAt"), '[]'::json) from (
         'botId', p.bot_id,
         'botIsOfficial', b.is_official,
         'outcomeRank', p.outcome_rank,
-        'outcomeReason', p.outcome_reason) order by p.player_order), '[]'::json)
+        'outcomeReason', p.outcome_reason,
+        'ratingAtStart', p.rating_at_start) order by p.player_order), '[]'::json)
       from game_players p left join built_in_bots b on b.bot_id = p.bot_id
       where p.game_id = ga.game_id) as seats
   from games ga left join game_details gd on gd.game_id = ga.game_id
@@ -212,7 +223,15 @@ interface Candidate {
    * it replays the game through replayDistances, with no production view.
    */
   initialState: GameInitialState;
-  seats: { playerOrder: number; kind: SeatKind; name: string }[];
+  /** games.rated. */
+  rated: boolean;
+  /** rating: game_players.rating_at_start (null for a custom bot). */
+  seats: {
+    playerOrder: number;
+    kind: SeatKind;
+    name: string;
+    rating: number | null;
+  }[];
   /**
    * The stored result (game_players outcome_rank and outcome_reason). A game
    * with no winner is not a candidate, so `winner` is always set.
@@ -233,6 +252,50 @@ interface Candidate {
    */
   engine?: EngineColumn | { error: string };
 }
+
+/**
+ * A game only member seats keep out (--members): the facts a person needs to
+ * judge its strength, with no member's name.
+ */
+interface MemberGame {
+  gameId: string;
+  startedAt: string;
+  variant: string;
+  boardWidth: number;
+  boardHeight: number;
+  movesCount: number;
+  rated: boolean;
+  result: ReturnType<typeof resolveResultFromPlayers>;
+  seats: {
+    playerOrder: number;
+    kind: "member" | SeatKind;
+    rating: number | null;
+    /** Only for a bot. */
+    botName?: string;
+  }[];
+}
+
+const memberGameOf = (game: StoredGame): MemberGame => ({
+  gameId: game.gameId,
+  startedAt: game.startedAt,
+  variant: game.variant,
+  boardWidth: game.boardWidth,
+  boardHeight: game.boardHeight,
+  movesCount: game.movesCount,
+  rated: game.rated,
+  result: resolveResultFromPlayers(game.seats),
+  seats: [...game.seats]
+    .sort((a, b) => a.playerOrder - b.playerOrder)
+    .map((s) => {
+      const v = classifySeat(s);
+      return {
+        playerOrder: s.playerOrder,
+        kind: v.ok ? v.kind : "member",
+        rating: s.ratingAtStart,
+        ...(s.botId ? { botName: s.displayName } : {}),
+      };
+    }),
+});
 
 const walk = (n: number | null) => (n === null ? "-" : String(n));
 
@@ -285,6 +348,7 @@ const main = async () => {
   const excluded: { gameId: string; reason: string }[] = [];
   const unscored: { gameId: string; reason: string }[] = [];
   const candidates: Candidate[] = [];
+  const memberGames: MemberGame[] = [];
   const links = new Map<string, EngineLink>();
 
   try {
@@ -294,6 +358,9 @@ const main = async () => {
       );
       if (!verdict.eligible) {
         excluded.push({ gameId: game.gameId, reason: verdict.reason });
+        if (args.members && excludedOnlyByMembers(game)) {
+          memberGames.push(memberGameOf(game));
+        }
         continue;
       }
       try {
@@ -326,12 +393,14 @@ const main = async () => {
           moves,
           initialState,
           result: verdict.result,
+          rated: game.rated,
           seats: [...game.seats]
             .sort((a, b) => a.playerOrder - b.playerOrder)
             .map((s, i) => ({
               playerOrder: s.playerOrder,
               kind: verdict.seatKinds[i],
               name: s.displayName,
+              rating: s.ratingAtStart,
             })),
           distances,
           minJump,
@@ -400,6 +469,7 @@ const main = async () => {
     ranked,
     excluded,
     unscored,
+    ...(args.members ? { memberGames } : {}),
   };
   writeFileSync(args.out, JSON.stringify(report, null, 1));
 

@@ -18,6 +18,7 @@ import {
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
+  excludedOnlyByMembers,
   MIN_PLIES,
   nilGameEligibility,
   NIL_USER_ID,
@@ -41,6 +42,7 @@ const seat = (over: Partial<StoredSeat>): StoredSeat => ({
   botIsOfficial: null,
   outcomeRank: 1,
   outcomeReason: "capture",
+  ratingAtStart: null,
   ...over,
 });
 
@@ -79,6 +81,7 @@ const game = (
   boardHeight: 8,
   movesCount: 30,
   puzzleId: null,
+  rated: false,
   seats: [
     { ...a, playerOrder: 1, outcomeRank: 1 },
     { ...b, playerOrder: 2, outcomeRank: 2 },
@@ -140,6 +143,16 @@ describe("seat eligibility", () => {
       eligible: false,
       reason: "signed-in member seat",
     });
+  });
+
+  test("--members: a game only a member seat keeps out, nothing else", () => {
+    expect(excludedOnlyByMembers(game(member, member))).toBe(true);
+    expect(excludedOnlyByMembers(game(member, officialBot))).toBe(true);
+    expect(excludedOnlyByMembers(game(guest, officialBot))).toBe(false);
+    expect(excludedOnlyByMembers(game(member, customBot))).toBe(false);
+    expect(excludedOnlyByMembers(game(member, member, { movesCount: 4 }))).toBe(
+      false,
+    );
   });
 
   test("a game with no stored winner is out: a one-move-rule draw too", () => {

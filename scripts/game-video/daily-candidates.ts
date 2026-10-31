@@ -95,6 +95,8 @@ export interface StoredSeat {
   botIsOfficial: boolean | null;
   outcomeRank: number;
   outcomeReason: string;
+  /** game_players.rating_at_start; NULL for a custom bot (and old rows). */
+  ratingAtStart: number | null;
 }
 
 export interface StoredGameSummary {
@@ -104,6 +106,8 @@ export interface StoredGameSummary {
   boardHeight: number;
   movesCount: number;
   puzzleId: string | null;
+  /** games.rated: the game moved ratings. */
+  rated: boolean;
   seats: StoredSeat[];
 }
 
@@ -195,6 +199,25 @@ export const nilGameEligibility = (game: StoredGameSummary): GameVerdict => {
   const verdict = gameEligibility(game);
   if (!verdict.eligible || verdict.seatKinds.includes("nil")) return verdict;
   return { eligible: false, reason: "no Nil seat" };
+};
+
+/**
+ * A game that only another member's seat keeps out: with every member seat
+ * read as Nil's, it would be eligible. The --members section lists these for
+ * a person to look at (strong human games, 2026-10-31); they are never
+ * candidates while the 2026-10-25 rule stands.
+ */
+export const excludedOnlyByMembers = (game: StoredGameSummary): boolean => {
+  if (gameEligibility(game).eligible) return false;
+  const asNil = {
+    ...game,
+    seats: game.seats.map((s) =>
+      classifyPastGamePlayer(s.playerConfigType, s.userId) === "member"
+        ? { ...s, userId: NIL_USER_ID }
+        : s,
+    ),
+  };
+  return gameEligibility(asNil).eligible;
 };
 
 /* ------------------------------------------------- engine (debug column) -- */
