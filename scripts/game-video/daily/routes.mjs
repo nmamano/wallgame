@@ -114,15 +114,16 @@ import {
   createFollowerHistory,
   PLATFORMS_FILE,
   socialView,
+  createPostCheckpoints,
   createPostStatsHistory,
   postStatsView,
 } from "./social.mjs";
 import {
   STATS_MAX_AGE_MS,
   STATS_PLATFORMS,
-  STATS_WINDOW_MS,
+  FRESH_WINDOW_MS,
   readPostStats,
-  statsDue,
+  postsDue,
 } from "./post-stats.mjs";
 import { STATS_PAGE } from "./stats-page.mjs";
 
@@ -1234,6 +1235,9 @@ export const createDaily = ({
   const postStatsHistory = createPostStatsHistory(
     join(dirs.root, "post-stats.jsonl"),
   );
+  const postCheckpoints = createPostCheckpoints(
+    join(dirs.root, "post-checkpoints.jsonl"),
+  );
   /** @returns {{ reads: Record<string, any>, numbers: Record<string, any> }} */
   const readPostStatsCache = () => {
     try {
@@ -1246,21 +1250,21 @@ export const createDaily = ({
   /** The post-stats read under way, if any. */
   let statsRun = null;
   /**
-   * Read the platforms that are due (statsDue: X after 24 h, any other
-   * after 6 h) and keep the result. As the follower read, it never starts
+   * Read the posts that are due (postsDue: at 1 h, 24 h, 7 d, then weekly
+   * to 4 weeks; a free platform also every 6 h) and keep the result. As the follower read, it never starts
    * while a post runs, and a post waits for it (asThePost): both may
    * refresh the YouTube token.
    */
   const recordPostStats = async () => {
     if (posting || statsRun) return;
     const cached = readPostStatsCache();
-    const due = statsDue(cached.reads, Date.now());
-    if (!due.length) return;
+    const posts = readPostLog(store.postLog.live);
+    const due = postsDue(posts, cached, Date.now());
+    if (!Object.keys(due).length) return;
     statsRun = (async () => {
       try {
         const fresh = await readPostStats(
           { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
-          readPostLog(store.postLog.live),
           due,
         );
         writeFileSync(
@@ -1271,6 +1275,7 @@ export const createDaily = ({
           }),
         );
         postStatsHistory.record(fresh.numbers);
+        postCheckpoints.record(fresh.numbers, posts);
       } catch (err) {
         console.warn(`post stats: not recorded: ${err?.message ?? err}`);
       } finally {
@@ -1906,13 +1911,14 @@ export const createDaily = ({
           numbers,
           reads,
           history: postStatsHistory.read(),
+          checkpoints: postCheckpoints.read(),
           names: {
             ...Object.fromEntries(data.platforms.map((p) => [p.id, p.name])),
             "instagram-story": "Instagram Story",
           },
           nowMs: Date.now(),
           platforms: STATS_PLATFORMS,
-          note: `Read every ${STATS_MAX_AGE_MS / 36e5} h (X every 24 h, as X reads are paid); a post is read for ${STATS_WINDOW_MS / 864e5} days, a Story for 1 day, then keeps its last numbers.`,
+          note: `Each post is read at 1 h, 24 h, 7 days, then weekly to 4 weeks; on every platform but X (paid per read) also every ${STATS_MAX_AGE_MS / 36e5} h for ${FRESH_WINDOW_MS / 864e5} days. A Story is read for 1 day. Then a post keeps its last numbers.`,
         }),
       });
     },

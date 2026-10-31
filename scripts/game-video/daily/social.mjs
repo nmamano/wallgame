@@ -19,6 +19,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { CHECKPOINTS, checkpointAt } from "./post-stats.mjs";
 
 /** How often the app records the follower history with no visitor: 1 h. */
 export const FOLLOWER_RECORD_MS = 60 * 60 * 1000;
@@ -328,6 +329,49 @@ export const createPostStatsHistory = (path) => {
 };
 
 /**
+ * @typedef {{ key: string, checkpoint: string, views: number | null,
+ *   likes: number | null, comments: number | null, shares: number | null,
+ *   at: string }} CheckpointRow
+ */
+
+/**
+ * Each post's numbers at each checkpoint (post-stats.mjs CHECKPOINTS: 1 h,
+ * 24 h, 7 d, ...): one row per post per checkpoint, the first numbers read
+ * after the post passed it, in a JSONL file. `at` says when they were read.
+ * @param {string} path
+ */
+export const createPostCheckpoints = (path) => {
+  /** @returns {CheckpointRow[]} */
+  const read = () =>
+    existsSync(path)
+      ? readFileSync(path, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : [];
+  /**
+   * @param {Record<string, any>} numbers keyed "<platform> <postId>"
+   * @param {{ platform: string, postId: string, utc: string }[]} posts
+   */
+  const record = (numbers, posts) => {
+    const have = new Set(read().map((r) => `${r.key}|${r.checkpoint}`));
+    const utcOf = new Map(
+      posts.map((p) => [`${p.platform} ${p.postId}`, p.utc]),
+    );
+    for (const [key, n] of Object.entries(numbers ?? {})) {
+      const posted = Date.parse(utcOf.get(key) ?? "");
+      const c = checkpointAt(Date.parse(n.at) - posted);
+      if (!c || have.has(`${key}|${c.label}`)) continue;
+      const row = { key, checkpoint: c.label };
+      for (const m of METRICS) row[m] = n[m] ?? null;
+      appendFileSync(path, JSON.stringify({ ...row, at: n.at }) + "\n");
+      have.add(`${key}|${c.label}`);
+    }
+  };
+  return { read, record };
+};
+
+/**
  * @typedef {{ views: number | null, likes: number | null,
  *   comments: number | null, shares: number | null }} PostNumbers
  */
@@ -359,14 +403,16 @@ export const videoName = (caption) => {
  * its total; each platform's totals and their change over 1 and 7 days,
  * from the history.
  * @param {{ posts: any[], numbers: Record<string, any>, reads: Record<string, any>,
- *   history: PostStatsRow[], names: Record<string, string>, nowMs: number,
- *   platforms: string[], note: string }} input
+ *   history: PostStatsRow[], checkpoints: CheckpointRow[],
+ *   names: Record<string, string>, nowMs: number, platforms: string[],
+ *   note: string }} input
  */
 export const postStatsView = ({
   posts,
   numbers,
   reads,
   history,
+  checkpoints,
   names,
   nowMs,
   platforms,
@@ -389,6 +435,19 @@ export const postStatsView = ({
     return reads[p.platform]?.error
       ? "no numbers: see Posts by platform"
       : "not read yet";
+  };
+  // A post's views at 1 h, 24 h and 7 d (its likes where it has no
+  // views): "12 / 140 / -", so posts compare at the same age.
+  const AGES = CHECKPOINTS.slice(0, 3).map((c) => c.label);
+  const agesOf = (p) => {
+    const rows = checkpoints.filter((r) => r.key === keyOf(p));
+    const m = rows.some((r) => typeof r.views === "number") ? "views" : "likes";
+    const at = (label) => rows.find((r) => r.checkpoint === label)?.[m];
+    const text = AGES.map((label) => {
+      const v = at(label);
+      return typeof v === "number" ? v.toLocaleString("en-US") : "-";
+    }).join(" / ");
+    return rows.length && m === "likes" ? `${text} likes` : text;
   };
   const order = (p) => {
     const i = platforms.indexOf(p.platform);
@@ -422,6 +481,7 @@ export const postStatsView = ({
           href: https(p.url),
           ...totals([numbers[keyOf(p)]]),
           at: numbers[keyOf(p)]?.at ?? null,
+          ages: agesOf(p),
           note: noteOf(p),
         }));
       return {

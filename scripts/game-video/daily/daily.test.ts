@@ -4669,6 +4669,66 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(itemOf(openStore(dir), id).state).toBe("approved");
   });
 
+  test("the timer reads a post due at its 1 h checkpoint and keeps its checkpoint row", async () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    const uri = "at://did:plc:wg/app.bsky.feed.post/1";
+    writeFileSync(
+      store.postLog.live,
+      JSON.stringify({
+        utc: new Date(Date.now() - 2 * 3600e3).toISOString(),
+        day: "2026-10-31",
+        itemId: "v-2026-10-31-1",
+        platform: "bluesky",
+        mode: "live",
+        postId: uri,
+        url: "https://bsky.app/profile/wg/post/1",
+      }) + "\n",
+    );
+    const sent: string[] = [];
+    const daily = createDaily({
+      dataDir: dir,
+      env: { PATH: process.env.PATH! },
+      backupWindow: null,
+      schedule: false,
+      followerRecordMs: 3600e3,
+      live: () => ({
+        mode: "live",
+        sent,
+        request: (req: { url: string }) => {
+          sent.push(req.url);
+          return Promise.resolve(
+            req.url.includes("app.bsky.feed.getPosts")
+              ? {
+                  status: 200,
+                  json: {
+                    posts: [
+                      { uri, likeCount: 4, replyCount: 1, repostCount: 0 },
+                    ],
+                  },
+                }
+              : { status: 404, json: null },
+          );
+        },
+      }),
+    });
+    stops.push(() => daily.stop());
+    const rows = join(store.dirs.root, "post-checkpoints.jsonl");
+    for (let i = 0; i < 100 && !existsSync(rows); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(
+      readFileSync(rows, "utf8")
+        .trim()
+        .split("\n")
+        .map(
+          (l) =>
+            JSON.parse(l) as { key: string; checkpoint: string; likes: number },
+        )
+        .map((r) => [r.key, r.checkpoint, r.likes]),
+    ).toEqual([[`bluesky ${uri}`, "1 h", 4]]);
+  });
+
   test("the Social tab: Growth's file with the app's modes, names only; opening it records the day's counts", async () => {
     const dir = tempDir();
     const store = openStore(dir);
@@ -4767,6 +4827,9 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
       body.postStats.platforms.find((r) => r.platform === "Bluesky")!.likes,
     ).toBe(4);
     expect(existsSync(join(store.dirs.root, "post-stats.jsonl"))).toBe(false);
+    expect(existsSync(join(store.dirs.root, "post-checkpoints.jsonl"))).toBe(
+      false,
+    );
     const [card] = body.cards;
     expect(card.name).toBe("Bluesky");
     // No key in the test env: dry-run, and the reason names the secret.

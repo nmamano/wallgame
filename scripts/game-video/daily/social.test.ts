@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createFollowerHistory,
+  createPostCheckpoints,
   createPostStatsHistory,
   postStatsView,
   ptMinute,
@@ -243,6 +244,19 @@ describe("the per-post stats", () => {
         x: { at: at("2026-10-31"), error: null, posts: 2 },
         tiktok: { at: at("2026-10-31"), error: "needs reconnect", posts: 0 },
       },
+      // X2's views at 1 h; Bluesky gives likes only.
+      checkpoints: [
+        ["x X2", 10, 1],
+        ["bluesky at://b", null, 1],
+      ].map(([key, views, likes]) => ({
+        key: String(key),
+        checkpoint: "1 h",
+        views: views as number | null,
+        likes: likes as number,
+        comments: null,
+        shares: null,
+        at: at("2026-10-31"),
+      })),
       history: [
         // X1 had 60 views a week ago and 90 yesterday.
         {
@@ -294,6 +308,7 @@ describe("the per-post stats", () => {
       numbers: {},
       reads: {},
       history: [],
+      checkpoints: [],
       names: {},
       nowMs: NOW,
       platforms: ["x", "bluesky"],
@@ -312,6 +327,7 @@ describe("the per-post stats", () => {
         comments: null,
         shares: null,
         at: at("2026-10-31"),
+        ages: "10 / - / -",
         note: "",
       },
       // No link but https. Bluesky gives no views: "-", no note.
@@ -323,6 +339,7 @@ describe("the per-post stats", () => {
         comments: null,
         shares: null,
         at: at("2026-10-31"),
+        ages: "1 / - / - likes",
         note: "",
       },
       // No numbers: the platform's read error is in its platform row.
@@ -334,6 +351,7 @@ describe("the per-post stats", () => {
         comments: null,
         shares: null,
         at: null,
+        ages: "- / - / -",
         note: "no numbers: see Posts by platform",
       },
     ]);
@@ -419,6 +437,7 @@ describe("a post read without the insights permission", () => {
       },
       reads: { facebook: { at, error: null, posts: 2 } },
       history: [],
+      checkpoints: [],
       names: { facebook: "Facebook Page" },
       nowMs: Date.parse("2026-10-31T18:00:00.000Z"),
       platforms: ["facebook"],
@@ -437,5 +456,33 @@ describe("ptMinute", () => {
     expect(ptMinute("2026-10-31T16:00:00.000Z")).toBe("Oct 31, 9:00 AM PT");
     expect(ptMinute("2026-11-02T17:05:00Z")).toBe("Nov 2, 9:05 AM PT");
     expect(ptMinute("2026-10-30")).toBe("2026-10-30");
+  });
+});
+
+describe("the checkpoint numbers", () => {
+  test("one row per post per checkpoint: the first read after it", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "checkpoints-")), "c.jsonl");
+    const cp = createPostCheckpoints(path);
+    const posts = [
+      { platform: "x", postId: "X1", utc: "2026-10-30T09:00:00.000Z" },
+    ];
+    const read = (at: string, views: number) => ({
+      "x X1": { views, likes: 1, comments: 0, shares: 0, at },
+      // A post not in the log has no age: no row.
+      "x gone": { views: 5, likes: 0, comments: 0, shares: 0, at },
+    });
+    // At 0.5 h: no checkpoint yet.
+    cp.record(read("2026-10-30T09:30:00.000Z", 3), posts);
+    // At 1.5 h, then 3 h: only the first counts as "1 h".
+    cp.record(read("2026-10-30T10:30:00.000Z", 12), posts);
+    cp.record(read("2026-10-30T12:00:00.000Z", 20), posts);
+    // At 24.5 h: "24 h".
+    cp.record(read("2026-10-31T09:30:00.000Z", 140), posts);
+    expect(
+      cp.read().map((r) => [r.key, r.checkpoint, r.views, r.at.slice(0, 13)]),
+    ).toEqual([
+      ["x X1", "1 h", 12, "2026-10-30T10"],
+      ["x X1", "24 h", 140, "2026-10-31T09"],
+    ]);
   });
 });

@@ -2,21 +2,20 @@
  * The per-post stats (post-stats.mjs): each platform's read from fixture
  * replies (no live call), the four numbers and "-" for one a platform does
  * not give, "needs reconnect" with a fallback where a permission is
- * missing, safe reasons, which posts are read (14 days; a Story 1 day) and
- * when (X 24 h, others 6 h), and one paid X request for all posts.
+ * missing, safe reasons, which posts are due (at 1 h, 24 h, 7 d, then
+ * weekly to 4 weeks; a free platform also every 6 h for 14 days; a Story
+ * for 1 day), and one paid X request for all posts.
  */
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  STATS_MAX_AGE_MS,
+  CHECKPOINTS,
   STATS_PLATFORMS,
   TIKTOK_NO_STATS,
-  X_STATS_MAX_AGE_MS,
-  postsToRead,
+  postsDue,
   readPostStats,
-  statsDue,
 } from "./post-stats.mjs";
 import { META_ACCOUNTS_URL } from "./meta.mjs";
 import { openTokenStore } from "./token-store.mjs";
@@ -36,6 +35,14 @@ interface Reply {
 const NOW = Date.parse("2026-10-31T18:00:00.000Z");
 const HOUR = 60 * 60 * 1000;
 const ago = (h: number) => new Date(NOW - h * HOUR).toISOString();
+/** The posts of each platform, as postsDue gives them. */
+const dueOf = (
+  posts: { platform: string; postId: string; utc: string }[],
+  platforms: string[],
+) =>
+  Object.fromEntries(
+    platforms.map((pl) => [pl, posts.filter((p) => p.platform === pl)]),
+  );
 
 const ENV = {
   X_API_KEY: "x-key",
@@ -263,8 +270,7 @@ const run = async (
       keepRefreshToken: () => undefined,
       now: () => new Date(NOW),
     },
-    posts,
-    platforms,
+    dueOf(posts, platforms),
   );
   return { ...out, sent };
 };
@@ -398,8 +404,7 @@ describe("readPostStats", () => {
         keepRefreshToken: () => undefined,
         now: () => new Date(NOW),
       },
-      POSTS,
-      ["threads"],
+      dueOf(POSTS, ["threads"]),
     );
     expect(reads.threads.error).toBe("needs reconnect");
     expect(sent).toEqual([]);
@@ -407,38 +412,100 @@ describe("readPostStats", () => {
 });
 
 describe("which posts and when", () => {
-  test("a post is read for 14 days, a Story for 1 day", () => {
-    const posts = [
-      { platform: "x", postId: "new", utc: ago(13 * 24) },
-      { platform: "x", postId: "old", utc: ago(14 * 24) },
-      { platform: "instagram-story", postId: "s-new", utc: ago(23) },
-      { platform: "instagram-story", postId: "s-old", utc: ago(25) },
-      { platform: "x", postId: "", utc: ago(1) },
-    ];
-    expect(postsToRead(posts, "x", NOW).map((p) => p.postId)).toEqual(["new"]);
-    expect(
-      postsToRead(posts, "instagram-story", NOW).map((p) => p.postId),
-    ).toEqual(["s-new"]);
+  interface P {
+    platform: string;
+    postId: string;
+    utc: string;
+  }
+  const due = (posts: P[], cache: Parameters<typeof postsDue>[1]) =>
+    Object.fromEntries(
+      Object.entries(postsDue(posts, cache, NOW)).map(([pl, ps]) => [
+        pl,
+        ps.map((p) => p.postId),
+      ]),
+    );
+  /** Every platform read `h` hours ago, with no error. */
+  const readAll = (h: number) =>
+    Object.fromEntries(
+      STATS_PLATFORMS.map((p) => [p, { at: ago(h), error: null }]),
+    );
+
+  test("the checkpoints: 1 h, 24 h, 7 d, then weekly to 4 weeks", () => {
+    expect(CHECKPOINTS.map((c) => c.label)).toEqual([
+      "1 h",
+      "24 h",
+      "7 d",
+      "14 d",
+      "21 d",
+      "28 d",
+    ]);
   });
 
-  test("X is due after 24 h (after a failed read, 6 h); any other after 6 h", () => {
-    const read = (h: number, error: string | null = null) => ({
-      at: ago(h),
-      error,
-      posts: 1,
+  test("an X post is read once per checkpoint, never between", () => {
+    const x = (postId: string, h: number) => ({
+      platform: "x",
+      postId,
+      utc: ago(h),
     });
-    expect(statsDue(null, NOW)).toEqual(STATS_PLATFORMS);
-    expect(X_STATS_MAX_AGE_MS).toBe(24 * HOUR);
-    expect(STATS_MAX_AGE_MS).toBe(6 * HOUR);
-    const reads = Object.fromEntries(
-      STATS_PLATFORMS.map((p) => [p, read(5.9)]),
-    );
-    expect(statsDue(reads, NOW)).toEqual([]);
-    expect(statsDue({ ...reads, x: read(23) }, NOW)).toEqual([]);
-    expect(statsDue({ ...reads, x: read(24) }, NOW)).toEqual(["x"]);
-    expect(
-      statsDue({ ...reads, x: read(6, "x tweets: HTTP 503") }, NOW),
-    ).toEqual(["x"]);
-    expect(statsDue({ ...reads, youtube: read(6) }, NOW)).toEqual(["youtube"]);
+    const posts = [
+      x("young", 0.5),
+      x("1h", 1.5),
+      x("1h-read", 3),
+      x("24h", 25),
+      x("7d", 7 * 24 + 2),
+      x("28d", 28 * 24 + 2),
+      x("late", 8 * 24 + 2),
+      x("old", 30 * 24),
+    ];
+    const numbers = {
+      // Read at 1.2 h: the 1 h checkpoint is done.
+      "x 1h-read": { at: ago(3 - 1.2) },
+      // Read at 6 d: the 7 d checkpoint is not.
+      "x 7d": { at: ago(26) },
+      // Read at 7 d: nothing new until 14 d.
+      "x late": { at: ago(26) },
+    };
+    expect(due(posts, { reads: readAll(0.5), numbers })).toEqual({
+      x: ["1h", "24h", "7d", "28d"],
+    });
+  });
+
+  test("a free platform also every 6 h for 14 days; TikTok for its reason", () => {
+    const posts = [
+      { platform: "bluesky", postId: "new", utc: ago(3) },
+      { platform: "bluesky", postId: "13d", utc: ago(13 * 24) },
+      { platform: "bluesky", postId: "20d", utc: ago(20 * 24) },
+      { platform: "x", postId: "X", utc: ago(3) },
+      { platform: "tiktok", postId: "", utc: ago(3) },
+    ];
+    const numbers = {
+      "bluesky new": { at: ago(1) },
+      "x X": { at: ago(1) },
+    };
+    expect(due(posts, { reads: readAll(5.9), numbers })).toEqual({});
+    const stale = { ...readAll(5.9), bluesky: { at: ago(6), error: null } };
+    expect(due(posts, { reads: stale, numbers })).toEqual({
+      bluesky: ["new", "13d"],
+    });
+    const tiktok = { ...readAll(5.9), tiktok: { at: ago(6), error: null } };
+    expect(due(posts, { reads: tiktok, numbers })).toEqual({ tiktok: [] });
+  });
+
+  test("a failed read waits 6 h; a Story is read for 1 day only", () => {
+    const posts = [
+      { platform: "x", postId: "X", utc: ago(2) },
+      { platform: "instagram-story", postId: "s-new", utc: ago(23) },
+      { platform: "instagram-story", postId: "s-old", utc: ago(25) },
+    ];
+    const reads = {
+      ...readAll(0.5),
+      x: { at: ago(5.9), error: "x tweets: HTTP 503" },
+      "instagram-story": { at: ago(6), error: null },
+    };
+    expect(due(posts, { reads, numbers: {} })).toEqual({
+      "instagram-story": ["s-new"],
+    });
+    reads.x = { at: ago(6), error: "x tweets: HTTP 503" };
+    expect(due(posts, { reads, numbers: {} }).x).toEqual(["X"]);
   });
 });

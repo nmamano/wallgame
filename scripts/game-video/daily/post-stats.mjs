@@ -70,15 +70,31 @@ export const STATS_PLATFORMS = [
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** A platform's posts are read at most once in this time. */
-export const STATS_MAX_AGE_MS = 6 * HOUR_MS;
-/** X posts at most once in 24 h: X reads are paid per post. */
-export const X_STATS_MAX_AGE_MS = DAY_MS;
 /**
- * A post is read until it is this old; then it keeps its last numbers. It
- * bounds the paid X read and the Meta calls (one per post).
+ * The ages at which each post is read (Wall Game Growth, 2026-10-31): 1 h,
+ * 24 h, 7 days, then weekly to 4 weeks. Posts compare at the same ages,
+ * and X, paid per post read, reads each post 6 times.
  */
-export const STATS_WINDOW_MS = 14 * DAY_MS;
+export const CHECKPOINTS = [
+  { label: "1 h", ms: HOUR_MS },
+  { label: "24 h", ms: DAY_MS },
+  { label: "7 d", ms: 7 * DAY_MS },
+  { label: "14 d", ms: 14 * DAY_MS },
+  { label: "21 d", ms: 21 * DAY_MS },
+  { label: "28 d", ms: 28 * DAY_MS },
+];
+/**
+ * A free platform (all but X) is also read every 6 h while its post is
+ * younger than 14 days, so the page stays fresh. A failed read of any
+ * platform waits this time before the next.
+ */
+export const STATS_MAX_AGE_MS = 6 * HOUR_MS;
+export const FRESH_WINDOW_MS = 14 * DAY_MS;
+/**
+ * A checkpoint read missed by more than a day (the app was down) is not
+ * made up: the post keeps its last numbers.
+ */
+const LATE_MS = DAY_MS;
 /** A Story's numbers can be read only while it is up. */
 const STORY_WINDOW_MS = DAY_MS;
 
@@ -388,54 +404,71 @@ const READERS = {
 };
 
 /**
- * The posts of `platform` that are still read: posted less than
- * STATS_WINDOW_MS ago (a Story: a day), with a post id.
- * @param {Post[]} posts
+ * The last checkpoint a post of this age has passed, or null.
+ * @param {number} ageMs
  */
-export const postsToRead = (posts, platform, nowMs) => {
-  const window =
-    platform === "instagram-story" ? STORY_WINDOW_MS : STATS_WINDOW_MS;
-  return posts.filter(
-    (p) =>
-      p.platform === platform &&
-      typeof p.postId === "string" &&
-      p.postId &&
-      nowMs - Date.parse(p.utc) < window,
-  );
+export const checkpointAt = (ageMs) =>
+  CHECKPOINTS.filter((c) => c.ms <= ageMs).at(-1) ?? null;
+
+/**
+ * The posts to read now, by platform, from the cached reads and numbers:
+ * - a post that passed a checkpoint (by less than a day) and was not read
+ *   since;
+ * - on a free platform whose last read is 6 h old, each post younger than
+ *   14 days (and TikTok's status, which has no post to read).
+ * A platform whose last read failed waits 6 h. A Story is read only while
+ * it is up. A post with no post id is never read.
+ * @param {Post[]} posts the live post log's rows
+ * @param {{ reads?: Record<string, { at: string, error: string | null }>,
+ *   numbers?: Record<string, { at: string }> }} cache
+ * @returns {Record<string, Post[]>}
+ */
+export const postsDue = (posts, cache, nowMs) => {
+  /** @type {Record<string, Post[]>} */
+  const out = {};
+  for (const platform of STATS_PLATFORMS) {
+    const last = cache.reads?.[platform];
+    const lastMs = Date.parse(last?.at ?? "");
+    const stale =
+      !Number.isFinite(lastMs) || nowMs - lastMs >= STATS_MAX_AGE_MS;
+    if (last?.error && !stale) continue;
+    const fresh = platform !== "x" && stale;
+    const list = posts.filter((p) => {
+      if (p.platform !== platform || typeof p.postId !== "string") return false;
+      if (!p.postId) return false;
+      const age = nowMs - Date.parse(p.utc);
+      if (!(age >= 0)) return false;
+      if (platform === "instagram-story" && age >= STORY_WINDOW_MS) {
+        return false;
+      }
+      if (fresh && age < FRESH_WINDOW_MS) return true;
+      const c = checkpointAt(age);
+      if (!c || age - c.ms >= LATE_MS) return false;
+      const readMs = Date.parse(
+        cache.numbers?.[`${platform} ${p.postId}`]?.at ?? "",
+      );
+      return !(readMs >= Date.parse(p.utc) + c.ms);
+    });
+    if (list.length || fresh) out[platform] = list;
+  }
+  return out;
 };
 
 /**
- * The platforms whose last read in `reads` is too old: X after 24 h (after
- * a failed X read, 6 h: it returned no post, so nothing was billed), any
- * other after 6 h.
- * @param {Record<string, { at: string, error: string | null }> | null | undefined} reads
- */
-export const statsDue = (reads, nowMs) =>
-  STATS_PLATFORMS.filter((platform) => {
-    const last = reads?.[platform];
-    const at = Date.parse(last?.at ?? "");
-    if (!Number.isFinite(at)) return true;
-    const maxAge =
-      platform === "x" && !last.error ? X_STATS_MAX_AGE_MS : STATS_MAX_AGE_MS;
-    return nowMs - at >= maxAge;
-  });
-
-/**
- * Read the posts of each platform in `platforms`, one platform after the
- * other. A platform with no post to read is not asked (no X bill).
+ * Read the due posts (postsDue), one platform after the other. A platform
+ * with no post to read is not asked (no X bill), but TikTok is: its read
+ * gives the reason it has no numbers.
  * @param {object} ctx {transport, env, tokens, keepRefreshToken, now?}
- * @param {Post[]} posts the live post log's rows
- * @param {string[]} platforms
+ * @param {Record<string, Post[]>} due
  * @returns {Promise<{ reads: Record<string, { at: string, error: string | null, posts: number }>,
  *   numbers: Record<string, Numbers & { at: string, note?: string }> }>}
  *   numbers is keyed "<platform> <postId>"
  */
-export const readPostStats = async (ctx, posts, platforms) => {
+export const readPostStats = async (ctx, due) => {
   const now = ctx.now ?? (() => new Date());
   const reads = {};
   const numbers = {};
-  for (const platform of platforms) {
-    const list = postsToRead(posts, platform, now().getTime());
+  for (const [platform, list] of Object.entries(due)) {
     const at = now().toISOString();
     if (!list.length && platform !== "tiktok") {
       reads[platform] = { at, error: null, posts: 0 };

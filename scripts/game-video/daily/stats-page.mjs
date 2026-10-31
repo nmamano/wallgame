@@ -193,8 +193,8 @@ export const STATS_PAGE = `<!doctype html>
           const c = el("span"); c.append(el("b", "", fmt(n)), " " + label); figures.append(c);
         }
         sum.append(name, figures);
-        d.append(sum, numTable([{ h: "Platform" }, ...M, { h: "Note", cls: "note wide" }],
-          v.rows.map((r) => [r.href ? link(r.platform, r.href) : r.platform, ...nums(r), el("span", "muted", r.note)])));
+        d.append(sum, numTable([{ h: "Platform" }, ...M, { h: "At 1 h / 24 h / 7 d", n: 1 }, { h: "Note", cls: "note wide" }],
+          v.rows.map((r) => [r.href ? link(r.platform, r.href) : r.platform, ...nums(r), r.ages, el("span", "muted", r.note)])));
         return d;
       }));
     return [byPlatform, videos];
