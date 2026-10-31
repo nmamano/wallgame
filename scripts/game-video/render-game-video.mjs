@@ -142,6 +142,7 @@ import {
   boardToCover,
   clipCoverage,
   clipFrameIndex,
+  clipSoundName,
   coverOver,
   loadClip,
 } from "./overlay-clips.mjs";
@@ -4011,9 +4012,15 @@ const renderStyle = async (styleName) => {
       start,
       end: elapsed,
     });
-  /** The cue of an EDL event's own sound, at `at`. */
+  /**
+   * The cue of an EDL event's own sound, at `at`. The opening is not in
+   * EVENTS, so its cue has no event, as music has none.
+   */
   const cueEvent = (sound, ev, at = elapsed) =>
-    cue(sound, "event", { at, event: EVENTS.indexOf(ev) });
+    cue(sound, "event", {
+      at,
+      event: ev === OPENING ? null : EVENTS.indexOf(ev),
+    });
   let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
   /**
@@ -4250,8 +4257,8 @@ const renderStyle = async (styleName) => {
       // Levelled as a meme sound is, and measured with them (`meme`).
       cueEvent(
         {
-          name: `clip:${ev.asset}`,
-          meme: `clip:${ev.asset}`,
+          name: clipSoundName(ev.asset),
+          meme: clipSoundName(ev.asset),
           file: own.path,
           gain: levelGain(own),
         },
@@ -4927,7 +4934,8 @@ const renderStyle = async (styleName) => {
           ply: w.ev.ply,
           kind: "overlay",
           sound:
-            w.ev.sound ?? (w.ev.audio === "own" ? `clip:${w.ev.asset}` : null),
+            w.ev.sound ??
+            (w.ev.audio === "own" ? clipSoundName(w.ev.asset) : null),
           place: { where: place.where, scale: place.scale },
           file: timeline[mid.image].file,
           at: mid.at,

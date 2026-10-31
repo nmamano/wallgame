@@ -28,6 +28,13 @@ export const OVERLAY_CLIP_DIR = "assets/overlays";
 /** A clip's sound, next to its frames. */
 export const CLIP_AUDIO_FILE = "audio.wav";
 
+/**
+ * The name of a clip's own sound in the mix and in RESULT.timeline. It must
+ * pass the timeline's name check (daily/strips.mjs timelineOf), or the review
+ * page and crew lose the whole timeline of the video (VR1, review 108).
+ */
+export const clipSoundName = (asset) => `clip-${asset}`;
+
 export const sha256 = (bytes) =>
   createHash("sha256").update(bytes).digest("hex");
 

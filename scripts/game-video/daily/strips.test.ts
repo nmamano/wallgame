@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clipSoundName } from "../overlay-clips.mjs";
+import { OVERLAYS } from "../overlays.mjs";
 import { stripPlan, timelineOf, writeStrips } from "./strips.mjs";
 
 /**
@@ -54,6 +56,28 @@ describe("event strips", () => {
     };
     expect(timelineOf(fallback)).toEqual(fallback);
     expect(timelineOf({ ...TIMELINE, moves: [{ ply: 1, at: -1 }] })).toBeNull();
+  });
+
+  test("a clip's own sound keeps the timeline, on a move's event and on the opening", () => {
+    // Every clip's sound name, as the renderer names its cue (VR1, review
+    // 108: "clip:<asset>" failed the name check and dropped the timeline).
+    const clips = Object.keys(OVERLAYS).filter(
+      (k) => OVERLAYS[k].draw === "sequence",
+    );
+    expect(clips.length).toBeGreaterThan(0);
+    for (const asset of clips) {
+      const own = {
+        ...TIMELINE,
+        sounds: [
+          ...TIMELINE.sounds,
+          // An overlay event's clip, at its event.
+          { name: clipSoundName(asset), role: "event", start: 19.8, event: 2 },
+          // The opening is not in EVENTS: its cue has no event.
+          { name: clipSoundName(asset), role: "event", start: 0, event: null },
+        ],
+      };
+      expect(timelineOf(own)).toEqual(own);
+    }
   });
 
   test("each event gets four frames in time order and its sounds against the landing", () => {
