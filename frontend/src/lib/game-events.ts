@@ -1,6 +1,10 @@
 /**
- * The `game_first_move` analytics event: a game this browser's player
- * actually started (Wall Game Growth, 2026-10-31, task 8ec46ee4).
+ * The game page's analytics events, sent with `browserSendEvent`:
+ * - `game_first_move` (task 8ec46ee4): a game this browser's player started;
+ * - `eval_bar_on` (task 72e72e0c): a player turned the evaluation bar on.
+ * Both describe the game the same way (`gameParams`): no user or game id.
+ *
+ * `game_first_move` (Wall Game Growth, 2026-10-31):
  *
  * GA already knows where a visitor came from (UTM, referrer); this event says
  * whether that visitor then played, so Growth can measure the play rate per
@@ -14,21 +18,39 @@
  */
 
 import type { GameState } from "../../../shared/domain/game-state";
-import type { PlayerId } from "../../../shared/domain/game-types";
+import type {
+  GameConfiguration,
+  PlayerId,
+} from "../../../shared/domain/game-types";
 import type { IdStorage } from "./anonymous-id";
 
 /** GA4 event names are snake_case and capped at 40 characters. */
 export const GAME_FIRST_MOVE_EVENT = "game_first_move";
+export const EVAL_BAR_ON_EVENT = "eval_bar_on";
 
 const SENT_KEY_PREFIX = "wall-game-first-move:";
 const SENT_VALUE = "1";
 
 /** Flat scalars only (GA4 stores no nested values); no user or game id. */
-export interface FirstMoveParams {
+export interface GameParams {
   [key: string]: string;
   variant: string;
-  opponent: "bot" | "human";
+  /** "<width>x<height>", e.g. "8x8". */
   board: string;
+}
+
+export interface FirstMoveParams extends GameParams {
+  opponent: "bot" | "human";
+}
+
+/** The game, as every event of this module describes it. */
+export function gameParams(
+  config: Pick<GameConfiguration, "variant" | "boardWidth" | "boardHeight">,
+): GameParams {
+  return {
+    variant: config.variant,
+    board: `${config.boardWidth}x${config.boardHeight}`,
+  };
 }
 
 /** The live game, as this browser sees it. */
@@ -100,10 +122,5 @@ export function takeFirstMoveEvent({
     // Storage refused (a privacy mode): the page's own once-only guard
     // (`sawBefore`, which the caller clears) still holds.
   }
-  const { config } = view.state;
-  return {
-    variant: config.variant,
-    opponent: view.opponent,
-    board: `${config.boardWidth}x${config.boardHeight}`,
-  };
+  return { ...gameParams(view.state.config), opponent: view.opponent };
 }

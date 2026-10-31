@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { EvalClient, type EvalHistoryEntry } from "@/lib/eval-client";
+import { browserSendEvent } from "@/lib/analytics";
+import { EVAL_BAR_ON_EVENT, gameParams } from "@/lib/game-events";
 import type { GameState } from "../../../shared/domain/game-state";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 
@@ -214,12 +216,15 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     if (isDisabled || toggleState === "loading") return;
 
     if (displayMode === "off") {
+      // Counted on the click that turns it on (task 72e72e0c), so a failed
+      // connection still counts the wish; turning it off is not counted.
+      if (config) browserSendEvent(EVAL_BAR_ON_EVENT, gameParams(config));
       setDisplayMode("eval-only");
       connect();
     } else {
       disconnect();
     }
-  }, [isDisabled, toggleState, displayMode, connect, disconnect]);
+  }, [isDisabled, toggleState, displayMode, config, connect, disconnect]);
 
   // Toggle best-move overlay (no WebSocket impact, just flips display mode)
   const toggleBestMove = useCallback(() => {

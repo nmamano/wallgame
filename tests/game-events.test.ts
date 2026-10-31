@@ -2,17 +2,20 @@
  * The `game_first_move` event (task 8ec46ee4): sent once per game id, only
  * after this browser's seated player made their own first move, which this
  * page saw happen; never for a spectator, a replay, a puzzle or a browser with
- * no seat; with variant, opponent and board, and no user or game id.
+ * no seat; with variant, opponent and board, and no user or game id. And
+ * `eval_bar_on` (task 72e72e0c) describes the game the same way.
  */
 
 import { describe, it, expect } from "bun:test";
 import {
+  EVAL_BAR_ON_EVENT,
   GAME_FIRST_MOVE_EVENT,
+  gameParams,
   firstMovePhase,
   hasMoved,
   takeFirstMoveEvent,
   type FirstMoveView,
-} from "../frontend/src/lib/game-first-move";
+} from "../frontend/src/lib/game-events";
 import type { PlayerId } from "../shared/domain/game-types";
 
 /** An ordinary storage that remembers what it is told. */
@@ -62,6 +65,7 @@ describe("hasMoved", () => {
 describe("game_first_move", () => {
   it("is named for GA4 (snake_case, at most 40 characters)", () => {
     expect(GAME_FIRST_MOVE_EVENT).toBe("game_first_move");
+    expect(GAME_FIRST_MOVE_EVENT.length).toBeLessThanOrEqual(40);
   });
 
   it("is sent after the seated player's own first move, with three params and no id", () => {
@@ -150,5 +154,15 @@ describe("game_first_move", () => {
     expect(
       takeFirstMoveEvent({ view: view(), sawBefore: true, session: undefined }),
     ).not.toBeNull();
+  });
+});
+
+describe("eval_bar_on", () => {
+  it("is named for GA4 and describes the game as game_first_move does", () => {
+    expect(EVAL_BAR_ON_EVENT).toBe("eval_bar_on");
+    expect(EVAL_BAR_ON_EVENT.length).toBeLessThanOrEqual(40);
+    expect(
+      gameParams({ variant: "classic", boardWidth: 9, boardHeight: 7 }),
+    ).toEqual({ variant: "classic", board: "9x7" });
   });
 });

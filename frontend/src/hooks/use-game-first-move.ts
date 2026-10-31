@@ -6,11 +6,11 @@ import {
   firstMovePhase,
   takeFirstMoveEvent,
   type FirstMoveView,
-} from "@/lib/game-first-move";
+} from "@/lib/game-events";
 
 /**
  * Sends `game_first_move` once, when this browser's seated player makes
- * their first move of a game (game-first-move.ts has the rule). Nothing on
+ * their first move of a game (game-events.ts has the rule). Nothing on
  * screen changes.
  */
 export function useGameFirstMove({
