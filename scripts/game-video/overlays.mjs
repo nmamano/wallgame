@@ -889,6 +889,27 @@ export const OVERLAYS = {
     nilOk: null,
     rating: null,
   },
+  "rec-frame": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 4,
+    // A camera frame round the whole board: "caught in 4K" (meme-pack.md
+    // Batch 2, gs-rec-frame; Wall Game PM, 2026-10-31): on a self-trap, or
+    // on the punish of a turn with costShown, with clang-1 or bruh-1.
+    sequence: {
+      dir: "rec-frame",
+      fps: 30,
+      frames: 120,
+      sha256:
+        "2dd3c3d270f574400eb448f6b2191fc7be27f83b4f2ab1d0f659476f48e9124b",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Camera Hud REC More Complex.mp4 (8.8 s, 1280x720, sha256 cf699c8ca4ed5c31), 0-4 s; made square for the board: its left and right 360 px side by side (the corner brackets, REC and its dot, the battery), its bottom line (ISO 200 ... 30 FPS) scaled to 600 px under them; silent",
+    claim: "LOW: a generic camera HUD (Director Rewriter, cc298af)",
+    likeness: "None",
+    rating: null,
+  },
   "stupid-stamp": {
     form: "clip",
     draw: "sequence",

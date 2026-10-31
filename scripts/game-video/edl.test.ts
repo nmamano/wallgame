@@ -1202,7 +1202,7 @@ describe("the meme pack's clips", () => {
     );
     expect("opening" in accept(base)).toBe(false);
     expect(errorsOf({ ...base, opening: "stupid-stamp" })).toEqual([
-      'opening must be a cover clip (curtain-open, confetti, curtain-open-pack, confetti-pack), or absent for none; got "stupid-stamp"',
+      'opening must be a cover clip (curtain-open, confetti, curtain-open-pack, confetti-pack, rec-frame), or absent for none; got "stupid-stamp"',
     ]);
   });
 });
