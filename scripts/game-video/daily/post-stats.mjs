@@ -133,6 +133,19 @@ const numbers = (given) => ({
 });
 /** @typedef {{ platform: string, postId: string, utc: string }} Post */
 
+/**
+ * The Meta token of the stats read (Instagram, its Story, Facebook):
+ * META_INSIGHTS_TOKEN when it is set, a read-only token with the insights
+ * permissions (Wall Game PM, 2026-10-31); else the posting token, as
+ * before. Only this read uses it: posting never does.
+ */
+export const META_INSIGHTS_SECRET = "META_INSIGHTS_TOKEN";
+const metaStatsToken = (env) => {
+  if (env[META_INSIGHTS_SECRET]) return env[META_INSIGHTS_SECRET];
+  needSecrets(env, META_SECRETS);
+  return env.META_SYSTEM_USER_TOKEN;
+};
+
 /** A number the platform gave, or null when it gave none. */
 const num = (value, step) =>
   value === undefined || value === null ? null : asCount(value, step);
@@ -313,8 +326,7 @@ const READERS = {
   },
 
   async instagram({ transport, env }, posts) {
-    needSecrets(env, META_SECRETS);
-    const token = env.META_SYSTEM_USER_TOKEN;
+    const token = metaStatsToken(env);
     const out = {};
     for (const p of posts) {
       try {
@@ -355,7 +367,7 @@ const READERS = {
   },
 
   async "instagram-story"({ transport, env }, posts) {
-    needSecrets(env, META_SECRETS);
+    const token = metaStatsToken(env);
     const out = {};
     for (const p of posts) {
       const m = insightValues(
@@ -363,7 +375,7 @@ const READERS = {
           transport,
           "instagram story insights",
           `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares,reach`,
-          env.META_SYSTEM_USER_TOKEN,
+          token,
           "instagram_manage_insights",
         ),
       );
@@ -378,11 +390,8 @@ const READERS = {
   },
 
   async facebook({ transport, env }, posts) {
-    needSecrets(env, META_SECRETS);
-    const meta = await discoverMeta({
-      transport,
-      token: env.META_SYSTEM_USER_TOKEN,
-    });
+    // The Page token comes from the stats token, so it has its permissions.
+    const meta = await discoverMeta({ transport, token: metaStatsToken(env) });
     const out = {};
     for (const p of posts) {
       try {

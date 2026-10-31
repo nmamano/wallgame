@@ -1918,7 +1918,7 @@ export const createDaily = ({
           },
           nowMs: Date.now(),
           platforms: STATS_PLATFORMS,
-          note: `Each post is read at 1 h, 24 h, 7 days, then weekly to 4 weeks; on every platform but X (paid per read) also every ${STATS_MAX_AGE_MS / 36e5} h for ${FRESH_WINDOW_MS / 864e5} days. A Story is read for 1 day. Then a post keeps its last numbers.`,
+          note: `Each post is read at 1 h, 24 h, 7 days, then weekly to 4 weeks (each up to an hour late: the timer runs hourly, so "~1 h"); on every platform but X (paid per read) also every ${STATS_MAX_AGE_MS / 36e5} h for ${FRESH_WINDOW_MS / 864e5} days. A Story is read for 1 day. Then a post keeps its last numbers.`,
         }),
       });
     },

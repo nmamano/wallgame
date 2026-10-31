@@ -437,7 +437,7 @@ export const postStatsView = ({
       ? "no numbers: see Posts by platform"
       : "not read yet";
   };
-  // A post's views at 1 h, 24 h and 7 d (its likes where it has no
+  // A post's views at ~1 h, 24 h and 7 d (its likes where it has no
   // views): "12 / 140 / -", so posts compare at the same age.
   const AGES = CHECKPOINTS.slice(0, 3).map((c) => c.label);
   const agesOf = (p) => {

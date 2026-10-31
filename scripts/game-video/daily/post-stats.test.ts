@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CHECKPOINTS,
+  META_INSIGHTS_SECRET,
   STATS_PLATFORMS,
   TIKTOK_NO_STATS,
   postsDue,
@@ -79,6 +80,7 @@ const RECORDS = {
 const SECRETS = [
   "SECRET-X-KEY",
   "SECRET-SU",
+  "SECRET-INSIGHTS",
   "SECRET-PAGE",
   "SECRET-YT-CLIENT",
   "1-SECRET-XAT",
@@ -257,6 +259,7 @@ const run = async (
   answer: (req: Req) => Reply = answers,
   platforms: string[] = STATS_PLATFORMS,
   posts = POSTS,
+  env: Record<string, string> = ENV,
 ) => {
   const sent: Req[] = [];
   const tokens = openTokenStore(
@@ -274,7 +277,7 @@ const run = async (
           return Promise.resolve(answer(req));
         },
       },
-      env: ENV,
+      env,
       tokens,
       keepRefreshToken: () => undefined,
       now: () => new Date(NOW),
@@ -326,6 +329,37 @@ describe("readPostStats", () => {
     const depleted = await run(() => ({ status: 402, json: null }), ["x"]);
     expect(depleted.reads.x.error).toBe("X credits depleted");
     expect(depleted.numbers).toEqual({});
+  });
+
+  test("Meta: the stats read uses META_INSIGHTS_TOKEN when it is set, else the posting token", async () => {
+    const meta = ["instagram", "instagram-story", "facebook"];
+    const bearerOf = (r: Req) => r.headers?.authorization;
+    // Set: every token-bearing Meta request is the insights token's, or
+    // the Page token found with it; never the posting token.
+    const withIt = await run(answers, meta, POSTS, {
+      ...ENV,
+      [META_INSIGHTS_SECRET]: "SECRET-INSIGHTS",
+    });
+    expect(withIt.sent.map((r) => [r.url.split("?")[0], bearerOf(r)])).toEqual([
+      [expect.stringContaining("/IG-R1/insights"), "Bearer SECRET-INSIGHTS"],
+      [expect.stringContaining("/IG-S1/insights"), "Bearer SECRET-INSIGHTS"],
+      [META_ACCOUNTS_URL.split("?")[0], "Bearer SECRET-INSIGHTS"],
+      [expect.stringContaining("/FB-V1/video_insights"), "Bearer SECRET-PAGE"],
+    ]);
+    expect(withIt.numbers["instagram IG-R1"].views).toBe(800);
+    // Not set: the posting token, as before.
+    const without = await run(answers, meta);
+    expect(without.sent.map(bearerOf)).toEqual([
+      "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
+      "Bearer SECRET-PAGE",
+    ]);
+    // Only the insights token: the read needs no posting token.
+    const only = await run(answers, ["instagram"], POSTS, {
+      [META_INSIGHTS_SECRET]: "SECRET-INSIGHTS",
+    });
+    expect(only.reads.instagram.error).toBeNull();
   });
 
   test("a platform with no post to read is not asked (no X bill)", async () => {
