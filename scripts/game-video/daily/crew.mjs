@@ -115,6 +115,11 @@
  *                                  (review-asks.mjs). Run it when Nil
  *                                  answers one; the app also syncs each
  *                                  minute
+ *   asks --again --item ID         a new ask for the item's video after
+ *                                  its last ask closed with nothing
+ *                                  applied (dismissed, unclear words, no
+ *                                  notes). Nil reviews only in his Inbox
+ *                                  (Nil, 2026-10-31)
  *   vet --item ID --video SHA --reviewer "<who>" --verdict pass|fail
  *       (--notes "<text>" | --notes-file F)
  *                                  the independent review of the item's
@@ -956,7 +961,12 @@ const commands = {
    * last ask.
    */
   async asks() {
-    const did = await app("POST", "/api/daily/asks/sync", {});
+    const again = has("again") ? itemFlag() : null;
+    const did = await app(
+      "POST",
+      "/api/daily/asks/sync",
+      again ? { again } : {},
+    );
     console.log(askLines(did).join("\n"));
   },
 

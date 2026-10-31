@@ -107,7 +107,7 @@ import {
   reviewView,
 } from "./review.mjs";
 import { appAsks, appMessenger } from "./office.mjs";
-import { openAskRecords, syncReviewAsks } from "./review-asks.mjs";
+import { askAgain, openAskRecords, syncReviewAsks } from "./review-asks.mjs";
 import { createItemPoster } from "./review-post.mjs";
 import { createScheduler, GROWTH_AGENT_ID } from "./scheduler.mjs";
 import {
@@ -2108,9 +2108,17 @@ export const createDaily = ({
     /**
      * One sync of Nil's review asks now (review-asks.mjs): crew.mjs asks,
      * for the Director after Nil answers. The app also syncs on its timer.
+     * With {again: itemId} (crew.mjs asks --again), the item's last ask,
+     * closed with nothing applied, gets a new one in this sync (askAgain).
      * Returns what it did and each item's last ask.
      */
     "POST /api/daily/asks/sync": async (req, res) => {
+      const body = await readJson(req);
+      if (body.again) {
+        // After a sync in flight, so its record writes come first.
+        await askSync?.catch(() => undefined);
+        askAgain(askRecords, itemOf(body.again).id);
+      }
       const did = await syncAsks();
       json(res, 200, { ...did, asks: askRecords.all() });
     },

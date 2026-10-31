@@ -205,6 +205,36 @@ export const openAskRecords = (root) => {
   };
 };
 
+/** The Director's way to ask Nil again in his Inbox (no review page). */
+const AGAIN_HINT = (itemId) =>
+  `To ask him again in his Inbox: crew.mjs asks --again --item ${itemId}`;
+
+/**
+ * Mark an item's last ask so the next sync opens a new ask for the same
+ * video and block (crew.mjs asks --again): after an ask that closed with
+ * nothing applied (dismissed, unclear words, no notes, ignored, withdrawn
+ * by hand). Nil reviews only in his Inbox asks (Nil, 2026-10-31, via Wall
+ * Game PM), so such an ask needs a second one, not the review page.
+ * Refused for an ask that is open, adopted or applied, or that the app
+ * opens again on its own (open-failed).
+ * @param {ReturnType<typeof openAskRecords>} records
+ * @param {string} itemId
+ */
+export const askAgain = (records, itemId) => {
+  const record = records.get(itemId);
+  if (!record) throw new StepRefused(`${itemId} has had no ask`);
+  if (
+    ["open", "adopted", "applied", "open-failed", "again"].includes(
+      record.status,
+    )
+  ) {
+    throw new StepRefused(
+      `${itemId}'s last ask ${record.askId ?? "-"} is ${record.status}: no new ask is needed`,
+    );
+  }
+  records.put(itemId, { ...record, status: "again" });
+};
+
 /**
  * One sync of the review asks: read the closed ones and apply them, then
  * withdraw the asks that no longer match their item, then open one for each
@@ -272,7 +302,7 @@ export const syncReviewAsks = async ({
         records.put(itemId, { ...record, readFailTold: true });
         await tell(
           itemId,
-          `ASK: the app cannot read Nil's answer to ask ${record.askId} (${itemId}) from the office: ${err.message}. Nothing changed; it tries again each minute. Nil can use the review page.`,
+          `ASK: the app cannot read Nil's answer to ask ${record.askId} (${itemId}) from the office: ${err.message}. Nothing changed; it tries again each minute.`,
         );
       }
       continue;
@@ -303,7 +333,7 @@ export const syncReviewAsks = async ({
       await tell(
         itemId,
         [
-          `ASK: Nil's ask ${record.askId} for ${itemId} closed as ${outcome}${by ? ` by ${by}` : ""}: nothing changed. He can still use the review page.`,
+          `ASK: Nil's ask ${record.askId} for ${itemId} closed as ${outcome}${by ? ` by ${by}` : ""}: nothing changed. ${AGAIN_HINT(itemId)}`,
           ...(answer ? ["Words, verbatim:", ...quoteLines(answer)] : []),
         ].join("\n"),
       );
@@ -325,7 +355,7 @@ export const syncReviewAsks = async ({
         [
           `ASK: Nil answered ask ${record.askId} for ${itemId}, but his words are not Approve, Revise: <notes> or Discard: <notes>. Nothing changed. His words, verbatim:`,
           ...quoteLines(answer ?? ""),
-          "Ask him again in your own words, or he can use the review page.",
+          AGAIN_HINT(itemId),
         ].join("\n"),
       );
       continue;
@@ -335,7 +365,7 @@ export const syncReviewAsks = async ({
       close(itemId, record, "no-notes", chosen.action);
       await tell(
         itemId,
-        `ASK: Nil chose ${action} with no notes on ask ${record.askId} (${itemId}); nothing done. Ask him what to ${chosen.action === "revise" ? "change" : "say"}, or he can use the review page.`,
+        `ASK: Nil chose ${action} with no notes on ask ${record.askId} (${itemId}); nothing done. Ask him what to ${chosen.action === "revise" ? "change" : "say"}. ${AGAIN_HINT(itemId)}`,
       );
       continue;
     }
@@ -392,8 +422,13 @@ export const syncReviewAsks = async ({
     const key = keyOf(item);
     const record = records.get(card.id);
     // Once per video, block and round: an ask that closed in any way
-    // (answered, dismissed, withdrawn by hand) is not opened again.
-    if (record && sameKey(record, key) && record.status !== "open-failed") {
+    // (answered, dismissed, withdrawn by hand) is not opened again, unless
+    // the Director asks for it (askAgain).
+    if (
+      record &&
+      sameKey(record, key) &&
+      !["open-failed", "again"].includes(record.status)
+    ) {
       continue;
     }
     let ask;
@@ -416,7 +451,7 @@ export const syncReviewAsks = async ({
       if (!told) {
         await tell(
           card.id,
-          `ASK: the app could not open Nil's review ask for ${card.id}: ${err.message}. It tries again each minute; Nil can use the review page.`,
+          `ASK: the app could not open Nil's review ask for ${card.id}: ${err.message}. It tries again each minute.`,
         );
       }
       continue;

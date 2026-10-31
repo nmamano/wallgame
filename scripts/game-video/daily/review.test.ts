@@ -11,7 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
-import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
+import {
+  ITEM_VERSION,
+  StepRefused,
+  openStore,
+  readPostLog,
+  reviewState,
+} from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { feedbackLines, holdLine, storyWarning, timingLines } from "./crew.mjs";
@@ -30,6 +36,7 @@ import {
 import {
   APP_NAME,
   ASK_OPTIONS,
+  askAgain,
   openAskRecords,
   parseAnswer,
   syncReviewAsks,
@@ -1643,6 +1650,27 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     expect(String(office.bodies.at(-1)!.text).split("\n")[0]).toBe(
       `This video replaces the one sent to you at ${sentAt.slice(0, 16).replace("T", " ")} UTC (that ask was withdrawn before your answer).`,
     );
+  });
+
+  test("after a dismiss, askAgain opens a new ask for the same video; never twice, never over an open ask", async () => {
+    const { office, sync, records, told } = withAsks();
+    expect(() => askAgain(records, ID)).toThrow(StepRefused);
+    await sync();
+    expect(() => askAgain(records, ID)).toThrow(/is open/);
+    const [askId] = office.openIds();
+    office.answer(askId, { outcome: "dismissed", by: "Nil", answer: "later" });
+    await sync();
+    expect(told.at(-1)).toContain(`crew.mjs asks --again --item ${ID}`);
+    expect(told.join("\n")).not.toContain("review page");
+    askAgain(records, ID);
+    expect(() => askAgain(records, ID)).toThrow(/is again/);
+    const did = await sync();
+    expect(did.opened).toEqual([ID]);
+    // The same video: the new ask is not told as a replacement.
+    expect(String(office.bodies.at(-1)!.text).split("\n")[0]).toBe(
+      "Post this video?",
+    );
+    expect((await sync()).opened).toEqual([]);
   });
 
   test("an open ask whose item left review is withdrawn (an action on the page)", async () => {
