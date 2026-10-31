@@ -59,6 +59,7 @@ import type {
 import {
   startBgsSession,
   endBgsSession,
+  cancelBgsSearch,
   requestEvaluation,
   applyBgsMove,
   notifyBotGameEnded,
@@ -72,7 +73,6 @@ import {
   markBgsResetting,
   clearBgsResetting,
   getResetPromise,
-  getResetGeneration,
   type BgsHistoryEntry,
 } from "../games/bgs-store";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
@@ -531,17 +531,43 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
 export type ResyncTrigger = "takeback" | "reattach" | "lead-in";
 
 /**
+ * The one rebuild running for each game. A request that arrives while one runs
+ * is folded into it: the owner finishes (or abandons) its current pass and
+ * runs one more from the history as it is THEN.
+ */
+interface RebuildOwner {
+  /** The trigger of the newest request that the running pass does not cover. */
+  pending: ResyncTrigger | null;
+  done: Promise<void>;
+}
+const rebuildOwners = new Map<string, RebuildOwner>();
+
+/**
  * V3: Rebuild a bot game session to match the game's current history: end the
  * BGS, start a fresh one from the authored config, replay the history, and
- * play the bot's turn if it is due. Generation-token guarded, so concurrent
- * resyncs supersede each other safely.
+ * play the bot's turn if it is due.
  *
  * Used when a takeback is accepted in a bot game, by the bot-client reattach
  * path to heal every active game after a connection drop (the rebuild is
  * idempotent against whatever state the client lost or kept), and to build the
  * session for a puzzle whose lead-in gives it history before any BGS exists.
+ *
+ * ONE OWNER PER GAME. Rebuilds used to run concurrently, each starting with its
+ * own End and superseding the others by a generation token. But a superseded
+ * rebuild parked inside endBgsSession could not see the token: when its wait
+ * ended it still sent End, and ended the session the newest rebuild had just
+ * built. Production game iiUTHvbs (2026-10-31): twenty takebacks in six
+ * seconds, the last rebuild completed, the game went on, and 10 s later (the
+ * request timeout) a stale rebuild's End deleted the live BGS; the next human
+ * move found none and the bot was forfeited as bgs-unavailable-after-wait.
+ * Now only the owner ever sends a rebuild's requests, so a stale End cannot
+ * exist, and a burst of requests costs at most the request in flight plus one
+ * more pass.
+ *
+ * The returned promise settles when the owner has finished every pass,
+ * including any pass a later request added.
  */
-export const resyncBgsFromHistory = async (
+export const resyncBgsFromHistory = (
   sessionId: string,
   botCompositeId: string,
   /**
@@ -557,6 +583,63 @@ export const resyncBgsFromHistory = async (
    */
   trigger: ResyncTrigger,
 ): Promise<void> => {
+  const running = rebuildOwners.get(sessionId);
+  if (running) {
+    running.pending = trigger;
+    // The running pass is now stale. If it waits on a search, stop it waiting,
+    // as the newer rebuild's End did when rebuilds ran side by side.
+    cancelBgsSearch(sessionId);
+    console.info("[ws] BGS rebuild request folded into the running rebuild", {
+      sessionId,
+      trigger,
+    });
+    return running.done;
+  }
+
+  const bgsId = sessionId;
+  // Mark as resetting ONCE, for every pass. This promise lives outside the BGS
+  // object (in a standalone map) so it survives the BGS delete+recreate cycle;
+  // the move handler waits on it and wakes only when the last pass is done.
+  const resetGeneration = markBgsResetting(bgsId);
+  const owner: RebuildOwner = { pending: null, done: Promise.resolve() };
+  rebuildOwners.set(sessionId, owner);
+  owner.done = (async () => {
+    try {
+      let next: ResyncTrigger | null = trigger;
+      while (next !== null) {
+        const passTrigger: ResyncTrigger = next;
+        owner.pending = null;
+        if (getSession(sessionId).gameState.status !== "playing") return;
+        await rebuildPass(
+          sessionId,
+          botCompositeId,
+          passTrigger,
+          () => owner.pending !== null,
+        );
+        next = owner.pending;
+      }
+    } finally {
+      rebuildOwners.delete(sessionId);
+      clearBgsResetting(bgsId, resetGeneration);
+    }
+  })();
+  return owner.done;
+};
+
+/**
+ * One pass of resyncBgsFromHistory. Only the game's rebuild owner calls it.
+ *
+ * `superseded` turns true when a newer request arrives. The pass then stops at
+ * its next check and the owner runs another pass. Every await below can also
+ * fail BECAUSE of that request (endBgsSession cancels an in-flight request), so
+ * the failure branches must ask it before resigning the bot.
+ */
+const rebuildPass = async (
+  sessionId: string,
+  botCompositeId: string,
+  trigger: ResyncTrigger,
+  superseded: () => boolean,
+): Promise<void> => {
   const bgsId = sessionId;
 
   // Snapshot the history BEFORE any async operations. The human's move handler
@@ -569,184 +652,159 @@ export const resyncBgsFromHistory = async (
   const historyLengthAtTakeback = replaySnapshot.length;
   const totalRows = sessionAtTakeback.config.boardHeight;
 
-  // Mark as resetting ONCE, before anything else. This promise lives outside
-  // the BGS object (in a standalone map) so it survives the BGS delete+recreate
-  // cycle. It is resolved only in the finally block below.
-  // The generation token ensures that if a second takeback fires, the first
-  // takeback's finally block won't destroy the second's promise.
-  const resetGeneration = markBgsResetting(bgsId);
-
-  // A newer resync takes ownership of the BGS by ending the current session,
-  // which cancels whatever request this one has in flight. Every await below
-  // can therefore fail for a reason that is not an engine failure, and the
-  // failure branches must ask this before resigning the bot: the newer owner
-  // is already rebuilding the session, so there is nothing to heal here.
-  const superseded = (): boolean =>
-    getResetGeneration(bgsId) !== resetGeneration;
-
+  // End the current BGS
   try {
-    // End the current BGS
-    try {
-      await endBgsSession(botCompositeId, bgsId);
-    } catch (error) {
-      console.error("[ws] failed to end BGS for takeback", {
-        error,
-        sessionId,
-      });
-      // Continue anyway - we need to start fresh
-    }
+    await endBgsSession(botCompositeId, bgsId);
+  } catch (error) {
+    console.error("[ws] failed to end BGS for takeback", {
+      error,
+      sessionId,
+    });
+    // Continue anyway - we need to start fresh
+  }
 
-    // Bail if a newer reset has superseded this one
+  // Bail if a newer reset has superseded this one
+  if (superseded()) {
+    console.info("[ws] takeback reset superseded by newer reset", {
+      sessionId,
+    });
+    return;
+  }
+
+  // Get the current session state (for bot player info and config)
+  const session = getSession(sessionId);
+
+  // Find the bot player
+  const botPlayer = session.players.host.botCompositeId
+    ? session.players.host
+    : session.players.joiner;
+
+  if (!botPlayer.botCompositeId) return;
+
+  // Start a new BGS with the same ID
+  const config = buildBgsConfig(session);
+  try {
+    await startBgsSession(botCompositeId, bgsId, sessionId, config);
+  } catch (error) {
     if (superseded()) {
-      console.info("[ws] takeback reset superseded by newer reset", {
+      console.info("[ws] takeback BGS start cancelled by newer reset", {
         sessionId,
-        resetGeneration,
       });
       return;
     }
+    const reason = startFailureReason(error);
+    console.error("[ws] failed to restart BGS during resync", {
+      error,
+      sessionId,
+      trigger,
+      reason,
+    });
+    await resignBotOnFailure(
+      session,
+      botPlayer.playerId,
+      `bgs-restart-failed:${trigger}:${reason}`,
+    );
+    return;
+  }
 
-    // Get the current session state (for bot player info and config)
-    const session = getSession(sessionId);
+  // Bail if a newer reset has superseded this one
+  if (superseded()) {
+    console.info("[ws] takeback reset superseded after BGS start", {
+      sessionId,
+    });
+    return;
+  }
 
-    // Find the bot player
-    const botPlayer = session.players.host.botCompositeId
-      ? session.players.host
-      : session.players.joiner;
-
-    if (!botPlayer.botCompositeId) return;
-
-    // Start a new BGS with the same ID
-    const config = buildBgsConfig(session);
-    try {
-      await startBgsSession(botCompositeId, bgsId, sessionId, config);
-    } catch (error) {
-      if (superseded()) {
-        console.info("[ws] takeback BGS start cancelled by newer reset", {
-          sessionId,
-          resetGeneration,
-        });
-        return;
-      }
-      const reason = startFailureReason(error);
-      console.error("[ws] failed to restart BGS during resync", {
-        error,
-        sessionId,
-        trigger,
-        reason,
-      });
-      await resignBotOnFailure(
-        session,
-        botPlayer.playerId,
-        `bgs-restart-failed:${trigger}:${reason}`,
-      );
-      return;
-    }
-
-    // Bail if a newer reset has superseded this one
+  // Get initial evaluation
+  const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
+  if (!initialEval) {
     if (superseded()) {
-      console.info("[ws] takeback reset superseded after BGS start", {
+      console.info("[ws] takeback initial eval cancelled by newer reset", {
         sessionId,
-        resetGeneration,
+      });
+      return;
+    }
+    console.error("[ws] failed to get initial eval during resync", {
+      sessionId,
+      trigger,
+    });
+    await resignBotOnFailure(
+      session,
+      botPlayer.playerId,
+      `bgs-initial-eval-failed:${trigger}`,
+    );
+    return;
+  }
+
+  // Replay moves from the SNAPSHOT (not the live history).
+  // This prevents moves played during the reset from being included in
+  // the replay — those will be handled by their own move handlers.
+  for (let i = 0; i < replaySnapshot.length; i++) {
+    // Check for superseding reset before each expensive async operation
+    if (superseded()) {
+      console.info("[ws] takeback reset superseded during replay", {
+        sessionId,
+        replayedSoFar: i,
       });
       return;
     }
 
-    // Get initial evaluation
-    const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
-    if (!initialEval) {
+    const historyEntry = replaySnapshot[i];
+    const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
+    const evalResult = await applyMoveAndEvaluate(
+      botCompositeId,
+      bgsId,
+      i,
+      moveNotation,
+    );
+    if (!evalResult) {
+      // The supersede check at the top of the loop cannot catch this: a
+      // newer reset cancels the request while we are parked on the await
+      // above, so control never reaches it. Production game Cb4nYTIS
+      // (2026-07-30) resigned a bot mid-game exactly this way, after three
+      // takebacks in twelve seconds.
       if (superseded()) {
-        console.info("[ws] takeback initial eval cancelled by newer reset", {
-          sessionId,
-          resetGeneration,
-        });
-        return;
-      }
-      console.error("[ws] failed to get initial eval during resync", {
-        sessionId,
-        trigger,
-      });
-      await resignBotOnFailure(
-        session,
-        botPlayer.playerId,
-        `bgs-initial-eval-failed:${trigger}`,
-      );
-      return;
-    }
-
-    // Replay moves from the SNAPSHOT (not the live history).
-    // This prevents moves played during the reset from being included in
-    // the replay — those will be handled by their own move handlers.
-    for (let i = 0; i < replaySnapshot.length; i++) {
-      // Check for superseding reset before each expensive async operation
-      if (superseded()) {
-        console.info("[ws] takeback reset superseded during replay", {
-          sessionId,
-          resetGeneration,
-          replayedSoFar: i,
-        });
-        return;
-      }
-
-      const historyEntry = replaySnapshot[i];
-      const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
-      const evalResult = await applyMoveAndEvaluate(
-        botCompositeId,
-        bgsId,
-        i,
-        moveNotation,
-      );
-      if (!evalResult) {
-        // The supersede check at the top of the loop cannot catch this: a
-        // newer reset cancels the request while we are parked on the await
-        // above, so control never reaches it. Production game Cb4nYTIS
-        // (2026-07-30) resigned a bot mid-game exactly this way, after three
-        // takebacks in twelve seconds.
-        if (superseded()) {
-          console.info("[ws] takeback replay cancelled by newer reset", {
-            sessionId,
-            resetGeneration,
-            moveIndex: i,
-          });
-          return;
-        }
-        console.error("[ws] failed to replay move during resync", {
+        console.info("[ws] takeback replay cancelled by newer reset", {
           sessionId,
           moveIndex: i,
-          trigger,
         });
-        await resignBotOnFailure(
-          session,
-          botPlayer.playerId,
-          `bgs-move-replay-failed:${trigger}`,
-        );
         return;
       }
+      console.error("[ws] failed to replay move during resync", {
+        sessionId,
+        moveIndex: i,
+        trigger,
+      });
+      await resignBotOnFailure(
+        session,
+        botPlayer.playerId,
+        `bgs-move-replay-failed:${trigger}`,
+      );
+      return;
     }
+  }
 
-    console.info("[ws] BGS takeback reset complete", {
-      sessionId,
-      movesReplayed: replaySnapshot.length,
-    });
+  console.info("[ws] BGS takeback reset complete", {
+    sessionId,
+    movesReplayed: replaySnapshot.length,
+  });
 
-    // Check if the human played a move while the reset was in progress.
-    // Compare against the snapshot taken BEFORE async operations — this
-    // correctly detects moves played at any point during the reset.
-    const currentSession = getSession(sessionId);
-    const gameAdvancedDuringReset =
-      currentSession.gameState.history.length > historyLengthAtTakeback;
+  // Check if the human played a move while the reset was in progress.
+  // Compare against the snapshot taken BEFORE async operations — this
+  // correctly detects moves played at any point during the reset.
+  const currentSession = getSession(sessionId);
+  const gameAdvancedDuringReset =
+    currentSession.gameState.history.length > historyLengthAtTakeback;
 
-    if (
-      !gameAdvancedDuringReset &&
-      currentSession.gameState.status === "playing" &&
-      currentSession.gameState.turn === botPlayer.playerId
-    ) {
-      // No new moves during reset, and it's the bot's turn — play it.
-      // Await so the reset promise stays pending until the bot's turn
-      // completes, preventing the move handler from racing with BGS updates.
-      await executeBotTurnV3(sessionId);
-    }
-  } finally {
-    clearBgsResetting(bgsId, resetGeneration);
+  if (
+    !gameAdvancedDuringReset &&
+    currentSession.gameState.status === "playing" &&
+    currentSession.gameState.turn === botPlayer.playerId
+  ) {
+    // No new moves during reset, and it's the bot's turn — play it.
+    // Await so the reset promise stays pending until the bot's turn
+    // completes, preventing the move handler from racing with BGS updates.
+    await executeBotTurnV3(sessionId);
   }
 };
 

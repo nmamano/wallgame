@@ -132,6 +132,7 @@ interface ClientInternals {
   engines: Map<string, EngineProcess>;
   sessionRoutes: Map<string, string>;
   handleMessage(data: string): void;
+  discardSessionBookkeeping(): void;
 }
 
 const BOT_ID = "fifo-engine";
@@ -335,6 +336,126 @@ describe("per-bgsId client FIFO", () => {
       ],
       ["evaluate_response", false, "no session route for this bgsId"],
       ["game_session_ended", false, "no session route for this bgsId"],
+    ]);
+  });
+});
+
+/** Refuses a second Start for an id it still holds, as Deep Wallwars does. */
+class StrictSessionEngine {
+  readonly events: string[] = [];
+  readonly sessions = new Set<string>();
+  readonly heldEvaluate = deferred<EngineResponseV3>();
+  readonly alive = true;
+  readonly exitStatus: number | null = null;
+
+  async send(request: EngineRequestV3): Promise<EngineResponseV3> {
+    const id = request.bgsId;
+    this.events.push(`${request.type}:${id}`);
+    switch (request.type) {
+      case "start_game_session": {
+        const fresh = !this.sessions.has(id);
+        this.sessions.add(id);
+        return {
+          type: "game_session_started",
+          bgsId: id,
+          success: fresh,
+          error: fresh ? "" : `Session ${id} already exists`,
+        };
+      }
+      case "end_game_session":
+        this.sessions.delete(id);
+        return {
+          type: "game_session_ended",
+          bgsId: id,
+          success: true,
+          error: "",
+        };
+      case "evaluate_position":
+        return this.heldEvaluate.promise;
+      case "apply_move":
+        throw new Error("not used");
+    }
+  }
+}
+
+describe("client disconnect", () => {
+  const strictClient = () => {
+    const engine = new StrictSessionEngine();
+    const socket = new RecordingSocket();
+    const client = new BotClient({
+      serverUrl: "http://test.invalid",
+      clientId: "disconnect-test",
+      bots: [bot],
+      engineCommands: new Map([[BOT_ID, "injected-test-engine"]]),
+    }) as unknown as ClientInternals;
+    client.ws = socket;
+    client.state = "waiting";
+    client.engines = new Map([[BOT_ID, engine as unknown as EngineProcess]]);
+    return { engine, socket, client };
+  };
+
+  it("ends the engine session, so the reattach rebuild can start it again", async () => {
+    const { engine, socket, client } = strictClient();
+    dispatch(client, startMessage());
+    await until("initial Start", () => socket.sent.length === 1);
+
+    client.discardSessionBookkeeping();
+    // The reattach rebuild: End (which no longer has a route), then Start.
+    dispatch(client, { type: "end_game_session", bgsId: BGS_ID });
+    dispatch(client, startMessage());
+    await until("rebuild replies", () => socket.sent.length === 3);
+
+    expect(socket.sent.map((frame) => [frame.type, frame.success])).toEqual([
+      ["game_session_started", true],
+      // The teardown sends nothing to the server.
+      ["game_session_ended", false],
+      ["game_session_started", true],
+    ]);
+    expect(engine.events).toEqual([
+      `start_game_session:${BGS_ID}`,
+      `end_game_session:${BGS_ID}`,
+      `start_game_session:${BGS_ID}`,
+    ]);
+    expect(client.sessionRoutes.get(BGS_ID)).toBe(BOT_ID);
+  });
+
+  it("lets a request in flight finish before the teardown ends its session", async () => {
+    const { engine, socket, client } = strictClient();
+    dispatch(client, startMessage());
+    dispatch(client, {
+      type: "evaluate_position",
+      bgsId: BGS_ID,
+      expectedPly: 0,
+    });
+    await until("Evaluate at the engine", () =>
+      engine.events.includes(`evaluate_position:${BGS_ID}`),
+    );
+
+    client.discardSessionBookkeeping();
+    await flush();
+    expect(client.sessionRoutes.has(BGS_ID)).toBe(true);
+    expect(engine.sessions.has(BGS_ID)).toBe(true);
+
+    engine.heldEvaluate.resolve({
+      type: "evaluate_response",
+      bgsId: BGS_ID,
+      ply: 0,
+      evaluation: 0,
+      bestMove: "a1",
+      success: true,
+      error: "",
+    });
+    await until("teardown", () => !client.sessionRoutes.has(BGS_ID));
+
+    expect(engine.events).toEqual([
+      `start_game_session:${BGS_ID}`,
+      `evaluate_position:${BGS_ID}`,
+      `end_game_session:${BGS_ID}`,
+    ]);
+    expect(engine.sessions.has(BGS_ID)).toBe(false);
+    expect(socket.sent.map((frame) => frame.type)).toEqual([
+      "game_session_started",
+      "evaluate_response",
     ]);
   });
 });

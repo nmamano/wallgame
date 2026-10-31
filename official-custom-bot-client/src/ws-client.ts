@@ -1173,31 +1173,64 @@ export class BotClient {
    * is nothing left to route. Either way the surviving entries are exactly the
    * ones that would have leaked.
    *
-   * Engine sessions are deliberately left alone: engines keep running across a
-   * reconnect, and the resync ends and restarts their sessions itself.
+   * The ENGINE session must go too, and it must go here. The engine keys a
+   * session only by bgsId and refuses a second start for an id it still holds.
+   * The resync's end_game_session cannot reach it, because only the route we
+   * drop here says which engine holds the id - so before this, every reattach
+   * answered "no session route", the resync's start was refused with "Session
+   * already exists", and the server forfeited the bot (21 production games,
+   * 2026-09-16 to 2026-10-30, cause bgs-restart-failed:reattach:engine-refused).
+   *
+   * The teardown is queued on each session's FIFO rather than done inline: a
+   * request that arrived before the drop finishes first, and everything the
+   * reattach sends for that id waits behind the teardown. Nothing is sent to
+   * the server for it - the server already treats the session as gone.
    */
   private discardSessionBookkeeping(): void {
-    const shadows = this.shadowSessions.size;
-    const routes = this.sessionRoutes.size;
-    if (shadows === 0 && routes === 0) return;
-
     // Every bgsId we know about, from both directions. A bot WITH an engine
     // keeps its naive shadow in shadowSessions; a bot with NO engine is served
     // by the naive bot directly, so its primary session sits in the same map
-    // under a plain route. Both leak identically, so both get ended here.
-    // Ending an id the naive bot never knew about is a no-op.
-    for (const bgsId of new Set([
+    // under a plain route. Both leak identically, so both get ended.
+    const bgsIds = new Set([
       ...this.shadowSessions,
       ...this.sessionRoutes.keys(),
-    ])) {
-      dumbBotEndSession({ type: "end_game_session", bgsId });
+    ]);
+    if (bgsIds.size === 0) return;
+
+    for (const bgsId of bgsIds) {
+      this.enqueueBgsMessage(bgsId, () => this.dropSession(bgsId));
     }
-    this.shadowSessions.clear();
-    this.sessionRoutes.clear();
 
     logger.info(
-      `Disconnected: dropped ${routes} session route(s) and ${shadows} naive shadow(s); a reattach rebuilds whichever games are still playing`,
+      `Disconnected: dropping ${bgsIds.size} session(s) here and in their engines; a reattach rebuilds whichever games are still playing`,
     );
+  }
+
+  /** One session's share of discardSessionBookkeeping, run on its FIFO. */
+  private async dropSession(bgsId: string): Promise<void> {
+    const responder = this.resolveResponder(this.sessionRoutes.get(bgsId));
+    if (responder.kind === "engine") {
+      try {
+        const response = await responder.engine.send({
+          type: "end_game_session",
+          bgsId,
+        });
+        if (!response.success) {
+          logger.warn(
+            `Engine did not end session ${bgsId} after the disconnect: ${response.error}`,
+          );
+        }
+      } catch (error) {
+        logger.warn(
+          `Engine error ending session ${bgsId} after the disconnect:`,
+          error,
+        );
+      }
+    }
+    this.sessionRoutes.delete(bgsId);
+    this.shadowSessions.delete(bgsId);
+    // Ending an id the naive bot never knew about is a no-op.
+    dumbBotEndSession({ type: "end_game_session", bgsId });
   }
 
   /**

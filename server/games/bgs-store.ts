@@ -283,14 +283,6 @@ export const getResetPromise = (bgsId: string): Promise<void> | null => {
   return resetPromises.get(bgsId) ?? null;
 };
 
-/**
- * Get the current reset generation for a bgsId.
- * Used by handleTakebackBgsReset to detect if a newer reset has superseded it.
- */
-export const getResetGeneration = (bgsId: string): number | undefined => {
-  return resetGenerations.get(bgsId);
-};
-
 // ============================================================================
 // History Management
 // ============================================================================

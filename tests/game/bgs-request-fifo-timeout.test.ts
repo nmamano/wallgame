@@ -163,6 +163,8 @@ let setBotCompositeId: typeof import("../../server/games/store").setBotComposite
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let getSession: typeof import("../../server/games/store").getSession;
 let getResetPromise: typeof import("../../server/games/bgs-store").getResetPromise;
+let isBotClientInGrace: typeof import("../../server/games/custom-bot-store").isBotClientInGrace;
+let isBotClientConnected: typeof import("../../server/games/custom-bot-store").isBotClientConnected;
 let resyncBgsFromHistory: typeof import("../../server/routes/game-socket").resyncBgsFromHistory;
 const createdGameIds: string[] = [];
 
@@ -239,6 +241,8 @@ beforeAll(async () => {
   getBgs = bgsStore.getBgs;
   clearBgs = bgsStore.clearAll;
   clearBots = botStore.clearAll;
+  isBotClientInGrace = botStore.isBotClientInGrace;
+  isBotClientConnected = botStore.isBotClientConnected;
   addActiveGame = botStore.addActiveGame;
   removeActiveGame = botStore.removeActiveGame;
   createGameSession = gameStore.createGameSession;
@@ -626,11 +630,69 @@ describe("client-only rapid resync convergence", () => {
     await assertConverged(id, newestHistoryLength);
   });
 
+  it("a burst of takebacks leaves no stale End to end the rebuilt session later", async () => {
+    // Production game iiUTHvbs, 2026-10-31: during twenty takebacks in six
+    // seconds, one superseded rebuild was parked in endBgsSession's drain wait.
+    // The newest rebuild completed and the game went on; 10 s later the parked
+    // rebuild's wait timed out, it sent its End, and the live BGS was gone.
+    const id = await createBotGame();
+    const historyLength = getSession(id).gameState.history.length;
+    const startsForId = () =>
+      engine.events.filter((event) => event === `start_game_session:${id}`)
+        .length;
+    const startsBeforeBurst = startsForId();
+    timers.useFakeTimers();
+    engine.heldTypes.add("evaluate_position");
+    const first = resyncBgsFromHistory(id, BOT_ID, "takeback");
+    await until(
+      "first rebuild's initial evaluation at the engine",
+      () => engine.heldCount("evaluate_position") === 1,
+    );
+    // Two more takebacks in the same tick, while that evaluation is in flight.
+    const second = resyncBgsFromHistory(id, BOT_ID, "takeback");
+    const third = resyncBgsFromHistory(id, BOT_ID, "takeback");
+    engine.heldTypes.clear();
+    engine.release("evaluate_position", {
+      type: "evaluate_position",
+      bgsId: id,
+      expectedPly: 0,
+    });
+    for (let index = 0; index < 20; index++) await flushIo();
+    // The cost of the burst: the pass that was running, plus ONE more for both
+    // later requests - not one rebuild each.
+    expect(startsForId() - startsBeforeBurst).toBe(2);
+    expect(getResetPromise(id)).toBeNull();
+
+    // A later takeback, after the burst has settled, rebuilds the session.
+    await resyncBgsFromHistory(id, BOT_ID, "takeback");
+    expect(getBgs(id)?.status).toBe("ready");
+    expect(getBgs(id)?.currentPly).toBe(historyLength);
+    expect(engine.sessions.get(id)?.ply).toBe(historyLength);
+    const endsBefore = engine.events.filter(
+      (event) => event === `end_game_session:${id}`,
+    ).length;
+
+    // Past every request deadline of the burst: nothing may end the session.
+    timers.advanceTimersByTime(timeoutMs + 1);
+    for (let index = 0; index < 20; index++) await flushIo();
+    timers.useRealTimers();
+    await Promise.all([first, second, third]);
+
+    expect(
+      engine.events.filter((event) => event === `end_game_session:${id}`)
+        .length,
+    ).toBe(endsBefore);
+    await assertConverged(id, historyLength);
+  });
+
   it("replacement attach carries and converges a game during another resync", async () => {
     const id = await createBotGame();
     const oldInternals = client as unknown as ClientInternals;
     expect(oldInternals.sessionRoutes.has(id)).toBe(true);
     engine.heldTypes.add("end_game_session");
+    // Fake timers from the first request on: the owner's End is the request
+    // whose reply the disconnect loses, so its own timeout is what releases it.
+    timers.useFakeTimers();
     const older = resyncBgsFromHistory(id, BOT_ID, "takeback");
     await until(
       "reattach first End",
@@ -643,27 +705,35 @@ describe("client-only rapid resync convergence", () => {
     const olderReset = getResetPromise(id);
     expect(olderReset).not.toBeNull();
 
-    timers.useFakeTimers();
     oldInternals.ws?.close();
-    await until(
-      "old client discardSessionBookkeeping",
-      () => oldInternals.sessionRoutes.size === 0,
-    );
-    // The old engine response can finish the same client's FIFO after route
-    // cleanup. Its socket is down, so the server's old resolver stays pending
-    // until the actual reattach owner drains it at the production timeout.
+    // The disconnect teardown is queued behind the held End on the same FIFO,
+    // so the route survives until that End finishes. That End already removes
+    // the engine session, so the teardown finds nothing left to end. Its socket
+    // is down, so the server's old resolver stays pending until the actual
+    // reattach owner drains it at the production timeout.
+    await flushIo();
+    expect(oldInternals.sessionRoutes.has(id)).toBe(true);
+    const endsForId = () =>
+      engine.events.filter((event) => event === `end_game_session:${id}`)
+        .length;
+    const endsBeforeRelease = endsForId();
     engine.release("end_game_session", {
       type: "end_game_session",
       bgsId: id,
     });
-    timers.advanceTimersByTime(5_000);
     await until(
-      "same BotClient replacement attach and carried-game owner",
-      () => {
-        const current = getResetPromise(id);
-        return current !== null && current !== olderReset;
-      },
+      "old client discardSessionBookkeeping",
+      () => !oldInternals.sessionRoutes.has(id),
     );
+    expect(endsForId()).toBe(endsBeforeRelease);
+    await until("server sees the disconnect", () => isBotClientInGrace(BOT_ID));
+    timers.advanceTimersByTime(5_000);
+    await until("same BotClient replacement attach", () =>
+      isBotClientConnected(BOT_ID),
+    );
+    // The reattach rebuild is folded into the running owner, not started as a
+    // second rebuild beside it.
+    expect(getResetPromise(id)).toBe(olderReset);
     timers.advanceTimersByTime(timeoutMs);
     await until(
       "reattach completed rebuild",

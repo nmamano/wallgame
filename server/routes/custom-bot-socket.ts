@@ -1109,6 +1109,62 @@ export const startBgsSession = async (
 };
 
 /**
+ * Cancel the request in flight for a BGS, if there is one. Its caller gets a
+ * rejection at once (e.g., executeBotTurnV3 sees it and checks getResetPromise
+ * for a graceful return), and a drain resolver with the same response type
+ * takes its slot, so the bot's natural reply is consumed rather than read as
+ * the answer to a later request. Returns a promise that settles when that
+ * reply arrives (or at the request timeout), or null if nothing was in flight.
+ *
+ * Cancelling a drain installs a fresh one: the reply it waits for has still
+ * not arrived.
+ */
+const cancelInFlightRequest = (bgsId: string): Promise<void> | null => {
+  const existingResolver = pendingResolvers.get(bgsId);
+  if (!existingResolver) return null;
+
+  clearTimeout(existingResolver.timeoutId);
+  existingResolver.reject(new Error("Request cancelled - session ending"));
+
+  return new Promise<void>((drainResolve) => {
+    const drainResolver: BgsRequestResolver<unknown> = {
+      resolve: () => {
+        clearTimeout(drainResolver.timeoutId);
+        drainResolve();
+      },
+      reject: () => {
+        clearTimeout(drainResolver.timeoutId);
+        drainResolve(); // Drain completes even on error response
+      },
+      timeoutId: setTimeout(() => {
+        // Only our own slot. A drain that outlives its use must not take a
+        // later request's resolver with it.
+        if (pendingResolvers.get(bgsId) === drainResolver) {
+          pendingResolvers.delete(bgsId);
+          clearPendingRequest(bgsId);
+        }
+        drainResolve();
+      }, BGS_REQUEST_TIMEOUT_MS),
+      expectedResponseType: existingResolver.expectedResponseType,
+    };
+    pendingResolvers.set(bgsId, drainResolver);
+  });
+};
+
+/**
+ * Cancel the bot's search for this BGS (an evaluation, or the move applied
+ * just before one), so a rebuild that has been superseded stops waiting for
+ * it and sends nothing more. Session start and end are left to finish: they involve no
+ * search, and cancelling them would orphan the session record they create or
+ * delete. The drain is not awaited: the next endBgsSession takes it over.
+ */
+export const cancelBgsSearch = (bgsId: string): void => {
+  const type = pendingResolvers.get(bgsId)?.expectedResponseType;
+  if (type !== "evaluate_response" && type !== "move_applied") return;
+  void cancelInFlightRequest(bgsId);
+};
+
+/**
  * End a Bot Game Session.
  * Returns a promise that resolves when the bot confirms session ended.
  */
@@ -1134,43 +1190,13 @@ export const endBgsSession = async (
   // If there's an in-flight request, wait for the bot's natural response before
   // sending end_game_session. The bot client enforces one-request-at-a-time:
   // sending end_game_session while another request is pending is a protocol violation.
-  const existingResolver = pendingResolvers.get(bgsId);
-  if (existingResolver) {
-    // Reject the original caller so they bail out immediately (e.g., executeBotTurnV3
-    // sees the rejection and checks getResetPromise → graceful return).
-    clearTimeout(existingResolver.timeoutId);
-    existingResolver.reject(new Error("Request cancelled - session ending"));
-
-    // Install a drain resolver with the same expectedResponseType so the response
-    // handler consumes the bot's natural response. The drain resolves once the
-    // response arrives, making it safe to send end_game_session.
-    await new Promise<void>((drainResolve) => {
-      const drainTimeoutId = setTimeout(() => {
-        pendingResolvers.delete(bgsId);
-        clearPendingRequest(bgsId);
-        drainResolve();
-      }, BGS_REQUEST_TIMEOUT_MS);
-
-      pendingResolvers.set(bgsId, {
-        resolve: () => {
-          clearTimeout(drainTimeoutId);
-          drainResolve();
-        },
-        reject: () => {
-          clearTimeout(drainTimeoutId);
-          drainResolve(); // Drain completes even on error response
-        },
-        timeoutId: drainTimeoutId,
-        expectedResponseType: existingResolver.expectedResponseType,
-      });
-    });
-
+  const drainedType = pendingResolvers.get(bgsId)?.expectedResponseType;
+  const drain = cancelInFlightRequest(bgsId);
+  if (drain) {
+    await drain;
     console.info(
       "[custom-bot-ws] drained in-flight request before ending BGS",
-      {
-        bgsId,
-        drainedType: existingResolver.expectedResponseType,
-      },
+      { bgsId, drainedType },
     );
   }
 
