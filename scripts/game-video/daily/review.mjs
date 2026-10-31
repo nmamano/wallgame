@@ -166,12 +166,22 @@ export const reviewView = (store, nextSlot) => ({
   })),
   // Approved and no slot took it yet (a slot makes it posting), in post
   // order: Nil may still take the approval back (withdraw).
-  approved: store.approvedQueue().map((it, i) => ({
+  // A held item (store.hold) is still approved, so it is listed, after the
+  // queue, with its hold.
+  approved: [
+    ...store
+      .approvedQueue()
+      .map((it, i) => ({ it, when: approvedLine(i, nextSlot) })),
+    ...store.held().map((it) => ({
+      it,
+      when: `Approved, held: it does not post (${it.hold.why}).`,
+    })),
+  ].map(({ it, when }) => ({
     id: it.id,
     // Approve requires a block today; a guard keeps the page usable if an
     // approved item ever has none (VR1, review 80).
     caption: it.copy ? postCaption(it.copy.block) : "(no post text)",
-    when: approvedLine(i, nextSlot),
+    when,
   })),
 });
 

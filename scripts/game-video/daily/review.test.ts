@@ -1012,6 +1012,15 @@ describe("the review routes", () => {
         when: expect.stringMatching(/^Approved: /) as unknown as string,
       },
     ]);
+    // Held (store.hold): still listed as approved, with its hold.
+    store.hold("v-2026-10-28-1", "a render fault", "Wall Game PM");
+    const held = JSON.parse(
+      (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
+    ) as View;
+    expect(held.approved.map((x) => x.when)).toEqual([
+      "Approved, held: it does not post (a render fault).",
+    ]);
+    store.release("v-2026-10-28-1", "Wall Game PM");
     const path = "/api/review/v-2026-10-28-1/withdraw";
     const other = await call(path, {
       method: "POST",

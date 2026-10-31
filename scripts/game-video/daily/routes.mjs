@@ -2105,6 +2105,22 @@ export const createDaily = ({
       );
     },
 
+    /**
+     * {item, why, by?} keeps an approved item from posting, its approval
+     * kept; {item, release: true, by?} lifts the hold (store.hold).
+     */
+    "POST /api/daily/hold": async (req, res) => {
+      const body = await readJson(req);
+      const id = itemOf(body.item).id;
+      json(
+        res,
+        200,
+        body.release === true
+          ? store.release(id, body.by)
+          : store.hold(id, body.why, body.by),
+      );
+    },
+
     /** {item, why}: the director stops an item Nil has not reviewed. */
     "POST /api/daily/drop": async (req, res) => {
       const body = await readJson(req);

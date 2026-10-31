@@ -114,6 +114,15 @@ export const reviewState = (item) => {
  * game is in one of these. Two videos of a game may be in work or in review
  * together (an A/B of edits).
  */
+/**
+ * Whether an approved item is held from posting (store.hold): its hold
+ * names the video its approval binds. A new approved render is not held.
+ */
+export const isHeld = (item) =>
+  item.state === "approved" &&
+  !!item.hold &&
+  item.hold.videoSha256 === item.approval?.videoSha256;
+
 export const ONE_POST_STATES = ["approved", "posting", "posted", "post-failed"];
 
 /**
@@ -632,17 +641,25 @@ export const openStore = (dataDir) => {
     /** The one way to change an item (see above). */
     updateItem,
 
-    /** Approved items, oldest approval first (then id): the post queue. */
+    /**
+     * Approved items that are not held (isHeld), oldest approval first (then
+     * id): the post queue, which every slot and the poster read.
+     */
     approvedQueue: () =>
-      items({ states: ["approved"] }).sort((a, b) =>
-        a.approval.at === b.approval.at
-          ? a.id < b.id
-            ? -1
-            : 1
-          : a.approval.at < b.approval.at
-            ? -1
-            : 1,
-      ),
+      items({ states: ["approved"] })
+        .filter((it) => !isHeld(it))
+        .sort((a, b) =>
+          a.approval.at === b.approval.at
+            ? a.id < b.id
+              ? -1
+              : 1
+            : a.approval.at < b.approval.at
+              ? -1
+              : 1,
+        ),
+
+    /** Approved items that are held: they stay approved and do not post. */
+    held: () => items({ states: ["approved"] }).filter(isHeld),
 
     /** Items whose post failed; Growth retries them by hand. */
     postFailed: () => items({ states: ["post-failed"] }),
@@ -659,6 +676,7 @@ export const openStore = (dataDir) => {
         inReview: n((it) => reviewState(it) === "in-review"),
         waitingCopy: n((it) => reviewState(it) === "waiting-copy"),
         approved: n((it) => it.state === "approved"),
+        held: n(isHeld),
         posting: n((it) => it.state === "posting"),
         postFailed: n((it) => it.state === "post-failed"),
         posted: n((it) => it.state === "posted"),
@@ -1405,6 +1423,47 @@ export const openStore = (dataDir) => {
           ];
         },
         `script unchanged after the revise, by ${who}`,
+      );
+    },
+
+    /**
+     * Keep an approved item from posting, approval kept (Wall Game PM,
+     * 2026-10-31: a render fault, a ghost walk through a wall, in 7
+     * approved videos; Nil decides about the approvals). The hold binds the
+     * approved video: a new render that Nil approves has other bytes, so it
+     * is not held (isHeld). A withdraw and a new approval of the same video
+     * keep it held.
+     */
+    hold(id, why, by) {
+      const reason = String(why ?? "").trim();
+      if (!reason) refuse("hold needs the reason");
+      const who = String(by ?? "").trim() || "the director";
+      return updateItem(
+        id,
+        ["approved"],
+        (item) => {
+          item.hold = {
+            videoSha256: item.approval.videoSha256,
+            why: reason.slice(0, 300),
+            by: who,
+            at: new Date().toISOString(),
+          };
+        },
+        `held by ${who}: ${reason.slice(0, 300)}`,
+      );
+    },
+
+    /** Lift a hold by hand (a new approved video lifts it on its own). */
+    release(id, by) {
+      const who = String(by ?? "").trim() || "the director";
+      return updateItem(
+        id,
+        ["approved"],
+        (item) => {
+          if (!isHeld(item)) refuse(`${id} is not held`);
+          delete item.hold;
+        },
+        `hold released by ${who}`,
       );
     },
 

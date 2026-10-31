@@ -23,6 +23,7 @@ import {
   migrateV2,
   openStore,
   reviewState,
+  isHeld,
 } from "./store.mjs";
 
 const FIXTURES = join(import.meta.dir, "fixtures");
@@ -387,6 +388,67 @@ describe("the store API the poster builds on", () => {
     ]);
   });
 
+  test("a held item stays approved and leaves the post queue until a new video is approved, or a release", () => {
+    // Wall Game PM, 2026-10-31: a render fault in approved videos; the
+    // queue was -30-3, -30-4 (faulty), -30-9: the next slot must take -30-9.
+    const store = storeWith([
+      item("v-2026-10-30-3", approved("2026-10-30T10:00:00.000Z")),
+      item("v-2026-10-30-4", approved("2026-10-30T11:00:00.000Z")),
+      item("v-2026-10-30-9", approved("2026-10-30T12:00:00.000Z")),
+      item("v-2026-10-28-5", { state: "draft" }),
+    ]);
+    const queue = () => store.approvedQueue().map((it: Item) => it.id);
+    expect(() => {
+      store.hold("v-2026-10-30-4", " ", "PM");
+    }).toThrow("hold needs the reason");
+    expect(() => {
+      store.hold("v-2026-10-28-5", "x", "PM");
+    }).toThrow("v-2026-10-28-5 is draft");
+    const held = store.hold(
+      "v-2026-10-30-4",
+      "ghost walk through a wall",
+      "Wall Game PM",
+    ) as Item;
+    expect(held.state).toBe("approved");
+    expect(held.approval?.videoSha256).toBe("v");
+    expect(isHeld(held)).toBe(true);
+    expect(held.events.at(-1)?.what).toBe(
+      "held by Wall Game PM: ghost walk through a wall",
+    );
+    expect(queue()).toEqual(["v-2026-10-30-3", "v-2026-10-30-9"]);
+    expect(store.held().map((it: Item) => it.id)).toEqual(["v-2026-10-30-4"]);
+    expect(store.counts()).toMatchObject({ approved: 3, held: 1 });
+    // The slot took -30-3: the next pick is -30-9, not the held -30-4.
+    store.updateItem(
+      "v-2026-10-30-3",
+      ["approved"],
+      (it: Item) => {
+        it.state = "posted";
+      },
+      "posted",
+    );
+    expect(queue()[0]).toBe("v-2026-10-30-9");
+    // A new approved video (other bytes) is not held.
+    store.updateItem(
+      "v-2026-10-30-4",
+      ["approved"],
+      (it: Item) => {
+        it.approval = { ...it.approval!, videoSha256: "v2" };
+      },
+      "approved again after a new render",
+    );
+    expect(queue()).toEqual(["v-2026-10-30-4", "v-2026-10-30-9"]);
+    expect(() => {
+      store.release("v-2026-10-30-4", "PM");
+    }).toThrow("v-2026-10-30-4 is not held");
+    // A release by hand.
+    store.hold("v-2026-10-30-9", "check", "PM");
+    expect(queue()).toEqual(["v-2026-10-30-4"]);
+    store.release("v-2026-10-30-9", "PM");
+    expect(queue()).toEqual(["v-2026-10-30-4", "v-2026-10-30-9"]);
+    expect(store.counts().held).toBe(0);
+  });
+
   test("in review: a finished item with a block for its video; after a revise, a new render AND a new block", () => {
     const render = (finishedAt: string) => ({
       finishedAt,
@@ -477,6 +539,7 @@ describe("the store API the poster builds on", () => {
       inReview: 1,
       waitingCopy: 1,
       approved: 1,
+      held: 0,
       posting: 0,
       postFailed: 0,
       posted: 0,

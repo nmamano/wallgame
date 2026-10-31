@@ -211,7 +211,7 @@ export const createScheduler = ({
     const c = s.counts;
     const n = s.nextSlot;
     return [
-      `Status: ready (approved) ${c.approved}, in review ${c.inReview}, waiting copy ${c.waitingCopy}, revise ${c.revise}, draft ${c.draft}, post-failed ${c.postFailed}, posted today ${c.postedToday}.`,
+      `Status: ready (approved) ${c.approved}${c.held ? ` (held ${c.held}: they do not post)` : ""}, in review ${c.inReview}, waiting copy ${c.waitingCopy}, revise ${c.revise}, draft ${c.draft}, post-failed ${c.postFailed}, posted today ${c.postedToday}.`,
       `Next slot: ${n.pacific} (${n.at}): ${n.willPost ? "will post" : "no post"}${n.why ? ` (${n.why})` : ""}.`,
     ].join("\n");
   };

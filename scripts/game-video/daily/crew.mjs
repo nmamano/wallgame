@@ -206,6 +206,11 @@
  *                                  item's current video: a render that makes
  *                                  other bytes leaves it stale. A new block
  *                                  replaces the old until Nil approves
+ *   hold --item ID --why "<reason>" [--by NAME]
+ *                                  keep an approved item from posting, its
+ *                                  approval kept (a render fault found after
+ *                                  approval); a new approved render is not
+ *                                  held. hold --item ID --release lifts it
  *   drop --item ID --why "<reason>"
  *                                  stop an item Nil has not reviewed (a game
  *                                  that does not make a video): discarded,
@@ -592,7 +597,7 @@ const summary = (s) => {
     `modes ${Object.entries(s.modes)
       .map(([p, m]) => `${p}=${m}`)
       .join(" ")}`,
-    `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview} (target ${s.reviewTarget}), waiting for copy ${c.waitingCopy}, approved ${c.approved}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
+    `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview} (target ${s.reviewTarget}), waiting for copy ${c.waitingCopy}, approved ${c.approved}${c.held ? ` (held ${c.held}: they do not post)` : ""}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
     `default ending ${s.suggestedEnding}${s.suggestedEnding === "ko" ? " (it takes no ending bar: with a bar, use gg or replay)" : ""}; last posted music ${s.lastMusic?.length ? s.lastMusic.join(", ") : "none"}`,
     ...s.items.flatMap((k) => itemLines(k, k.renderProgress)),
   ].join("\n");
@@ -1116,6 +1121,19 @@ const commands = {
       "  Wall Game Growth gets the slot message, as for a timed slot",
     );
     if (r.outcome !== "posted") process.exitCode = 1;
+  },
+
+  async hold() {
+    const id = itemFlag();
+    const by = flag("by") ?? undefined;
+    if (has("release")) {
+      await app("POST", "/api/daily/hold", { item: id, release: true, by });
+      console.log(`${id}: hold released; it posts in its turn`);
+      return;
+    }
+    const why = flag("why") ?? die('hold needs --why "<reason>" or --release');
+    await app("POST", "/api/daily/hold", { item: id, why, by });
+    console.log(`${id} held, approval kept: ${why}`);
   },
 
   async drop() {
