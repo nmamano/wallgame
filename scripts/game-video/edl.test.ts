@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   checkEdlAgainstGame,
   dailySeatColors,
@@ -1139,39 +1139,60 @@ describe("the meme pack's clips", () => {
   });
   const errorsOf = (raw: object): string[] =>
     (validateEdl(raw).errors as string[] | undefined) ?? [];
-  const stamp = { form: "clip", asset: "stupid-stamp" };
+  // No registered clip keeps its sound today (the stamp's thud is muted,
+  // Director Rewriter's source check, 2026-10-31): a test clip that does.
+  const SOUNDED = "test-sounded-clip";
+  beforeAll(() => {
+    (OVERLAYS as Record<string, unknown>)[SOUNDED] = {
+      ...OVERLAYS["stupid-stamp"],
+      sequence: { ...OVERLAYS["stupid-stamp"].sequence, audio: true },
+    };
+  });
+  afterAll(() => {
+    delete (OVERLAYS as Record<string, unknown>)[SOUNDED];
+  });
+  const sounded = { form: "clip", asset: SOUNDED };
 
   test("a clip with its own sound says whether it plays", () => {
     expect(
-      accept(withEvent({ ...stamp, audio: "own" })).events[0],
-    ).toMatchObject({ audio: "own", seconds: 3 });
+      accept(withEvent({ ...sounded, audio: "own" })).events[0],
+    ).toMatchObject({ audio: "own" });
     expect(
-      accept(withEvent({ ...stamp, audio: "muted", sound: "boom-2" }))
+      accept(withEvent({ ...sounded, audio: "muted", sound: "slam-1" }))
         .events[0],
-    ).toMatchObject({ audio: "muted", sound: "boom-2" });
-    expect(errorsOf(withEvent(stamp))).toEqual([
-      'events[0]: stupid-stamp has its own sound; audio must be "own" (it plays) or "muted"',
+    ).toMatchObject({ audio: "muted", sound: "slam-1" });
+    expect(errorsOf(withEvent(sounded))).toEqual([
+      `events[0]: ${SOUNDED} has its own sound; audio must be "own" (it plays) or "muted"`,
     ]);
     expect(
-      errorsOf(withEvent({ ...stamp, audio: "own", sound: "boom-2" })),
+      errorsOf(withEvent({ ...sounded, audio: "own", sound: "slam-1" })),
     ).toEqual([
-      'events[0]: stupid-stamp plays its own sound; give no "sound", or make it "muted"',
+      `events[0]: ${SOUNDED} plays its own sound; give no "sound", or make it "muted"`,
     ]);
-    // A clip whose sound is silence keeps none, so it takes no "audio".
+    // A clip that keeps no sound takes no "audio".
     expect(
-      errorsOf(withEvent({ form: "cover", asset: "confetti", audio: "own" })),
-    ).toEqual(['events[0]: confetti has no sound of its own; give no "audio"']);
+      errorsOf(
+        withEvent({ form: "clip", asset: "stupid-stamp", audio: "muted" }),
+      ),
+    ).toEqual([
+      'events[0]: stupid-stamp has no sound of its own; give no "audio"',
+    ]);
+    expect(
+      accept(
+        withEvent({ form: "clip", asset: "stupid-stamp", sound: "slam-1" }),
+      ).events[0],
+    ).toMatchObject({ seconds: 1.533, sound: "slam-1" });
   });
 
   test("a cover clip is cut shorter, never held longer", () => {
     expect(
-      accept(withEvent({ form: "cover", asset: "anime-zoom", seconds: 1.2 }))
+      accept(withEvent({ form: "cover", asset: "confetti", seconds: 1.2 }))
         .events[0],
     ).toMatchObject({ seconds: 1.2 });
     expect(
-      errorsOf(withEvent({ form: "cover", asset: "anime-zoom", seconds: 2.5 })),
+      errorsOf(withEvent({ form: "cover", asset: "confetti", seconds: 2.5 })),
     ).toEqual([
-      "events[0]: anime-zoom is a 2 s clip; seconds may be at most that",
+      "events[0]: confetti is a 2 s clip; seconds may be at most that",
     ]);
   });
 
@@ -1181,7 +1202,7 @@ describe("the meme pack's clips", () => {
     );
     expect("opening" in accept(base)).toBe(false);
     expect(errorsOf({ ...base, opening: "stupid-stamp" })).toEqual([
-      'opening must be a cover clip (anime-zoom, confetti, curtain-open), or absent for none; got "stupid-stamp"',
+      'opening must be a cover clip (curtain-open, confetti, curtain-open-pack, confetti-pack), or absent for none; got "stupid-stamp"',
     ]);
   });
 });

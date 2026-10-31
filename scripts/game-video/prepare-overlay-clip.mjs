@@ -103,8 +103,9 @@ export const borderColor = (rgb, width, height) => {
 /** How many frames the auto key looks at. */
 export const KEY_SAMPLES = 8;
 
-/** How much a screen's own channel must lead the other two (of 255). */
-export const SCREEN_LEAD = 60;
+/** How much a screen's own channel must lead the other two (of 255): the
+ * Pixabay curtain's yellow-green leads by 59 (2026-10-31). */
+export const SCREEN_LEAD = 40;
 
 /**
  * The most screen-like of some border colours (0xRRGGBB): the one whose

@@ -250,15 +250,12 @@ export const coverOver = (grid, cols, rows, box) => {
  * A box in the board (0..1) as a share of a clip drawn over the whole board
  * with object-fit: cover (stage.html, #overlay.sequence.cover): the clip is
  * scaled to fill the board and centred, so its overflow is cut equally on
- * both sides. `board` and `clip` are width / height. With `fit` "fill" the
- * clip is stretched to the board, so the box is the same share of it.
+ * both sides. `board` and `clip` are width / height.
  * @param {{ x0: number, y0: number, x1: number, y1: number }} box
  * @param {number} board
  * @param {number} clip
- * @param {"fill"} [fit]
  */
-export const boardToCover = (box, board, clip, fit) => {
-  if (fit === "fill") return { ...box };
+export const boardToCover = (box, board, clip) => {
   // In the clip's shares: the board shows a centred window of it.
   const [sx, sy] = clip > board ? [board / clip, 1] : [1, clip / board];
   const ox = (1 - sx) / 2;

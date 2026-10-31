@@ -4323,7 +4323,6 @@ const renderStyle = async (styleName) => {
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
-      ...(w.asset.fit ? { fit: w.asset.fit } : {}),
       t: elapsed - w.start,
       alpha: 1,
       place: w.place,
@@ -4689,7 +4688,7 @@ const renderStyle = async (styleName) => {
           grid,
           cols,
           rows,
-          boardToCover(b, r, facts.aspect, w.asset.fit),
+          boardToCover(b, r, facts.aspect),
         );
         if (share > COVER_HIDE_SHARE && (!worst || share > worst.share)) {
           worst = { share, what: b.what, at: f.at };

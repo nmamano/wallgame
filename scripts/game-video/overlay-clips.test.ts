@@ -294,8 +294,6 @@ describe("overlay clips", () => {
     const tall = boardToCover({ x0: 0.5, y0: 0, x1: 1, y1: 0.5 }, 0.5, 1);
     expect([tall.x0, tall.x1, tall.y0, tall.y1]).toEqual([0.5, 0.75, 0, 0.5]);
     // A board wider than the clip cuts its top and bottom instead.
-    // Stretched ("fill"), a box is the same share of the clip.
-    expect(boardToCover(tall, 0.5, 16 / 9, "fill")).toEqual(tall);
     const flat = boardToCover(all, 2, 1);
     expect([flat.x0, flat.x1, flat.y0, flat.y1]).toEqual([0, 1, 0.25, 0.75]);
   });

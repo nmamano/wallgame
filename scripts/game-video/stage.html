@@ -2635,12 +2635,7 @@
         if (o.draw === "whitebar") {
           el.innerHTML = "<div>" + esc(o.text) + "</div>";
         } else if (o.draw === "sequence" && o.form === "cover") {
-          el.innerHTML =
-            '<img src="' +
-            esc(o.src) +
-            '"' +
-            (o.fit === "fill" ? ' style="object-fit:fill"' : "") +
-            " />";
+          el.innerHTML = '<img src="' + esc(o.src) + '" />';
         } else if (o.draw === "sequence") {
           // Its corner's edges: "bottom-right" stands it on the bottom and
           // pushes it right, toward the board's rim, not into the middle.

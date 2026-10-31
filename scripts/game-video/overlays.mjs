@@ -13,9 +13,7 @@
  *          Wall Game PM, 2026-10-31). Its box is every pawn's, so what it
  *          hides is MEASURED from its pixels: on no frame may its alpha
  *          cover COVER_HIDE_SHARE of a pawn's box or of a thing in play
- *          (coverOver). A "sequence" draw only. `fit` "fill" stretches it
- *          to the board instead (speed lines: a 16:9 clip cut to a square
- *          board loses the sides, where its lines are; 2026-10-31 proof).
+ *          (coverOver). A "sequence" draw only.
  *   bar    the ending's white caption bar (the model video's last beat):
  *          on the last move only, from the ending's impact to its end (the
  *          ending holds longer when its line needs the reading time), in
@@ -346,7 +344,6 @@ const SCREAM_OUTLINE = [
  *   size?: { w: number, h: number },
  *   small?: { w: number, h: number },
  *   sequence?: { dir: string, fps: number, frames: number, sha256: string, audio?: true },
- *   fit?: "fill",
  *   source: string,
  *   claim: string,
  *   likeness: string,
@@ -809,27 +806,28 @@ export const OVERLAYS = {
     rating: null,
   },
   /*
-    Nil's meme pack, Green Screen (meme-pack.md in the director's repo,
-    2026-10-31), keyed by prepare-overlay-clip.mjs on 2026-10-31. The pack
-    grants no license; each clip keeps its owner's claim risk, the
-    Director's first estimate until its source check.
+    Green-screen clips, keyed by prepare-overlay-clip.mjs on 2026-10-31.
+    Their risks come from the Director Rewriter's source checks
+    (meme-pack.md "Source checks", director repo b75d3cb and facaf65): Nil's
+    meme pack grants no license, so a pack clip is LOW only with no owner
+    trace; curtain-open and confetti are Pixabay's replacements (Pixabay
+    Content License, no credit).
   */
-  "anime-zoom": {
+  "curtain-open": {
     form: "cover",
     draw: "sequence",
-    fit: "fill",
     text: "none",
-    seconds: 2,
+    seconds: 3,
     sequence: {
-      dir: "anime-zoom",
+      dir: "curtain-open",
       fps: 30,
-      frames: 60,
+      frames: 90,
       sha256:
-        "61e8dc5ee5817f9213dcd388b13105627bc225411e552415ed574cf607d0d30e",
+        "3f4f7c0de05c691fd863ae658d4e65152f272fbc3c2931c527317befc5d968cc",
     },
     source:
-      "Nil's meme pack: Green Screen/Anime Zoom Greenscreen.mp4, 0-2 s (its sound is silence)",
-    claim: "LOW: generic speed lines",
+      "Pixabay 30680, Opening Curtain, green screen, play (shahsb_27, 2019; https://pixabay.com/videos/opening-curtain-green-screen-play-30680/), 4.3-10.3 s at 2x, keyed at similarity 0.08 (its dark folds are near its yellow-green); no sound",
+    claim: "LOW: Pixabay Content License",
     likeness: "None",
     rating: null,
   },
@@ -837,58 +835,81 @@ export const OVERLAYS = {
     form: "cover",
     draw: "sequence",
     text: "none",
-    seconds: 3,
+    seconds: 2,
     sequence: {
       dir: "confetti",
       fps: 30,
-      frames: 90,
+      frames: 60,
       sha256:
-        "80ec5af06dcf9c449ffcdd78a5f721bdde17bacffee029ab8b04b4c54105f55a",
+        "84e211a54eb50fed0f495f4daac9d124121a8e0062a3038653eaac671c7f0051",
     },
     source:
-      "Nil's meme pack: Green Screen/Confetti.mp4, 0.5-3.5 s (its sound is silence)",
-    claim: "LOW: generic confetti",
+      "Pixabay 219897, Confetti paper green screen (2024; https://pixabay.com/videos/confetti-paper-green-screen-fun-219897/), 0.5-2.5 s (the burst building: its middle covers 10-13% of the frame and hid the winner in the proof), keyed at similarity 0.08 (its teal pieces come out pale blue); no sound",
+    claim: "LOW: Pixabay Content License",
     likeness: "None",
     rating: null,
   },
-  "curtain-open": {
+  "curtain-open-pack": {
     form: "cover",
     draw: "sequence",
     text: "none",
     seconds: 3.233,
     sequence: {
-      dir: "curtain-open",
+      dir: "curtain-open-pack",
       fps: 30,
       frames: 97,
       sha256:
         "dedafb03dc42e2f9ea43cd271fbab75fc336d5f946a55bebc6efb2d325d33f2d",
     },
     source:
-      'Nil\'s meme pack: Green Screen/Curtain Opening Effect - Green Screen Royalty Free Footage.mp4, 1.5-8 s at 2x (its sound is silence; "Royalty Free" in its name)',
-    claim: "LOW: generic stage curtains",
+      "Nil's meme pack: Green Screen/Curtain Opening Effect - Green Screen Royalty Free Footage.mp4 (a YouTube download), 1.5-8 s at 2x; no sound",
+    claim:
+      'MEDIUM: "Royalty Free" is the uploader\'s own claim; its title form matches a channel whose terms ask for a subscribe and a link for commercial use',
     likeness: "None",
+    nilOk: null,
+    rating: null,
+  },
+  "confetti-pack": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 3,
+    sequence: {
+      dir: "confetti-pack",
+      fps: 30,
+      frames: 90,
+      sha256:
+        "80ec5af06dcf9c449ffcdd78a5f721bdde17bacffee029ab8b04b4c54105f55a",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Confetti.mp4 (a YouTube download of 2018), 0.5-3.5 s; no sound",
+    claim:
+      "MEDIUM: its likeliest upload links to a Shutterstock listing, so it may be a stock clip",
+    likeness: "None",
+    nilOk: null,
     rating: null,
   },
   "stupid-stamp": {
     form: "clip",
     draw: "sequence",
     text: "none",
-    seconds: 3,
-    // 1280x480 after the trim: the stamp and the hand that brings it.
-    size: { w: 0.62, h: 0.23 },
-    small: { w: 0.48, h: 0.18 },
+    seconds: 1.533,
+    // 384x212 after the trim: the stamp alone, cut after the hand has left
+    // (Wall Game Director, 2026-10-31: "about 2x bigger", held for its
+    // beat only). Its pop is the landing; our own thud goes with it.
+    size: { w: 0.3, h: 0.166 },
+    small: { w: 0.24, h: 0.133 },
     places: ["board", "caption"],
     sequence: {
       dir: "stupid-stamp",
       fps: 30,
-      frames: 90,
+      frames: 46,
       sha256:
-        "bc44a7b86eb1888d554f0148783100e3549803a2b778dccd289c419197491be8",
-      audio: true,
+        "a1abd0abf1b4ce5a00c0a9f3a87cf50bc8e8c9775df65bd9586fdd799e1d25fd",
     },
     source:
-      "Nil's meme pack: Green Screen/Stupid Stamp - Chroma Key Template [Mpgun.com].mp4, 1-4 s, trimmed to its art",
-    claim: "LOW: a generic stamp template (its stamp thud: unknown source)",
+      "Nil's meme pack: Green Screen/Stupid Stamp - Chroma Key Template [Mpgun.com].mp4 (a YouTube download), 1.9-3.4 s, trimmed to its art; its own thud is not kept",
+    claim: "LOW: a generic word stamp, no owner trace; its thud muted",
     likeness: "None",
     rating: null,
   },
