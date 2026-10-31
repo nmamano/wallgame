@@ -3824,6 +3824,9 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
     without,
     walks: walks.map((w) => drawnWalk(state.pawns, w)),
     steps,
+    // Both sides' counts without the wall: the counter shows them while
+    // the wall is gone, so the frame never says two things.
+    withoutSteps,
     erase: { wall: term, oldBoard: wallPly, box, caps },
     faults,
   });
@@ -6771,8 +6774,38 @@ const renderStyle = async (styleName) => {
         meta,
       );
     }
+    /*
+      While the wall is gone the counter shows the counts without it,
+      ticking to them, and as it comes back it ticks back to the game's
+      (Wall Game PM and Video Reviewer 1, 2026-11-01: the frame showed the
+      board without the wall and the count with it).
+    */
+    const withHud = raceHud(ply);
+    const withoutHud = (t) =>
+      withHud && {
+        ...withHud,
+        a: {
+          ...withHud.a,
+          n: f.withoutSteps[redSeat],
+          changed: f.withoutSteps[redSeat] !== withHud.a.n,
+        },
+        b: {
+          ...withHud.b,
+          n: f.withoutSteps[blueSeat],
+          changed: f.withoutSteps[blueSeat] !== withHud.b.n,
+        },
+        t,
+      };
+    const backHud = (t) =>
+      withHud && {
+        ...withHud,
+        a: { ...withHud.a, changed: f.withoutSteps[redSeat] !== withHud.a.n },
+        b: { ...withHud.b, changed: f.withoutSteps[blueSeat] !== withHud.b.n },
+        t,
+      };
     // 3. The walk without it, on the board without it.
     const [walkNo, walkYes] = f.walks;
+    const gone = elapsed;
     const drawn = was > 1;
     const drawNo = drawSeconds(walkNo.points);
     if (drawn) cueWalkTicks(walkNo.points, elapsed, { fromStart: true });
@@ -6785,6 +6818,7 @@ const renderStyle = async (styleName) => {
       }
       await emit(
         playState(ply, {
+          race: withoutHud(elapsed - gone),
           erase: erase(1),
           path: {
             cell: GRID.pitchX,
@@ -6805,6 +6839,7 @@ const renderStyle = async (styleName) => {
       await emit(
         playState(ply, {
           erase: erase(1 - easeInOut((i + 1) / frames(CALLBACK_FADE_SECONDS))),
+          race: backHud(elapsed - back),
           trap: { t: elapsed - back, ...lit },
           path: { cell: GRID.pitchX, lines: ghost(1) },
         }),
@@ -6832,6 +6867,7 @@ const renderStyle = async (styleName) => {
         span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
       await emit(
         playState(ply, {
+          race: backHud(elapsed - back),
           trap: { t: elapsed - back, ...lit },
           path: {
             cell: GRID.pitchX,
