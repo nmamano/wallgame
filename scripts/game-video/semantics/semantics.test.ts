@@ -150,8 +150,8 @@ describe("labelGame", () => {
 
   test("the same wall with no threat before it is a detour", () => {
     const l = labels([
-      { w1: [6, 4], w2: [8, 8], wc: [0.5, 0.5] },
-      { w1: [4, 9], w2: [8, 8], wc: [0.5, 0.5], walls: ["^a1"] },
+      { w1: [10, 8], w2: [8, 8], wc: [0.5, 0.5] },
+      { w1: [8, 13], w2: [8, 8], wc: [0.5, 0.5], walls: ["^a1"] },
     ]);
     expect(l.plies[1].label).toBe("detour");
   });
@@ -569,18 +569,16 @@ describe("fixtures: what a move means", () => {
     expect(l.plies[14].focus.target).toEqual({ player: 2, type: "mouse" });
   });
 
-  test("8FroT1GU: the capture at ply 44 comes after the seal, with no turn after it", () => {
+  test("8FroT1GU: the capture at ply 44, no turn after ply 7, no trap-closes (C36)", () => {
     const l = fixtureLabels("8FroT1GU");
     expect(l.plies[44].label).toBe("capture");
-    const sealed = l.plies.find((p) => p.label === "trap-closes")!.ply;
-    expect(l.links).toContainEqual({
-      kind: "sealed-capture",
-      from: sealed,
-      to: 44,
-    });
-    expect(
-      l.plies.filter((p) => p.ply > sealed && p.tags.includes("turn")),
-    ).toEqual([]);
+    // The engine crosses 90% on a move that swings it by under 15 points:
+    // nothing a viewer sees, so no trap-closes and no sealed-capture link.
+    expect(l.plies.filter((p) => p.label === "trap-closes")).toEqual([]);
+    expect(l.links.filter((k) => k.kind === "sealed-capture")).toEqual([]);
+    expect(l.plies.filter((p) => p.ply > 7 && p.tags.includes("turn"))).toEqual(
+      [],
+    );
     expect(l.links.filter((k) => k.kind === "blunder-punish")).toEqual([]);
   });
 });
@@ -662,9 +660,26 @@ describe("the race and its moments (2Xnv0iiY, engine of 2026-10-31; C36)", () =>
     expect(l.plies[33].tags).not.toContain("dodge");
   });
 
-  test("the turning point names the sealing ply and the capture", () => {
-    expect(l.turningPoint).toContain("ply 26 (move 27");
+  test("ply 26 is no trap-closes: it swings neither the race nor the engine", () => {
+    // 9-9 with P1 to move, then 9-11 with P2 to move: the same race as a
+    // plain step (7-9); the engine 89% -> 90%.
+    expect(l.plies[26].raceGain).toBe(0);
+    expect(l.plies[26].label).toBe("quiet");
+    expect(l.turningPoint).toContain("from ply 9 (move 10");
     expect(l.turningPoint).toContain("the capture at ply 40");
+  });
+
+  test("a near miss: the cat steps to a new cell beside the mouse (ply 39)", () => {
+    expect(l.plies[39].label).toBe("standoff");
+  });
+
+  test("a save by the race: the bot's ^g1 at G0Oa_TzU ply 31", () => {
+    const g = fixtureLabels("G0Oa_TzU");
+    expect(g.plies[31].label).toBe("save");
+    expect(g.plies[31].tags).toContain("race-save");
+    expect(g.plies[31].raceWinner).toEqual({ plainStep: 1, played: 2 });
+    // The opening wall war flips the walk-only race too, far from the end.
+    expect(g.plies[3].tags).not.toContain("race-save");
   });
 });
 

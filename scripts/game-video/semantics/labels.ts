@@ -53,7 +53,8 @@ export type Tag =
   | "kept-gain"
   | "engine-losing"
   | "own-wall"
-  | "dodge";
+  | "dodge"
+  | "race-save";
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -154,6 +155,13 @@ export interface PlyLabel {
    * step, +2 for walls that add 4 to the other side's walk.
    */
   raceGain: number;
+  /**
+   * Who wins the walk-only race (raceWinner) after a plain two-step move
+   * instead of this one, and after this move. A save by the race (C36) is a
+   * move that turns the first into the mover's opponent and the second into
+   * the mover.
+   */
+  raceWinner: { plainStep: PlayerId | null; played: PlayerId | null };
   /** With the own-wall tag: the wall between the cat and the mouse, and when its owner placed it. */
   ownWall?: { wall: string; ply: number };
 }
@@ -188,6 +196,39 @@ const tempo = (r: RaceState): number | null => {
   if (a === null || b === null) return null;
   return b - a + (r.toMove === 1 ? 1 : -1);
 };
+
+/**
+ * Who wins the race if both sides only walk from here, two steps a move: the
+ * side to move needs ceil(walk / 2) moves and goes first. Null with no race.
+ */
+export const raceWinner = (r: RaceState): PlayerId | null => {
+  const { 1: a, 2: b } = r.walks;
+  if (a === null || b === null) return null;
+  const need = { 1: Math.ceil(a / 2), 2: Math.ceil(b / 2) };
+  const first = r.toMove;
+  const second: PlayerId = first === 1 ? 2 : 1;
+  return need[first] <= need[second] ? first : second;
+};
+
+/** The race after a plain two-step move by the side to move in `r`. */
+const plainStep = (r: RaceState): RaceState => {
+  const m = r.toMove;
+  const w = r.walks[m];
+  return {
+    walks: { ...r.walks, [m]: w === null ? null : Math.max(0, w - 2) },
+    toMove: m === 1 ? 2 : 1,
+  };
+};
+
+/**
+ * A save by the race needs the opponent's cat this close (three moves): far
+ * from the end, a wall war flips the walk-only race every few moves and the
+ * flip means nothing (G0Oa_TzU ply 3, 9L8BLuex ply 8).
+ */
+export const RACE_SAVE_WALK = 6;
+
+/** A win-chance swing this large makes a move a moment (C36 B). */
+export const MOMENT_CHANCE = 0.15;
 
 /** The race in words, as the counters show it. */
 export const raceWords = (
@@ -332,6 +373,16 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       gains[ply - 1] <= -MOMENT_GAIN &&
       Math.abs(gainOver(ply - 1, ply, m)) < MOMENT_GAIN;
     return back || answers;
+  };
+  const winners = plies.map((_, k) => ({
+    plainStep: raceWinner(plainStep(races[k])),
+    played: raceWinner(races[k + 1]),
+  }));
+  /** The move turns the walk-only race from the opponent's to the mover's. */
+  const raceFlip = (k: number) => {
+    const m = plies[k].mover;
+    const w = winners[k];
+    return w.plainStep !== null && w.plainStep !== m && w.played === m;
   };
   /** Who placed each wall, and when. */
   const wallOwner = new Map<string, { player: PlayerId; ply: number }>();
@@ -520,11 +571,14 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     for (const h of f.hunts.filter(isAnimal)) {
       if (h.after > 1 && adjacent(h.hunterTo, h.targetTo)) {
         const was = h.before > 1 && adjacent(h.hunterFrom, h.targetFrom);
-        if (!was) fit(ply, "standoff", 0.3, h);
+        // A cat that steps to a new cell beside the mouse is a new near
+        // miss, even when it was beside the mouse before (C36: 2Xnv0iiY 39).
+        const fresh = !was || h.hunterFrom !== h.hunterTo;
+        if (fresh) fit(ply, "standoff", 0.3, h);
         // C36 E: the wall that stops the cat is its own side's.
         const wall = wallBetween(h.hunterTo, h.targetTo);
         const owner = wallOwner.get(wall);
-        if (!was && owner?.player === h.hunter.player) {
+        if (fresh && owner?.player === h.hunter.player) {
           tags[ply].push("own-wall");
           ownWalls.set(ply, { wall, ply: owner.ply });
         }
@@ -542,6 +596,17 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       }
     }
 
+    // A save by the race (C36): without this move (a plain step instead)
+    // the opponent wins the walk-only race; with it, the mover does. The cat
+    // can be far: the walls or the mouse step decide who arrives first.
+    const acts = f.walls.length > 0 || f.steps.some((s) => s.type !== "cat");
+    const other: PlayerId = f.mover === 1 ? 2 : 1;
+    const close = (races[ply].walks[other] ?? Infinity) <= RACE_SAVE_WALK;
+    if (raceFlip(ply) && close && acts && !blunders.has(ply) && !f.end) {
+      tags[ply].push("race-save");
+      fit(ply, "save", 0.6, largest(yours, rise) ?? moved);
+    }
+
     fit(ply, "quiet", 0, moved);
   });
 
@@ -557,7 +622,16 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     while (from > 0 && chance(from - 1) >= SEALED_CHANCE) from--;
     // `from` is the first ply after which the winner stays sealed.
     const f = plies[from];
-    if (f?.mover === winner && f.engine!.before < SEALED_CHANCE && !f.end) {
+    // C36 B: the move must swing the game (the win chance or the race);
+    // crossing 90% by a few points seals nothing a viewer could see.
+    const swings =
+      f !== undefined && (f.engine!.delta >= MOMENT_CHANCE || raceFlip(from));
+    if (
+      f?.mover === winner &&
+      f.engine!.before < SEALED_CHANCE &&
+      !f.end &&
+      swings
+    ) {
       const h = largest(own(f), (x) => -x.after) ?? f.hunts[0];
       fit(from, "trap-closes", 0.5 + (f.engine!.after - f.engine!.before), h);
       const last = plies.length - 1;
@@ -589,6 +663,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       tags: [...all],
       focus: focusOf(f, top.hunt),
       race: { before: races[ply], after: races[ply + 1] },
+      raceWinner: winners[ply],
       raceGain: gains[ply],
       ...(ownWall ? { ownWall } : {}),
     };
