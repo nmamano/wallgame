@@ -1480,26 +1480,37 @@ describe("custom bot WebSocket integration V3", () => {
    * exact wire string, which game_details.moves cannot: it is re-serialised
    * from the applied state. The game is NOT ended - that is a separate question.
    */
-  it.each([
-    ["does not parse", "Zz99"],
-    ["leaves the board", "C`3"],
-  ])(
-    "records a bot move the game refuses because it %s",
-    async (_label, wireMove) => {
-      const clientId = `test-client-refused-${wireMove.length}`;
-      const botId = "refused-move-bot";
-      const compositeId = `${clientId}:${botId}`;
-      let botSocket: BotSocket | null = null;
-      let humanSocket: HumanSocket | null = null;
+  // One bot client for all three games: this file already uses most of the
+  // server's 10 client slots. The third wire move is a hostile custom bot's,
+  // just under the 64 KiB frame limit: it is capped, so a bot cannot write
+  // tens of kilobytes per refusal.
+  it("records each bot move the game refuses, with the wire string capped", async () => {
+    const LONG_WIRE_MOVE = "Z".repeat(60_000);
+    const cases = [
+      { wireMove: "Zz99", stored: "Zz99" }, // does not parse
+      { wireMove: "C`3", stored: "C`3" }, // leaves the board
+      {
+        wireMove: LONG_WIRE_MOVE,
+        stored: `${"Z".repeat(200)}...(+${60_000 - 200} chars)`,
+      },
+    ];
+    const clientId = "test-client-refused";
+    const botId = "refused-move-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    const humanSockets: HumanSocket[] = [];
 
-      try {
-        botSocket = await openBotSocket();
-        botSocket.sendAttach(clientId, [
-          createTestBotConfig(botId, "Refused Move Bot"),
-        ]);
-        await botSocket.waitForMessage("attached");
-        await waitForBotRegistration(compositeId, { variant: "standard" });
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [
+        createTestBotConfig(botId, "Refused Move Bot"),
+      ]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
 
+      const { eq } = await import("drizzle-orm");
+      const { getSession } = await import("../../server/games/store");
+      for (const { wireMove, stored } of cases) {
         // The human is player 2, so the bot moves first.
         const { gameId, socketToken } = await createGameVsBot(
           "host-refused-move",
@@ -1519,19 +1530,17 @@ describe("custom bot WebSocket integration V3", () => {
           },
           false,
         );
-        humanSocket = await openHumanSocket(
-          "host-refused-move",
-          gameId,
-          socketToken,
+        humanSockets.push(
+          await openHumanSocket("host-refused-move", gameId, socketToken),
         );
 
         const start = await botSocket.waitForMessage("start_game_session");
+        expect(start.bgsId).toBe(gameId);
         botSocket.sendGameSessionStarted(start.bgsId, true);
         const evaluate = await botSocket.waitForMessage("evaluate_position");
         expect(evaluate.expectedPly).toBe(0);
         botSocket.sendEvaluateResponse(start.bgsId, 0, wireMove, 0);
 
-        const { eq } = await import("drizzle-orm");
         const readRows = () =>
           db
             .select()
@@ -1548,18 +1557,17 @@ describe("custom bot WebSocket integration V3", () => {
           gameId,
           botCompositeId: compositeId,
           ply: 0,
-          wireMove,
+          wireMove: stored,
         });
         expect(rows[0].reason.length).toBeGreaterThan(0);
+        expect(rows[0].reason.length).toBeLessThanOrEqual(530);
 
-        const { getSession } = await import("../../server/games/store");
         expect(getSession(gameId).gameState.status).toBe("playing");
         expect(getSession(gameId).gameState.history).toHaveLength(0);
-      } finally {
-        humanSocket?.close();
-        botSocket?.close();
       }
-    },
-    60_000,
-  );
+    } finally {
+      for (const socket of humanSockets) socket.close();
+      botSocket?.close();
+    }
+  }, 60_000);
 });

@@ -438,7 +438,9 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    await recordBotMoveRefusal({
+    // Not awaited: inside a rebuild pass the write would hold up the reset
+    // promise that the move handler waits on, for a turn left unplayed anyway.
+    void recordBotMoveRefusal({
       gameId: sessionId,
       botCompositeId: activePlayer.botCompositeId,
       ply: bgs.currentPly,

@@ -27,7 +27,8 @@ export const botMoveRefusalsTable = pgTable("bot_move_refusals", {
   /**
    * The move EXACTLY as the bot client sent it. game_details.moves is
    * re-serialised from the applied game state, so this is the only place
-   * the wire string is kept.
+   * the wire string is kept. Capped at WIRE_MOVE_MAX_CHARS
+   * (server/games/bot-move-refusals.ts), with the cut length at the end.
    */
   wireMove: text("wire_move").notNull(),
   /** Why the game refused it: the parser's or the rules' message. */
