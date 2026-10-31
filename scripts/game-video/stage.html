@@ -3448,6 +3448,7 @@
         }
         boardFilter("");
         $("boardWrap").style.transform = "";
+        $("stripSite").style.opacity = "";
         if (!e) return;
         const t = e.t;
 
@@ -3500,6 +3501,11 @@
             const p = easeOut3(span(t, 0.55, window.__ENDINGS.gg.cardIn));
             show($("ggCard"), true);
             $("ggCard").style.opacity = p;
+            // One call to action at the end, the card's, which pops: the
+            // badge under the board fades out as the card lands, and is
+            // back on the loop's first frame (Wall Game Director,
+            // 2026-10-31: two orange badges split the eye).
+            $("stripSite").style.opacity = 1 - p;
             // It grows in where it rests, never sliding: the ending's bar
             // may take the band below it (Wall Game Director, 2026-10-29).
             $("ggCard").style.transform =
