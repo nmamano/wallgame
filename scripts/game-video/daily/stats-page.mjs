@@ -2,12 +2,15 @@
  * The game-video app's "/": the social media stats tracker (Nil,
  * 2026-10-31: "i see videos for review here - no need, I'll use inbox
  * only. this app can be restructured into social media stats tracker").
- * It shows, from GET /api/review/social: the platforms posting live, the
- * follower counts with their change over 1 and 7 days, each platform's
- * post totals with their change, each posted video (most recent first)
- * with one row per platform (its link and numbers), and the accounts'
- * setup (Wall Game Growth's platforms.json) folded under "Accounts and
- * setup". The numbers are read on the app's timer (post-stats.mjs,
+ * It shows, from GET /api/review/social: a headline (views and likes in
+ * 7 days, followers, videos posted in 7 days; Wall Game PM, 2026-10-31),
+ * the follower counts with their change over 1 and 7 days, each
+ * platform's post totals with their change, each posted video (most
+ * recent first) as one row of totals with its platforms folded under it,
+ * and the accounts' setup (Wall Game Growth's platforms.json) folded
+ * under "Accounts and setup". On a phone the tables keep only the main
+ * columns, so nothing scrolls sideways. Views are each platform's own
+ * count, and the page says so where it adds them (Wall Game Growth). The numbers are read on the app's timer (post-stats.mjs,
  * followers.mjs), never when the page opens. The review page is at
  * /review; the crew's view at /daily.
  *
@@ -40,7 +43,6 @@ export const STATS_PAGE = `<!doctype html>
   .social a { color: #93c5fd; }
   .social li.nil { background: rgba(250, 204, 21, 0.15); border-radius: 4px; }
   .social .ok { color: #4ade80; } .social .todo { color: #fbbf24; }
-  .social .scroll { overflow-x: auto; }
   /* The same column widths in every table, so the videos line up. */
   .social table.num { width: auto; }
   .social table.num th, .social table.num td { width: auto; padding: 4px 14px 4px 0; white-space: nowrap; }
@@ -50,6 +52,34 @@ export const STATS_PAGE = `<!doctype html>
   .social table.num tr.sum td { border-top: 1px solid #334155; font-weight: 700; }
   .social table.num td.note { white-space: normal; min-width: 180px; max-width: 420px; }
   .social details.setup > summary { cursor: pointer; font-size: 17px; font-weight: 700; margin: 6px 0 12px; }
+  /* A video: one row (its name and time, then its four totals); its
+     platforms fold under it. */
+  .social details.video { border-top: 1px solid #1f2937; padding: 8px 0; }
+  .social details.video > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  .social .vname { display: flex; flex-direction: column; flex: 1 1 260px; min-width: 0; }
+  .social .vname b { overflow-wrap: anywhere; }
+  .social .vnums { display: flex; gap: 14px; flex-wrap: wrap; color: #94a3b8; font-size: 13px; }
+  .social .vnums b { color: #f8fafc; font-size: 15px; font-variant-numeric: tabular-nums; }
+  /* Each figure in its own fixed slot, so the videos' figures line up. */
+  .social .vnums > span { min-width: 104px; text-align: right; }
+  .social details.video table { margin-top: 8px; }
+  .social .narrow { display: none; }
+  /* A phone: the main numbers only, no sideways scroll. */
+  @media (max-width: 640px) {
+    .social .wide { display: none; }
+    .social .narrow { display: inline; white-space: nowrap; }
+    .social table.num td:first-child { white-space: normal; }
+    .social .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .social .stat { padding: 8px 10px; font-size: 13px; }
+    .social .stat b { font-size: 19px; }
+    .social .vnums { gap: 10px; font-size: 12px; }
+    .social .vnums > span { min-width: 0; text-align: left; }
+    .social .vnums b { font-size: 14px; }
+    .social table.num th, .social table.num td { padding-right: 8px; }
+    .social table.num th:first-child, .social table.num td:first-child { min-width: 0; }
+    .social table.num td.n, .social table.num th.n { min-width: 0; }
+    .social table.num td.note { min-width: 0; }
+  }
 </style></head>
 <body><main><h1>Wall Game social stats</h1><div id="list"></div></main>
 <script>
@@ -89,9 +119,22 @@ export const STATS_PAGE = `<!doctype html>
     return b;
   };
   const drawSocial = (list, v) => {
-    const head = el("p", "muted", "Status file updated " + v.updated + " by " + v.updatedBy + ". Poster modes read live from this app. Times UTC.");
-    const stats = el("div", "stats");
-    for (const st of v.stats) { const d = el("div", "stat"); d.append(el("b", "", st.value), st.label); stats.append(d); }
+    // The headline (Wall Game PM, 2026-10-31): what Nil looks for first.
+    const p = v.postStats, f = v.followers?.total;
+    const head = el("p", "muted", p?.readAt ? "Read " + p.readAt + "." : "Not read yet.");
+    const chips = (xs) => { const d = el("div", "stats");
+      for (const [value, label] of xs) { const c = el("div", "stat"); c.append(el("b", "", value), label); d.append(c); }
+      return d; };
+    const signed = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + fmt(n) : "-";
+    const stats = chips([
+      [signed(p?.headline.views), "views in 7 days (platform counts added)"],
+      [signed(p?.headline.likes), "likes in 7 days"],
+      [fmt(f?.now), "followers now" + (typeof f?.week === "number" ? " (" + signed(f.week) + " in 7 days)" : "")],
+      [fmt(p?.headline.videos), "videos posted in 7 days"],
+    ]);
+    // The setup's own figures, under "Accounts and setup".
+    const setupStats = chips(v.stats.map((st) => [st.value, st.label]));
+    const setupHead = el("p", "muted", "Status file updated " + v.updated + " by " + v.updatedBy + ". Poster modes read live from this app.");
     const followers = v.followers
       ? box("Followers", table([["Platform", "Now", "1 day", "7 days", "Note"]].concat(v.followers.rows.map((r) => [r.platform, el("b", "", r.now), r.day, r.week, el("span", "muted", r.note)]))), el("p", "muted", v.followers.note))
       : box("Followers", el("p", "muted", "No follower counts now (a post is running): look again in a few minutes."));
@@ -107,41 +150,51 @@ export const STATS_PAGE = `<!doctype html>
     if (v.brand) { tail.append(el("h3", "", "Brand assets")); const bp = el("p", "", v.brand.banners + " Folder: "); bp.append(el("code", "", v.brand.folder)); tail.append(bp); }
     tail.append(el("h3", "", "Later / no"), items("ul", v.later, (x) => el("li", "", x)));
     tail.append(el("h3", "", "Recent changes"), items("ul", v.log, (x) => el("li", "", x.at + ": " + x.what)));
-    const setup = el("details", "setup"); setup.append(el("summary", "", "Accounts and setup"), nil, how, grid, tail);
+    const setup = el("details", "setup"); setup.append(el("summary", "", "Accounts and setup"), setupHead, setupStats, nil, how, grid, tail);
     const wrap = el("div", "social"); wrap.append(head, stats, followers, ...postStats(v.postStats), setup);
     list.append(wrap);
   };
 
   // A table of numbers: a header row, right-aligned numbers, "-" for a
-  // number the platform does not give, and an optional total row.
+  // number the platform does not give, and an optional total row. A
+  // column {h, n: numeric, cls}: cls "wide" hides it on a phone, "note"
+  // lets it wrap.
   const fmt = (n) => typeof n === "number" ? n.toLocaleString("en-US") : "-";
-  const numTable = (head, rows, sumRow) => {
+  const numTable = (cols, rows, sumRow) => {
     const t = el("table", "num");
-    const hr = el("tr"); for (const [h, n] of head) hr.append(el("th", n ? "n" : "", h)); t.append(hr);
+    const cls = (c) => [c.n ? "n" : "", c.cls ?? ""].join(" ").trim();
+    const hr = el("tr"); for (const c of cols) hr.append(el("th", cls(c), c.h)); t.append(hr);
     for (const r of rows.concat(sumRow ? [sumRow] : [])) {
       const tr = el("tr", r === sumRow ? "sum" : "");
-      r.forEach((c, i) => { const td = el("td", head[i][1] ? "n" : head[i][2] ?? ""); td.append(c); tr.append(td); });
+      r.forEach((x, i) => { const td = el("td", cls(cols[i])); td.append(x); tr.append(td); });
       t.append(tr);
     }
-    const s = el("div", "scroll"); s.append(t); return s;
+    return t;
   };
-  const M = [["Views", 1], ["Likes", 1], ["Comments", 1], ["Shares", 1]];
+  const M = [{ h: "Views", n: 1 }, { h: "Likes", n: 1 }, { h: "Comments", n: 1, cls: "wide" }, { h: "Shares", n: 1, cls: "wide" }];
   const nums = (x) => [fmt(x.views), fmt(x.likes), fmt(x.comments), fmt(x.shares)];
   const postStats = (p) => {
     if (!p) return [];
     const byPlatform = box("Posts by platform",
-      numTable([["Platform"], ["Posts", 1], ...M, ["1 day"], ["7 days"], ["Read", 0, "note"]],
-        p.platforms.map((r) => [r.platform, fmt(r.posts), ...nums(r), r.day, r.week, el("span", "muted", r.note)]),
+      numTable([{ h: "Platform" }, { h: "Posts", n: 1, cls: "wide" }, ...M, { h: "1 day", cls: "wide" }, { h: "7 days" }, { h: "Read", cls: "note wide" }],
+        p.platforms.map((r) => { const wk = el("span"); wk.append(el("span", "wide", r.week), el("span", "narrow", r.weekShort));
+          return [r.platform, fmt(r.posts), ...nums(r), r.day, wk, el("span", "muted", r.note)]; }),
         ["All", "", ...nums(p.total), "", "", ""]),
-      el("p", "muted", p.note));
+      el("p", "muted", p.note + " Views are each platform's own count (a play, a start, a timeline show), so their sum only adds them as they are."));
+    // One row per video, most recent first; its platforms fold under it.
     const videos = box("Videos, most recent first",
       ...(p.videos.length ? [] : [el("p", "muted", "No video is posted yet.")]),
       ...p.videos.map((v) => {
-        const d = el("div");
-        d.append(el("h3", "", v.itemId + " - posted " + v.postedAt.slice(0, 16).replace("T", " ") + " UTC"));
-        d.append(numTable([["Platform"], ...M, ["Note", 0, "note"]],
-          v.rows.map((r) => [r.href ? link(r.platform, r.href) : r.platform, ...nums(r), el("span", "muted", r.note)]),
-          ["Total", ...nums(v.total), ""]));
+        const d = el("details", "video");
+        const sum = el("summary");
+        const name = el("span", "vname"); name.append(el("b", "", v.name), el("span", "muted", v.postedAt.slice(0, 16).replace("T", " ") + " UTC"));
+        const figures = el("span", "vnums");
+        for (const [n, label] of [[v.total.views, "views"], [v.total.likes, "likes"], [v.total.comments, "comments"], [v.total.shares, "shares"]]) {
+          const c = el("span"); c.append(el("b", "", fmt(n)), " " + label); figures.append(c);
+        }
+        sum.append(name, figures);
+        d.append(sum, numTable([{ h: "Platform" }, ...M, { h: "Note", cls: "note wide" }],
+          v.rows.map((r) => [r.href ? link(r.platform, r.href) : r.platform, ...nums(r), el("span", "muted", r.note)])));
         return d;
       }));
     return [byPlatform, videos];

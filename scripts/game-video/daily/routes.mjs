@@ -2953,8 +2953,8 @@ const DASHBOARD = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game daily video</h1>
-  <p class="sub">Videos to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes each video as an item, Wall Game Growth writes its post text, Nil reviews it on the review page, and an approved video posts at the next slot. This page shows where each item is.
-    <a href="/">Review</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
+  <p class="sub">Videos to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes each video as an item, Wall Game Growth writes its post text, Nil reviews it in his Isomux Inbox, and an approved video posts at the next slot. This page shows where each item is.
+    <a href="/">Social stats</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
   <h2>Items</h2><div id="items"></div>
   <h2>Posted or discarded</h2><div id="over" class="box"></div>

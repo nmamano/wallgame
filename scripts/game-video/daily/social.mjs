@@ -103,6 +103,12 @@ export const createFollowerHistory = (path) => {
   return { read, record };
 };
 
+/** The sum of the numbers that are there, or null when none is. */
+const sumOf = (xs) => {
+  const have = xs.filter((x) => typeof x === "number");
+  return have.length ? have.reduce((a, b) => a + b, 0) : null;
+};
+
 /**
  * The followers box: each platform's count now and its change over 1 and 7
  * days, from the history (the last row on or before that day).
@@ -119,7 +125,22 @@ const followersBox = (counts, history, names, nowMs) => {
       ? (now - then >= 0 ? "+" : "") + (now - then)
       : "-";
   const first = history[0]?.day;
+  const weekAgo = Object.entries(counts).map(([p, c]) =>
+    typeof c.followers === "number" ? ago(p, 7) : undefined,
+  );
   return {
+    // All accounts together, for the stats tracker's headline: now, and
+    // the change in 7 days over the accounts that have a count both times.
+    total: {
+      now: sumOf(Object.values(counts).map((c) => c.followers)),
+      week: sumOf(
+        Object.values(counts).map((c, i) =>
+          typeof c.followers === "number" && typeof weekAgo[i] === "number"
+            ? c.followers - weekAgo[i]
+            : null,
+        ),
+      ),
+    },
     rows: Object.entries(counts).map(([p, c]) => ({
       platform: names[p] ?? p,
       now: c.followers ?? "-",
@@ -295,10 +316,25 @@ export const createPostStatsHistory = (path) => {
  *   comments: number | null, shares: number | null }} PostNumbers
  */
 
-/** The sum of the numbers that are there, or null when none is. */
-const sumOf = (xs) => {
-  const have = xs.filter((x) => typeof x === "number");
-  return have.length ? have.reduce((a, b) => a + b, 0) : null;
+/**
+ * A video's name from its post text: the first line, up to " · " (the
+ * sounds credit), without hashtags; null when nothing is left.
+ * @param {string | null | undefined} caption
+ */
+export const videoName = (caption) => {
+  const line = String(caption ?? "")
+    .split("\n")[0]
+    .split(" · ")[0]
+    .replace(/#\w+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // By code point, so a cut never splits an emoji (VR1, review 119).
+  const chars = [...line];
+  return line
+    ? chars.length > 80
+      ? `${chars.slice(0, 79).join("")}…`
+      : line
+    : null;
 };
 
 /**
@@ -355,10 +391,18 @@ export const postStatsView = ({
       /** @type {string} */
       const itemId =
         ps[0].itemId ?? (ps[0].gameId ? `game ${ps[0].gameId}` : ps[0].day);
+      const caption =
+        ps.find((p) => p.platform === "youtube")?.caption ??
+        ps.find((p) => p.caption)?.caption;
       const rows = [...ps]
         .sort((a, b) => order(a) - order(b))
         .map((p) => ({
-          platform: names[p.platform] ?? p.platform,
+          // A post read without the insights permission has likes and
+          // comments but no views (post-stats.mjs fallback, VR1 review 119
+          // N1): its name says so, on a phone too.
+          platform:
+            (names[p.platform] ?? p.platform) +
+            (numbers[keyOf(p)]?.note ? " (no views)" : ""),
           href: https(p.url),
           ...totals([numbers[keyOf(p)]]),
           at: numbers[keyOf(p)]?.at ?? null,
@@ -366,6 +410,7 @@ export const postStatsView = ({
         }));
       return {
         itemId,
+        name: videoName(caption) ?? itemId,
         postedAt: ps.map((p) => p.utc).sort()[0],
         rows,
         total: totals(rows),
@@ -378,10 +423,12 @@ export const postStatsView = ({
    * over the posts that have a value now: a post's last row on or before
    * that day, or 0 for a post made after it. A post with neither is left
    * out of both sides. Views and likes only, so the line stays short.
+   * @returns {{ views: number | null, likes: number | null }}
    */
   const change = (platform, days) => {
     const d = new Date(nowMs - days * 864e5).toISOString().slice(0, 10);
-    const out = [];
+    /** @type {{ views: number | null, likes: number | null }} */
+    const out = { views: null, likes: null };
     for (const m of /** @type {const} */ (["views", "likes"])) {
       let now = 0;
       let then = 0;
@@ -400,29 +447,61 @@ export const postStatsView = ({
         then += before;
         any = true;
       }
-      if (any) {
-        const by = now - then;
-        out.push(`${by >= 0 ? "+" : ""}${by.toLocaleString("en-US")} ${m}`);
-      }
+      if (any) out[m] = now - then;
     }
-    return out.length ? out.join(", ") : "-";
+    return out;
   };
+  const signed = (n) => `${n >= 0 ? "+" : ""}${n.toLocaleString("en-US")}`;
+  /** "+1,399 views, +58 likes", or "-" with no change to show. */
+  const changeText = (c) =>
+    [
+      ...(c.views === null ? [] : [`${signed(c.views)} views`]),
+      ...(c.likes === null ? [] : [`${signed(c.likes)} likes`]),
+    ].join(", ") || "-";
 
   const platformRows = platforms.map((platform) => {
     const ps = posts.filter((p) => p.platform === platform);
     const t = totals(ps.map((p) => numbers[keyOf(p)]));
     const r = reads[platform];
+    const week = change(platform, 7);
     return {
       platform: names[platform] ?? platform,
       posts: ps.length,
       ...t,
-      day: change(platform, 1),
-      week: change(platform, 7),
-      note: r?.error ?? (r ? `read ${utcMinute(r.at)}` : "not read yet"),
+      day: changeText(change(platform, 1)),
+      week: changeText(week),
+      // The phone's short form: the views' change, or the likes' where the
+      // platform gives no views.
+      weekShort: changeText(
+        week.views === null ? { ...week } : { views: week.views, likes: null },
+      ),
+      weekNumbers: week,
+      // A read error; else a post's fallback note (no views: needs
+      // reconnect); else when it was read.
+      note:
+        r?.error ??
+        ps.map((p) => numbers[keyOf(p)]?.note).find(Boolean) ??
+        (r ? `read ${utcMinute(r.at)}` : "not read yet"),
     };
   });
   const first = history[0]?.day;
+  const readAt =
+    Object.values(reads)
+      .map((r) => r?.at)
+      .filter((at) => typeof at === "string")
+      .sort()
+      .at(-1) ?? null;
   return {
+    // The headline (Wall Game PM, 2026-10-31): the 7-day change of views
+    // (each platform's own count, added: Growth warns they differ) and
+    // likes, and the videos posted in 7 days.
+    headline: {
+      views: sumOf(platformRows.map((r) => r.weekNumbers.views)),
+      likes: sumOf(platformRows.map((r) => r.weekNumbers.likes)),
+      videos: videos.filter((v) => nowMs - Date.parse(v.postedAt) < 7 * 864e5)
+        .length,
+    },
+    readAt: readAt && utcMinute(readAt),
     platforms: platformRows,
     total: totals(platformRows),
     videos,

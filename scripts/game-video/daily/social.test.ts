@@ -15,6 +15,7 @@ import {
   createPostStatsHistory,
   postStatsView,
   socialView,
+  videoName,
 } from "./social.mjs";
 
 const DAY = Date.parse("2026-10-30T09:00:00Z");
@@ -163,6 +164,9 @@ describe("socialView", () => {
       note: "",
     });
     expect(v.followers!.rows[1]).toMatchObject({ now: "-", note: "no key" });
+    // All accounts: X has no count, so only Bluesky adds (7, and +6 since
+    // 2026-10-23).
+    expect(v.followers!.total).toEqual({ now: 7, week: 6 });
     expect(v.followers!.note).toStartWith("Counts cached 1 h (X: 24 h). ");
     expect(v.followers!.note).toContain("since 2026-10-23");
   });
@@ -232,9 +236,7 @@ describe("the per-post stats", () => {
       numbers: {
         "x X1": n("2026-10-31", 100, 5),
         "x X2": n("2026-10-31", 40, 2),
-        "bluesky at://b": n("2026-10-31", null, 3, {
-          note: "views: none",
-        }),
+        "bluesky at://b": n("2026-10-31", null, 3),
       },
       reads: {
         x: { at: at("2026-10-31"), error: null, posts: 2 },
@@ -267,6 +269,12 @@ describe("the per-post stats", () => {
       note: "Read every 6 h.",
     });
     expect(v.videos.map((x) => x.itemId)).toEqual(["v-2", "v-1"]);
+    // No caption in these rows: the name is the id.
+    expect(v.videos.map((x) => x.name)).toEqual(["v-2", "v-1"]);
+    // The headline: the 7-day change of views and likes over all
+    // platforms, and the videos posted in 7 days (v-1 is 7.3 days old).
+    expect(v.headline).toEqual({ views: 80, likes: 6, videos: 1 });
+    expect(v.readAt).toBe("2026-10-31 10:00 UTC");
     // Posts from before item ids: one video per video file, named by game.
     const early = postStatsView({
       posts: ["x", "bluesky"].map((platform) => ({
@@ -301,7 +309,7 @@ describe("the per-post stats", () => {
         at: at("2026-10-31"),
         note: "",
       },
-      // No link but https; the platform's own note.
+      // No link but https. Bluesky gives no views: "-", no note.
       {
         platform: "Bluesky",
         href: null,
@@ -310,7 +318,7 @@ describe("the per-post stats", () => {
         comments: null,
         shares: null,
         at: at("2026-10-31"),
-        note: "views: none",
+        note: "",
       },
       // No numbers: the platform's read error is in its platform row.
       {
@@ -357,5 +365,64 @@ describe("the per-post stats", () => {
     expect(v.note).toBe(
       'Read every 6 h. History: one row a day per post since 2026-10-24. "-": the platform gives no such number.',
     );
+  });
+});
+
+describe("a video's name", () => {
+  test("the post text's first line, without the sounds credit or hashtags", () => {
+    expect(
+      videoName(
+        "the race flipped in one move... #wallgame #gaming #Shorts\n\nmore",
+      ),
+    ).toBe("the race flipped in one move...");
+    expect(
+      videoName(
+        "bro trapped himself with his own walls 😭💔 #wallgame · sounds: JDSherbert",
+      ),
+    ).toBe("bro trapped himself with his own walls 😭💔");
+    expect(videoName("#wallgame")).toBeNull();
+    expect(videoName(null)).toBeNull();
+    expect(videoName("x".repeat(100))).toHaveLength(80);
+    // An emoji at the cut stays whole.
+    expect(videoName("x".repeat(78) + "😭😭😭")).toBe("x".repeat(78) + "😭…");
+  });
+});
+
+describe("a post read without the insights permission", () => {
+  test("its row says no views, its platform shows why, and views totals leave it out", () => {
+    const at = "2026-10-31T10:00:00.000Z";
+    const note = "views, shares: needs reconnect (read_insights)";
+    const v = postStatsView({
+      posts: ["F1", "F2"].map((postId) => ({
+        itemId: postId,
+        day: "2026-10-31",
+        utc: at,
+        platform: "facebook",
+        postId,
+        url: null,
+      })),
+      numbers: {
+        "facebook F1": { views: 500, likes: 9, comments: 1, shares: 2, at },
+        "facebook F2": {
+          views: null,
+          likes: 11,
+          comments: 3,
+          shares: null,
+          note,
+          at,
+        },
+      },
+      reads: { facebook: { at, error: null, posts: 2 } },
+      history: [],
+      names: { facebook: "Facebook Page" },
+      nowMs: Date.parse("2026-10-31T18:00:00.000Z"),
+      platforms: ["facebook"],
+      note: "",
+    });
+    const f2 = v.videos.find((x) => x.itemId === "F2")!;
+    expect(f2.rows[0].platform).toBe("Facebook Page (no views)");
+    expect(f2.total.views).toBeNull();
+    expect(v.platforms[0]).toMatchObject({ views: 500, likes: 20, note });
+    expect(v.headline.views).toBe(500);
   });
 });
