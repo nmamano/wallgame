@@ -248,3 +248,184 @@ export const socialView = ({
     log: data.log,
   };
 };
+
+const METRICS = /** @type {const} */ (["views", "likes", "comments", "shares"]);
+
+/**
+ * @typedef {{ day: string, key: string, views: number | null,
+ *   likes: number | null, comments: number | null, shares: number | null,
+ *   at: string }} PostStatsRow
+ */
+
+/**
+ * The per-post history (post-stats.mjs): one row {day, key, views, likes,
+ * comments, shares, at} per post per UTC day, the first numbers read that
+ * day, in a JSONL file, as the follower history. `key` is
+ * "<platform> <postId>".
+ */
+export const createPostStatsHistory = (path) => {
+  /** @returns {PostStatsRow[]} */
+  const read = () =>
+    existsSync(path)
+      ? readFileSync(path, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l))
+      : [];
+  /** Append today's numbers of each post read today with no row today. */
+  const record = (numbers, nowMs = Date.now()) => {
+    const day = new Date(nowMs).toISOString().slice(0, 10);
+    const have = new Set(
+      read()
+        .filter((r) => r.day === day)
+        .map((r) => r.key),
+    );
+    for (const [key, n] of Object.entries(numbers ?? {})) {
+      if (String(n.at).slice(0, 10) !== day || have.has(key)) continue;
+      const row = { day, key };
+      for (const m of METRICS) row[m] = n[m] ?? null;
+      appendFileSync(path, JSON.stringify({ ...row, at: n.at }) + "\n");
+    }
+  };
+  return { read, record };
+};
+
+/**
+ * @typedef {{ views: number | null, likes: number | null,
+ *   comments: number | null, shares: number | null }} PostNumbers
+ */
+
+/** The sum of the numbers that are there, or null when none is. */
+const sumOf = (xs) => {
+  const have = xs.filter((x) => typeof x === "number");
+  return have.length ? have.reduce((a, b) => a + b, 0) : null;
+};
+
+/**
+ * The stats tracker's per-post view (Nil, 2026-10-31): each posted video,
+ * most recent first, with one row per platform (its link and numbers) and
+ * its total; each platform's totals and their change over 1 and 7 days,
+ * from the history.
+ * @param {{ posts: any[], numbers: Record<string, any>, reads: Record<string, any>,
+ *   history: PostStatsRow[], names: Record<string, string>, nowMs: number,
+ *   platforms: string[], note: string }} input
+ */
+export const postStatsView = ({
+  posts,
+  numbers,
+  reads,
+  history,
+  names,
+  nowMs,
+  platforms,
+  note,
+}) => {
+  const keyOf = (p) => `${p.platform} ${p.postId}`;
+  /** @returns {PostNumbers} */
+  const totals = (rows) => ({
+    views: sumOf(rows.map((r) => r?.views)),
+    likes: sumOf(rows.map((r) => r?.likes)),
+    comments: sumOf(rows.map((r) => r?.comments)),
+    shares: sumOf(rows.map((r) => r?.shares)),
+  });
+  // A platform's read error is in its row of "Posts by platform"; a
+  // video's row only points there.
+  const noteOf = (p) => {
+    const n = numbers[keyOf(p)];
+    if (n?.note) return n.note;
+    if (n) return "";
+    return reads[p.platform]?.error
+      ? "no numbers: see Posts by platform"
+      : "not read yet";
+  };
+  const order = (p) => {
+    const i = platforms.indexOf(p.platform);
+    return i === -1 ? platforms.length : i;
+  };
+  // One video per item. A post from before items had ids (2026-10-28) goes
+  // with the posts of the same video file, named by its game.
+  /** @type {Map<string, any[]>} */
+  const groups = new Map();
+  for (const p of posts) {
+    const id = p.itemId ?? p.videoSha256 ?? `${p.day} ${p.platform}`;
+    groups.set(id, [...(groups.get(id) ?? []), p]);
+  }
+  const videos = [...groups.values()]
+    .map((ps) => {
+      /** @type {string} */
+      const itemId =
+        ps[0].itemId ?? (ps[0].gameId ? `game ${ps[0].gameId}` : ps[0].day);
+      const rows = [...ps]
+        .sort((a, b) => order(a) - order(b))
+        .map((p) => ({
+          platform: names[p.platform] ?? p.platform,
+          href: https(p.url),
+          ...totals([numbers[keyOf(p)]]),
+          at: numbers[keyOf(p)]?.at ?? null,
+          note: noteOf(p),
+        }));
+      return {
+        itemId,
+        postedAt: ps.map((p) => p.utc).sort()[0],
+        rows,
+        total: totals(rows),
+      };
+    })
+    .sort((a, b) => b.postedAt.localeCompare(a.postedAt));
+
+  /**
+   * The change of a platform's views and likes since the end of `days` ago,
+   * over the posts that have a value now: a post's last row on or before
+   * that day, or 0 for a post made after it. A post with neither is left
+   * out of both sides. Views and likes only, so the line stays short.
+   */
+  const change = (platform, days) => {
+    const d = new Date(nowMs - days * 864e5).toISOString().slice(0, 10);
+    const out = [];
+    for (const m of /** @type {const} */ (["views", "likes"])) {
+      let now = 0;
+      let then = 0;
+      let any = false;
+      for (const p of posts.filter((q) => q.platform === platform)) {
+        const v = numbers[keyOf(p)]?.[m];
+        if (typeof v !== "number") continue;
+        const before =
+          p.utc.slice(0, 10) > d
+            ? 0
+            : history.filter((r) => r.key === keyOf(p) && r.day <= d).at(-1)?.[
+                m
+              ];
+        if (typeof before !== "number") continue;
+        now += v;
+        then += before;
+        any = true;
+      }
+      if (any) {
+        const by = now - then;
+        out.push(`${by >= 0 ? "+" : ""}${by.toLocaleString("en-US")} ${m}`);
+      }
+    }
+    return out.length ? out.join(", ") : "-";
+  };
+
+  const platformRows = platforms.map((platform) => {
+    const ps = posts.filter((p) => p.platform === platform);
+    const t = totals(ps.map((p) => numbers[keyOf(p)]));
+    const r = reads[platform];
+    return {
+      platform: names[platform] ?? platform,
+      posts: ps.length,
+      ...t,
+      day: change(platform, 1),
+      week: change(platform, 7),
+      note: r?.error ?? (r ? `read ${utcMinute(r.at)}` : "not read yet"),
+    };
+  });
+  const first = history[0]?.day;
+  return {
+    platforms: platformRows,
+    total: totals(platformRows),
+    videos,
+    note: `${note} History: one row a day per post${first ? ` since ${first}` : ""}. "-": the platform gives no such number.`,
+  };
+};

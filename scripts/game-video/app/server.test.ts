@@ -69,15 +69,18 @@ const startApp = async () => {
 };
 
 describe("the app", () => {
-  test("opens on the review page, at / and at /review", async () => {
+  test("opens on the stats tracker at /; the review page is at /review", async () => {
     const base = await startApp();
-    for (const path of ["/", "/review"]) {
-      const res = await fetch(`${base}${path}`);
-      expect(res.status).toBe(200);
-      const page = await res.text();
-      expect(page).toContain("<title>Wall Game videos</title>");
-      expect(page).toContain('fetch("/api/review/queue")');
-    }
+    const stats = await fetch(`${base}/`);
+    expect(stats.status).toBe(200);
+    const statsPage = await stats.text();
+    expect(statsPage).toContain("<title>Wall Game social stats</title>");
+    expect(statsPage).toContain('fetch("/api/review/social")');
+    const review = await fetch(`${base}/review`);
+    expect(review.status).toBe(200);
+    const reviewPage = await review.text();
+    expect(reviewPage).toContain("<title>Wall Game videos</title>");
+    expect(reviewPage).toContain('fetch("/api/review/queue")');
   });
 
   test("the make-by-hand render routes are gone", async () => {

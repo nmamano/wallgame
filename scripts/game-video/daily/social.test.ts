@@ -2,13 +2,20 @@
  * The Social tab (social.mjs): the follower history keeps one row per
  * platform per UTC day and never rewrites a row; the view shows the app's
  * live mode over the file's status, the dry-run reasons, secret names, and
- * links only to https addresses.
+ * links only to https addresses. The per-post stats: one history row per
+ * post per day, each video with its platforms and totals (most recent
+ * first), and each platform's totals with their change over 1 and 7 days.
  */
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFollowerHistory, socialView } from "./social.mjs";
+import {
+  createFollowerHistory,
+  createPostStatsHistory,
+  postStatsView,
+  socialView,
+} from "./social.mjs";
 
 const DAY = Date.parse("2026-10-30T09:00:00Z");
 
@@ -158,5 +165,197 @@ describe("socialView", () => {
     expect(v.followers!.rows[1]).toMatchObject({ now: "-", note: "no key" });
     expect(v.followers!.note).toStartWith("Counts cached 1 h (X: 24 h). ");
     expect(v.followers!.note).toContain("since 2026-10-23");
+  });
+});
+
+describe("the per-post stats", () => {
+  const NOW = Date.parse("2026-10-31T18:00:00Z");
+  const at = (day: string) => `${day}T10:00:00.000Z`;
+  const n = (
+    day: string,
+    views: number | null,
+    likes: number | null,
+    extra: object = {},
+  ) => ({ views, likes, comments: null, shares: null, at: at(day), ...extra });
+
+  test("the history keeps the first numbers of each post each UTC day", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "post-stats-")), "h.jsonl");
+    const h = createPostStatsHistory(path);
+    h.record({ "x X1": n("2026-10-30", 10, 1) }, Date.parse(at("2026-10-30")));
+    h.record({ "x X1": n("2026-10-30", 20, 2) }, Date.parse(at("2026-10-30")));
+    // Numbers read on an earlier day write no row today.
+    h.record({ "x X1": n("2026-10-30", 20, 2) }, Date.parse(at("2026-10-31")));
+    h.record({ "x X1": n("2026-10-31", 30, 3) }, Date.parse(at("2026-10-31")));
+    expect(h.read().map((r) => [r.day, r.key, r.views, r.likes])).toEqual([
+      ["2026-10-30", "x X1", 10, 1],
+      ["2026-10-31", "x X1", 30, 3],
+    ]);
+  });
+
+  test("videos most recent first, a row per platform with its link, totals and changes", () => {
+    const posts = [
+      {
+        itemId: "v-1",
+        day: "2026-10-24",
+        utc: at("2026-10-24"),
+        platform: "x",
+        postId: "X1",
+        url: "https://x.com/i/web/status/X1",
+      },
+      {
+        itemId: "v-2",
+        day: "2026-10-31",
+        utc: at("2026-10-31"),
+        platform: "x",
+        postId: "X2",
+        url: "https://x.com/i/web/status/X2",
+      },
+      {
+        itemId: "v-2",
+        day: "2026-10-31",
+        utc: at("2026-10-31"),
+        platform: "bluesky",
+        postId: "at://b",
+        url: "javascript:alert(1)",
+      },
+      {
+        itemId: "v-2",
+        day: "2026-10-31",
+        utc: at("2026-10-31"),
+        platform: "tiktok",
+        postId: "v_inbox_file~1",
+        url: null,
+      },
+    ];
+    const v = postStatsView({
+      posts,
+      numbers: {
+        "x X1": n("2026-10-31", 100, 5),
+        "x X2": n("2026-10-31", 40, 2),
+        "bluesky at://b": n("2026-10-31", null, 3, {
+          note: "views: none",
+        }),
+      },
+      reads: {
+        x: { at: at("2026-10-31"), error: null, posts: 2 },
+        tiktok: { at: at("2026-10-31"), error: "needs reconnect", posts: 0 },
+      },
+      history: [
+        // X1 had 60 views a week ago and 90 yesterday.
+        {
+          day: "2026-10-24",
+          key: "x X1",
+          views: 60,
+          likes: 4,
+          comments: null,
+          shares: null,
+          at: at("2026-10-24"),
+        },
+        {
+          day: "2026-10-30",
+          key: "x X1",
+          views: 90,
+          likes: 5,
+          comments: null,
+          shares: null,
+          at: at("2026-10-30"),
+        },
+      ],
+      names: { x: "X", bluesky: "Bluesky", tiktok: "TikTok" },
+      nowMs: NOW,
+      platforms: ["x", "bluesky", "tiktok"],
+      note: "Read every 6 h.",
+    });
+    expect(v.videos.map((x) => x.itemId)).toEqual(["v-2", "v-1"]);
+    // Posts from before item ids: one video per video file, named by game.
+    const early = postStatsView({
+      posts: ["x", "bluesky"].map((platform) => ({
+        day: "2026-10-28",
+        utc: at("2026-10-28"),
+        platform,
+        postId: platform,
+        url: null,
+        gameId: "VoSWbMDd",
+        videoSha256: "1f8d",
+      })),
+      numbers: {},
+      reads: {},
+      history: [],
+      names: {},
+      nowMs: NOW,
+      platforms: ["x", "bluesky"],
+      note: "",
+    });
+    expect(early.videos.map((x) => [x.itemId, x.rows.length])).toEqual([
+      ["game VoSWbMDd", 2],
+    ]);
+    const [latest] = v.videos;
+    expect(latest.rows).toEqual([
+      {
+        platform: "X",
+        href: "https://x.com/i/web/status/X2",
+        views: 40,
+        likes: 2,
+        comments: null,
+        shares: null,
+        at: at("2026-10-31"),
+        note: "",
+      },
+      // No link but https; the platform's own note.
+      {
+        platform: "Bluesky",
+        href: null,
+        views: null,
+        likes: 3,
+        comments: null,
+        shares: null,
+        at: at("2026-10-31"),
+        note: "views: none",
+      },
+      // No numbers: the platform's read error is in its platform row.
+      {
+        platform: "TikTok",
+        href: null,
+        views: null,
+        likes: null,
+        comments: null,
+        shares: null,
+        at: null,
+        note: "no numbers: see Posts by platform",
+      },
+    ]);
+    expect(latest.total).toEqual({
+      views: 40,
+      likes: 5,
+      comments: null,
+      shares: null,
+    });
+    const x = v.platforms[0];
+    // X2 was posted today: all of it is growth. X1: 100 - 90 a day, 100 -
+    // 60 a week.
+    expect(x).toMatchObject({ platform: "X", posts: 2, views: 140, likes: 7 });
+    expect(x.day).toBe("+50 views, +2 likes");
+    expect(x.week).toBe("+80 views, +3 likes");
+    expect(x.note).toBe("read 2026-10-31 10:00 UTC");
+    // Bluesky has no history row and was posted today: all growth.
+    expect(v.platforms[1]).toMatchObject({
+      day: "+3 likes",
+      note: "not read yet",
+    });
+    expect(v.platforms[2]).toMatchObject({
+      posts: 1,
+      views: null,
+      day: "-",
+      note: "needs reconnect",
+    });
+    expect(v.total).toEqual({
+      views: 140,
+      likes: 10,
+      comments: null,
+      shares: null,
+    });
+    expect(v.note).toBe(
+      'Read every 6 h. History: one row a day per post since 2026-10-24. "-": the platform gives no such number.',
+    );
   });
 });

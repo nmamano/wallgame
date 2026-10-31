@@ -4706,6 +4706,35 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
         ),
       }),
     );
+    // One posted video and its cached numbers: the page shows them, and
+    // opening it reads nothing (the app's timer reads the stats).
+    writeFileSync(
+      store.postLog.live,
+      JSON.stringify({
+        utc: at,
+        day: at.slice(0, 10),
+        itemId: "v-2026-10-30-1",
+        platform: "bluesky",
+        mode: "live",
+        postId: "at://did:plc:wg/app.bsky.feed.post/1",
+        url: "https://bsky.app/profile/wg/post/1",
+      }) + "\n",
+    );
+    writeFileSync(
+      join(store.dirs.root, "post-stats.json"),
+      JSON.stringify({
+        reads: { bluesky: { at, error: null, posts: 1 } },
+        numbers: {
+          "bluesky at://did:plc:wg/app.bsky.feed.post/1": {
+            views: null,
+            likes: 4,
+            comments: 1,
+            shares: 0,
+            at,
+          },
+        },
+      }),
+    );
     const { base } = await serveHere(dir, "unused", undefined, platforms);
     const { status, body } = await call<{
       cards: {
@@ -4713,8 +4742,31 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
         rows: { k: string; v: string; codes?: string[] }[];
       }[];
       followers: { rows: { platform: string; now: number | string }[] };
+      postStats: {
+        videos: {
+          itemId: string;
+          rows: { platform: string; href: string; likes: number }[];
+        }[];
+        platforms: { platform: string; likes: number | null }[];
+      };
     }>(base, "/api/review/social");
     expect(status).toBe(200);
+    expect(body.postStats.videos).toMatchObject([
+      {
+        itemId: "v-2026-10-30-1",
+        rows: [
+          {
+            platform: "Bluesky",
+            href: "https://bsky.app/profile/wg/post/1",
+            likes: 4,
+          },
+        ],
+      },
+    ]);
+    expect(
+      body.postStats.platforms.find((r) => r.platform === "Bluesky")!.likes,
+    ).toBe(4);
+    expect(existsSync(join(store.dirs.root, "post-stats.jsonl"))).toBe(false);
     const [card] = body.cards;
     expect(card.name).toBe("Bluesky");
     // No key in the test env: dry-run, and the reason names the secret.
@@ -4736,10 +4788,14 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(rows.map((r) => [r.platform, r.followers])).toEqual([
       ["bluesky", 9],
     ]);
-    // The page has the tab, and "#social" opens it.
-    const page = await (await fetch(base + "/review")).text();
-    expect(page).toContain('["social", "Social"]');
-    expect(page).toContain('location.hash === "#social"');
+    // "/" is the stats tracker: it draws this route; the review page has
+    // no Social tab any more (Nil, 2026-10-31).
+    const page = await (await fetch(base + "/")).text();
+    expect(page).toContain("<title>Wall Game social stats</title>");
+    expect(page).toContain('fetch("/api/review/social")');
+    expect(page).not.toContain("innerHTML =");
+    const review = await (await fetch(base + "/review")).text();
+    expect(review).not.toContain('["social", "Social"]');
     // A broken platforms.json: a 500 that names the file and the reason.
     writeFileSync(platforms, "{");
     const broken = await call<{ error: string }>(base, "/api/review/social");
@@ -4747,7 +4803,7 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(broken.body.error).toStartWith(
       "Wall Game Growth's platforms.json cannot be read: ",
     );
-    expect(page).toContain('"The Social tab cannot load. " + s.error');
+    expect(page).toContain('"The stats cannot load. " + s.error');
   });
 
   test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {

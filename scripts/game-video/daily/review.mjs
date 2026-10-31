@@ -1,6 +1,7 @@
 /**
- * Nil's review queue (Nil, via Wall Game Growth, 2026-10-28): the page the
- * game-video app opens on (/, and /review). Nil, 2026-10-28: "I literally
+ * Nil's review queue (Nil, via Wall Game Growth, 2026-10-28): the page at
+ * /review (until 2026-10-31 also the app's "/"; Nil now reviews in his
+ * Isomux inbox, and "/" is the stats tracker, stats-page.mjs). Nil, 2026-10-28: "I literally
  * only need to see the videos and captions. Everything else is context i
  * don't need." So it shows every item in review (store.mjs reviewState),
  * oldest first, each with ONLY its video, its caption (the post's text, one
@@ -20,10 +21,8 @@
  *
  * Right after an Approve, the card offers Undo (withdraw: in review again),
  * so a mis-tap on a phone is undone without a confirm dialog. The page has
- * three tabs. "Social" (Nil, 2026-10-30; "#social" opens it) shows the
- * platforms, their setup and the follower counts (social.mjs; it was the
- * app wallgame-social). The other two show their counts: "In review" (the
- * queue) and "Approved" (Nil, 2026-10-30; "#approved" opens it), where each approved item that
+ * two tabs with their counts (its Social tab moved to "/" on 2026-10-31):
+ * "In review" (the queue) and "Approved" (Nil, 2026-10-30; "#approved" opens it), where each approved item that
  * no slot took yet shows when it posts, its video, its caption and one
  * button, "Undo approval" (the same withdraw), so Nil can take back an
  * approval later too (Nil, 2026-10-29: v-2026-10-28-3 was
@@ -282,7 +281,6 @@ export const REVIEW_PAGE = `<!doctype html>
      --top: the space above the first card, for the zoom buttons. */
   :root { --top: 50px; }
   main { width: 100%; max-width: calc(520px * var(--z, 1)); }
-  main.wide { max-width: 1400px; }
   .card { margin-bottom: 28px; }
   /* The box is the picture's own shape (9:16 until its size loads): no bars. */
   video { display: block; width: auto; height: auto; max-width: 100%; max-height: min(calc(78vh * var(--z, 1)), calc(100vh - var(--top) - 8px));
@@ -310,23 +308,6 @@ export const REVIEW_PAGE = `<!doctype html>
   .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
   .tabs button { flex: 0 0 auto; padding: 9px 14px; background: #1e293b; color: #cbd5e1; font-size: 15px; }
   .tabs button.on { background: #e2e8f0; color: #0b0f1c; }
-  .social { font-size: 15px; line-height: 1.45; }
-  .social .muted, .social span.muted { color: #94a3b8; font-size: 13px; }
-  .social .stats { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
-  .social .stat { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 8px 14px; color: #cbd5e1; }
-  .social .stat b { display: block; font-size: 22px; color: #f8fafc; }
-  .social .sbox { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; }
-  .social .sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; }
-  .social .sgrid .sbox { margin: 0; }
-  .social h2 { margin: 0 0 8px; font-size: 18px; } .social h3 { margin: 10px 0 4px; font-size: 15px; }
-  .social .pill { color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 12px; vertical-align: middle; }
-  .social table { border-collapse: collapse; width: 100%; }
-  .social th { text-align: left; vertical-align: top; color: #94a3b8; font-weight: 500; width: 38%; padding: 3px 8px 3px 0; }
-  .social td { padding: 3px 0; overflow-wrap: anywhere; white-space: pre-line; }
-  .social code { background: #1e293b; border-radius: 4px; padding: 0 4px; font-size: 12px; }
-  .social a { color: #93c5fd; }
-  .social li.nil { background: rgba(250, 204, 21, 0.15); border-radius: 4px; }
-  .social .ok { color: #4ade80; } .social .todo { color: #fbbf24; }
 </style></head>
 <body><div class="zoom" id="zoom" hidden><button id="zoom-out" aria-label="Smaller videos">−</button><button id="zoom-in" aria-label="Larger videos">+</button></div>
 <main><nav class="tabs" id="tabs"></nav><div id="list"></div></main>
@@ -439,66 +420,12 @@ export const REVIEW_PAGE = `<!doctype html>
     return box;
   };
 
-  // The Social tab (social.mjs): the platforms, their setup and the
-  // follower counts, drawn as text; a link only to an https address.
-  const link = (text, href) => { const a = el("a", "", text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
-  const table = (rows) => { const t = el("table");
-    for (const [k, ...cells] of rows) { const tr = el("tr"); tr.append(el("th", "", k));
-      for (const c of cells) { const td = el("td"); td.append(c); tr.append(td); } t.append(tr); }
-    return t; };
-  const box = (title, ...kids) => { const b = el("section", "sbox"); if (title) b.append(el("h3", "", title)); b.append(...kids); return b; };
-  const items = (tag, xs, line) => { const l = el(tag); for (const x of xs) l.append(line(x)); return l; };
-  const platformCard = (c) => {
-    const b = el("section", "sbox scard"); b.id = c.id;
-    const h = el("h2", "", c.name + " "); const pill = el("span", "pill", c.status.label); pill.style.background = c.status.color;
-    h.append(pill); b.append(h);
-    b.append(table(c.rows.map((r) => {
-      const v = el("span", "", r.v);
-      if (r.href) { v.replaceChildren(link(r.v || r.href, r.href)); }
-      for (const name of r.codes ?? []) { v.append(el("code", "", name), " "); }
-      return [r.k, v];
-    })));
-    if (c.profile.length) {
-      b.append(el("h3", "", "Profile tune-up"));
-      b.append(table(c.profile.map((r) => [r.k, el("span", r.tone, r.v)])));
-    }
-    if (c.next.length) {
-      b.append(el("h3", "", "Next steps"));
-      b.append(items("ol", c.next, (n) => { const li = el("li", n.nil ? "nil" : ""); li.append(el("b", "", n.who + ": "), n.what); return li; }));
-    }
-    if (c.asks.length) b.append(el("p", "muted", "Asks: " + c.asks.join(", ")));
-    return b;
-  };
-  const drawSocial = (list, v) => {
-    const head = el("p", "muted", "Status file updated " + v.updated + " by " + v.updatedBy + ". Poster modes read live from this app. Times UTC.");
-    const stats = el("div", "stats");
-    for (const st of v.stats) { const d = el("div", "stat"); d.append(el("b", "", st.value), st.label); stats.append(d); }
-    const followers = v.followers
-      ? box("Followers", table([["Platform", "Now", "1 day", "7 days", "Note"]].concat(v.followers.rows.map((r) => [r.platform, el("b", "", r.now), r.day, r.week, el("span", "muted", r.note)]))), el("p", "muted", v.followers.note))
-      : box("Followers", el("p", "muted", "No follower counts now (a post is running): look again in a few minutes."));
-    const nil = box("What Nil does next",
-      v.nilSteps.length
-        ? items("ol", v.nilSteps, (n) => { const li = el("li"); li.append(el("b", "", n.platform + ": "), n.what); if (n.asks.length) li.append(el("span", "muted", " (ask " + n.asks.join(", ") + ")")); return li; })
-        : el("p", "", "Nothing now."),
-      el("p", "muted", "Each step is also an ask in your Isomux inbox. Keys go only in Integrations > Secrets, never in chat."));
-    const rootLine = el("p"); rootLine.append(el("b", "", "Root account: "), v.root.name + ". " + v.root.why + " Credentials: " + v.root.credentials + ". 2FA: " + v.root.twoFactor + ".");
-    const how = box("How it works", el("p", "", v.flow), rootLine, table(v.roles.map((r) => [r.role, r.who])));
-    const grid = el("div", "sgrid"); grid.append(...v.cards.map(platformCard));
-    const tail = box(null);
-    if (v.brand) { tail.append(el("h3", "", "Brand assets")); const bp = el("p", "", v.brand.banners + " Folder: "); bp.append(el("code", "", v.brand.folder)); tail.append(bp); }
-    tail.append(el("h3", "", "Later / no"), items("ul", v.later, (x) => el("li", "", x)));
-    tail.append(el("h3", "", "Recent changes"), items("ul", v.log, (x) => el("li", "", x.at + ": " + x.what)));
-    const wrap = el("div", "social"); wrap.append(head, stats, followers, nil, how, grid, tail);
-    list.append(wrap);
-  };
-
-  // Three tabs (Nil, 2026-10-30: "make tabs for the pending queue vs
-  // approved queue so i can find"; then "can we merge the 2 apps": the
-  // Social tab, from the app wallgame-social). The first two show their
-  // counts. "#approved" or "#social" in the address opens that tab, so a
-  // link can point at it.
-  const TABS = [["review", "In review"], ["approved", "Approved"], ["social", "Social"]];
-  let tab = location.hash === "#approved" ? "approved" : location.hash === "#social" ? "social" : "review";
+  // Two tabs (Nil, 2026-10-30: "make tabs for the pending queue vs
+  // approved queue so i can find"), with their counts. "#approved" in the
+  // address opens that tab, so a link can point at it. The Social tab moved
+  // to the app's "/" (stats-page.mjs, Nil, 2026-10-31).
+  const TABS = [["review", "In review"], ["approved", "Approved"]];
+  let tab = location.hash === "#approved" ? "approved" : "review";
 
   const load = async () => {
     const list = document.getElementById("list");
@@ -517,17 +444,6 @@ export const REVIEW_PAGE = `<!doctype html>
       return b;
     }));
     list.replaceChildren();
-    // The Social tab is a dashboard: the window's width, not a video's.
-    document.querySelector("main").classList.toggle("wide", tab === "social");
-    if (tab === "social") {
-      document.getElementById("zoom").hidden = true;
-      let s;
-      try { s = await (await fetch("/api/review/social")).json(); }
-      catch { list.append(el("p", "quiet", LOST)); return; }
-      if (s.error) { list.append(el("p", "quiet", "The Social tab cannot load. " + s.error)); return; }
-      drawSocial(list, s);
-      return;
-    }
     if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
     document.getElementById("zoom").hidden = !of[tab].length;
     if (tab === "review") {

@@ -74,15 +74,15 @@ export const TIKTOK_FOLLOWERS_URL =
   "https://open.tiktokapis.com/v2/user/info/?fields=follower_count";
 
 /** A reason that is safe to show as it is. */
-class NoCount extends Error {}
+export class NoCount extends Error {}
 
-const bearer = (token) => ({ authorization: `Bearer ${token}` });
+export const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
 /**
  * The reply's JSON, or NoCount with the step and the status only, or with
  * the reason that `reasons` gives for the status.
  */
-const read = async (transport, step, req, reasons = {}) => {
+export const read = async (transport, step, req, reasons = {}) => {
   const reply = await transport.request({ method: "GET", ...req });
   if (!ok(reply)) {
     throw new NoCount(reasons[reply.status] ?? `${step}: HTTP ${reply.status}`);
@@ -91,7 +91,7 @@ const read = async (transport, step, req, reasons = {}) => {
 };
 
 /** A count, or NoCount: a platform could answer a string or nothing. */
-const asCount = (value, step) => {
+export const asCount = (value, step) => {
   const n = typeof value === "string" ? Number(value) : value;
   if (!Number.isSafeInteger(n) || n < 0) {
     throw new NoCount(`${step}: no count in the reply`);
@@ -99,7 +99,7 @@ const asCount = (value, step) => {
   return n;
 };
 
-const needSecrets = (env, names) => {
+export const needSecrets = (env, names) => {
   const missing = names.filter((name) => !env[name]);
   if (missing.length) {
     throw new NoCount(`secrets missing: ${missing.join(", ")}`);
@@ -107,7 +107,7 @@ const needSecrets = (env, names) => {
 };
 
 /** The stored Connect record, with `scope` granted when it is named. */
-const needConnected = (tokens, platform, scope) => {
+export const needConnected = (tokens, platform, scope) => {
   if (!tokens.connected(platform)) {
     throw new NoCount("not connected (/daily/connect)");
   }
@@ -243,7 +243,7 @@ const READERS = {
 };
 
 /** What a failed read may show: never a reply body or a request. */
-const reasonOf = (err) => {
+export const reasonOf = (err) => {
   if (err instanceof NoCount || err instanceof MetaRefused) return err.message;
   if (err instanceof PostFailed) return `${err.step}: HTTP ${err.status}`;
   return `the read did not finish (${err?.name ?? "error"})`;

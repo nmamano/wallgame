@@ -2,9 +2,10 @@
  * The game-video app: Nil's review of the daily videos, and the routes the
  * director's crew.mjs, Wall Game Growth and the slot poster use.
  *
- * Opening the app (/) shows the review page (../daily/review.mjs): the
- * videos that wait for Nil. Everything else lives in ../daily/routes.mjs:
- * /review, /api/review/*, /daily, /daily/sounds, /daily/connect and
+ * Opening the app (/) shows the social media stats tracker
+ * (../daily/stats-page.mjs, Nil, 2026-10-31); Nil reviews the videos in his
+ * Isomux inbox. Everything else lives in ../daily/routes.mjs: /review (the
+ * review page, ../daily/review.mjs), /api/review/*, /daily, /daily/sounds, /daily/connect and
  * /api/daily/*. Its renders run on the 4090, not here.
  *
  * Until 2026-10-28 "/" was a page that rendered a pasted game link on this

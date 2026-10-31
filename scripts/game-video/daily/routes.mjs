@@ -114,7 +114,17 @@ import {
   createFollowerHistory,
   PLATFORMS_FILE,
   socialView,
+  createPostStatsHistory,
+  postStatsView,
 } from "./social.mjs";
+import {
+  STATS_MAX_AGE_MS,
+  STATS_PLATFORMS,
+  STATS_WINDOW_MS,
+  readPostStats,
+  statsDue,
+} from "./post-stats.mjs";
+import { STATS_PAGE } from "./stats-page.mjs";
 
 import {
   loudnessVerdict,
@@ -1212,6 +1222,62 @@ export const createDaily = ({
   const followerHistory = createFollowerHistory(
     join(dirs.root, "followers.jsonl"),
   );
+  /**
+   * The per-post stats (post-stats.mjs) of the live post log: the last
+   * read of each platform and each post's last numbers, in the app's data;
+   * the history keeps one row a day per post. Read only on the timer, not
+   * when the page opens.
+   */
+  const postStatsPath = join(dirs.root, "post-stats.json");
+  const postStatsHistory = createPostStatsHistory(
+    join(dirs.root, "post-stats.jsonl"),
+  );
+  /** @returns {{ reads: Record<string, any>, numbers: Record<string, any> }} */
+  const readPostStatsCache = () => {
+    try {
+      const c = JSON.parse(readFileSync(postStatsPath, "utf8"));
+      return { reads: c?.reads ?? {}, numbers: c?.numbers ?? {} };
+    } catch {
+      return { reads: {}, numbers: {} };
+    }
+  };
+  /** The post-stats read under way, if any. */
+  let statsRun = null;
+  /**
+   * Read the platforms that are due (statsDue: X after 24 h, any other
+   * after 6 h) and keep the result. As the follower read, it never starts
+   * while a post runs, and a post waits for it (asThePost): both may
+   * refresh the YouTube token.
+   */
+  const recordPostStats = async () => {
+    if (posting || statsRun) return;
+    const cached = readPostStatsCache();
+    const due = statsDue(cached.reads, Date.now());
+    if (!due.length) return;
+    statsRun = (async () => {
+      try {
+        const fresh = await readPostStats(
+          { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
+          readPostLog(store.postLog.live),
+          due,
+        );
+        writeFileSync(
+          postStatsPath,
+          JSON.stringify({
+            reads: { ...cached.reads, ...fresh.reads },
+            numbers: { ...cached.numbers, ...fresh.numbers },
+          }),
+        );
+        postStatsHistory.record(fresh.numbers);
+      } catch (err) {
+        console.warn(`post stats: not recorded: ${err?.message ?? err}`);
+      } finally {
+        statsRun = null;
+      }
+    })();
+    await statsRun;
+  };
+
   /** Today's counts into the history; a failed read waits for the next. */
   const recordFollowers = async () => {
     try {
@@ -1244,6 +1310,7 @@ export const createDaily = ({
     posting = true;
     try {
       await followersRun?.catch(() => {});
+      await statsRun;
       return await fn();
     } finally {
       posting = false;
@@ -1451,19 +1518,24 @@ export const createDaily = ({
     store,
     livePlatforms,
     // A post, or a follower read that a post would wait for (asThePost).
-    busy: () => posting || followersRun !== null,
+    busy: () => posting || followersRun !== null || statsRun !== null,
     postItem: (slot) => asThePost(() => itemPoster.postNext(slot)),
     recover: itemPoster.recover,
     send: (text) => sendMessage(GROWTH_AGENT_ID, text),
   });
   const stopSchedule = schedule ? scheduler.start() : () => {};
-  // The follower history is recorded even when nobody opens the Social tab
-  // (as wallgame-social did): at start, then every followerRecordMs.
+  // The follower history and the post stats are recorded with nobody on
+  // the page (as wallgame-social did): at start, then every
+  // followerRecordMs; each platform is read only when it is due.
+  const recordStats = () => {
+    void recordFollowers();
+    void recordPostStats();
+  };
   const followerTimer = followerRecordMs
-    ? setInterval(() => void recordFollowers(), followerRecordMs)
+    ? setInterval(recordStats, followerRecordMs)
     : null;
   followerTimer?.unref();
-  if (followerTimer) void recordFollowers();
+  if (followerTimer) recordStats();
 
   // Nil's review asks (review-asks.mjs): one sync at a time, so a crew call
   // and the timer never apply one answer twice or open two asks.
@@ -1769,7 +1841,10 @@ export const createDaily = ({
 
     // Nil's review queue (review.mjs): the page the app opens on (Nil,
     // 2026-10-28), and its first address, which links already carry.
-    "GET /": (req, res) => html(res, 200, REVIEW_PAGE),
+    // The stats tracker (Nil, 2026-10-31: "i see videos for review here -
+    // no need, I'll use inbox only. this app can be restructured into
+    // social media stats tracker"). The review page stays at /review.
+    "GET /": (req, res) => html(res, 200, STATS_PAGE),
     "GET /review": (req, res) => html(res, 200, REVIEW_PAGE),
 
     /** Every item in review (what the page shows), and who may act. */
@@ -1800,20 +1875,33 @@ export const createDaily = ({
       const followers = await followerCounts().catch(() => null);
       followerHistory.record(followers);
       const { modes, modeReasons: reasons } = state();
-      json(
-        res,
-        200,
-        socialView({
+      const live = readPostLog(store.postLog.live);
+      const { reads, numbers } = readPostStatsCache();
+      json(res, 200, {
+        ...socialView({
           data,
           modes,
           reasons,
-          live: readPostLog(store.postLog.live),
+          live,
           dry: readPostLog(store.postLog.dryRun),
           followers,
           history: followerHistory.read(),
           nowMs: Date.now(),
         }),
-      );
+        postStats: postStatsView({
+          posts: live,
+          numbers,
+          reads,
+          history: postStatsHistory.read(),
+          names: {
+            ...Object.fromEntries(data.platforms.map((p) => [p.id, p.name])),
+            "instagram-story": "Instagram Story",
+          },
+          nowMs: Date.now(),
+          platforms: STATS_PLATFORMS,
+          note: `Read every ${STATS_MAX_AGE_MS / 36e5} h (X every 24 h, as X reads are paid); a post is read for ${STATS_WINDOW_MS / 864e5} days, a Story for 1 day, then keeps its last numbers.`,
+        }),
+      });
     },
 
     /** {reviewTarget}: how many items Growth wants in review. */
