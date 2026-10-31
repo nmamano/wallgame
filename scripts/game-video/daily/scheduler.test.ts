@@ -404,7 +404,9 @@ describe("scheduler", () => {
     w.setTime(OCT29_0900);
     await s.tick();
     expect(readState(w.statePath).lastPostAt).toBeNull();
-    expect(readState(w.statePath).lastSlot.outcome).toBe("none-applies");
+    expect(readState(w.statePath).lastSlot).toMatchObject({
+      outcome: "none-applies",
+    });
     expect(w.sent[0]).toContain(
       "SKIPPED, no live platform posts this slot. The approved items stay approved for a later slot:",
     );
