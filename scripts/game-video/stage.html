@@ -465,6 +465,33 @@
         text-align: center;
         line-height: 1.1;
       }
+      /*
+        In a fast-forward the middle shows a badge, "▶▶ x3", in place of its
+        words (Nil, 2026-10-31, the revise of v-2026-10-31-9: "the >> x3 is
+        too small and not well placed"). Both sit in one grid cell, so the
+        middle is as wide as the wider of the two all video long (the badge
+        is laid out only in a video with a fast-forward), and the counters
+        and the board never move.
+      */
+      #race .vs {
+        display: grid;
+        place-items: center;
+      }
+      #race .vs > * {
+        grid-area: 1 / 1;
+      }
+      #raceFast {
+        display: none;
+        visibility: hidden;
+        font-size: 1.7em;
+        line-height: 1;
+        padding: 0.14em 0.5em;
+        border-radius: 999px;
+        background: #fde047;
+        color: #0b0f1c;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
       /* The same size as the side words, so it reads at phone size. */
       #race .vs small {
         display: block;
@@ -1232,7 +1259,10 @@
               ><span class="n" id="raceNa"></span>
             </div>
             <div class="vs">
-              <span id="raceTag">VS</span><small>STEPS</small>
+              <span class="words"
+                ><span id="raceTag">VS</span><small>STEPS</small></span
+              >
+              <span id="raceFast"></span>
             </div>
             <div class="side">
               <span class="n" id="raceNb"></span
@@ -3057,13 +3087,17 @@
        * credit c = { a: 0..1 }, its fade-in, in the board's corner (the
        * counter stays: the credit no longer takes its place). The credit's
        * text is set once, by __fitWallz. In a fast-forward (edl.mjs fastForward, audit
-       * item 5) the counter's middle shows the tag, "▶▶ x3", in place of
-       * "VS", so a quiet stretch reads as sped up and not as the game's real
-       * pace; off the board, it covers no pawn (Wall Game Director,
-       * 2026-10-29).
+       * item 5) the counter's middle shows the tag, "▶▶ x3", as a badge in
+       * place of its words, so a quiet stretch reads as sped up and not as
+       * the game's real pace; off the board, it covers no pawn (Wall Game
+       * Director, 2026-10-29) and no counter.
        */
       const paintHud = (r, goal, c, ff) => {
-        $("raceTag").textContent = ff ? "▶\uFE0E▶\uFE0E " + ff : "VS";
+        if (ff) $("raceFast").textContent = "▶\uFE0E▶\uFE0E " + ff;
+        $("raceFast").style.visibility = ff ? "visible" : "hidden";
+        $("race").querySelector(".vs .words").style.visibility = ff
+          ? "hidden"
+          : "visible";
         const inn = c ? c.a : 0;
         $("race").style.visibility = r && !goal ? "visible" : "hidden";
         $("goal").style.visibility = goal ? "visible" : "hidden";
@@ -3115,8 +3149,15 @@
         strip,
         cta,
         ending,
+        fastForward,
       }) => {
         $("root").classList.add("wallz");
+        // The widest speed tag the video shows, laid out (hidden) all video
+        // long, so the counter's middle keeps one width; none: no badge.
+        $("raceFast").style.display = fastForward ? "block" : "none";
+        $("raceFast").textContent = fastForward
+          ? "▶\uFE0E▶\uFE0E " + fastForward
+          : "";
         // The call to action (edl.mjs cta) in the badge under the board and
         // as the GG card's last line, its "." in the site's orange.
         for (const el of [$("stripSite"), $("ggCta")]) ctaInto(el, cta);

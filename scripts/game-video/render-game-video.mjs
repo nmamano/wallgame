@@ -3977,6 +3977,12 @@ const renderStyle = async (styleName) => {
           strip,
           cta: EDL?.cta ?? null,
           ending: style.ending,
+          // The widest speed tag, for the counter's middle (stage.html).
+          fastForward:
+            (EDL?.pace ?? [])
+              .filter((r) => r.fastForward)
+              .map((r) => fastForwardTag(r.secondsPerMove))
+              .reduce((a, b) => (b.length > a.length ? b : a), "") || null,
         })
       : null;
     return { page, board };
