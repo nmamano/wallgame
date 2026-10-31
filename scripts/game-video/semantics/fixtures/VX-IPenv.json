@@ -87,7 +87,11 @@
         "kind": "guest",
         "name": "Guest Jackal"
       }
-    ]
+    ],
+    "result": {
+      "winner": 1,
+      "reason": "capture"
+    }
   },
   "engine": {
     "botId": "dw-transformer",

@@ -101,7 +101,11 @@
         "kind": "official bot",
         "name": "Normal Bot"
       }
-    ]
+    ],
+    "result": {
+      "winner": 1,
+      "reason": "capture"
+    }
   },
   "engine": {
     "botId": "dw-transformer",

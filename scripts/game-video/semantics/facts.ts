@@ -52,12 +52,11 @@ export interface SemanticGame {
   moves: string[];
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
   /**
-   * The stored result, when the source has it (candidate reports from
-   * 2026-10-31 on). It overrides the replay's: the replay applies today's
-   * rules, and a game before 2026-09-01 that the one-move rule made a draw
-   * replays as a capture win.
+   * The stored result (game_players, as the replay page reads it). Never the
+   * replay's: the replay applies today's rules, and a game before 2026-09-01
+   * that the one-move rule made a draw replays as a capture win.
    */
-  result?: GameResult;
+  result: GameResult;
 }
 
 /** The engine's numbers for one game (engine-eval.ts scoreGame). */
@@ -156,8 +155,8 @@ export interface PlyFacts {
   rooms: MouseRoom[];
   engine: EngineFacts | null;
   /**
-   * Set on the move that ends the game on the board. The winner and reason
-   * are the stored result's when the game has one (SemanticGame.result).
+   * Set on the move that ends the game on the board, with the stored
+   * result's winner and reason (SemanticGame.result).
    */
   end: { winner: PlayerId | null; reason: string } | null;
 }
@@ -165,10 +164,7 @@ export interface PlyFacts {
 export interface GameFacts {
   game: SemanticGame;
   plies: PlyFacts[];
-  /**
-   * The stored winner when the game has a result; else the winner on the
-   * board. Null for a draw, or a game not ended on the board.
-   */
+  /** The stored winner; null for a draw. */
   winner: PlayerId | null;
   engineBotId: string | null;
 }
@@ -365,24 +361,14 @@ export const gameFacts = (
       rooms: roomsOf(hunts, before, after, mover),
       engine: engineFacts,
       end: ended
-        ? game.result
-          ? { winner: game.result.winner ?? null, reason: game.result.reason }
-          : {
-              winner: after.result?.winner ?? null,
-              reason: after.result?.reason ?? "unknown",
-            }
+        ? { winner: game.result.winner ?? null, reason: game.result.reason }
         : null,
     };
   });
-  const last = replay.states[n];
   return {
     game,
     plies,
-    winner: game.result
-      ? (game.result.winner ?? null)
-      : last.status === "finished"
-        ? (last.result?.winner ?? null)
-        : null,
+    winner: game.result.winner ?? null,
     engineBotId: engine?.botId ?? null,
   };
 };

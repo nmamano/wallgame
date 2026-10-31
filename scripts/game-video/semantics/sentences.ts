@@ -699,9 +699,7 @@ export const renderTable = (s: GameSemantics): string => {
   const names = namesOf(s.facts);
   const result = s.facts.winner
     ? `${names[s.facts.winner]} wins`
-    : game.result
-      ? `a draw (${game.result.reason})`
-      : "no winner on the board";
+    : `a draw (${game.result.reason})`;
   const lines = [
     `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} moves, ${result}`,
     "",

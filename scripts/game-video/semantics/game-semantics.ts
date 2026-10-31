@@ -31,7 +31,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Variant } from "../../../shared/domain/game-types";
+import type { GameResult, Variant } from "../../../shared/domain/game-types";
 import { evalBarEngineFor } from "../daily-candidates";
 import {
   EngineLink,
@@ -39,7 +39,6 @@ import {
   gpuHostFromEnv,
   scoreGame,
 } from "../engine-eval";
-import { replayDistances } from "../race-replay";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
 import { renderTable, writeSentences, type GameSemantics } from "./sentences";
@@ -107,11 +106,20 @@ const asGame = (c: StoredCandidate): SemanticGame => ({
     kind: s.kind,
     name: s.name,
   })),
-  ...(c.result ? { result: c.result } : {}),
+  result: c.result,
 });
 
 const readGames = (args: Args): ReadGame[] => {
-  const read = (stored: StoredCandidate) => ({ game: asGame(stored), stored });
+  const read = (stored: StoredCandidate) => {
+    // A report made before 2026-10-31 has no stored result, and a replay
+    // would call a one-move-rule draw a win (FkQKb63y).
+    if (!(stored.result as GameResult | undefined)?.reason) {
+      throw new Error(
+        `${stored.gameId}: the candidate has no stored result; re-make its report with nightly-candidates.sh (code of 2026-10-31 or later)`,
+      );
+    }
+    return { game: asGame(stored), stored };
+  };
   if (args.item) {
     const item = JSON.parse(readFileSync(args.item, "utf8")) as {
       candidate: StoredCandidate;
@@ -148,17 +156,10 @@ const scoreOnGpu = async (games: SemanticGame[], dir: string) => {
         link = new EngineLink(gpuHost, engine.command);
         links.set(engine.command, link);
       }
-      const replay = replayDistances(game);
-      const last = replay.states.at(-1)!;
       const t0 = performance.now();
       const scored = await scoreGame(link, {
         ...game,
-        // The stored result first: a one-move-rule draw replays as a win.
-        winner: game.result
-          ? (game.result.winner ?? null)
-          : last.status === "finished"
-            ? (last.result?.winner ?? null)
-            : null,
+        winner: game.result.winner ?? null,
       });
       const data: EngineData = {
         botId: engine.botId,

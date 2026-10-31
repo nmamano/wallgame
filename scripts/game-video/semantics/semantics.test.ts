@@ -62,6 +62,9 @@ const gameOf = (
       { playerOrder: 1, kind: "guest", name: "Guest Ferret" },
       { playerOrder: 2, kind: "official bot", name: "Normal Bot" },
     ],
+    result: winner
+      ? { winner, reason: "capture" }
+      : { reason: "draw-agreement" },
   },
   winner,
   engineBotId: "dw-transformer",
@@ -480,6 +483,8 @@ describe("the stored result over the replay's", () => {
   );
 
   test("a stored draw has no winner, and its last move says the rule", () => {
+    // The same moves stored as a capture win: the replay is not asked.
+    expect(fixture.game.result).toEqual({ winner: 1, reason: "capture" });
     expect(gameFacts(fixture.game, fixture.engine).winner).toBe(1);
     expect(draw.winner).toBeNull();
     const last = draw.plies.at(-1)!;

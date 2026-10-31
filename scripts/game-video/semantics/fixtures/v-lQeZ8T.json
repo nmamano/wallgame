@@ -90,7 +90,11 @@
         "kind": "guest",
         "name": "Guest Ibex"
       }
-    ]
+    ],
+    "result": {
+      "winner": 1,
+      "reason": "capture"
+    }
   },
   "engine": {
     "botId": "dw-transformer",
