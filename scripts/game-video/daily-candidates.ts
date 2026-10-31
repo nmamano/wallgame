@@ -832,7 +832,8 @@ export interface RankedCandidate {
 /**
  * How strong an official bot plays, by its display name (bots have no stored
  * rating). A game against a stronger bot ranks first (Nil, 2026-10-31: "clearly
- * better players" made his own game more interesting). A name not listed is 0.
+ * better players" made his own game more interesting). A name not listed is 0,
+ * and the report names it (unknownBotNames), so a renamed or new bot shows.
  */
 export const BOT_STRENGTH: Readonly<Record<string, number>> = {
   "Superhuman Bot": 5,
@@ -843,7 +844,23 @@ export const BOT_STRENGTH: Readonly<Record<string, number>> = {
   "Deep Wallwars Standard": 2,
   "Normal Bot": 1,
   "Medium Bot": 1,
+  "Easy Bot": 0,
+  PuzzleBot: 0,
 };
+
+/** The official-bot names of these candidates that BOT_STRENGTH lacks. */
+export const unknownBotNames = (
+  candidates: Pick<RankedCandidate, "seats">[],
+): string[] =>
+  [
+    ...new Set(
+      candidates.flatMap((c) =>
+        c.seats
+          .filter((s) => s.kind === "official bot" && !(s.name in BOT_STRENGTH))
+          .map((s) => s.name),
+      ),
+    ),
+  ].sort();
 
 /** The strongest official bot seat of a game; 0 when it has none. */
 export const opponentStrength = (c: Pick<RankedCandidate, "seats">): number =>

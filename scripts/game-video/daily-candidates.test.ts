@@ -22,6 +22,7 @@ import {
   MIN_PLIES,
   oneExitLoss,
   type SeatKind,
+  unknownBotNames,
   nilGameEligibility,
   NIL_USER_ID,
   pickBoard,
@@ -658,6 +659,20 @@ describe("close calls", () => {
       "humans",
       "easy",
     ]);
+  });
+
+  test("an official bot missing from the strength table is named", () => {
+    const seats = (name: string) => [
+      { kind: "official bot" as const, name },
+      { kind: "guest" as const, name: "Guest Yak" },
+    ];
+    expect(
+      unknownBotNames([
+        { seats: seats("Easy Bot") },
+        { seats: seats("Mega Bot") },
+        { seats: seats("Mega Bot") },
+      ]),
+    ).toEqual(["Mega Bot"]);
   });
 
   test("the one-exit box: a human's mouse caught at its only open side", () => {

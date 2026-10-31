@@ -55,6 +55,7 @@ import {
   jumpsOf,
   nilGameEligibility,
   oneExitLoss,
+  unknownBotNames,
   pickJumps,
   PICKS_PER_GAME,
   rankCandidates,
@@ -485,6 +486,8 @@ const main = async () => {
       withPicks: candidates.filter((c) => c.picks.length > 0).length,
       withBeats: candidates.filter((c) => c.beats.length > 0).length,
     },
+    /** Official bots BOT_STRENGTH does not list: they rank as strength 0. */
+    unknownBotNames: unknownBotNames(candidates),
     ranked,
     excluded,
     unscored,
@@ -495,6 +498,11 @@ const main = async () => {
   console.log(
     `${all.length} games started ${report.window.since} .. ${report.window.until}: ${excluded.length} not eligible, ${unscored.length} eligible but not scored, ${candidates.length} scored, ${report.counts.withPicks} with a pick, ${report.counts.withBeats} with a close call.`,
   );
+  if (report.unknownBotNames.length > 0) {
+    console.log(
+      `  bots with no strength (rank as 0; add them to BOT_STRENGTH): ${report.unknownBotNames.join(", ")}`,
+    );
+  }
   for (const u of unscored)
     console.log(`  not scored ${u.gameId}: ${u.reason}`);
   console.log("");
