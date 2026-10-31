@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CHECKPOINTS,
+  META_INSIGHTS,
   META_INSIGHTS_SECRET,
+  metaTokenCheck,
   STATS_PLATFORMS,
   TIKTOK_NO_STATS,
   postsDue,
@@ -81,6 +83,7 @@ const SECRETS = [
   "SECRET-X-KEY",
   "SECRET-SU",
   "SECRET-INSIGHTS",
+  "SECRET-STORED",
   "SECRET-PAGE",
   "SECRET-YT-CLIENT",
   "1-SECRET-XAT",
@@ -260,12 +263,13 @@ const run = async (
   platforms: string[] = STATS_PLATFORMS,
   posts = POSTS,
   env: Record<string, string> = ENV,
+  records: Record<string, unknown> = RECORDS,
 ) => {
   const sent: Req[] = [];
   const tokens = openTokenStore(
     join(mkdtempSync(join(tmpdir(), "post-stats-test-")), "tokens"),
   );
-  for (const [p, r] of Object.entries(RECORDS)) {
+  for (const [p, r] of Object.entries(records)) {
     tokens.write(p, r as Parameters<typeof tokens.write>[1]);
   }
   const out = await readPostStats(
@@ -340,7 +344,11 @@ describe("readPostStats", () => {
       ...ENV,
       [META_INSIGHTS_SECRET]: "SECRET-INSIGHTS",
     });
-    expect(withIt.sent.map((r) => [r.url.split("?")[0], bearerOf(r)])).toEqual([
+    const got: unknown[][] = withIt.sent.map((r) => [
+      r.url.split("?")[0],
+      bearerOf(r),
+    ]);
+    expect(got).toEqual([
       [expect.stringContaining("/IG-R1/insights"), "Bearer SECRET-INSIGHTS"],
       [expect.stringContaining("/IG-R1/insights"), "Bearer SECRET-INSIGHTS"],
       [expect.stringContaining("/IG-S1/insights"), "Bearer SECRET-INSIGHTS"],
@@ -358,6 +366,27 @@ describe("readPostStats", () => {
       "Bearer SECRET-SU",
       "Bearer SECRET-SU",
       "Bearer SECRET-PAGE",
+    ]);
+    // A token saved on /daily/connect/meta-insights comes first.
+    const stored = await run(
+      answers,
+      ["instagram"],
+      POSTS,
+      { ...ENV, [META_INSIGHTS_SECRET]: "SECRET-INSIGHTS" },
+      {
+        ...RECORDS,
+        [META_INSIGHTS]: {
+          connectedAt: ago(1),
+          connectedBy: "browser",
+          scopes: [],
+          account: { id: null, name: null },
+          accessToken: "SECRET-STORED",
+        },
+      },
+    );
+    expect(stored.sent.map(bearerOf)).toEqual([
+      "Bearer SECRET-STORED",
+      "Bearer SECRET-STORED",
     ]);
     // Only the insights token: the read needs no posting token.
     const only = await run(answers, ["instagram"], POSTS, {
@@ -581,5 +610,42 @@ describe("which posts and when", () => {
     });
     reads.x = { at: ago(6), error: "x tweets: HTTP 503" };
     expect(due(posts, { reads, numbers: {} }).x).toEqual(["X"]);
+  });
+});
+
+describe("metaTokenCheck", () => {
+  test("Graph /me with the token: 'works', or a status and code, never the token", async () => {
+    const sent: Req[] = [];
+    const transport = (reply: Reply) => ({
+      request: (req: Req) => (sent.push(req), Promise.resolve(reply)),
+    });
+    const good = await metaTokenCheck(
+      transport({ status: 200, json: { id: "1" } }),
+      "SECRET-STORED",
+    );
+    expect(good).toEqual({
+      ok: true,
+      text: "Saved. Test read (Graph /me): works.",
+    });
+    expect(sent[0].url).toEndWith("/me?fields=id");
+    expect(sent[0].headers?.authorization).toBe("Bearer SECRET-STORED");
+    const bad = await metaTokenCheck(
+      transport({
+        status: 400,
+        json: { error: { code: 190, message: "SECRET-STORED is invalid" } },
+      }),
+      "SECRET-STORED",
+    );
+    expect(bad).toEqual({
+      ok: false,
+      text: "Saved, but the test read (Graph /me) failed: HTTP 400 code 190.",
+    });
+    const down = await metaTokenCheck(
+      { request: () => Promise.reject(new TypeError("fetch failed")) },
+      "SECRET-STORED",
+    );
+    expect(down.text).toBe(
+      "Saved, but the test read (Graph /me) did not finish (TypeError).",
+    );
   });
 });

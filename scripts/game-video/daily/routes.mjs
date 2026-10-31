@@ -122,6 +122,8 @@ import {
   STATS_MAX_AGE_MS,
   STATS_PLATFORMS,
   FRESH_WINDOW_MS,
+  META_INSIGHTS,
+  metaTokenCheck,
   readPostStats,
   postsDue,
 } from "./post-stats.mjs";
@@ -219,7 +221,11 @@ import {
   xRequestToken,
   missingClientSecrets,
 } from "./connect.mjs";
-import { connectPage, connectRefusedPage } from "./connect-page.mjs";
+import {
+  connectPage,
+  connectRefusedPage,
+  metaInsightsPage,
+} from "./connect-page.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RENDER_4090 = resolve(HERE, "render-4090.mjs");
@@ -2513,6 +2519,63 @@ export const createDaily = ({
     // name with each request through the app's URL; a request without them
     // did not come through the office and may not connect anything. Only
     // Nil (CONNECT_MEMBER_ID) may start or finish a Connect.
+    /**
+     * The Meta insights token's landing page (Wall Game PM, 2026-10-31):
+     * Wall Game PM's browser pastes it from Meta's Copy button, so no
+     * agent reads it. Only Nil (the office's member header) may save; the
+     * token goes to the token store (0600) and is never shown or echoed.
+     */
+    "GET /daily/connect/meta-insights": async (req, res) => {
+      html(
+        res,
+        200,
+        metaInsightsPage({ status: tokens.status(META_INSIGHTS) }),
+      );
+    },
+
+    "POST /daily/connect/meta-insights": async (req, res) => {
+      const member = memberOf(req);
+      const refusal = connectRefusal(member);
+      if (refusal) {
+        return html(res, 403, connectRefusedPage(META_INSIGHTS, refusal));
+      }
+      let raw = "";
+      for await (const chunk of req) {
+        raw += chunk;
+        if (raw.length > 16 * 1024) {
+          return html(
+            res,
+            413,
+            connectRefusedPage(META_INSIGHTS, "that request is too large"),
+          );
+        }
+      }
+      const token = new URLSearchParams(raw).get("token")?.trim() ?? "";
+      if (!token) {
+        return html(
+          res,
+          400,
+          metaInsightsPage({
+            status: tokens.status(META_INSIGHTS),
+            result: { ok: false, text: "No token given: paste it, then Save." },
+          }),
+        );
+      }
+      tokens.write(META_INSIGHTS, {
+        connectedAt: new Date().toISOString(),
+        connectedBy: "browser",
+        scopes: [],
+        account: { id: null, name: null },
+        accessToken: token,
+      });
+      const result = await metaTokenCheck(makeLiveTransport(), token);
+      html(
+        res,
+        200,
+        metaInsightsPage({ status: tokens.status(META_INSIGHTS), result }),
+      );
+    },
+
     "GET /daily/connect": async (req, res, url) => {
       const connected = url.searchParams.get("connected");
       const meta = await metaStatus();

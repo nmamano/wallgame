@@ -126,3 +126,30 @@ export const connectRefusedPage = (platform, message) =>
 <p class="bad">${escapeHtml(message)}</p>
 <p><a href="/daily/connect">Back to Connect platforms</a></p>`,
   );
+
+/**
+ * The Meta insights token's landing page (Wall Game PM, 2026-10-31): one
+ * password field and Save. Wall Game PM's browser fills it from Meta's
+ * Copy button, so no agent reads the token. It shows when a token was
+ * saved and the result of the test read, never the token.
+ * @param {{ status: any, result?: { ok: boolean, text: string } }} input
+ */
+export const metaInsightsPage = ({ status, result }) =>
+  page(
+    "Meta insights token",
+    `<h1>Meta insights token</h1>
+<p>The stats read of Instagram, its Story and Facebook uses this token (read only). Posting does not use it.</p>
+${result ? `<p class="${result.ok ? "note" : "bad"}">${escapeHtml(result.text)}</p>` : ""}
+<p>${
+      status?.error
+        ? `<span class="err">${escapeHtml(status.error)}</span>`
+        : status
+          ? `Saved at ${escapeHtml(utc(status.connectedAt) ?? "?")} by ${escapeHtml(status.connectedBy)}.`
+          : "No token saved: the stats read uses META_INSIGHTS_TOKEN, else the posting token."
+    }</p>
+<form method="post" action="/daily/connect/meta-insights">
+<input type="password" id="meta-insights-token" name="token" autocomplete="off" required>
+<button type="submit" id="meta-insights-save">Save</button>
+</form>
+<p><a href="/daily/connect">Back to Connect platforms</a></p>`,
+  );

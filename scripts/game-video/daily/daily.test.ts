@@ -90,7 +90,12 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import { modeReasons, postingModes, createDaily } from "./routes.mjs";
+import {
+  CONNECT_MEMBER_ID,
+  modeReasons,
+  postingModes,
+  createDaily,
+} from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
@@ -4667,6 +4672,80 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(state.lastSlot.outcome).toBe("no-live");
     expect(state.lastPostAt).toBeNull();
     expect(itemOf(openStore(dir), id).state).toBe("approved");
+  });
+
+  test("the Meta insights token page: only Nil saves, 0600, the token never shown", async () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    const sent: { url: string; headers?: Record<string, string> }[] = [];
+    const daily = createDaily({
+      dataDir: dir,
+      env: { PATH: process.env.PATH! },
+      backupWindow: null,
+      schedule: false,
+      live: () => ({
+        mode: "live",
+        sent: [],
+        request: (req: { url: string; headers?: Record<string, string> }) => {
+          sent.push(req);
+          return Promise.resolve({ status: 200, json: { id: "1" } });
+        },
+      }),
+    });
+    const server = createHttpServer((req, res) => {
+      void daily
+        .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
+        .then((done: boolean) => {
+          if (!done) res.writeHead(404).end();
+        });
+    });
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    stops.push(() => {
+      server.close();
+      daily.stop();
+    });
+    const { port } = server.address() as { port: number };
+    const url = `http://127.0.0.1:${port}/daily/connect/meta-insights`;
+    const save = (token: string, member?: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          ...(member && { "x-isomux-member-id": member }),
+        },
+        body: new URLSearchParams({ token }).toString(),
+      });
+    const file = join(store.dirs.root, "tokens", "meta-insights.json");
+
+    const page = await (await fetch(url)).text();
+    expect(page).toContain('<input type="password" id="meta-insights-token"');
+    expect(page).toContain("No token saved");
+    // Not Nil, or no member: refused, nothing saved, no Graph call.
+    for (const member of [undefined, "someone-else"]) {
+      const r = await save("SECRET-STORED", member);
+      expect(r.status).toBe(403);
+      expect(await r.text()).not.toContain("SECRET-STORED");
+    }
+    expect(existsSync(file)).toBe(false);
+    // No token: refused.
+    expect((await save("  ", CONNECT_MEMBER_ID)).status).toBe(400);
+    expect(sent).toEqual([]);
+    // Nil: saved 0600, tested with Graph /me, never echoed.
+    const r = await save(" SECRET-STORED ", CONNECT_MEMBER_ID);
+    const body = await r.text();
+    expect(r.status).toBe(200);
+    expect(body).toContain("Saved. Test read (Graph /me): works.");
+    expect(body).toContain("by browser");
+    expect(body).not.toContain("SECRET-STORED");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+      connectedBy: "browser",
+      accessToken: "SECRET-STORED",
+    });
+    expect(sent.map((q) => q.headers?.authorization)).toEqual([
+      "Bearer SECRET-STORED",
+    ]);
+    expect(await (await fetch(url)).text()).not.toContain("SECRET-STORED");
   });
 
   test("the timer reads a post due at its 1 h checkpoint and keeps its checkpoint row", async () => {

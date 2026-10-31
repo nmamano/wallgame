@@ -137,16 +137,54 @@ const numbers = (given) => ({
 /** @typedef {{ platform: string, postId: string, utc: string }} Post */
 
 /**
- * The Meta token of the stats read (Instagram, its Story, Facebook):
- * META_INSIGHTS_TOKEN when it is set, a read-only token with the insights
- * permissions (Wall Game PM, 2026-10-31); else the posting token, as
- * before. Only this read uses it: posting never does.
+ * The Meta token of the stats read (Instagram, its Story, Facebook), a
+ * read-only token with the insights permissions (Wall Game PM,
+ * 2026-10-31), first found of: the one saved on
+ * /daily/connect/meta-insights (token store, "meta-insights"), the app
+ * secret META_INSIGHTS_TOKEN, the posting token as before. Only this read
+ * uses it: posting never does.
  */
+export const META_INSIGHTS = "meta-insights";
 export const META_INSIGHTS_SECRET = "META_INSIGHTS_TOKEN";
-const metaStatsToken = (env) => {
+const metaStatsToken = (env, tokens) => {
+  let saved;
+  try {
+    saved = tokens?.read(META_INSIGHTS)?.accessToken;
+  } catch (err) {
+    // Its message names the file, never the token.
+    throw new NoCount(String(err?.message ?? err));
+  }
+  if (typeof saved === "string" && saved) return saved;
   if (env[META_INSIGHTS_SECRET]) return env[META_INSIGHTS_SECRET];
   needSecrets(env, META_SECRETS);
   return env.META_SYSTEM_USER_TOKEN;
+};
+
+/**
+ * The test read of a saved Meta insights token: Graph /me. The result is
+ * a safe text (a status and a code), never the token or the reply body.
+ * @returns {Promise<{ ok: boolean, text: string }>}
+ */
+export const metaTokenCheck = async (transport, token) => {
+  try {
+    const reply = await transport.request({
+      method: "GET",
+      url: `${FB_GRAPH}/me?fields=id`,
+      headers: bearer(token),
+    });
+    if (ok(reply))
+      return { ok: true, text: "Saved. Test read (Graph /me): works." };
+    const code = reply.json?.error?.code;
+    return {
+      ok: false,
+      text: `Saved, but the test read (Graph /me) failed: HTTP ${reply.status}${typeof code === "number" ? ` code ${code}` : ""}.`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      text: `Saved, but the test read (Graph /me) did not finish (${err?.name ?? "error"}).`,
+    };
+  }
 };
 
 /** A number the platform gave, or null when it gave none. */
@@ -345,8 +383,8 @@ const READERS = {
     return out;
   },
 
-  async instagram({ transport, env }, posts) {
-    const token = metaStatsToken(env);
+  async instagram({ transport, env, tokens }, posts) {
+    const token = metaStatsToken(env, tokens);
     const out = {};
     for (const p of posts) {
       try {
@@ -396,8 +434,8 @@ const READERS = {
     return out;
   },
 
-  async "instagram-story"({ transport, env }, posts) {
-    const token = metaStatsToken(env);
+  async "instagram-story"({ transport, env, tokens }, posts) {
+    const token = metaStatsToken(env, tokens);
     const out = {};
     for (const p of posts) {
       const m = insightValues(
@@ -429,9 +467,12 @@ const READERS = {
     return out;
   },
 
-  async facebook({ transport, env }, posts) {
+  async facebook({ transport, env, tokens }, posts) {
     // The Page token comes from the stats token, so it has its permissions.
-    const meta = await discoverMeta({ transport, token: metaStatsToken(env) });
+    const meta = await discoverMeta({
+      transport,
+      token: metaStatsToken(env, tokens),
+    });
     const out = {};
     for (const p of posts) {
       try {
