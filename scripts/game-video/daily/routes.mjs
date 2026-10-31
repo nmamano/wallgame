@@ -125,6 +125,7 @@ import {
 import { COPY_VERSION, copyProblems, parseCopy, postTexts } from "./copy.mjs";
 import {
   claimRisk,
+  retired,
   openSoundPicks,
   soundList,
   soundFile,
@@ -1687,6 +1688,13 @@ export const createDaily = ({
       ...saveFrameProblems(edl, item.candidate.beats),
       ...storyProblems(edl, item.candidate),
       ...resultProblems(item.candidate, passedScript(item)),
+      // Every new video ends on a call to action (Nil, 2026-10-31): the
+      // director writes one per script (edl.mjs cta).
+      ...(edl.cta
+        ? []
+        : [
+            'name a call to action ("cta", e.g. "play free at wallgame.io"): every video shows one under the board and on the GG card',
+          ]),
       ...risk.problems,
       // Without a named track the renderer picks one at random, so a
       // second render of the list (from the capture) could play another
@@ -2705,6 +2713,13 @@ export const claimRiskLines = (edl, ok) => {
   const uses = soundUses(edl).filter(([, key]) => claimRisk(key));
   return {
     problems: [
+      // A retired sound has no "on purpose": Nil took it out.
+      ...soundUses(edl)
+        .filter(([, key]) => retired(key))
+        .map(
+          ([where, key]) =>
+            `${where}: ${key} is ${retired(key)}; name another sound (crew.mjs sounds)`,
+        ),
       ...uses
         .filter(([, key]) => !ok.includes(key))
         .map(

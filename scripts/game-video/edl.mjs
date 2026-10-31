@@ -82,6 +82,13 @@
  *            meme-pack.md, 2026-10-31). It must hide nothing once the VS
  *            overlay ends, as any cover clip. Muted: the VS slot has its
  *            sound. Absent: none.
+ *   cta      optional for the renderer, required by the daily app for a
+ *            new list: the call to action (Nil, 2026-10-31, the revise of
+ *            v-2026-10-31-6: "a clear CTA to all videos ... you can make
+ *            variations per video"), one line of at most CTA_CHARS that
+ *            names wallgame.io ("play free at wallgame.io"). It replaces
+ *            "wallgame.io" in the badge under the board, for the whole
+ *            video, and as the GG card's last line. Absent: "wallgame.io".
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
  *            A range with "fastForward": true (audit item 5) runs a quiet
@@ -238,6 +245,31 @@ export const dailySeatColors = (isBot) => {
     : { 1: "red", 2: "blue" };
 };
 export const ENDINGS = ["replay", "gg", "ko"];
+
+/** The most characters a call to action (`cta`) may have. */
+export const CTA_CHARS = 30;
+/** What a list without a `cta` shows where a call to action goes. */
+export const DEFAULT_CTA = "wallgame.io";
+
+/**
+ * Why `cta` is not a call to action the video may show, or null: a string
+ * of one line, at most CTA_CHARS, that names wallgame.io.
+ * @param {unknown} cta
+ */
+export const ctaProblem = (cta) => {
+  if (typeof cta !== "string" || cta.trim() === "") {
+    return "cta must be a line of text";
+  }
+  if (/[\r\n]/.test(cta)) return "cta must be one line";
+  if (cta !== cta.trim()) return "cta must not start or end with a space";
+  if ([...cta].length > CTA_CHARS) {
+    return `cta has ${[...cta].length} characters; at most ${CTA_CHARS}`;
+  }
+  if (!cta.toLowerCase().includes("wallgame.io")) {
+    return 'cta must name wallgame.io (e.g. "play free at wallgame.io")';
+  }
+  return null;
+};
 
 /**
  * The names the daily video shows for its two seats, wherever it shows one
@@ -552,6 +584,7 @@ export const validateEdl = (raw) => {
       "vsSound",
       "finishSound",
       "opening",
+      "cta",
       "pace",
       "events",
     ],
@@ -711,6 +744,12 @@ export const validateEdl = (raw) => {
           .join(", ")}), or absent for none; got ${JSON.stringify(opening)}`,
       );
     }
+  }
+
+  const cta = raw.cta ?? null;
+  if (cta !== null) {
+    const problem = ctaProblem(cta);
+    if (problem) fail(problem);
   }
 
   const pace = raw.pace ?? [];
@@ -1185,6 +1224,7 @@ export const validateEdl = (raw) => {
       ...slots,
       // Only when set, so a list without one stores the same bytes as before.
       ...(opening !== null ? { opening } : {}),
+      ...(cta !== null ? { cta } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
     },

@@ -80,6 +80,21 @@ export const claimRisk = (key) => {
 };
 
 /**
+ * The sounds Nil retired: no new list may play one, whatever its moment
+ * (a preference on /daily/sounds only marks a sound disliked, which is
+ * allowed). key -> why.
+ * @type {Record<string, string>}
+ */
+export const RETIRED_SOUNDS = {
+  "tick-1":
+    'retired by Nil (2026-10-31, the revise of v-2026-10-31-6: "loud and annoying and doesn\'t make sense")',
+};
+
+/** Why the sound `key` is retired, or null. */
+export const retired = (key) =>
+  Object.hasOwn(RETIRED_SOUNDS, key) ? RETIRED_SOUNDS[key] : null;
+
+/**
  * Where a validated edit decision list plays a sound: [where, key] for each
  * slot of DEFAULT_SLOT_SOUNDS and for each event with a sound.
  */
@@ -156,6 +171,7 @@ export const soundList = (picks, dir = MEME_DIR, defaults = defaultSlots()) =>
       choice: picks[key]?.choice ?? "ok",
       note: MEME_SOURCE_NOTES[key] ?? null,
       claimRisk: claimRisk(key) !== null,
+      retired: retired(key),
       defaultFor: defaults[key] ?? null,
       file: existsSync(join(dir, `${key}.mp3`)),
     };

@@ -491,18 +491,36 @@
       }
       /*
         The credit (music-tracks.mjs creditLines): over the ending and its
-        hold, the head row is the credit's. One line per track, broken only
-        where the lines end; its size fitted by __fitWallz (--credit-size).
+        hold, a small muted line in the bottom-right corner of the end
+        card, about the size of the board's letters (Nil, 2026-10-31, the
+        revise of v-2026-10-31-6: "JDSherbert credits are too prominent.
+        they should be in the corner"): in the GG card's bottom padding, or,
+        in an ending with no card, the board's corner (__fitWallz puts it
+        there). One line per track, broken only where the lines end. The
+        board's filters do not reach it: it is not the board image.
       */
       #credit {
-        max-width: 100%;
+        position: absolute;
+        right: calc(var(--board) * 0.025);
+        bottom: calc(var(--board) * 0.012);
+        max-width: calc(var(--board) * 0.7);
+        z-index: 5;
         white-space: pre;
         font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
         font-weight: 700;
-        font-size: var(--credit-size);
-        color: #e2e8f0;
-        text-align: center;
+        font-size: calc(var(--board) * 0.026);
+        line-height: 1.2;
+        color: #94a3b8;
+        text-align: right;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
         visibility: hidden;
+      }
+      #ggCard #credit {
+        right: 5%;
+        max-width: 80%;
+      }
+      #ggCard.credited {
+        padding-bottom: calc(var(--board) * 0.075);
       }
 
       /* ---------- the endings (wallz look) ---------- */
@@ -935,6 +953,9 @@
       }
       #ggCard .cta {
         margin-top: 2%;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
         font-size: calc(var(--board) * 0.055);
         font-weight: 900;
         letter-spacing: 0.12em;
@@ -1219,7 +1240,6 @@
             </div>
           </div>
           <div id="goal"></div>
-          <div id="credit"></div>
         </div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
@@ -1272,6 +1292,7 @@
           ></svg>
           <div id="overlay" class="hidden"></div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
+          <div id="credit"></div>
           <div id="replayBadge" class="hidden">
             <div class="dot"></div>
             REPLAY
@@ -1297,7 +1318,7 @@
             ><span class="vs">VS</span><span id="stripNameB"></span
             ><img id="stripImgB" />
           </div>
-          <div class="site">wallgame.io</div>
+          <div class="site" id="stripSite">wallgame.io</div>
         </div>
         <div id="ggCard" class="hidden">
           <div class="gg stampmark">G<span>G</span></div>
@@ -1306,7 +1327,7 @@
             <div class="n" id="ggName"></div>
           </div>
           <div class="how" id="ggHow"></div>
-          <div class="cta">wallgame<span class="dot">.</span>io</div>
+          <div class="cta" id="ggCta">wallgame<span class="dot">.</span>io</div>
         </div>
         <div class="plate bottom">
           <img class="avatar" id="pAvB" />
@@ -1415,6 +1436,45 @@
        * measured here, not predicted. Seen 2026-10-26: the 9:16 frame cut
        * "Guest Cormorant" to "Guest Cormor...".
        */
+      /**
+       * Write the call to action into `el` (DEFAULT_CTA when absent), its
+       * "wallgame.io" with the site's orange dot, as text nodes.
+       */
+      const ctaInto = (el, cta) => {
+        const text = cta ?? "wallgame.io";
+        const at = text.toLowerCase().indexOf("wallgame.io");
+        el.textContent = "";
+        if (at < 0) {
+          el.textContent = text;
+          return;
+        }
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        dot.textContent = ".";
+        el.append(text.slice(0, at + 8), dot, text.slice(at + 9));
+      };
+
+      /**
+       * `measure()` with the GG card laid out as it rests over the ending
+       * (centred, full size) but unseen: the card is hidden until then, and
+       * the credit may be in it. Everything is put back.
+       */
+      const cardAtRest = (measure) => {
+        const card = $("ggCard");
+        const hidden = card.classList.contains("hidden");
+        const { visibility, transform } = card.style;
+        card.style.visibility = "hidden";
+        card.style.transform = "translate(-50%, -50%)";
+        show(card, true);
+        try {
+          return measure();
+        } finally {
+          show(card, !hidden);
+          card.style.visibility = visibility;
+          card.style.transform = transform;
+        }
+      };
+
       const fitName = (el) => {
         el.style.fontSize = "";
         let size = parseFloat(getComputedStyle(el).fontSize);
@@ -2988,11 +3048,10 @@
        *   goal = the goal line to show instead, or null
        */
       /**
-       * The head row: the race counter `r`, or the goal line `goal`, or the
-       * credit c = { a: 0..1 }, which takes the race counter's place: the
-       * counter fades out over the first half and the credit fades in over
-       * the second, so the two never show at once. The credit's text is set
-       * once, by __fitWallz. In a fast-forward (edl.mjs fastForward, audit
+       * The head row: the race counter `r`, or the goal line `goal`; and the
+       * credit c = { a: 0..1 }, its fade-in, in the board's corner (the
+       * counter stays: the credit no longer takes its place). The credit's
+       * text is set once, by __fitWallz. In a fast-forward (edl.mjs fastForward, audit
        * item 5) the counter's middle shows the tag, "▶▶ x3", in place of
        * "VS", so a quiet stretch reads as sped up and not as the game's real
        * pace; off the board, it covers no pawn (Wall Game Director,
@@ -3000,12 +3059,8 @@
        */
       const paintHud = (r, goal, c, ff) => {
         $("raceTag").textContent = ff ? "▶\uFE0E▶\uFE0E " + ff : "VS";
-        const a = c ? c.a : 0;
-        const out = Math.min(1, 2 * a);
-        const inn = Math.max(0, 2 * a - 1);
-        $("race").style.visibility =
-          r && !goal && out < 1 ? "visible" : "hidden";
-        $("race").style.opacity = a > 0 ? String(1 - out) : "";
+        const inn = c ? c.a : 0;
+        $("race").style.visibility = r && !goal ? "visible" : "hidden";
         $("goal").style.visibility = goal ? "visible" : "hidden";
         $("credit").style.visibility = inn > 0 ? "visible" : "hidden";
         $("credit").style.opacity = inn > 0 ? String(inn) : "";
@@ -3053,8 +3108,13 @@
         raceLabel,
         credit,
         strip,
+        cta,
+        ending,
       }) => {
         $("root").classList.add("wallz");
+        // The call to action (edl.mjs cta) in the badge under the board and
+        // as the GG card's last line, its "." in the site's orange.
+        for (const el of [$("stripSite"), $("ggCta")]) ctaInto(el, cta);
         show($("play"), true);
         $("goal").textContent = goal ?? "";
         const root = document.documentElement.style;
@@ -3069,7 +3129,7 @@
         root.setProperty("--caption-h", captionH + "px");
         $("caption").textContent = captions[0] ?? "";
         await document.fonts.ready;
-        $("hud").classList.toggle("on", hud || !!credit);
+        $("hud").classList.toggle("on", hud);
         $("race").querySelector(".vs small").textContent = raceLabel ?? "STEPS";
         // The race counter at its widest, for the head row's measure.
         $("raceNa").textContent = "88";
@@ -3102,32 +3162,14 @@
           root.setProperty("--goal-size", goalSize + "px");
         }
         goalFits = !goal || textLines($("goal")).lines === 1;
-        /*
-          The credit, one line per entry of `credit`: it shrinks from half
-          the caption size until every line fits the row's width, measured,
-          not predicted from its length. One line may set the row's height,
-          as it always did; several lines must fit in the height the counter
-          gives the row, so the board does not get smaller for them. The
-          credit is hidden, not absent, on every other frame, so it would
-          grow the row there too, and the VS banners measure the row: the
-          heights are compared unrounded, as the layout has them.
-        */
-        const heightOf = (el) => el.getBoundingClientRect().height;
-        $("credit").textContent = "";
-        const rowH = heightOf($("hud"));
+        // The credit, one line per entry of `credit`, at a fixed size: in
+        // the GG card on a "gg" ending, else in the board's corner.
+        // creditFits says whether each line fits its width (measured once
+        // the board has its size, below).
         $("credit").textContent = credit?.join("\n") ?? "";
-        let creditSize = captionSize * 0.5;
-        const creditFloor = captionSize * 0.36;
-        root.setProperty("--credit-size", creditSize + "px");
-        const creditMisfits = () =>
-          !!credit &&
-          ($("credit").scrollWidth > $("credit").clientWidth ||
-            (credit.length > 1 && heightOf($("credit")) > rowH));
-        while (creditMisfits() && creditSize > creditFloor) {
-          creditSize = Math.max(creditFloor, creditSize - 1);
-          root.setProperty("--credit-size", creditSize + "px");
-        }
-        creditFits = !creditMisfits();
+        const card = ending === "gg" && !!credit;
+        (card ? $("ggCard") : $("boardWrap")).append($("credit"));
+        $("ggCard").classList.toggle("credited", card);
         const play = $("play");
         const cs = getComputedStyle(play);
         const width =
@@ -3148,6 +3190,9 @@
         document.documentElement.style.setProperty(
           "--board-mid",
           r.top + r.height / 2 + "px",
+        );
+        creditFits = cardAtRest(
+          () => !credit || $("credit").scrollWidth <= $("credit").clientWidth,
         );
         /*
           The players strip: one gap under the board, as the head row is one
@@ -3180,8 +3225,10 @@
           let stripSize = captionSize * 0.75;
           const stripFloor = captionSize * 0.36;
           root.setProperty("--strip-size", stripSize + "px");
-          const row = $("strip").querySelector(".row");
-          const tooWide = () => row.scrollWidth > $("strip").clientWidth;
+          // The players' row and the call to action's badge.
+          const lines = [$("strip").querySelector(".row"), $("stripSite")];
+          const tooWide = () =>
+            lines.some((el) => el.scrollWidth > $("strip").clientWidth);
           while (tooWide() && stripSize > stripFloor) {
             stripSize = Math.max(stripFloor, stripSize - 1);
             root.setProperty("--strip-size", stripSize + "px");
@@ -3220,7 +3267,7 @@
           ...(captions[1] && { payoff: captionBox(captions[1]) }),
           ...(race && { race: box($("race")) }),
           ...(goal && { goalLine: box($("goal")) }),
-          ...(credit && { credit: box($("credit")) }),
+          ...(credit && { credit: cardAtRest(() => box($("credit"))) }),
           ...(strip && { strip: box($("strip")) }),
         };
       };
@@ -3288,11 +3335,12 @@
        * The credit as the page lays it out: { lines, width, size }, and
        * `fits`, false when it fits its row at no size down to its floor.
        */
-      window.__creditText = () => ({
-        ...textLines($("credit")),
-        size: parseFloat(getComputedStyle($("credit")).fontSize),
-        fits: creditFits,
-      });
+      window.__creditText = () =>
+        cardAtRest(() => ({
+          ...textLines($("credit")),
+          size: parseFloat(getComputedStyle($("credit")).fontSize),
+          fits: creditFits,
+        }));
 
       /**
        * A filter on the board as the camera shows it: its image and the
@@ -3393,6 +3441,7 @@
             $("ggName").style.color = e.winner.hex;
             $("ggHow").textContent = e.how;
             fitName($("ggName"));
+            fitName($("ggCta"));
           }
         }
 

@@ -3928,6 +3928,8 @@ const renderStyle = async (styleName) => {
           raceLabel: RACE_LABEL,
           credit: CREDIT_LINES,
           strip,
+          cta: EDL?.cta ?? null,
+          ending: style.ending,
         })
       : null;
     return { page, board };
@@ -5547,7 +5549,7 @@ const renderStyle = async (styleName) => {
       fault(
         "text-fit",
         null,
-        `the players strip does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}`,
+        `the players strip (or its call to action) does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? "wallgame.io"}`,
       );
     }
     log(
@@ -5572,8 +5574,8 @@ const renderStyle = async (styleName) => {
 
   /**
    * The credit as the stage fitted it (stage.html __creditText): one line
-   * per track and no more, inside its row, or the render stops here, before
-   * any frame.
+   * per track and no more, inside its width in the GG card or the board's
+   * corner, or the render stops here, before any frame.
    */
   const creditText =
     wallz && CREDIT_LINES
@@ -5589,7 +5591,7 @@ const renderStyle = async (styleName) => {
     fault(
       "text-fit",
       null,
-      `the credit does not fit its row at its smallest size: ${CREDIT}`,
+      `the credit does not fit its width in its corner: ${CREDIT}`,
     );
   }
   /** The credit over the ending, `t` seconds after the ending began. */

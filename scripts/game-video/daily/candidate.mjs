@@ -86,6 +86,7 @@ export const musicText = (cues) =>
 export const edlSummary = (edl) => [
   `ending ${edl.ending}, music ${!edl.music ? "random" : edl.music.length ? musicText(edl.music) : "none"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
   `VS sound ${edl.vsSound}, finish sound ${edl.finishSound}`,
+  ...(edl.cta ? [`call to action "${edl.cta}"`] : []),
   ...(edl.startPly ? [`starts at ply ${edl.startPly}`] : []),
   ...(edl.coldOpenPly != null
     ? [`cold open: the position after ply ${edl.coldOpenPly}`]

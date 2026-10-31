@@ -1196,6 +1196,25 @@ describe("the meme pack's clips", () => {
     ]);
   });
 
+  test("the call to action: one line, at most 30 chars, names wallgame.io; stored only when set", () => {
+    expect(accept({ ...base, cta: "play free at wallgame.io" }).cta).toBe(
+      "play free at wallgame.io",
+    );
+    expect("cta" in accept(base)).toBe(false);
+    expect(errorsOf({ ...base, cta: "play free now" })).toEqual([
+      'cta must name wallgame.io (e.g. "play free at wallgame.io")',
+    ]);
+    expect(errorsOf({ ...base, cta: "play\nwallgame.io" })).toEqual([
+      "cta must be one line",
+    ]);
+    expect(
+      errorsOf({ ...base, cta: "your move: play free at wallgame.io" }),
+    ).toEqual(["cta has 35 characters; at most 30"]);
+    expect(errorsOf({ ...base, cta: "" })).toEqual([
+      "cta must be a line of text",
+    ]);
+  });
+
   test("the opening is a cover clip, stored only when set", () => {
     expect(accept({ ...base, opening: "curtain-open" }).opening).toBe(
       "curtain-open",

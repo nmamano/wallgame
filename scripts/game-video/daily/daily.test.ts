@@ -352,6 +352,7 @@ const EDL = {
   gameId: "TESTGAME1",
   ending: "replay",
   music: [{ fromPly: 0, track: "deja-vus" }],
+  cta: "play free at wallgame.io",
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
@@ -4896,5 +4897,36 @@ describe("the stored result: a game with no winner makes no video (FkQKb63y, 202
     expect(refused.body.error).toContain(
       "the script says blue (player 1) wins, but the stored result says red (player 2) wins by capture",
     );
+  });
+});
+
+describe("Nil's revise of v-2026-10-31-6: a call to action on every video, tick-1 retired", () => {
+  test("lint and direct refuse a new list with no cta, or one that plays tick-1", async () => {
+    const dir = tempDir();
+    const stub = join(dir, "stub-render.cjs");
+    writeFileSync(stub, STUB_RENDER);
+    const base = await serve(dir, stub);
+    const picked = await call(base, "/api/daily/pick", { report: REPORT });
+    expect(picked.status).toBe(200);
+    const id = picked.body.id;
+    await call(base, "/api/daily/script-review", { item: id, ...SCRIPT_PASS });
+    const ending = (await dailyState(base)).suggestedEnding;
+    const direct = (edl: object) =>
+      call(base, "/api/daily/direct", {
+        item: id,
+        edl: { ...EDL, ending, ...edl },
+        noLint: true,
+      });
+    const bare = await direct({ cta: undefined });
+    expect(bare.status).toBe(409);
+    expect(bare.body.error).toContain('name a call to action ("cta"');
+    const tick = await direct({
+      events: [{ ply: 22, kind: "sound", sound: "tick-1" }],
+    });
+    expect(tick.status).toBe(409);
+    expect(tick.body.error).toContain(
+      "ply 22: tick-1 is retired by Nil (2026-10-31",
+    );
+    expect((await direct({})).status).toBe(200);
   });
 });

@@ -808,14 +808,15 @@ const commands = {
       const members = sounds.filter((x) => x.family === family);
       const names = (choice) =>
         members
-          .filter((x) => x.choice === choice && !x.claimRisk)
+          .filter((x) => x.choice === choice && !x.claimRisk && !x.retired)
           .map((x) => (x.note ? `${x.key} [${x.note}]` : x.key))
           .join(", ") || "-";
       const risky = members
         .filter((x) => x.claimRisk)
         .map((x) => `${x.key} (${x.choice}) [${x.note}]`);
+      const out = members.filter((x) => x.retired).map((x) => x.key);
       console.log(
-        `${family} (${members[0].moment ?? "no moment"}): best ${names("best")}; ok ${names("ok")}; disliked ${names("disliked")}${risky.length ? `; claim risk, refused: ${risky.join(", ")}` : ""}`,
+        `${family} (${members[0].moment ?? "no moment"}): best ${names("best")}; ok ${names("ok")}; disliked ${names("disliked")}${risky.length ? `; claim risk, refused: ${risky.join(", ")}` : ""}${out.length ? `; retired by Nil, refused: ${out.join(", ")}` : ""}`,
       );
     }
     for (const x of sounds.filter((s) => s.defaultFor)) {
