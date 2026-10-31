@@ -91,9 +91,9 @@
  *            video, and as the GG card's last line. Absent: "wallgame.io".
  *   evalStrip
  *            optional, OFF by default: the engine's view as a thin strip
- *            between the race counter and the board, in the look of the
+ *            under the players' names below the board, in the look of the
  *            site's evaluation bar (info/evaluation_bar.md), each side's
- *            share in its seat's colour, red on the left. The values are
+ *            share in its seat's colour under its name, red on the left. The values are
  *            the game's .engine.json evaluationsP1 as they are: one a
  *            position, n + 1 for n moves, each -1 (player 2 wins) to 1
  *            (player 1 wins). The strip moves to each move's value as it

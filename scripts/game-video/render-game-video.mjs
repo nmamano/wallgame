@@ -973,7 +973,8 @@ const PLANT_SECONDS = 0.8;
 const PLANT_FADE_SECONDS = 0.25;
 const CALLBACK_LAND_SECONDS = 0.6;
 /**
- * The evaluation strip (edl.mjs evalStrip): it moves to a move's value over
+ * The evaluation strip (edl.mjs evalStrip), under the players' names: it
+ * moves to a move's value over
  * EVAL_MOVE_SECONDS from its landing (Wall Game Director, 2026-10-31: a
  * swing reads as motion), and a marked move's swing flashes for
  * EVAL_FLASH_SECONDS.

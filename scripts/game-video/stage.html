@@ -441,21 +441,23 @@
       }
       /*
         The evaluation strip (edl.mjs evalStrip): the site's evaluation bar
-        (info/evaluation_bar.md), thin and across the board's width, in the
-        middle of the gap between the head row and the board, so it takes
-        no room from the board. The left part is red's share, the rest is
-        blue's; a thin line marks the even split.
+        (info/evaluation_bar.md), thin, under the players' names below the
+        board and as wide as their row: red's share under the red name on
+        the left, blue's under the blue name, so the names say whose part
+        is whose (Wall Game Director, 2026-10-31: under the steps counter it
+        read as part of the counter). It sits in the middle of the gap
+        between the names and the call to action, out of the flow, so the
+        strip keeps its size. A thin line marks the even split.
       */
-      #root.wallz #hud.on {
+      #strip .row {
         position: relative;
       }
       #evalStrip {
         position: absolute;
-        left: 50%;
-        top: calc(100% + (var(--head-gap) - 14px) / 2);
-        width: var(--board);
+        left: 0;
+        right: 0;
+        top: calc(100% + (0.8em - 14px) / 2);
         height: 14px;
-        transform: translateX(-50%);
         border-radius: 7px;
         overflow: hidden;
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
@@ -1335,11 +1337,6 @@
             </div>
           </div>
           <div id="goal"></div>
-          <div id="evalStrip" class="hidden">
-            <div id="evalLeft"></div>
-            <div id="evalSwing"></div>
-            <div id="evalMid"></div>
-          </div>
         </div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
@@ -1422,6 +1419,11 @@
             <img id="stripImgA" /><span id="stripNameA"></span
             ><span class="vs">VS</span><span id="stripNameB"></span
             ><img id="stripImgB" />
+            <div id="evalStrip" class="hidden">
+              <div id="evalLeft"></div>
+              <div id="evalSwing"></div>
+              <div id="evalMid"></div>
+            </div>
           </div>
           <div class="site" id="stripSite">wallgame.io</div>
         </div>
@@ -3207,8 +3209,7 @@
           $("evalSwing").style.width = Math.abs(w.to - w.from) * 100 + "%";
           $("evalSwing").style.opacity = 0.85 * pulse;
         }
-        $("evalStrip").style.transform =
-          "translateX(-50%) scaleY(" + (1 + 0.6 * pulse) + ")";
+        $("evalStrip").style.transform = "scaleY(" + (1 + 0.35 * pulse) + ")";
       };
       const paintErase = (e) => {
         show($("eraseFx"), !!e);
