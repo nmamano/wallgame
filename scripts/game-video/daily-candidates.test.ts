@@ -20,6 +20,8 @@ import {
   jumpsOf,
   excludedOnlyByMembers,
   MIN_PLIES,
+  oneExitLoss,
+  type SeatKind,
   nilGameEligibility,
   NIL_USER_ID,
   pickBoard,
@@ -513,6 +515,7 @@ describe("distance jumps", () => {
   test("candidates rank by their largest pick, then the next one", () => {
     const withSizes = (gameId: string, sizes: number[]) => ({
       gameId,
+      seats: [],
       beats: [],
       picks: sizes.map((size, i) => jump(i * 2, size)),
     });
@@ -627,10 +630,58 @@ describe("close calls", () => {
 
   test("a game with a close call ranks above a bigger plain jump", () => {
     const ranked = rankCandidates([
-      { gameId: "jump", beats: [], picks: [{ size: 18 }] },
-      { gameId: "beat", beats: [{ size: 4 }], picks: [{ size: 4 }] },
+      { gameId: "jump", seats: [], beats: [], picks: [{ size: 18 }] },
+      { gameId: "beat", seats: [], beats: [{ size: 4 }], picks: [{ size: 4 }] },
     ]);
     expect(ranked.map((c) => c.gameId)).toEqual(["beat", "jump"]);
+  });
+
+  test("a game against a stronger bot ranks first, close call or not", () => {
+    const vs = (name: string) => [
+      { kind: "guest" as const, name: "Guest Yak" },
+      { kind: "official bot" as const, name },
+    ];
+    const ranked = rankCandidates([
+      {
+        gameId: "easy",
+        seats: vs("Easy Bot"),
+        beats: [{ size: 8 }],
+        picks: [],
+      },
+      { gameId: "humans", seats: [], beats: [{ size: 9 }], picks: [] },
+      { gameId: "super", seats: vs("Superhuman Bot"), beats: [], picks: [] },
+      { gameId: "normal", seats: vs("Normal Bot"), beats: [], picks: [] },
+    ]);
+    expect(ranked.map((c) => c.gameId)).toEqual([
+      "super",
+      "normal",
+      "humans",
+      "easy",
+    ]);
+  });
+
+  test("the one-exit box: a human's mouse caught at its only open side", () => {
+    // >c4 closes d4's left side; d4 is a corner, so d3 is its only exit, and
+    // the cat walks round by c3 and d3 into it.
+    const end = (moves: string[], kinds: SeatKind[]) =>
+      oneExitLoss(
+        replayDistances({
+          variant: "standard",
+          boardWidth: 4,
+          boardHeight: 4,
+          initialState: start,
+          moves,
+        }),
+        1,
+        kinds,
+        4,
+      );
+    const boxed = ["Cc4", ">c4.Cb1", "Cd3", "Cc1", "Cd4"];
+    expect(end(boxed, ["official bot", "guest"])).toBe(true);
+    // A bot's mouse in the same box: C28 is about the human's moves.
+    expect(end(boxed, ["guest", "official bot"])).toBe(false);
+    // No wall: the corner keeps two open sides.
+    expect(end(["Cc4", "Cb1", "Cd4"], ["official bot", "guest"])).toBe(false);
   });
 });
 

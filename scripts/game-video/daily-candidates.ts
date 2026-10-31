@@ -46,6 +46,7 @@ import type {
 } from "../../shared/domain/game-types";
 import { boardPawns } from "../../shared/domain/pawns";
 import {
+  cellFromStandardNotation,
   cellToStandardNotation,
   moveFromStandardNotation,
   wallToStandardNotation,
@@ -823,12 +824,66 @@ export type DescribedEscape = Escape & { description: string };
 
 export interface RankedCandidate {
   gameId: string;
+  seats: { kind: SeatKind; name: string }[];
   beats: { size: number }[];
   picks: { size: number }[];
 }
 
 /**
- * A game with a close call first, by its largest save; then the largest pick,
+ * How strong an official bot plays, by its display name (bots have no stored
+ * rating). A game against a stronger bot ranks first (Nil, 2026-10-31: "clearly
+ * better players" made his own game more interesting). A name not listed is 0.
+ */
+export const BOT_STRENGTH: Readonly<Record<string, number>> = {
+  "Superhuman Bot": 5,
+  "Ruthless Bot": 4,
+  "Hard Bot": 3,
+  "Transformer Bot (experimental)": 3,
+  "Deep Wallwars": 2,
+  "Deep Wallwars Standard": 2,
+  "Normal Bot": 1,
+  "Medium Bot": 1,
+};
+
+/** The strongest official bot seat of a game; 0 when it has none. */
+export const opponentStrength = (c: Pick<RankedCandidate, "seats">): number =>
+  Math.max(
+    0,
+    ...c.seats
+      .filter((s) => s.kind === "official bot")
+      .map((s) => BOT_STRENGTH[s.name] ?? 0),
+  );
+
+/**
+ * The one-exit box (Director, 2026-10-31, C28 on 4pesMRqv and zAwG1175): a
+ * human loses, and the cat catches the human's mouse on a cell with one open
+ * side. A newcomer reads that as walls the human built round his own mouse,
+ * with the cat walking in at the only gap. Such a game is no candidate.
+ */
+export const oneExitLoss = (
+  replay: ReplayedGame,
+  winner: PlayerId,
+  seatKinds: SeatKind[],
+  boardHeight: number,
+): boolean => {
+  const loser = other(winner);
+  if (seatKinds[loser - 1] === "official bot") return false;
+  const n = replay.states.length - 1;
+  const grid = replay.states[n].grid;
+  return replay.tracks.some(
+    (t) =>
+      t.walks[n] === 0 &&
+      t.target.type === "mouse" &&
+      t.target.player === loser &&
+      grid.accessibleNeighbors(
+        cellFromStandardNotation(t.targetCells[n], boardHeight),
+      ).length === 1,
+  );
+};
+
+/**
+ * The strongest bot opponent first (opponentStrength; Wall Game PM, 2026-10-31).
+ * Then a game with a close call first, by its largest save; then the largest pick,
  * the second and the third; then the game id. Every game with a close call
  * ranks above every game without one, however large its jumps (Wall Game PM,
  * 2026-10-26): the close call (scared, the FAAAH wall, the laugh) is the story
@@ -838,6 +893,8 @@ export const rankCandidates = <T extends RankedCandidate>(
   candidates: T[],
 ): T[] =>
   [...candidates].sort((a, b) => {
+    const strength = opponentStrength(b) - opponentStrength(a);
+    if (strength !== 0) return strength;
     const beat = (b.beats[0]?.size ?? 0) - (a.beats[0]?.size ?? 0);
     if (beat !== 0) return beat;
     for (let i = 0; i < PICKS_PER_GAME; i++) {

@@ -54,6 +54,7 @@ import {
   gameEligibility,
   jumpsOf,
   nilGameEligibility,
+  oneExitLoss,
   pickJumps,
   PICKS_PER_GAME,
   rankCandidates,
@@ -292,7 +293,10 @@ const memberGameOf = (game: StoredGame): MemberGame => ({
         playerOrder: s.playerOrder,
         kind: v.ok ? v.kind : "member",
         rating: s.ratingAtStart,
-        ...(s.botId ? { botName: s.displayName } : {}),
+        // A custom bot's name can carry its owner's (review 120 N1).
+        ...(s.botId
+          ? { botName: s.botIsOfficial ? s.displayName : "custom bot" }
+          : {}),
       };
     }),
 });
@@ -376,6 +380,21 @@ const main = async () => {
           initialState,
           moves,
         });
+        if (
+          oneExitLoss(
+            replay,
+            verdict.result.winner,
+            verdict.seatKinds,
+            game.boardHeight,
+          )
+        ) {
+          excluded.push({
+            gameId: game.gameId,
+            reason:
+              "one-exit box: a human's mouse caught at its only open side",
+          });
+          continue;
+        }
         const { movers, distances } = replay;
         const names = {
           1: game.seats.find((s) => s.playerOrder === 1)?.displayName ?? "P1",
