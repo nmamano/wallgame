@@ -107,7 +107,7 @@ import {
   reviewView,
 } from "./review.mjs";
 import { appAsks, appMessenger } from "./office.mjs";
-import { adoptAsk, openAskRecords, syncReviewAsks } from "./review-asks.mjs";
+import { openAskRecords, syncReviewAsks } from "./review-asks.mjs";
 import { createItemPoster } from "./review-post.mjs";
 import { createScheduler, GROWTH_AGENT_ID } from "./scheduler.mjs";
 import {
@@ -2014,24 +2014,6 @@ export const createDaily = ({
      * for the Director after Nil answers. The app also syncs on its timer.
      * Returns what it did and each item's last ask.
      */
-    /**
-     * {item, ask}: adopt the Director's own ask for an item in review
-     * (review-asks.mjs adoptAsk), then sync, so his reply is applied if it
-     * is in already.
-     */
-    "POST /api/daily/asks/adopt": async (req, res) => {
-      const body = await readJson(req);
-      await askSync;
-      adoptAsk({
-        store,
-        records: askRecords,
-        itemId: itemOf(body.item).id,
-        askId: String(body.ask ?? ""),
-      });
-      const did = await syncAsks();
-      json(res, 200, { ...did, asks: askRecords.all() });
-    },
-
     "POST /api/daily/asks/sync": async (req, res) => {
       const did = await syncAsks();
       json(res, 200, { ...did, asks: askRecords.all() });

@@ -115,10 +115,6 @@
  *                                  (review-asks.mjs). Run it when Nil
  *                                  answers one; the app also syncs each
  *                                  minute
- *   asks --adopt ID --ask ASKID    the same for an ask the director opened
- *                                  by hand for item ID (in review): its
- *                                  reply is applied with the same checks,
- *                                  bound to the item's video and block now
  *   vet --item ID --video SHA --reviewer "<who>" --verdict pass|fail
  *       (--notes "<text>" | --notes-file F)
  *                                  the independent review of the item's
@@ -936,13 +932,7 @@ const commands = {
    * last ask.
    */
   async asks() {
-    const adopt = flag("adopt");
-    const did = adopt
-      ? await app("POST", "/api/daily/asks/adopt", {
-          item: adopt,
-          ask: flag("ask") ?? die("asks --adopt ITEM needs --ask <ask id>"),
-        })
-      : await app("POST", "/api/daily/asks/sync", {});
+    const did = await app("POST", "/api/daily/asks/sync", {});
     console.log(askLines(did).join("\n"));
   },
 

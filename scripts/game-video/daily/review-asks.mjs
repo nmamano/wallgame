@@ -121,8 +121,9 @@ export const parseAnswer = (answer) => {
  */
 export const askProblem = (ask, record) => {
   if (!ask || ask.id !== record.askId) return "the office returned another ask";
-  // An adopted ask is the Director's own (adoptAsk): the Director named it
-  // for this item; every other check is the same.
+  // An adopted ask is the Director's own: the one cut-over ask of
+  // v-2026-10-31-2 (214bf6df), adopted by a one-time route (73352ec5,
+  // removed); every other check is the same.
   if (record.status !== "adopted" && ask.app?.name !== APP_NAME) {
     return "the ask was not opened by this app";
   }
@@ -161,45 +162,6 @@ export const openAskRecords = (root) => {
         JSON.stringify({ ...all(), [itemId]: record }, null, 1),
       ),
   };
-};
-
-/**
- * Adopt an ask that the Director opened by hand for an item (Wall Game
- * Director, 2026-10-31: the cut-over ask of v-2026-10-31-2): the sync then
- * applies Nil's reply to it with the checks of the app's own asks, bound to
- * the item's video, block and round NOW. Refused when the item is not in
- * review or the app has an open ask for it (withdraw that one first in
- * the office, or wait for it).
- * @param {{ store: ReturnType<import("./store.mjs").openStore>,
- *   records: ReturnType<typeof openAskRecords>, itemId: string,
- *   askId: string, now?: () => Date }} deps
- */
-export const adoptAsk = ({
-  store,
-  records,
-  itemId,
-  askId,
-  now = () => new Date(),
-}) => {
-  if (!/^[\w-]{1,64}$/.test(askId)) throw new StepRefused("not an ask id");
-  const item = store.item(itemId);
-  if (!item || !store.inReview().some((it) => it.id === itemId)) {
-    throw new StepRefused(`${itemId} is not in review`);
-  }
-  const record = records.get(itemId);
-  if (record?.status === "open") {
-    throw new StepRefused(
-      `${itemId} has the app's open ask ${record.askId}; the app applies that one`,
-    );
-  }
-  const adopted = {
-    ...keyOf(item),
-    askId,
-    status: "adopted",
-    adoptedAt: now().toISOString(),
-  };
-  records.put(itemId, adopted);
-  return adopted;
 };
 
 /**

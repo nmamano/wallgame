@@ -32,7 +32,6 @@ import {
   ASK_OPTIONS,
   openAskRecords,
   parseAnswer,
-  adoptAsk,
   syncReviewAsks,
 } from "./review-asks.mjs";
 
@@ -1358,6 +1357,24 @@ const ID = "v-2026-10-28-1";
 const itemOf = (store: ReturnType<typeof openStore>) =>
   store.item(ID) as unknown as Item;
 
+/**
+ * The record of the one adopted ask (214bf6df, the cut-over of
+ * v-2026-10-31-2): a hand ask the sync reads until it closes. The route
+ * that adopted it is gone; the sync keeps reading such a record.
+ */
+const adopted = (
+  { records, video, block }: ReturnType<typeof withAsks>,
+  askId: string,
+) =>
+  records.put(ID, {
+    videoSha256: video,
+    copySha256: block,
+    round: 0,
+    askId,
+    status: "adopted",
+    adoptedAt: "2026-10-31T11:20:00.000Z",
+  });
+
 describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
   test("his words read as one action, or as none", () => {
     expect(parseAnswer("Approve")).toEqual({ action: "approve", notes: "" });
@@ -1579,9 +1596,10 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
   });
 
   test("an adopted hand ask: applied with the same checks once Nil replies", async () => {
-    const { store, office, records, sync, video, block } = withAsks();
+    const asks = withAsks();
+    const { store, office, records, sync, video, block } = asks;
     office.handAsk("214bf6df");
-    adoptAsk({ store, records, itemId: ID, askId: "214bf6df" });
+    adopted(asks, "214bf6df");
     // Still open: nothing happens, the app opens no ask of its own.
     const first = await sync();
     expect(first).toMatchObject({ opened: [], applied: [] });
@@ -1605,34 +1623,16 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
   });
 
   test("an adopted ask answered by another member changes nothing", async () => {
-    const { store, office, records, sync } = withAsks();
+    const asks = withAsks();
+    const { store, office, records, sync } = asks;
     office.handAsk("hand1", {
       outcome: "replied",
       by: "Isomuxer 3",
       answer: "Approve",
     });
-    adoptAsk({ store, records, itemId: ID, askId: "hand1" });
+    adopted(asks, "hand1");
     await sync();
     expect(itemOf(store).state).toBe("finished");
     expect(records.get(ID)).toMatchObject({ status: "ignored" });
-  });
-
-  test("adopt is refused for an item not in review, or while the app's own ask is open", async () => {
-    const { store, records, sync, video, block } = withAsks();
-    await sync();
-    expect(() => adoptAsk({ store, records, itemId: ID, askId: "x1" })).toThrow(
-      /the app's open ask/,
-    );
-    store.review(ID, {
-      action: "approve",
-      notes: "",
-      videoSha256: video,
-      copySha256: block,
-      by: "Nil",
-      memberId: REVIEWER_MEMBER_ID,
-    });
-    expect(() => adoptAsk({ store, records, itemId: ID, askId: "x1" })).toThrow(
-      /not in review/,
-    );
   });
 });
