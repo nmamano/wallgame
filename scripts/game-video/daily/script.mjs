@@ -25,17 +25,37 @@ export const seatColors = (candidate) =>
 export const ONE_MOVE_RULE_UNTIL = "2026-09-01";
 
 /**
- * The player order that a script's header names as the winner, by the
- * colour on its "Winner:" line (SCRIPT.md: "Winner: bro (blue), by
- * CAPTURE ..."): the line's first "red" or "blue". null when the script has
- * no such line or it names no colour.
+ * The player order that a script's header names as the winner, from its
+ * "Winner:" line (SCRIPT.md: "Winner: <who> (<colour>), by <how>"). The
+ * colour in the first brackets wins ("bro (blue, the human)"); with no
+ * colour there, the line must name one colour only: "Winner: the human
+ * beats red (blue)" reads blue, and "Winner: the human, after red's wall,
+ * blue" is refused (VR1, review 115 N2).
+ * @returns {{ player: 1 | 2 } | { problem: string }}
  */
 export const scriptWinner = (script, candidate) => {
-  const line = script.split("\n").find((l) => /^\s*Winner:/i.test(l));
-  const colour = line?.match(/\b(red|blue)\b/i)?.[1].toLowerCase();
-  if (!colour) return null;
   const colours = seatColors(candidate);
-  return [1, 2].find((p) => colours[p] === colour) ?? null;
+  const form = `write "Winner: <who> (<colour>), by <how>" (SCRIPT.md)`;
+  const line = script.split("\n").find((l) => /^\s*Winner:/i.test(l));
+  if (!line)
+    return { problem: `the script's header has no Winner line: ${form}` };
+  const bracket = line
+    .match(/\(([^)]*)\)?/)?.[1]
+    .match(/^\s*(red|blue)\b/i)?.[1];
+  const named = new Set(
+    [...line.matchAll(/\b(red|blue)\b/gi)].map((m) => m[1].toLowerCase()),
+  );
+  const colour =
+    bracket?.toLowerCase() ?? (named.size === 1 ? [...named][0] : null);
+  if (!colour) {
+    return {
+      problem:
+        named.size === 0
+          ? `the script's Winner line names no colour: ${form}`
+          : `the script's Winner line names both red and blue and no colour in brackets: ${form}`,
+    };
+  }
+  return { player: colours[1] === colour ? 1 : 2 };
 };
 
 /**
@@ -65,15 +85,11 @@ export const resultProblems = (candidate, script) => {
   }
   if (script === null) return [];
   const named = scriptWinner(script, candidate);
+  if ("problem" in named) return [named.problem];
   const colours = seatColors(candidate);
-  if (named === null) {
+  if (named.player !== r.winner) {
     return [
-      `the script's header names no winner colour: write "Winner: <who> (${colours[r.winner]}), by <how>" (SCRIPT.md)`,
-    ];
-  }
-  if (named !== r.winner) {
-    return [
-      `the script says ${colours[named]} (player ${named}) wins, but the stored result says ${colours[r.winner]} (player ${r.winner}) wins by ${r.reason}: the script's story is not the game's`,
+      `the script says ${colours[named.player]} (player ${named.player}) wins, but the stored result says ${colours[r.winner]} (player ${r.winner}) wins by ${r.reason}: the script's story is not the game's`,
     ];
   }
   return [];

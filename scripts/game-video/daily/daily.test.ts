@@ -4846,15 +4846,15 @@ describe("the stored result: a game with no winner makes no video (FkQKb63y, 202
       withResult({ winner: 1, reason: "capture" }),
       1,
     );
-    expect(scriptWinner(script("bro (blue)"), c)).toBe(1);
-    expect(scriptWinner(script("the bot (red)"), c)).toBe(2);
+    expect(scriptWinner(script("bro (blue)"), c)).toEqual({ player: 1 });
+    expect(scriptWinner(script("the bot (red)"), c)).toEqual({ player: 2 });
     expect(resultProblems(c, script("bro (blue)"))).toEqual([]);
     expect(resultProblems(c, script("the bot (red)"))).toEqual([
       "the script says red (player 2) wins, but the stored result says blue (player 1) wins by capture: the script's story is not the game's",
     ]);
-    expect(resultProblems(c, "SCRIPT test\nBEATS")[0]).toContain(
-      'the script\'s header names no winner colour: write "Winner: <who> (blue), by <how>"',
-    );
+    expect(resultProblems(c, "SCRIPT test\nBEATS")).toEqual([
+      'the script\'s header has no Winner line: write "Winner: <who> (<colour>), by <how>" (SCRIPT.md)',
+    ]);
     // No script yet: render refuses the item on its own.
     expect(resultProblems(c, null)).toEqual([]);
     expect(
@@ -4862,6 +4862,39 @@ describe("the stored result: a game with no winner makes no video (FkQKb63y, 202
     ).toEqual([
       "game TESTGAME1 has no winner (one-move-rule): a game with no winner makes no video",
     ]);
+  });
+
+  test("the Winner line's colour is the one in its first brackets; both colours with none there is refused", () => {
+    const c = candidateFromReport(
+      withResult({ winner: 1, reason: "capture" }),
+      1,
+    );
+    const winner = (line: string) =>
+      scriptWinner(`SCRIPT test\nWinner: ${line}\nBEATS`, c);
+    // VR1, review 115 N2: the first colour word here is red.
+    expect(winner("the human beats red (blue), by capture")).toEqual({
+      player: 1,
+    });
+    expect(winner("bro (blue, the human), by capture")).toEqual({ player: 1 });
+    expect(
+      winner("Blue, by capture (blue's cat b4 -> a3 onto red's mouse)"),
+    ).toEqual({ player: 1 });
+    expect(winner("Blue, by capture at ply 15")).toEqual({ player: 1 });
+    // A first bracket with no colour leaves the line's own colour words.
+    expect(winner("the bot, by capture (move 27), red's walls")).toEqual({
+      player: 2,
+    });
+    expect(winner("the human, after red's wall, blue")).toEqual({
+      problem:
+        'the script\'s Winner line names both red and blue and no colour in brackets: write "Winner: <who> (<colour>), by <how>" (SCRIPT.md)',
+    });
+    expect(winner("the human, by capture")).toEqual({
+      problem:
+        'the script\'s Winner line names no colour: write "Winner: <who> (<colour>), by <how>" (SCRIPT.md)',
+    });
+    expect(
+      resultProblems(c, "SCRIPT test\nWinner: bro after red, blue\nBEATS")[0],
+    ).toContain("names both red and blue");
   });
 
   test("an item from before stored results: only a game from the one-move-rule days stops", () => {
