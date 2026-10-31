@@ -194,7 +194,11 @@ export const createItemPoster = ({
    * posting, so an item that is no longer approved when it is taken is
    * passed over. An item that fails its checks goes to post-failed and the
    * next one is taken (Nil wants a post at least once per 24 h); `refused`
-   * lists those, {itemId, error}.
+   * lists those, {itemId, error}. An item that no live platform applies to
+   * at this slot (TikTok alone at another slot than 09:00 PT) is never taken:
+   * it stays approved for a later slot (VR1, review 107); `passed` lists
+   * those, {itemId, notApplicable}, and when no item is taken the kind is
+   * "none-applies".
    * @param {{ slotAt: string, firedBy?: string }} slot  firedBy: who fired
    *   a slot by hand
    */
@@ -202,12 +206,21 @@ export const createItemPoster = ({
     const platforms = livePlatforms();
     if (!platforms.length) return { kind: "no-live" };
     const refused = [];
+    const passed = [];
     for (const queued of store.approvedQueue()) {
       let video = null;
       try {
         video = readVideo(queued.render.video.path);
       } catch {
         /* contentProblem names it */
+      }
+      // A slot that would post the item nowhere: it stays approved.
+      const none = video
+        ? notApplicableTo(queued, video, platforms, { slotAt, firedBy })
+        : {};
+      if (platforms.every((p) => p in none)) {
+        passed.push({ itemId: queued.id, notApplicable: none });
+        continue;
       }
       let problem = null;
       let item;
@@ -260,6 +273,7 @@ export const createItemPoster = ({
         )),
       };
     }
+    if (passed.length) return { kind: "none-applies", passed, refused };
     return refused.length ? { kind: "refused", refused } : { kind: "empty" };
   };
 

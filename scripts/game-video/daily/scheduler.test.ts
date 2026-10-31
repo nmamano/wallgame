@@ -385,6 +385,34 @@ describe("scheduler", () => {
     );
   });
 
+  test("no live platform posts this slot: a skip, the gap does not hold, the items stay approved", async () => {
+    const w = world({ ready: 1 });
+    w.setOutcome(() => ({
+      kind: "none-applies",
+      passed: [
+        {
+          itemId: "v-2026-10-28-1",
+          notApplicable: {
+            tiktok: "not in this slot; TikTok posts at 09:00 PT only",
+          },
+        },
+      ],
+      refused: [],
+    }));
+    const s = w.make();
+    await s.tick();
+    w.setTime(OCT29_0900);
+    await s.tick();
+    expect(readState(w.statePath).lastPostAt).toBeNull();
+    expect(readState(w.statePath).lastSlot.outcome).toBe("none-applies");
+    expect(w.sent[0]).toContain(
+      "SKIPPED, no live platform posts this slot. The approved items stay approved for a later slot:",
+    );
+    expect(w.sent[0]).toContain(
+      "- v-2026-10-28-1: tiktok (not in this slot; TikTok posts at 09:00 PT only)",
+    );
+  });
+
   test("a stop before the slot took an item: interrupted, the gap restored, Growth told", async () => {
     const w = world({ ready: 1 });
     const prev = new Date(OCT29_0900 - 20 * HOUR).toISOString();

@@ -384,6 +384,31 @@ describe("post(itemId)", () => {
     }
   });
 
+  test("a slot at which no live platform applies never takes the item: it stays approved and posts at a later slot", async () => {
+    const w = world(["tiktok"]);
+    const r = await w.post({ slotAt: "2026-10-29T22:00:00.000Z" }); // 15:00 PDT
+    expect(r).toMatchObject({
+      kind: "none-applies",
+      passed: [
+        {
+          itemId: "v-2026-10-28-1",
+          notApplicable: {
+            tiktok: "not in this slot; TikTok posts at 09:00 PT only",
+          },
+        },
+      ],
+    });
+    expect(w.get().state).toBe("approved");
+    expect(w.get()).not.toHaveProperty("posting");
+    expect(w.logged).toEqual([]);
+    // The 09:00 slot takes it.
+    expect(await w.post(SLOT)).toMatchObject({
+      kind: "posted",
+      platforms: ["tiktok"],
+    });
+    expect(w.logged).toEqual(["tiktok"]);
+  });
+
   test("a video outside the Story limits posts no Story: not applicable, not a failure, never retried", async () => {
     const w = world(["instagram", "instagram-story"]);
     w.get().render.video.durationSeconds = 72;

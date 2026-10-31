@@ -104,7 +104,8 @@ const notApplicableLines = (notApplicable) =>
  *   itemId?: string, platforms?: string[], posts?: object, error?: string }>}
  *   deps.postItem posts the oldest approved item (review-post.mjs postNext):
  *   kind "posted" | "post-failed" | "refused" (the item failed its checks
- *   and went to post-failed) | "no-live" (nothing was touched) | "empty"
+ *   and went to post-failed) | "none-applies" (no live platform posts this
+ *   slot: the items stay approved) | "no-live" (nothing was touched) | "empty"
  * @param {() => Array<{ id: string, slotAt: string, posts: object,
  *   platforms: string[], notApplicable: Record<string, string> | null }>}
  *   deps.recover items left in "posting" by a stop, now post-failed
@@ -282,7 +283,12 @@ export const createScheduler = ({
     }
     // Only these prove that nothing went out; after an error a platform may
     // have posted, so the gap holds.
-    const nothingSent = ["no-live", "empty", "refused"].includes(result.kind);
+    const nothingSent = [
+      "no-live",
+      "empty",
+      "refused",
+      "none-applies",
+    ].includes(result.kind);
     update({
       ...(nothingSent && { lastPostAt: before.lastPostAt }),
       lastSlot: {
@@ -327,6 +333,17 @@ export const createScheduler = ({
               `Retry by hand after the cause is fixed: crew.mjs post --item ${id}.`,
             ]
           : []),
+      ]);
+    } else if (result.kind === "none-applies") {
+      queueMessage([
+        `${head}: SKIPPED, no live platform posts this slot. The approved items stay approved for a later slot:`,
+        ...result.passed.map(
+          (r) =>
+            `- ${r.itemId}: ${Object.entries(r.notApplicable)
+              .map(([p, why]) => `${p} (${why})`)
+              .join(", ")}`,
+        ),
+        ...refusedLines,
       ]);
     } else if (result.kind === "refused") {
       queueMessage([
