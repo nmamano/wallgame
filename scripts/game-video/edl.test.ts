@@ -789,6 +789,17 @@ describe("the path event", () => {
     expect(validateEdl(path({ frame: ["e7"] })).ok).toBe(false);
   });
 
+  test("may name its hunter's seat, for two cats on one cell; stored only when set", () => {
+    expect(accept(path({ hunter: "blue" })).events[0]).toMatchObject({
+      hunter: "blue",
+    });
+    expect("hunter" in accept(path({})).events[0]).toBe(false);
+    const green = validateEdl(path({ hunter: "green" }));
+    expect(green.ok ? [] : green.errors).toEqual([
+      'events[0]: hunter must be "red" or "blue"',
+    ]);
+  });
+
   test("needs a pawn on its cell after the move", () => {
     const game = {
       notations: ["Ce7", "Cf7", "^a4.^h4"],

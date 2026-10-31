@@ -3396,13 +3396,23 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
     ev.cell.charCodeAt(0) - "a".charCodeAt(0),
   ];
   const after = REPLAYED.states[ev.ply + 1];
-  const hunt = huntsFor(after.config.variant).find((h) => {
+  // Two cats may share a cell (cats do not catch cats): `hunter` says whose.
+  const colours = SEAT_COLORS(replay);
+  const hunts = huntsFor(after.config.variant).filter((h) => {
     const at = pawnCell(after.pawns, h.hunter.player, h.hunter.type);
-    return at && at[0] === row && at[1] === col;
+    return (
+      at &&
+      at[0] === row &&
+      at[1] === col &&
+      (!ev.hunter || colours[h.hunter.player] === ev.hunter)
+    );
   });
+  const hunt = hunts.length === 1 ? hunts[0] : null;
   if (!hunt) {
     console.error(
-      `the path event on ply ${ev.ply} names ${ev.cell}, and no hunter stands there after the move`,
+      hunts.length > 1
+        ? `the path event on ply ${ev.ply} names ${ev.cell}, where both hunters stand after the move: name one with "hunter": "red" or "blue"`
+        : `the path event on ply ${ev.ply} names ${ev.cell}, and no ${ev.hunter ? `${ev.hunter} ` : ""}hunter stands there after the move`,
     );
     await browser.close();
     process.exit(2);

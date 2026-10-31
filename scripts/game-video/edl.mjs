@@ -140,7 +140,8 @@
  *             at its end (the race counter's number), then fades (Nil,
  *             2026-10-28: newcomers must see what is happening). The
  *             renderer computes the walk from the position; the EDL only
- *             names the hunter. With "compare": true (a SAVE or an
+ *             names the hunter; `hunter` ("red" or "blue", optional) says
+ *             whose, where both cats stand on `cell`. With "compare": true (a SAVE or an
  *             ESCAPE) it first shows the walk BEFORE the move, then the
  *             walk after it, so the wall's effect shows (2, then 12).
  *             `holdSeconds` (default 0.8) holds the last walk.
@@ -440,7 +441,7 @@ const KIND_FIELDS = {
   race: [],
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
-  path: ["cell", "compare", "holdSeconds"],
+  path: ["cell", "compare", "holdSeconds", "hunter"],
   overlay: [
     "form",
     "asset",
@@ -1082,6 +1083,13 @@ export const validateEdl = (raw) => {
         }
       }
       if (ev.kind === "path") {
+        // Only when set, so a list without one stores the same bytes.
+        if (ev.hunter != null) {
+          out.hunter = ev.hunter;
+          if (!["red", "blue"].includes(ev.hunter)) {
+            fail(`${where}: hunter must be "red" or "blue"`);
+          }
+        }
         out.compare = ev.compare ?? false;
         out.holdSeconds = ev.holdSeconds ?? DEFAULT_PATH_HOLD_SECONDS;
         if (typeof out.compare !== "boolean") {
