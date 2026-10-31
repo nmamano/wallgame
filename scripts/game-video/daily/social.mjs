@@ -44,8 +44,24 @@ const effective = (p, mode) =>
 
 const lastBy = (rows, id) => rows.filter((r) => r.platform === id).at(-1);
 
-/** "2026-10-30T09:16:00.000Z" -> "2026-10-30 09:16 UTC". */
-const utcMinute = (iso) => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+const pt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Los_Angeles",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+/**
+ * "2026-10-31T16:00:00.000Z" -> "Oct 31, 9:00 AM PT": Nil lives on the US
+ * west coast (Wall Game PM, 2026-10-31). A value with no time of day (a
+ * date only, "2026-10-30") stays as it is.
+ */
+export const ptMinute = (iso) => {
+  const ms = /T\d\d:\d\d/.test(String(iso)) ? Date.parse(iso) : NaN;
+  return Number.isNaN(ms)
+    ? String(iso)
+    : `${pt.format(ms).replace(/\s/g, " ")} PT`;
+};
 
 /** @typedef {{ day: string, platform: string, followers: number, at: string }} FollowerRow */
 /** @typedef {{ k: string, v: string, href?: string | null, codes?: string[] }} SocialRow */
@@ -205,10 +221,10 @@ export const socialView = ({
       { k: "Profile link", v: p.profileLink ?? "" },
       {
         k: "Last post",
-        v: l ? utcMinute(l.utc) : "none yet",
+        v: l ? ptMinute(l.utc) : "none yet",
         href: l ? https(l.url) : null,
       },
-      { k: "Last dry run", v: d ? utcMinute(d.utc) : "none" },
+      { k: "Last dry run", v: d ? ptMinute(d.utc) : "none" },
       {
         k: "Owners",
         v: Object.entries(p.owners ?? {})
@@ -242,7 +258,7 @@ export const socialView = ({
   };
   const count = (s) => counted.filter((p) => statusOf(p) === s).length;
   return {
-    updated: data.updated,
+    updated: ptMinute(data.updated),
     updatedBy: data.updatedBy,
     stats: [
       {
@@ -412,6 +428,7 @@ export const postStatsView = ({
         itemId,
         name: videoName(caption) ?? itemId,
         postedAt: ps.map((p) => p.utc).sort()[0],
+        posted: ptMinute(ps.map((p) => p.utc).sort()[0]),
         rows,
         total: totals(rows),
       };
@@ -481,7 +498,7 @@ export const postStatsView = ({
       note:
         r?.error ??
         ps.map((p) => numbers[keyOf(p)]?.note).find(Boolean) ??
-        (r ? `read ${utcMinute(r.at)}` : "not read yet"),
+        (r ? `read ${ptMinute(r.at)}` : "not read yet"),
     };
   });
   const first = history[0]?.day;
@@ -501,10 +518,10 @@ export const postStatsView = ({
       videos: videos.filter((v) => nowMs - Date.parse(v.postedAt) < 7 * 864e5)
         .length,
     },
-    readAt: readAt && utcMinute(readAt),
+    readAt: readAt && ptMinute(readAt),
     platforms: platformRows,
     total: totals(platformRows),
     videos,
-    note: `${note} History: one row a day per post${first ? ` since ${first}` : ""}. "-": the platform gives no such number.`,
+    note: `${note} History: one row a day (UTC) per post${first ? ` since ${first}` : ""}. "-": the platform gives no such number.`,
   };
 };

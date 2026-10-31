@@ -187,7 +187,7 @@ export const STATS_PAGE = `<!doctype html>
       ...p.videos.map((v) => {
         const d = el("details", "video");
         const sum = el("summary");
-        const name = el("span", "vname"); name.append(el("b", "", v.name), el("span", "muted", v.postedAt.slice(0, 16).replace("T", " ") + " UTC"));
+        const name = el("span", "vname"); name.append(el("b", "", v.name), el("span", "muted", v.posted));
         const figures = el("span", "vnums");
         for (const [n, label] of [[v.total.views, "views"], [v.total.likes, "likes"], [v.total.comments, "comments"], [v.total.shares, "shares"]]) {
           const c = el("span"); c.append(el("b", "", fmt(n)), " " + label); figures.append(c);

@@ -14,6 +14,7 @@ import {
   createFollowerHistory,
   createPostStatsHistory,
   postStatsView,
+  ptMinute,
   socialView,
   videoName,
 } from "./social.mjs";
@@ -145,7 +146,7 @@ describe("socialView", () => {
     );
     expect(row(x, "Account").href).toBeNull();
     expect(row(bluesky, "Last post")).toMatchObject({
-      v: "2026-10-30 03:14 UTC",
+      v: "Oct 29, 8:14 PM PT",
       href: "https://bsky.app/post/1",
     });
     expect(bluesky.profile).toEqual([
@@ -271,10 +272,14 @@ describe("the per-post stats", () => {
     expect(v.videos.map((x) => x.itemId)).toEqual(["v-2", "v-1"]);
     // No caption in these rows: the name is the id.
     expect(v.videos.map((x) => x.name)).toEqual(["v-2", "v-1"]);
+    expect(v.videos.map((x) => x.posted)).toEqual([
+      "Oct 31, 3:00 AM PT",
+      "Oct 24, 3:00 AM PT",
+    ]);
     // The headline: the 7-day change of views and likes over all
     // platforms, and the videos posted in 7 days (v-1 is 7.3 days old).
     expect(v.headline).toEqual({ views: 80, likes: 6, videos: 1 });
-    expect(v.readAt).toBe("2026-10-31 10:00 UTC");
+    expect(v.readAt).toBe("Oct 31, 3:00 AM PT");
     // Posts from before item ids: one video per video file, named by game.
     const early = postStatsView({
       posts: ["x", "bluesky"].map((platform) => ({
@@ -344,7 +349,7 @@ describe("the per-post stats", () => {
     expect(x).toMatchObject({ platform: "X", posts: 2, views: 140, likes: 7 });
     expect(x.day).toBe("+50 views, +2 likes");
     expect(x.week).toBe("+80 views, +3 likes");
-    expect(x.note).toBe("read 2026-10-31 10:00 UTC");
+    expect(x.note).toBe("read Oct 31, 3:00 AM PT");
     // Bluesky has no history row and was posted today: all growth.
     expect(v.platforms[1]).toMatchObject({
       day: "+3 likes",
@@ -363,7 +368,7 @@ describe("the per-post stats", () => {
       shares: null,
     });
     expect(v.note).toBe(
-      'Read every 6 h. History: one row a day per post since 2026-10-24. "-": the platform gives no such number.',
+      'Read every 6 h. History: one row a day (UTC) per post since 2026-10-24. "-": the platform gives no such number.',
     );
   });
 });
@@ -424,5 +429,13 @@ describe("a post read without the insights permission", () => {
     expect(f2.total.views).toBeNull();
     expect(v.platforms[0]).toMatchObject({ views: 500, likes: 20, note });
     expect(v.headline.views).toBe(500);
+  });
+});
+
+describe("ptMinute", () => {
+  test("a time shows in PT, daylight saving time or not; a date stays", () => {
+    expect(ptMinute("2026-10-31T16:00:00.000Z")).toBe("Oct 31, 9:00 AM PT");
+    expect(ptMinute("2026-11-02T17:05:00Z")).toBe("Nov 2, 9:05 AM PT");
+    expect(ptMinute("2026-10-30")).toBe("2026-10-30");
   });
 });
