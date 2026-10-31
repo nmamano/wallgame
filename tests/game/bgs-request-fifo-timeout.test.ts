@@ -149,6 +149,9 @@ let startBgsSession: typeof import("../../server/routes/custom-bot-socket").star
 let requestEvaluation: typeof import("../../server/routes/custom-bot-socket").requestEvaluation;
 let applyBgsMove: typeof import("../../server/routes/custom-bot-socket").applyBgsMove;
 let endBgsSession: typeof import("../../server/routes/custom-bot-socket").endBgsSession;
+let startBgsJanitor: typeof import("../../server/routes/custom-bot-socket").startBgsJanitor;
+let janitorIntervalMs: number;
+let maxIdleMs: number;
 let timeoutMs: number;
 let getBgs: typeof import("../../server/games/bgs-store").getBgs;
 let clearBgs: typeof import("../../server/games/bgs-store").clearAll;
@@ -229,6 +232,9 @@ beforeAll(async () => {
   requestEvaluation = socketModule.requestEvaluation;
   applyBgsMove = socketModule.applyBgsMove;
   endBgsSession = socketModule.endBgsSession;
+  startBgsJanitor = socketModule.startBgsJanitor;
+  janitorIntervalMs = socketModule.BGS_JANITOR_INTERVAL_MS;
+  maxIdleMs = bgsStore.BGS_MAX_IDLE_MS;
   timeoutMs = socketModule.BGS_REQUEST_TIMEOUT_MS;
   getBgs = bgsStore.getBgs;
   clearBgs = bgsStore.clearAll;
@@ -497,6 +503,43 @@ const createBotGame = async (): Promise<string> => {
   createdGameIds.push(session.id);
   return session.id;
 };
+
+describe("stale-BGS janitor", () => {
+  it("on its timer, ends only sessions idle past the limit, engine included", async () => {
+    for (const id of ["janitor-stale", "janitor-edge", "janitor-fresh"]) {
+      await start(id);
+    }
+    timers.useFakeTimers();
+    const janitor = startBgsJanitor();
+    try {
+      // Fake timers move Date.now() too, so idle times are as of the sweep.
+      const sweepAt = Date.now() + janitorIntervalMs;
+      // Idle 1 ms past the limit at the sweep, and exactly at the limit.
+      getBgs("janitor-stale")!.updatedAt = sweepAt - maxIdleMs - 1;
+      getBgs("janitor-edge")!.updatedAt = sweepAt - maxIdleMs;
+
+      timers.advanceTimersByTime(janitorIntervalMs - 1);
+      await flushIo();
+      expect(getBgs("janitor-stale")).toBeDefined();
+      expect(engine.events).not.toContain("end_game_session:janitor-stale");
+
+      timers.advanceTimersByTime(1);
+      await until(
+        "stale BGS ended",
+        () => getBgs("janitor-stale") === undefined,
+      );
+      expect(engine.events).toContain("end_game_session:janitor-stale");
+      expect(engine.sessions.has("janitor-stale")).toBe(false);
+      for (const id of ["janitor-edge", "janitor-fresh"]) {
+        expect(getBgs(id)?.status).toBe("ready");
+        expect(engine.sessions.has(id)).toBe(true);
+        expect(engine.events).not.toContain(`end_game_session:${id}`);
+      }
+    } finally {
+      clearInterval(janitor);
+    }
+  });
+});
 
 describe("client-only rapid resync convergence", () => {
   const assertConverged = async (

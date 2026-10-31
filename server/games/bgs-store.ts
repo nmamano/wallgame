@@ -542,31 +542,30 @@ export const endAllBgsForBot = (botCompositeId: string): BotGameSession[] => {
 };
 
 /**
- * Clean up stale BGS (older than maxAgeMs).
- * Should be called periodically.
+ * How long a BGS may go with no update before the janitor ends it.
+ *
+ * No legitimate session gets near this. A live game updates its BGS on every
+ * move, and every live game ends long before a day passes with no move: an
+ * untimed game after 30 minutes (IDLE_TIMEOUT_MS in store.ts), a timed one on
+ * its clock (at most 1 hour plus banked increments, timeControlSchema). A
+ * replay BGS ends as soon as its history is sent. So a session this idle has
+ * leaked: an end path that never ran.
  */
-export const cleanupStaleBgs = (
-  maxAgeMs: number = 24 * 60 * 60 * 1000,
-): number => {
-  const now = Date.now();
-  // Collect bgsIds first to avoid modifying the map while iterating
-  const staleIds: string[] = [];
-  for (const session of Array.from(sessions.values())) {
-    if (now - session.updatedAt > maxAgeMs) {
-      staleIds.push(session.bgsId);
-    }
-  }
-  for (const bgsId of staleIds) {
-    endBgs(bgsId);
-  }
+export const BGS_MAX_IDLE_MS = 24 * 60 * 60 * 1000;
 
-  if (staleIds.length > 0) {
-    console.info("[bgs-store] cleanup completed", {
-      cleanedCount: staleIds.length,
-    });
-  }
-  return staleIds.length;
-};
+/**
+ * The sessions with no update for MORE than `maxIdleMs` before `now`.
+ * Ends nothing: the janitor in custom-bot-socket.ts ends them through
+ * endBgsSession, which also tells the engine, where a bare endBgs would
+ * forget a session the engine still holds.
+ */
+export const findStaleBgs = (
+  now: number,
+  maxIdleMs: number = BGS_MAX_IDLE_MS,
+): BotGameSession[] =>
+  Array.from(sessions.values()).filter(
+    (session) => now - session.updatedAt > maxIdleMs,
+  );
 
 // ============================================================================
 // Debug / Testing
