@@ -26,6 +26,8 @@ import {
   soundList,
   defaultSlots,
   MEME_DIR,
+  recentVideoSounds,
+  soundRepeatNotes,
 } from "./sounds.mjs";
 import {
   claimRiskLines,
@@ -221,6 +223,71 @@ describe("a sound on the last move (the capture)", () => {
     ]) {
       expect(lastMoveSoundNotes({ events: [ev] }, 41)).toEqual([]);
     }
+  });
+});
+
+describe("sound repeats across videos (Nil, CASES C33)", () => {
+  const made = (
+    id: string,
+    finishedAt: string,
+    sounds: string[],
+    state = "approved",
+  ) => ({
+    id,
+    state,
+    render: { finishedAt },
+    edl: {
+      doc: {
+        finishSound: "trombone-1",
+        events: sounds.map((sound, ply) => ({ ply, kind: "sound", sound })),
+      },
+    },
+  });
+  const items = [
+    made("v-1", "2026-10-31T10:00:00Z", ["boom-3", "laugh-2"]),
+    made("v-2", "2026-10-31T11:00:00Z", ["boom-3", "airhorn-1"], "posted"),
+    made("v-3", "2026-10-31T12:00:00Z", ["boom-3", "ooh-1"], "finished"),
+    made("v-4", "2026-10-31T13:00:00Z", ["scared-1"], "draft"),
+    made("v-5", "2026-10-31T14:00:00Z", ["airhorn-1"]),
+    made("v-6", "2026-10-31T15:00:00Z", ["scared-1"], "discarded"),
+  ];
+  const inReview = (it: { id: string }) => it.id === "v-3";
+  const list = (sounds: string[]) => ({
+    events: sounds.map((sound) => ({ sound })),
+  });
+
+  test("the last 3 made, newest first: in review, approved or posted, not the item itself", () => {
+    expect(recentVideoSounds(items, "v-5", inReview).map((r) => r.id)).toEqual([
+      "v-3",
+      "v-2",
+      "v-1",
+    ]);
+    expect(recentVideoSounds(items, "v-9", inReview).map((r) => r.id)).toEqual([
+      "v-5",
+      "v-3",
+      "v-2",
+    ]);
+  });
+
+  test("a sound in 2 of the last 3 warns; laugh-2 or scared-1 warns in any of the last 2; the slots never", () => {
+    const recent = recentVideoSounds(items, "v-9", inReview);
+    const notes = soundRepeatNotes(
+      list(["airhorn-1", "ooh-1", "trombone-1", "laugh-2"]),
+      recent,
+    );
+    expect(notes).toEqual([
+      "WARNING: airhorn-1 is also in 2 of the last 3 videos (v-5, v-2): Nil hears the repeat (C33); pick another sound",
+    ]);
+    // boom-3 in v-3 and v-2 (2 of the last 3).
+    expect(soundRepeatNotes(list(["boom-3"]), recent)[0]).toContain(
+      "boom-3 is also in 2 of the last 3 videos (v-3, v-2)",
+    );
+    // laugh-2 only in v-1: older than the last 2, so no warning above;
+    // with v-1 among the last 2, it warns.
+    const older = recentVideoSounds(items.slice(0, 2), "v-9", inReview);
+    expect(soundRepeatNotes(list(["laugh-2"]), older)).toEqual([
+      "WARNING: laugh-2 is an overused sound, and it is in 1 of the last 2 videos (v-1): Nil hears the repeat (C33); pick another sound",
+    ]);
   });
 });
 

@@ -140,6 +140,8 @@ import {
   soundList,
   soundFile,
   soundUses,
+  recentVideoSounds,
+  soundRepeatNotes,
   SOUNDS_PAGE,
 } from "./sounds.mjs";
 import {
@@ -1718,6 +1720,17 @@ export const createDaily = ({
     const review = currentScriptReview(item);
     return review?.verdict === "pass" ? scriptText(review).script : null;
   };
+  /** The list's sound repeats over the last videos made (sounds.mjs). */
+  const repeatNotes = (item, edl) =>
+    soundRepeatNotes(
+      edl,
+      recentVideoSounds(
+        store.items(),
+        item.id,
+        (it) => reviewState(it) === "in-review",
+      ),
+    );
+
   const listChecks = (item, rawEdl, claimRiskOk) => {
     const checked = validateEdl(rawEdl);
     if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
@@ -2064,6 +2077,7 @@ export const createDaily = ({
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
             ...risk.notes,
             ...lastMoveSoundNotes(edl, item.candidate.movesCount),
+            ...repeatNotes(item, edl),
             ...linted.lines,
           ],
         }),
@@ -2373,6 +2387,7 @@ export const createDaily = ({
         key: sha256(text),
         state: capture.cached ? "queued" : "done",
         errors,
+        warnings: repeatNotes(item, edl),
         skipped: capture.cached
           ? null
           : `the 4090 has no capture of game ${edl.gameId} yet; the first render checks the list before its shoot pass`,
@@ -2409,6 +2424,7 @@ export const createDaily = ({
         state: rec.state,
         progress: progress.get(id) ?? null,
         errors: rec.errors,
+        warnings: rec.warnings,
         skipped: rec.skipped,
         lint: rec.lint,
         timings: rec.timings,

@@ -287,3 +287,74 @@ export const SOUNDS_PAGE = `<!doctype html>
   const load = async () => render(await (await fetch("/api/daily/sounds")).json());
   load();
 </script></main></body></html>`;
+
+/**
+ * Sound repeats across videos (Nil, CASES C33: "you reuse the same laugh
+ * effect and the same 'oh no' a lot"; Wall Game Director, 2026-10-31). An
+ * event's sound that is also in REPEAT_LIMIT of the last REPEAT_WINDOW
+ * videos made, or an OVERUSED sound in any of the last OVERUSED_WINDOW, is
+ * a warning in the lint and the list's summary, not a refusal. The two
+ * slot sounds (VS, finish) are left out: the Director's rules pick them.
+ */
+export const REPEAT_WINDOW = 3;
+export const REPEAT_LIMIT = 2;
+export const OVERUSED_SOUNDS = ["laugh-2", "scared-1"];
+export const OVERUSED_WINDOW = 2;
+/** The states of a video that is made: approved and after. */
+const MADE_STATES = ["approved", "posting", "post-failed", "posted"];
+
+/** The meme sounds of a list's events, each once. */
+const eventSounds = (edl) => [
+  ...new Set(
+    edl.events
+      .filter((e) => e.sound !== undefined && e.sound !== "muted")
+      .map((e) => e.sound),
+  ),
+];
+
+/**
+ * The last REPEAT_WINDOW videos made (in review, approved or posted),
+ * newest render first, with their event sounds; not the item itself.
+ * @param {any[]} items store.items()
+ * @param {string} exceptId the item being directed
+ * @param {(item: any) => boolean} inReview
+ * @returns {{ id: string, sounds: string[] }[]}
+ */
+export const recentVideoSounds = (items, exceptId, inReview) =>
+  items
+    .filter(
+      (it) =>
+        it.id !== exceptId &&
+        it.edl &&
+        it.render?.finishedAt &&
+        (MADE_STATES.includes(it.state) || inReview(it)),
+    )
+    .sort((a, b) => (a.render.finishedAt < b.render.finishedAt ? 1 : -1))
+    .slice(0, REPEAT_WINDOW)
+    .map((it) => ({ id: it.id, sounds: eventSounds(it.edl.doc) }));
+
+/**
+ * One warning for each event sound of the list that the last videos
+ * repeat (recentVideoSounds, newest first).
+ * @param {{ events: { sound?: string }[] }} edl
+ * @param {{ id: string, sounds: string[] }[]} recent
+ */
+export const soundRepeatNotes = (edl, recent) =>
+  eventSounds(edl).flatMap((key) => {
+    const inLast = recent.filter((r) => r.sounds.includes(key));
+    const ids = (list) => list.map((r) => r.id).join(", ");
+    if (inLast.length >= REPEAT_LIMIT) {
+      return [
+        `WARNING: ${key} is also in ${inLast.length} of the last ${recent.length} videos (${ids(inLast)}): Nil hears the repeat (C33); pick another sound`,
+      ];
+    }
+    const recentOverused = recent
+      .slice(0, OVERUSED_WINDOW)
+      .filter((r) => r.sounds.includes(key));
+    if (OVERUSED_SOUNDS.includes(key) && recentOverused.length > 0) {
+      return [
+        `WARNING: ${key} is an overused sound, and it is in ${recentOverused.length} of the last ${OVERUSED_WINDOW} videos (${ids(recentOverused)}): Nil hears the repeat (C33); pick another sound`,
+      ];
+    }
+    return [];
+  });

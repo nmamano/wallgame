@@ -7,7 +7,7 @@
  * render, warns, or is a note); its notes are {kind, ply, at, message}.
  *
  * A lint record (GET /api/daily/lint): {state: queued|running|done|failed,
- * errors: [the app's checks], skipped: why the renderer did not lint (no
+ * errors: [the app's checks], warnings: [the app's warnings], skipped: why the renderer did not lint (no
  * capture yet) | null, lint: {faults, notes, counts} | null, timings,
  * error}. These helpers are the one reading of it, for the app and crew.
  */
@@ -62,6 +62,9 @@ export const lintReport = (rec) => {
       .map((f) => `  STOP ${lintLine(f)}`),
     ...lintRecapture(rec).map((l) => `  LIVE ${l}`),
     ...lintNotes(rec).map((l) => `  ${l}`),
+    // The app's own warnings (sounds.mjs soundRepeatNotes): direct puts
+    // them in the list's summary too.
+    ...(rec.warnings ?? []).map((w) => `  ${w}`),
     ...(counts
       ? [
           `  ${counts.seconds} s; events: ${tally(counts.events)}; overlays: ${tally(counts.overlays)}; sounds: ${tally(counts.sounds)}`,
