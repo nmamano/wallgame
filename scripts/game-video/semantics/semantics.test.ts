@@ -935,4 +935,28 @@ describe("checkSeen (the image check)", () => {
     expect(asked).toContain("Normal Bot plays red");
     expect(asked).not.toContain("ply 0:");
   });
+
+  test("the counters make a gain seen, never a mistake (C36 D)", () => {
+    // Ply 1: P2's walls turn the 8-8 tie into P2's lead (8 vs 12 for P1).
+    const run = (wc: [number, number]) => {
+      const game = gameOf([
+        { w1: [10, 8], w2: [10, 8], wc: [0.5, 0.5] },
+        { w1: [8, 12], w2: [8, 8], wc, walls: [">f4", "^g3"] },
+      ]);
+      const labels = labelGame(game);
+      return {
+        label: labels.plies[1].label,
+        seen: checkSeen(
+          { facts: game, labels, sentences: null, seen: null },
+          "/tmp/tiles",
+          () => ({
+            plies: [{ ply: 1, seen: false, reason: "no" }],
+            costUsd: 0,
+          }),
+        ).find((x) => x.ply === 1)?.seen,
+      };
+    };
+    expect(run([0.5, 0.52])).toEqual({ label: "detour", seen: true });
+    expect(run([0.7, 0.4])).toEqual({ label: "blunder", seen: false });
+  });
 });

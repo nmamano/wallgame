@@ -217,7 +217,8 @@ export const askVision = (
  * The seen mark of every labelled (not quiet) ply. A ply the model left
  * out is not seen, with that as its reason. A move whose counters flip the
  * lead, or turn a tie into the mover's lead, is seen whatever the model says
- * (Director, 2026-10-31, C36 D: the viewer reads the counters).
+ * (Director, 2026-10-31, C36 D: the viewer reads the counters), unless
+ * the label calls the move a mistake.
  */
 export const checkSeen = (
   s: GameSemantics,
@@ -237,7 +238,11 @@ export const checkSeen = (
       seen: false,
       reason: "the model gave no answer",
     };
-    if (!answer.seen && countersShow(s.labels.plies[ply])) {
+    // Not for a move the label calls a mistake: the counters show its
+    // gain, never the mistake (YGlYwnRu ply 2: a blunder that gains 4).
+    const l = s.labels.plies[ply];
+    const mistake = ["blunder", "turn", "self-trap"].includes(l.label);
+    if (!answer.seen && !mistake && countersShow(l)) {
       return {
         ply,
         seen: true,
