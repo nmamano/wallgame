@@ -112,17 +112,29 @@ const labels = (specs: PlySpec[], winner: PlayerId | null = null) =>
   labelGame(gameOf(specs, winner));
 
 describe("labelGame", () => {
-  test("a cat within 2 is a threat only when the engine agrees", () => {
-    const routine = labels([{ w1: [4, 2], w2: [8, 8], wc: [0.5, 0.5] }]);
-    expect(routine.plies[0].label).toBe("quiet");
+  test("a cat within 2 is a threat, whatever the engine says (ymU8fqsF ply 14)", () => {
+    const losing = labels([{ w1: [4, 2], w2: [8, 8], wc: [0.4, 0.3] }]);
+    expect(losing.plies[0].label).toBe("threat");
+    expect(losing.plies[0].strength).toBe(0.2);
     const real = labels([{ w1: [4, 2], w2: [8, 8], wc: [0.5, 0.8] }]);
     expect(real.plies[0].label).toBe("threat");
     expect(real.plies[0].focus).toMatchObject({ before: 4, after: 2 });
+    const far = labels([{ w1: [5, 3], w2: [8, 8], wc: [0.5, 0.8] }]);
+    expect(far.plies[0].label).toBe("quiet");
   });
 
-  test("no engine, no threat and no blunder", () => {
+  test("no engine: a threat from the board, no blunder", () => {
     const l = labels([{ w1: [4, 2], w2: [8, 8] }]);
-    expect(l.plies[0].label).toBe("quiet");
+    expect(l.plies[0].label).toBe("threat");
+  });
+
+  test("a save of a threat the engine calls losing is still a save", () => {
+    const l = labels([
+      { w1: [4, 2], w2: [8, 8], wc: [0.4, 0.3] },
+      { w1: [2, 10], w2: [8, 8], wc: [0.7, 0.68], walls: ["^a1"] },
+    ]);
+    expect(l.plies[1].label).toBe("save");
+    expect(l.links).toContainEqual({ kind: "threat-save", from: 0, to: 1 });
   });
 
   test("a save answers a threat, and is linked to it", () => {

@@ -45,8 +45,6 @@ export type Tag = Label | "missed-wall" | "missed-punish" | "kept-gain";
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
-/** The mover's win chance after a move that is a real threat. */
-export const THREAT_CHANCE = 0.65;
 /** A drop in the mover's win chance this large is a blunder. */
 export const BLUNDER_DROP = 0.2;
 /**
@@ -275,13 +273,16 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       }
     }
 
-    // A threat: the mover's cat comes within reach, and the engine agrees.
+    // A threat: the mover's cat comes within reach, so the defender must
+    // answer or lose. The board decides, not the engine (Director, 2026-10-31,
+    // on ymU8fqsF ply 14): a cat 2 steps from the mouse is the danger a
+    // viewer sees, even when the engine knows the defender has an answer.
+    // The engine only sets the strength.
     for (const h of mine.filter(isAnimal)) {
       if (h.after === 0 || h.after > THREAT_WALK || h.before <= THREAT_WALK)
         continue;
-      if (!e || e.after < THREAT_CHANCE) continue;
       threats.set(ply, h);
-      fit(ply, "threat", (e.after - 0.5) * 2, h);
+      fit(ply, "threat", e ? Math.max(0.2, (e.after - 0.5) * 2) : 0.5, h);
     }
 
     // The defender's answer to the threat just before.
