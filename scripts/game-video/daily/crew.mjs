@@ -267,7 +267,11 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CAPTION_STYLE_VERSION, candidateFromReport } from "./candidate.mjs";
+import {
+  CAPTION_STYLE_VERSION,
+  candidateFromReport,
+  resultLine,
+} from "./candidate.mjs";
 import { validateEdl } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
@@ -528,6 +532,7 @@ const itemLines = (k, progress = null) => {
     "",
     `ITEM ${k.id}: ${k.state}${k.reviewState ? ` (${k.reviewState})` : ""}, ${k.stage ?? ""}`,
     `game ${g.gameId}: ${g.seats.map((x) => x.name).join(" vs ")}, ${g.movesCount} plies`,
+    resultLine(g),
     ...g.facts,
     ...k.reviews.flatMap((r) => [
       `Nil ${r.action} at ${r.at}${r.notes ? ", notes verbatim:" : ""}`,

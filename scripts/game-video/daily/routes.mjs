@@ -64,7 +64,10 @@ import {
   stage,
   reviewState,
   currentVet,
+  currentScriptReview,
+  scriptText,
 } from "./store.mjs";
+import { resultProblems } from "./script.mjs";
 import {
   candidateFromReport,
   CAPTION_STYLE_VERSION,
@@ -1637,6 +1640,11 @@ export const createDaily = ({
    * direct and lint: {edl, risk, errors}. A list that is not a list at all
    * (validateEdl, another game) is refused at once.
    */
+  /** The text of the item's script review if it passed, or null. */
+  const passedScript = (item) => {
+    const review = currentScriptReview(item);
+    return review?.verdict === "pass" ? scriptText(review).script : null;
+  };
   const listChecks = (item, rawEdl, claimRiskOk) => {
     const checked = validateEdl(rawEdl);
     if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
@@ -1678,6 +1686,7 @@ export const createDaily = ({
       }),
       ...saveFrameProblems(edl, item.candidate.beats),
       ...storyProblems(edl, item.candidate),
+      ...resultProblems(item.candidate, passedScript(item)),
       ...risk.problems,
       // Without a named track the renderer picks one at random, so a
       // second render of the list (from the capture) could play another

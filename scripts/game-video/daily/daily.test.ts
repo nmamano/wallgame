@@ -58,7 +58,9 @@ import {
   playerNames,
   CAPTION_STYLE_VERSION,
   textProblems,
+  resultLine,
 } from "./candidate.mjs";
+import { resultProblems, scriptWinner } from "./script.mjs";
 import {
   copyLines,
   copyProblems,
@@ -4790,5 +4792,109 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     );
     expect(readPostLog(store.postLog.dryRun)).toEqual([]);
     expect(itemOf(store, id).state).toBe("post-failed");
+  });
+});
+
+describe("the stored result: a game with no winner makes no video (FkQKb63y, 2026-10-31)", () => {
+  /** REPORT with the stored result `result` on its game. */
+  const withResult = (result: object, startedAt?: string) => ({
+    ...REPORT,
+    ranked: [
+      {
+        ...REPORT.ranked[0],
+        result,
+        ...(startedAt !== undefined && { startedAt }),
+      },
+    ],
+  });
+  // Guest Tuatara (player 1) plays blue, Ruby the bot (player 2) red.
+  const script = (winner: string) =>
+    `SCRIPT test | game TESTGAME1\nWinner: ${winner}, by CAPTURE at ply 40\nBEATS`;
+
+  test("the candidate carries the result; a draw is refused; the facts follow the stored winner", () => {
+    const won = candidateFromReport(
+      withResult({ winner: 2, reason: "capture" }),
+      1,
+    );
+    expect(won.result).toEqual({ winner: 2, reason: "capture" });
+    expect(resultLine(won)).toBe(
+      "result (stored): Ruby (player 2) wins by capture",
+    );
+    expect(resultLine(candidateFromReport(REPORT, 1))).toContain("not stored");
+    expect(() =>
+      candidateFromReport(withResult({ reason: "one-move-rule" }), 1),
+    ).toThrow("TESTGAME1 has no winner (one-move-rule)");
+    // The race says the guest's walk ends at 0; the record says Ruby won.
+    const report = {
+      ...REPORT,
+      ranked: [
+        {
+          ...REPORT.ranked[0],
+          result: { winner: 2, reason: "capture" },
+          beats: [CLOSE_CALL],
+        },
+      ],
+    };
+    expect(candidateFromReport(report, 1).facts[0]).toMatch(
+      /Ruby still wins at move 41/,
+    );
+  });
+
+  test("the script's Winner line must name the stored winner's colour", () => {
+    const c = candidateFromReport(
+      withResult({ winner: 1, reason: "capture" }),
+      1,
+    );
+    expect(scriptWinner(script("bro (blue)"), c)).toBe(1);
+    expect(scriptWinner(script("the bot (red)"), c)).toBe(2);
+    expect(resultProblems(c, script("bro (blue)"))).toEqual([]);
+    expect(resultProblems(c, script("the bot (red)"))).toEqual([
+      "the script says red (player 2) wins, but the stored result says blue (player 1) wins by capture: the script's story is not the game's",
+    ]);
+    expect(resultProblems(c, "SCRIPT test\nBEATS")[0]).toContain(
+      'the script\'s header names no winner colour: write "Winner: <who> (blue), by <how>"',
+    );
+    // No script yet: render refuses the item on its own.
+    expect(resultProblems(c, null)).toEqual([]);
+    expect(
+      resultProblems({ ...c, result: { reason: "one-move-rule" } }, null),
+    ).toEqual([
+      "game TESTGAME1 has no winner (one-move-rule): a game with no winner makes no video",
+    ]);
+  });
+
+  test("an item from before stored results: only a game from the one-move-rule days stops", () => {
+    const recent = candidateFromReport(REPORT, 1);
+    expect(resultProblems(recent, script("bro (blue)"))).toEqual([]);
+    const old = { ...recent, startedAt: "2026-08-03T01:37:37.471Z" };
+    expect(resultProblems(old, script("bro (blue)"))[0]).toContain(
+      "under the one-move draw rule, and its item has no stored result",
+    );
+  });
+
+  test("lint and direct refuse a script whose winner is not the record's", async () => {
+    const dir = tempDir();
+    const stub = join(dir, "stub-render.cjs");
+    writeFileSync(stub, STUB_RENDER);
+    const base = await serve(dir, stub);
+    const picked = await call(base, "/api/daily/pick", {
+      report: withResult({ winner: 2, reason: "capture" }),
+    });
+    expect(picked.status).toBe(200);
+    const id = picked.body.id;
+    await call(base, "/api/daily/script-review", {
+      item: id,
+      ...SCRIPT_PASS,
+      script: script("bro (blue)"),
+    });
+    const refused = await call(base, "/api/daily/direct", {
+      item: id,
+      edl: { ...EDL, ending: (await dailyState(base)).suggestedEnding },
+      noLint: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain(
+      "the script says blue (player 1) wins, but the stored result says red (player 2) wins by capture",
+    );
   });
 });

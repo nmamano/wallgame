@@ -297,6 +297,33 @@ const checkEscape = (gameId, escape) => {
  * The report entry at `rank` (1-based), as the cycle's candidate.
  * Throws with a reason when the report or the entry cannot be used.
  */
+/**
+ * A report's stored result (pick-daily-candidates.ts, from game_players):
+ * a game with no winner is no candidate (Wall Game Director, 2026-10-31:
+ * a draw cannot be told to a viewer whose intro says "first catch wins").
+ */
+const checkResult = (gameId, result) => {
+  if (typeof result?.reason !== "string") {
+    throw new Error(`${gameId} has a result with no reason`);
+  }
+  if (result.winner !== 1 && result.winner !== 2) {
+    throw new Error(
+      `${gameId} has no winner (${result.reason}): a game with no winner makes no video`,
+    );
+  }
+};
+
+/**
+ * The game's stored result in one line, for crew.mjs status.
+ * @param {{ seats: { playerOrder: number, name: string }[], result?: { winner: number, reason: string } | null }} candidate
+ */
+export const resultLine = (candidate) => {
+  const r = candidate.result;
+  if (!r) return "result: not stored (picked from a report before 2026-10-31)";
+  const name = candidate.seats.find((s) => s.playerOrder === r.winner)?.name;
+  return `result (stored): ${name} (player ${r.winner}) wins by ${r.reason}`;
+};
+
 export const candidateFromReport = (report, rank = 1) => {
   if (report?.kind !== "daily-video-candidates") {
     throw new Error("that file is not a daily-video-candidates report");
@@ -338,6 +365,7 @@ export const candidateFromReport = (report, rank = 1) => {
       `${entry.gameId} has no move that beat an ordinary advance`,
     );
   }
+  if (entry.result !== undefined) checkResult(entry.gameId, entry.result);
   const base = {
     gameId: entry.gameId,
     variant: entry.variant,
@@ -407,9 +435,14 @@ export const candidateFromReport = (report, rank = 1) => {
     // what the video shows over the board, so storyProblems can hold the
     // captions to it.
     distances: entry.distances ?? null,
+    // The stored result, as the replay page reads it: { winner, reason }.
+    // A report from before 2026-10-31 has none (null).
+    result: entry.result ?? null,
     source: { reportCreatedAt: report.createdAt, rank },
   };
-  const winner = raceWinner(base.distances);
+  // The race's end is not the result: under the one-move rule a capture
+  // could end in a draw (FkQKb63y, 2026-10-31). The stored winner first.
+  const winner = base.result?.winner ?? raceWinner(base.distances);
   const name = (player) =>
     base.seats.find((s) => s.playerOrder === player)?.name;
   // A close call's sentence says "the mouse is safe"; the game can still be

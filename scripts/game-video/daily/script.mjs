@@ -18,6 +18,68 @@ export const seatColors = (candidate) =>
   );
 
 /**
+ * The day the one-move draw rule ended: before it, a capture by player 1
+ * with player 2 one move from a catch was a draw (b24de9e8; FkQKb63y,
+ * 2026-08-03, was one).
+ */
+export const ONE_MOVE_RULE_UNTIL = "2026-09-01";
+
+/**
+ * The player order that a script's header names as the winner, by the
+ * colour on its "Winner:" line (SCRIPT.md: "Winner: bro (blue), by
+ * CAPTURE ..."): the line's first "red" or "blue". null when the script has
+ * no such line or it names no colour.
+ */
+export const scriptWinner = (script, candidate) => {
+  const line = script.split("\n").find((l) => /^\s*Winner:/i.test(l));
+  const colour = line?.match(/\b(red|blue)\b/i)?.[1].toLowerCase();
+  if (!colour) return null;
+  const colours = seatColors(candidate);
+  return [1, 2].find((p) => colours[p] === colour) ?? null;
+};
+
+/**
+ * Why the item's game must not make a video, from its stored result
+ * (candidate.result) and the script that passed review (null: none yet;
+ * render refuses the item then). Two checks that do not lean on each
+ * other: the record has a winner, and the script names the same one
+ * (Wall Game PM, 2026-10-31, after FkQKb63y: a draw that the move
+ * sentences, the script and its review all called a capture win).
+ * @returns {string[]} the faults; empty when none
+ */
+export const resultProblems = (candidate, script) => {
+  const r = candidate.result;
+  if (!r) {
+    // A pick from before the report carried results. Since the rule
+    // changed, a capture always wins; before, it could be a draw.
+    return candidate.startedAt < ONE_MOVE_RULE_UNTIL
+      ? [
+          `game ${candidate.gameId} was played before ${ONE_MOVE_RULE_UNTIL}, under the one-move draw rule, and its item has no stored result: drop the item and pick the game from a report that carries the result`,
+        ]
+      : [];
+  }
+  if (r.winner !== 1 && r.winner !== 2) {
+    return [
+      `game ${candidate.gameId} has no winner (${r.reason}): a game with no winner makes no video`,
+    ];
+  }
+  if (script === null) return [];
+  const named = scriptWinner(script, candidate);
+  const colours = seatColors(candidate);
+  if (named === null) {
+    return [
+      `the script's header names no winner colour: write "Winner: <who> (${colours[r.winner]}), by <how>" (SCRIPT.md)`,
+    ];
+  }
+  if (named !== r.winner) {
+    return [
+      `the script says ${colours[named]} (player ${named}) wins, but the stored result says ${colours[r.winner]} (player ${r.winner}) wins by ${r.reason}: the script's story is not the game's`,
+    ];
+  }
+  return [];
+};
+
+/**
  * The game's facts with 0-based plies, as the edit list names them: each
  * close call, escape and wall jump, the cells after the ply, and the walls
  * that caused the jump (marked *).
