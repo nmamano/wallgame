@@ -24,9 +24,11 @@
 # instead of ~2.6s). It alerts on the change only: slow (2 checks in a row),
 # still slow after SLOW_REMIND_RUNS checks, normal again (only after a "slow").
 #
-# It also alarms when a bot engine process crashes, so that an agent
-# investigates it (task 8a81a189). Each crash is alerted once: a state file
-# beside STATE_FILE remembers the log position already read.
+# It also alarms on two events that need an agent to investigate (task
+# 8a81a189): an official bot forfeiting a game (a bot never resigns by design;
+# each one is the server forfeiting for it after an internal failure), and a
+# bot engine process crashing. Each event is alerted once: state files beside
+# STATE_FILE remember the games and the log position already reported.
 #
 # Install as a systemd user timer: see scripts/wallgame-bot-monitor.{service,timer}
 set -uo pipefail
@@ -58,6 +60,15 @@ BOT_RESTART_CMD="${WALLGAME_BOT_RESTART_CMD:-systemctl --user restart wallgame-b
 BOT_LOG="${WALLGAME_BOT_LOG:-logs/bot-client-transformer.log}"
 # The ssh command (without the host). Tests replace it with a local stand-in.
 read -r -a BOT_SSH <<< "${WALLGAME_MONITOR_SSH:-ssh -o BatchMode=yes -o ConnectTimeout=10}"
+
+# The read-only forfeit list: a forced-command login on the production host
+# that runs one fixed query and nothing else. Leave the target empty to turn
+# the forfeit alarm off. Its owner allows one call per run (every 5 minutes),
+# and no retry after a failure.
+FORFEITS_TARGET="${WALLGAME_FORFEITS_TARGET:-}"
+FORFEITS_KEY="${WALLGAME_FORFEITS_KEY:-}"
+FORFEITS_KNOWN_HOSTS="${WALLGAME_FORFEITS_KNOWN_HOSTS:-}"
+read -r -a FORFEITS_SSH <<< "${WALLGAME_FORFEITS_SSH:-ssh -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15}"
 
 STATE_FILE="${WALLGAME_MONITOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/wallgame-bot-monitor.state}"
 
@@ -225,6 +236,63 @@ else
   fi
 fi
 
+# --- Bot forfeits ---------------------------------------------------------------
+# The production database records why the server forfeited each bot game
+# (game_details.bot_resign_cause). The forced-command login returns the 50
+# newest of those games, puzzles included, '|'-separated under a fixed header.
+FORFEITS_FILE="$STATE_FILE.forfeits"
+FORFEITS_FAILING_FILE="$STATE_FILE.forfeits-failing"
+FORFEITS_HEADER="game_id|started_at|bot_id|bot_resign_cause|puzzle_id|moves_count"
+
+# The display name for a "clientId:botId", or the id itself for any other bot.
+bot_label() {
+  local bot_id="${1#*:}" entry
+  for entry in "${BOTS[@]}"; do
+    if [ "$(cut -d'|' -f1 <<< "$entry")" = "$bot_id" ]; then
+      cut -d'|' -f4 <<< "$entry"
+      return
+    fi
+  done
+  echo "$1"
+}
+
+check_forfeits() {
+  [ -n "$FORFEITS_TARGET" ] || return
+  local out first_run=0 id started bot cause puzzle moves where
+  if ! out="$(timeout 40 "${FORFEITS_SSH[@]}" -i "$FORFEITS_KEY" \
+        -o "UserKnownHostsFile=$FORFEITS_KNOWN_HOSTS" \
+        "$FORFEITS_TARGET" wallgame-bot-forfeits 2>/dev/null)" ||
+     [ "$(head -n 1 <<< "$out")" != "$FORFEITS_HEADER" ]; then
+    # One alert when the reads start failing, none while they go on.
+    if [ ! -f "$FORFEITS_FAILING_FILE" ]; then
+      touch "$FORFEITS_FAILING_FILE"
+      send_discord "⚠️ **Cannot read the bot forfeit list** (${now}), so a bot forfeit would go unnoticed. The monitor tries again on its next run."
+    fi
+    return
+  fi
+  if [ -f "$FORFEITS_FAILING_FILE" ]; then
+    rm -f "$FORFEITS_FAILING_FILE"
+    send_discord "✅ **The bot forfeit list can be read again** (${now})."
+  fi
+
+  # The first run only learns what is already there: an alert per forfeit of
+  # the list would be history, not news. The file is made here, whatever the
+  # list holds, so an empty first list still ends the first run.
+  [ -f "$FORFEITS_FILE" ] || first_run=1
+  touch "$FORFEITS_FILE"
+  while IFS='|' read -r id started bot cause puzzle moves; do
+    [ -n "$id" ] || continue
+    grep -qxF -e "$id" "$FORFEITS_FILE" && continue
+    echo "$id" >> "$FORFEITS_FILE"
+    [ "$first_run" = "1" ] && continue
+    where="$API_BASE/game/$id"
+    [ -n "$puzzle" ] && where="$where (puzzle $puzzle)"
+    send_discord "🏳️ **$(bot_label "$bot") forfeited a game**: $where. Cause: \`$cause\`, $moves moves, started $started (seen ${now}). Bots do not resign by design, so an internal failure ended this game: investigate it."
+  done <<< "$(tail -n +2 <<< "$out")"
+  # The list holds 50 games; 500 ids is far more than can return.
+  tail -n 500 "$FORFEITS_FILE" > "$FORFEITS_FILE.tmp" && mv "$FORFEITS_FILE.tmp" "$FORFEITS_FILE"
+}
+
 # --- Engine crashes ---------------------------------------------------------------
 # The bot client logs "Bot <id> will NOT be advertised: <reason>" when it
 # withdraws a bot - an engine that exited, at startup or in a game - followed by
@@ -266,9 +334,10 @@ check_crashes() {
 \`\`\`
 ${lines:0:900}
 \`\`\`
-Any game it was playing was forfeited. Investigate the crash."
+Any game it was playing appears in a forfeit alert. Investigate the crash."
 }
 
+check_forfeits
 check_crashes
 
 printf '%s\n%s\n%s\n%s\n' "$state" "$fails" "$last_restart" "$slow_runs" > "$STATE_FILE"
