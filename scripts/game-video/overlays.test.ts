@@ -233,7 +233,7 @@ describe("overlays", () => {
     for (const name of CARDS) expect(needsNilOk(OVERLAYS[name])).toBe(false);
   });
 
-  test("the reverse card and the reactors name their seat; nothing else", () => {
+  test("the reverse card, the reactors and the pointing pawns name their seat; nothing else", () => {
     expect(
       Object.entries(OVERLAYS)
         .filter(([, a]) => takesSeat(a))
@@ -244,6 +244,7 @@ describe("overlays", () => {
       "reactor-stare",
       "do-something",
       "uno-reverse",
+      "pointing-pawns",
     ]);
   });
 

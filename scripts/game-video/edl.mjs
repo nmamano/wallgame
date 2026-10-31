@@ -89,6 +89,18 @@
  *            names wallgame.io ("play free at wallgame.io"). It replaces
  *            "wallgame.io" in the badge under the board, for the whole
  *            video, and as the GG card's last line. Absent: "wallgame.io".
+ *   evalStrip
+ *            optional, OFF by default: the engine's view as a thin strip
+ *            between the race counter and the board, in the look of the
+ *            site's evaluation bar (info/evaluation_bar.md), each side's
+ *            share in its seat's colour, red on the left. The values are
+ *            the game's .engine.json evaluationsP1 as they are: one a
+ *            position, n + 1 for n moves, each -1 (player 2 wins) to 1
+ *            (player 1 wins). The strip moves to each move's value as it
+ *            lands, and on a ply with a blunder or brilliant mark the
+ *            swing flashes (Wall Game Director, 2026-10-31: the "!!" and
+ *            "??" show their swing). A preview for Nil comes before any
+ *            posted video uses it.
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
  *            A range with "fastForward": true (audit item 5) runs a quiet
@@ -165,6 +177,18 @@
  *             near-catch, blunder, punish) goes to RESULT.timeline only.
  *             At most one on a ply, and not with a freeze, a lead zoom or
  *             a path on that ply: it is the ply's explanation.
+ *             With `callback` ({ wall }, a wall an EARLIER move placed) it
+ *             is a setup's payoff (Wall Game Director, 2026-10-31): the
+ *             move lands first, then on the position after it the old
+ *             wall fades out and the hunter's walk without it draws;
+ *             then the wall comes back, glowing, and the real walk draws
+ *             over the ghost of the other (2Xnv0iiY ply 37 and the bot's
+ *             >b2 of ply 7: 1, then 5). `expect` is then { without, with },
+ *             the hunter's steps; `hunter` absent, the side whose steps
+ *             the wall changes most. No number names the wall.
+ *     plant   the setup of a later callback: on the ply that places
+ *             `wall`, as its move lands, that wall glows for 0.8 s, with
+ *             no word, so the viewer has seen it once.
  *     overlay a meme over the board while the game goes on under it
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
@@ -398,6 +422,8 @@ export const LINT_KINDS = {
   "reactor-pawn": "stops",
   "reactor-capture": "stops",
   "explain-flat": "warns",
+  "callback-joint": "stops",
+  "callback-cover": "stops",
   "video-long": "warns",
   "voice-no-speaker": "warns",
   "zoom-scale": "note",
@@ -428,6 +454,7 @@ export const EVENT_KINDS = [
   "path",
   "overlay",
   "explain",
+  "plant",
 ];
 
 /** The fields each kind takes, besides ply, kind and sound. */
@@ -454,7 +481,8 @@ const KIND_FIELDS = {
     "place",
     "audio",
   ],
-  explain: ["hunter", "label", "expect"],
+  explain: ["hunter", "label", "expect", "callback"],
+  plant: ["wall"],
 };
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
@@ -588,6 +616,7 @@ export const validateEdl = (raw) => {
       "finishSound",
       "opening",
       "cta",
+      "evalStrip",
       "pace",
       "events",
     ],
@@ -706,6 +735,19 @@ export const validateEdl = (raw) => {
   const introPaths = raw.introPaths ?? true;
   if (typeof introPaths !== "boolean") {
     fail("introPaths must be true or false");
+  }
+  const evalStrip = raw.evalStrip ?? null;
+  if (
+    evalStrip !== null &&
+    !(
+      Array.isArray(evalStrip) &&
+      evalStrip.length >= 2 &&
+      evalStrip.every((v) => isNumberIn(v, [-1, 1]))
+    )
+  ) {
+    fail(
+      "evalStrip must list the game's evaluationsP1, one a position, each -1..1",
+    );
   }
   const coldOpenPly = raw.coldOpenPly ?? null;
   if (coldOpenPly !== null && !isPly(coldOpenPly)) {
@@ -1058,12 +1100,35 @@ export const validateEdl = (raw) => {
         ) {
           fail(`${where}: label must be a kebab-case word (near-catch)`);
         }
+        // Only when set, so a list without one stores the same bytes.
+        const callback = ev.callback ?? null;
+        if (callback !== null) {
+          out.callback = callback;
+          if (
+            typeof callback !== "object" ||
+            Array.isArray(callback) ||
+            typeof callback.wall !== "string" ||
+            !WALL.test(callback.wall)
+          ) {
+            fail(`${where}: callback must be { wall } (^h4, >h4)`);
+          } else {
+            unknown(callback, ["wall"], `${where}.callback`);
+          }
+        }
+        const steps =
+          callback !== null ? ["without", "with"] : ["before", "after"];
+        const shape =
+          callback !== null ? "{ without, with }" : "{ walls, before, after }";
         if (out.expect !== null) {
           const x = out.expect;
           if (typeof x !== "object" || Array.isArray(x)) {
-            fail(`${where}: expect must be { walls, before, after }`);
+            fail(`${where}: expect must be ${shape}`);
           } else {
-            unknown(x, ["walls", "before", "after"], `${where}.expect`);
+            unknown(
+              x,
+              callback !== null ? steps : ["walls", ...steps],
+              `${where}.expect`,
+            );
             if (
               x.walls !== undefined &&
               !(
@@ -1073,7 +1138,7 @@ export const validateEdl = (raw) => {
             ) {
               fail(`${where}: expect.walls must list walls (^h4, >h4)`);
             }
-            for (const k of ["before", "after"]) {
+            for (const k of steps) {
               if (
                 x[k] !== undefined &&
                 !(Number.isInteger(x[k]) && x[k] >= 0)
@@ -1083,6 +1148,12 @@ export const validateEdl = (raw) => {
             }
           }
         }
+      }
+      if (
+        ev.kind === "plant" &&
+        !(typeof ev.wall === "string" && WALL.test(ev.wall))
+      ) {
+        fail(`${where}: wall must be a wall (^h4, >h4)`);
       }
       if (ev.kind === "path") {
         // Only when set, so a list without one stores the same bytes.
@@ -1235,6 +1306,7 @@ export const validateEdl = (raw) => {
       // Only when set, so a list without one stores the same bytes as before.
       ...(opening !== null ? { opening } : {}),
       ...(cta !== null ? { cta } : {}),
+      ...(evalStrip !== null ? { evalStrip } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
     },
@@ -1368,6 +1440,30 @@ export const checkEdlAgainstGame = (
       }
     }
   });
+  // A plant lights its own move's wall; a callback takes away an earlier
+  // move's wall.
+  const placedBy = (term) =>
+    notations.findIndex((n) => String(n).split(".").includes(term));
+  edl.events.forEach((ev, i) => {
+    if (ev.kind === "plant" && placedBy(ev.wall) !== ev.ply) {
+      errors.push(
+        `events[${i}]: a plant lights its own move's wall, and ply ${ev.ply} (${notations[ev.ply]}) does not place ${ev.wall}`,
+      );
+    }
+    if (ev.kind === "explain" && ev.callback) {
+      const at = placedBy(ev.callback.wall);
+      if (at < 0 || at >= ev.ply) {
+        errors.push(
+          `events[${i}]: a callback takes away a wall an earlier move placed, and no move before ply ${ev.ply} places ${ev.callback.wall}`,
+        );
+      }
+    }
+  });
+  if (edl.evalStrip && edl.evalStrip.length !== notations.length + 1) {
+    errors.push(
+      `evalStrip lists ${edl.evalStrip.length} values, and the game's ${notations.length} moves have ${notations.length + 1} positions`,
+    );
+  }
   const hasLead = edl.events.some((ev) => ev.kind === "zoom" && ev.lead);
   if (hasLead && !initialState) {
     errors.push(

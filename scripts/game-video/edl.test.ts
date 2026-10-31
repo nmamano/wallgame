@@ -196,6 +196,58 @@ describe("the moment kinds", () => {
     }
   });
 
+  test("a callback explain names an old wall and expects its two walks; a plant names a wall", () => {
+    const callback = {
+      ply: 37,
+      kind: "explain",
+      hunter: "red",
+      callback: { wall: ">b2" },
+      expect: { without: 1, with: 5 },
+    };
+    expect(accept({ ...base, events: [callback] }).events[0]).toMatchObject({
+      callback: { wall: ">b2" },
+      expect: { without: 1, with: 5 },
+    });
+    // A plain explain stores no callback field: the same bytes as before.
+    expect(
+      "callback" in
+        accept({ ...base, events: [{ ply: 3, kind: "explain" }] }).events[0],
+    ).toBe(false);
+    const errors = (ev: object) =>
+      (validateEdl({ ...base, events: [ev] }).errors ?? []) as string[];
+    expect(errors({ ...callback, callback: { wall: "b2" } })).toContain(
+      "events[0]: callback must be { wall } (^h4, >h4)",
+    );
+    expect(
+      errors({ ...callback, callback: { wall: ">b2", ply: 7 } }),
+    ).toContain('events[0].callback: unknown field "ply"');
+    expect(errors({ ...callback, expect: { before: 1 } })).toContain(
+      'events[0].expect: unknown field "before"',
+    );
+    expect(errors({ ...callback, expect: { with: 1.5 } })).toContain(
+      "events[0]: expect.with must be a whole number of steps",
+    );
+    expect(
+      accept({ ...base, events: [{ ply: 7, kind: "plant", wall: ">b2" }] })
+        .events[0],
+    ).toMatchObject({ wall: ">b2" });
+    expect(errors({ ply: 7, kind: "plant", wall: "b2" })).toContain(
+      "events[0]: wall must be a wall (^h4, >h4)",
+    );
+  });
+
+  test("an evaluation strip lists one value a position, each -1..1, and is off when absent", () => {
+    expect("evalStrip" in accept(base)).toBe(false);
+    expect(accept({ ...base, evalStrip: [-0.3, 0.1, 1] }).evalStrip).toEqual([
+      -0.3, 0.1, 1,
+    ]);
+    for (const bad of [[0.2], [0, 1.2], "0.1", [0, null]]) {
+      expect(validateEdl({ ...base, evalStrip: bad }).errors).toContain(
+        "evalStrip must list the game's evaluationsP1, one a position, each -1..1",
+      );
+    }
+  });
+
   test("freeze a move once", () => {
     expect(
       validateEdl({
@@ -266,6 +318,33 @@ describe("checkEdlAgainstGame", () => {
         initialState: START_8,
       }),
     ).toHaveLength(1);
+  });
+
+  test("a plant lights its own move's wall, a callback an earlier move's, and the strip has one value a position", () => {
+    const check = (raw: object) =>
+      checkEdlAgainstGame(accept({ ...base, ...raw }), {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      });
+    const plant = (ply: number) => ({
+      events: [{ ply, kind: "plant", wall: "^h4" }],
+    });
+    expect(check(plant(2))).toEqual([]);
+    expect(check(plant(1))).toEqual([
+      "events[0]: a plant lights its own move's wall, and ply 1 (Cf7) does not place ^h4",
+    ]);
+    const callback = (wall: string) => ({
+      events: [{ ply: 2, kind: "explain", callback: { wall } }],
+    });
+    expect(check(callback("^h4"))).toEqual([
+      "events[0]: a callback takes away a wall an earlier move placed, and no move before ply 2 places ^h4",
+    ]);
+    expect(check({ evalStrip: [0, 0.1, 0.2, 0.3] })).toEqual([]);
+    expect(check({ evalStrip: [0, 0.1, 0.2] })).toEqual([
+      "evalStrip lists 3 values, and the game's 3 moves have 4 positions",
+    ]);
   });
 
   test("rejects a ply past the last move and a cell off the board", () => {

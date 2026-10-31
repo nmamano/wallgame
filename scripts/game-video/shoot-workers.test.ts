@@ -146,6 +146,20 @@ describe("isRestShot: no part starts inside any effect", () => {
           trap: { t: 0.2, walls: [[0.1, 0.2, 0.3, 0.2]] },
         },
       },
+      // A callback's frame with its old wall taken away.
+      {
+        kind: "explain",
+        state: {
+          ...plain,
+          erase: { a: 1, wall: ">b2", box: [0, 0, 0.1, 0.1], caps: [] },
+        },
+      },
+    ],
+    plant: [
+      {
+        kind: "beat-plant",
+        state: { ...plain, trap: { t: 0.2, fade: 1, walls: [] } },
+      },
     ],
     react: [{ kind: "beat-react", state: { ...plain, ...cell } }],
     path: [

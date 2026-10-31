@@ -104,7 +104,9 @@ import {
   huntsFor,
   pawnCellsOn,
   preyTypeOf,
+  raceFromWalks,
   replayDistances,
+  walksOn,
 } from "./race-replay.ts";
 import {
   OVERLAYS,
@@ -135,6 +137,11 @@ import {
   readingSeconds,
 } from "./overlays.mjs";
 import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
+import { Grid } from "../../shared/domain/grid.ts";
+import {
+  wallFromStandardNotation,
+  wallToStandardNotation,
+} from "../../shared/domain/standard-notation.ts";
 import {
   helpRulesFor,
   helpVariantFor,
@@ -950,6 +957,31 @@ const EXPLAIN_LAND_SECONDS = 0.8;
 const EXPLAIN_AFTER_HOLD_SECONDS = 1.2;
 const EXPLAIN_GHOST = 0.35;
 const EXPLAIN_MIN_CHANGE = 2;
+/**
+ * A callback explain (edl.mjs "explain" with `callback`), in seconds: the
+ * move lands and the counter ticks (CALLBACK_LAND_SECONDS); the old wall
+ * fades out (CALLBACK_FADE_SECONDS); the walk without it draws and rests
+ * EXPLAIN_BEFORE_REST_SECONDS, or, a walk of 1 step drawing no line, the
+ * board without the wall holds CALLBACK_GONE_SECONDS; the wall fades back
+ * in, glowing; the real walk draws and holds as an explain's new walk.
+ */
+/**
+ * A plant (edl.mjs "plant"): its wall glows as the move lands, and the
+ * glow fades over the last PLANT_FADE_SECONDS.
+ */
+const PLANT_SECONDS = 0.8;
+const PLANT_FADE_SECONDS = 0.25;
+const CALLBACK_LAND_SECONDS = 0.6;
+/**
+ * The evaluation strip (edl.mjs evalStrip): it moves to a move's value over
+ * EVAL_MOVE_SECONDS from its landing (Wall Game Director, 2026-10-31: a
+ * swing reads as motion), and a marked move's swing flashes for
+ * EVAL_FLASH_SECONDS.
+ */
+const EVAL_MOVE_SECONDS = 0.3;
+const EVAL_FLASH_SECONDS = 0.6;
+const CALLBACK_FADE_SECONDS = 0.3;
+const CALLBACK_GONE_SECONDS = 1.0;
 /**
  * The opening walks (edl.mjs introPaths): each draws as a path event's
  * walk does and shows its steps INTRO_PATH_HOLD_SECONDS. The hold was 0.6
@@ -2426,6 +2458,43 @@ if (EDL) {
       A redraw shows the pawn that emotes it (overlays.mjs `pawn`): the
       board's own art for that seat's piece, as a reactor's prey.
     */
+    /*
+      The pointing pawns show the standoff's two pieces: the seat's hunter
+      and the piece it hunts, each in its board art.
+    */
+    if (OVERLAYS[ev.asset].redraw === "pointing") {
+      const player = playerOf(ev.seat);
+      const hunt = huntsFor(replay.state.config.variant).find(
+        (h) => h.hunter.player === player && h.target.player !== player,
+      );
+      if (!hunt) {
+        REACTOR_ART.set(ev, {
+          stop: `the ${ev.asset} on ply ${ev.ply}: ${ev.seat} hunts no piece of the other side in ${replay.state.config.variant}`,
+        });
+        continue;
+      }
+      const other = colourOf[hunt.target.player];
+      const pair = [
+        [player, ev.seat, hunt.hunter.type],
+        [hunt.target.player, other, hunt.target.type],
+      ];
+      const arts = [];
+      for (const [p, seat, type] of pair) {
+        const key = `${p}:${type}`;
+        if (!prey.has(key)) prey.set(key, await preyArt(p, seat, type));
+        arts.push(prey.get(key));
+      }
+      const bad = arts.find((a) => !("url" in a));
+      REACTOR_ART.set(
+        ev,
+        !bad
+          ? { url: arts[0].url, url2: arts[1].url, player2: hunt.target.player }
+          : "stop" in bad
+            ? { stop: `the ${ev.asset} on ply ${ev.ply}: ${bad.stop}` }
+            : bad,
+      );
+      continue;
+    }
     if (OVERLAYS[ev.asset].draw === "redraw") {
       const pawn = parsePawn(ev.pawn);
       const player = playerOf(pawn.seat);
@@ -3495,7 +3564,7 @@ const pathSeconds = (ev) =>
  * look good. probably unnecessary".)
  */
 const EXPLAINS = new Map();
-for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
+for (const ev of EVENTS.filter((e) => e.kind === "explain" && !e.callback)) {
   if (!RACE_DISTANCES) {
     console.error(
       `the explain on ply ${ev.ply} draws a hunter's walk, and ${replay.state.config.variant} gives a side nothing to hunt`,
@@ -3551,6 +3620,247 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain")) {
       .filter((t) => t.startsWith(">") || t.startsWith("^")),
   });
 }
+/**
+ * `grid` with the wall `term` taken out: the board a callback explain shows
+ * while that wall is gone.
+ */
+const gridWithout = (grid, term) => {
+  const gone = wallFromStandardNotation(term, GRID.rows);
+  const out = new Grid(grid.width, grid.height, grid.variant);
+  for (const w of grid.getWalls()) {
+    const same =
+      w.orientation === gone.orientation &&
+      w.cell[0] === gone.cell[0] &&
+      w.cell[1] === gone.cell[1];
+    if (!same) out.addWall(w);
+  }
+  return out;
+};
+/** The ply whose move placed the wall `term`, or -1. */
+const plyOfWall = (term) =>
+  history.findIndex((h) =>
+    String(h.notation ?? "")
+      .split(".")
+      .includes(term),
+  );
+/**
+ * The walls of the position after `boardIndex` plies that end at the point
+ * `end` (0..1 on the board image), in notation, but `term`.
+ */
+const wallsEndingAt = (boardIndex, end, term) =>
+  REPLAYED.states[boardIndex].grid
+    .getWalls()
+    .map((w) => wallToStandardNotation(w, GRID.rows))
+    .filter((t) => t !== term)
+    .filter((t) => {
+      const [x1, y1, x2, y2] = wallLine(t);
+      return [
+        [x1, y1],
+        [x2, y2],
+      ].some(
+        ([x, y]) =>
+          Math.abs(x - end[0]) < GRID.pitchX / 10 &&
+          Math.abs(y - end[1]) < GRID.pitchY / 10,
+      );
+    });
+/** How close a pawn's move arrow on the page may come to an erased wall. */
+const ARROW_CLEAR_CELLS = 0.3;
+/** The distance from point p to the box [x0, y0, x1, y1], in cells. */
+const boxDistance = (p, [x0, y0, x1, y1]) =>
+  Math.hypot(
+    Math.max(x0 - p.x, 0, p.x - x1) / GRID.pitchX,
+    Math.max(y0 - p.y, 0, p.y - y1) / GRID.pitchY,
+  );
+
+/**
+ * Each callback explain's facts (edl.mjs "explain" with `callback`): the
+ * hunter, its walk on the position after the move with the old wall W and
+ * without it, and how the frames take W away. The board is a screenshot,
+ * so W is covered with the same spot of the screenshot from before W's
+ * move (the same capture: the pixels match), its groove and its two
+ * joints. A joint where a later wall meets W draws that wall's round end
+ * as the page draws a lone wall's end (a half-disc, its tip on the joint's
+ * centre): a disc of the wall's own pixels, from one groove further along
+ * it. A joint the renderer cannot draw without W (two or more later
+ * walls) stops the render (callback-joint), and so does a page mark that
+ * the old spot would cover or bring back: a glow of a move's new walls at
+ * W's ends, or a move arrow near W (callback-cover).
+ */
+const CALLBACKS = new Map();
+for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
+  const term = ev.callback.wall;
+  const where = `the callback explain on ply ${ev.ply}`;
+  const wallPly = plyOfWall(term);
+  if (!RACE_DISTANCES || wallPly < 0 || wallPly >= ev.ply) {
+    console.error(
+      !RACE_DISTANCES
+        ? `${where} draws a hunter's walk, and ${replay.state.config.variant} gives a side nothing to hunt`
+        : `${where} names ${term}, and no move before ply ${ev.ply} placed it`,
+    );
+    await browser.close();
+    process.exit(2);
+  }
+  const board = ev.ply + 1;
+  const state = REPLAYED.states[board];
+  const without = gridWithout(state.grid, term);
+  const hunts = huntsFor(state.config.variant);
+  const withSteps = RACE_DISTANCES[board];
+  const withoutSteps = raceFromWalks(
+    hunts,
+    walksOn(hunts, without, state.pawns),
+  );
+  const colours = SEAT_COLORS(replay);
+  const red = colours[1] === "red" ? 1 : 2;
+  const blue = red === 1 ? 2 : 1;
+  const change = (id) => Math.abs(withSteps[id] - withoutSteps[id]);
+  const player = ev.hunter
+    ? ev.hunter === "red"
+      ? red
+      : blue
+    : change(blue) > change(red)
+      ? blue
+      : red;
+  const walkOn = (grid) =>
+    hunts
+      .filter((h) => h.hunter.player === player)
+      .map((h) => huntPath(grid, state.pawns, h))
+      .reduce((a, b) => (b.length < a.length ? b : a));
+  const walks = [walkOn(without), walkOn(state.grid)];
+  const steps = [withoutSteps[player], withSteps[player]];
+  walks.forEach((w, k) => {
+    if (w.length - 1 !== steps[k]) {
+      throw new Error(
+        `${where}: ${colours[player]}'s walk ${k === 0 ? "without" : "with"} ${term} has ${w.length - 1} steps, and the count says ${steps[k]}`,
+      );
+    }
+  });
+  const faults = { joint: [], cover: [] };
+  const [x1, y1, x2, y2] = wallLine(term);
+  const ends = [
+    [x1, y1],
+    [x2, y2],
+  ];
+  const px = { x: 1 / clip.width, y: 1 / clip.height };
+  const box = [
+    Math.min(x1, x2) - GROOVE.x / 2 - px.x,
+    Math.min(y1, y2) - GROOVE.y / 2 - px.y,
+    Math.max(x1, x2) + GROOVE.x / 2 + px.x,
+    Math.max(y1, y2) + GROOVE.y / 2 + px.y,
+  ];
+  const caps = [];
+  for (const end of ends) {
+    const now = wallsEndingAt(board, end, term);
+    const then = wallsEndingAt(wallPly, end, term);
+    if (now.join() === then.join()) continue;
+    if (now.length === 1 && then.length === 0) {
+      const [a1, b1, a2, b2] = wallLine(now[0]);
+      const far =
+        Math.abs(a1 - end[0]) + Math.abs(b1 - end[1]) <
+        Math.abs(a2 - end[0]) + Math.abs(b2 - end[1])
+          ? [a2, b2]
+          : [a1, b1];
+      const horizontal = b1 === b2;
+      const u = [Math.sign(far[0] - end[0]), Math.sign(far[1] - end[1])];
+      // The joint's half-length along the wall; its thickness across.
+      const along = horizontal ? GROOVE.x : GROOVE.y;
+      const r = horizontal
+        ? (GROOVE.y * clip.height) / 2
+        : (GROOVE.x * clip.width) / 2;
+      caps.push({
+        cx: end[0] + (u[0] * along) / 2,
+        cy: end[1] + (u[1] * along) / 2,
+        rx: r / clip.width,
+        ry: r / clip.height,
+        dx: -u[0] * along,
+        dy: -u[1] * along,
+      });
+    } else {
+      faults.joint.push(
+        `${where}: ${term} meets ${now.join(" ")} at one end, and ${now.filter((t) => !then.includes(t)).join(" ")} came after ply ${wallPly}; the video cannot draw that joint without ${term}: pick another wall or ply`,
+      );
+    }
+  }
+  // The page's marks of the two boards' last moves: the glow on a move's
+  // new walls, and the arrow of each pawn it moved.
+  for (const k of [wallPly - 1, ev.ply]) {
+    if (k < 0) continue;
+    const terms = String(history[k].notation ?? "").split(".");
+    const glowing = terms.filter(
+      (t) =>
+        (t.startsWith(">") || t.startsWith("^")) &&
+        t !== term &&
+        ends.some((end) => wallsEndingAt(k + 1, end, term).includes(t)),
+    );
+    if (glowing.length > 0) {
+      faults.cover.push(
+        `${where}: ply ${k} placed ${glowing.join(" ")} at an end of ${term}, and the page's glow on it differs between the two screenshots`,
+      );
+    }
+    const [from, to] = [REPLAYED.states[k].pawns, REPLAYED.states[k + 1].pawns];
+    for (const p of boardPawns(to)) {
+      const was = pawnCell(from, p.playerId, p.type);
+      if (!was || (was[0] === p.cell[0] && was[1] === p.cell[1])) continue;
+      const [a, b] = [cellAt(was), cellAt(p.cell)];
+      const near = Array.from({ length: 21 }, (_, i) => i / 20).some(
+        (f) =>
+          boxDistance(
+            { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+            box,
+          ) < ARROW_CLEAR_CELLS,
+      );
+      if (near) {
+        faults.cover.push(
+          `${where}: the page's arrow for ply ${k}'s ${p.type} passes ${term}, and the old spot would cover or bring it back`,
+        );
+      }
+    }
+  }
+  CALLBACKS.set(ev, {
+    board,
+    player,
+    term,
+    wallPly,
+    without,
+    walks: walks.map((w) => drawnWalk(state.pawns, w)),
+    steps,
+    erase: { wall: term, oldBoard: wallPly, box, caps },
+    faults,
+  });
+}
+// The strip's values (edl.mjs evalStrip) are one a position of this game.
+if (EDL?.evalStrip && EDL.evalStrip.length !== history.length + 1) {
+  console.error(
+    `evalStrip lists ${EDL.evalStrip.length} values, and the game's ${history.length} moves have ${history.length + 1} positions`,
+  );
+  await browser.close();
+  process.exit(2);
+}
+// A plant glows a wall its own move places.
+for (const ev of EVENTS.filter((e) => e.kind === "plant")) {
+  if (plyOfWall(ev.wall) !== ev.ply) {
+    console.error(
+      `the plant on ply ${ev.ply} names ${ev.wall}, which that ply's move (${history[ev.ply]?.notation}) does not place`,
+    );
+    await browser.close();
+    process.exit(2);
+  }
+}
+/**
+ * The walls a frame shows of the position after `boardIndex` plies: with a
+ * callback's wall fully taken away (`erase.a` 1), all but that one.
+ */
+const gridShown = (boardIndex, erase) => {
+  if (!(erase && erase.a >= 1)) return REPLAYED.states[boardIndex].grid;
+  const c = [...CALLBACKS.values()].find(
+    (x) => x.erase.wall === erase.wall && x.board === boardIndex,
+  );
+  if (!c) {
+    throw new Error(
+      `a frame takes ${erase.wall} away on board ${boardIndex}, which no callback shows`,
+    );
+  }
+  return c.without;
+};
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
   console.error(
     `the EDL flashes the race counter, but ${replay.state.config.variant} gives a side nothing to hunt, so the video shows no counter`,
@@ -3610,7 +3920,7 @@ for (const ev of [
     }
     OVERLAY_FACTS.set(ev, { ...OVERLAY_FACTS.get(ev), src: fileUrl(path) });
   }
-  if (draw === "card" && ev.seat !== undefined) {
+  if ((draw === "card" || draw === "redraw") && ev.seat !== undefined) {
     OVERLAY_FACTS.set(ev, {
       player: SEAT_COLORS(replay)[1] === ev.seat ? 1 : 2,
     });
@@ -4084,6 +4394,48 @@ const renderStyle = async (styleName) => {
   /** For RESULT.timeline: the second each move lands, and each event's span. */
   const moveTimes = [];
   const eventSpans = [];
+  /**
+   * The evaluation strip over the position after `boardIndex` plies, now:
+   * red's share of the engine's view (edl.mjs evalStrip, player 1's view
+   * from -1 to 1), red on the left; moving from the last position's share
+   * as the move lands; `swing` while a blunder or brilliant mark's swing
+   * flashes. Null in a video without one.
+   */
+  const evalStripAt = (boardIndex) => {
+    if (!wallz || !EDL?.evalStrip) return null;
+    const red = seatColors[1] === "red" ? 1 : 2;
+    const blue = red === 1 ? 2 : 1;
+    const share = (b) =>
+      red === 1 ? (1 + EDL.evalStrip[b]) / 2 : (1 - EDL.evalStrip[b]) / 2;
+    const to = share(boardIndex);
+    const landed =
+      boardIndex > 0
+        ? moveTimes.findLast((m) => m.ply === boardIndex - 1)
+        : undefined;
+    const strip = { left: side(red).hex, right: side(blue).hex };
+    if (!landed) return { ...strip, x: to, swing: null };
+    const from = share(boardIndex - 1);
+    const t = elapsed - landed.at;
+    // The swing flashes with the move's "??" or "!!", as it pops.
+    const mark = markAt.get(boardIndex - 1);
+    const m = mark === undefined ? null : elapsed - mark;
+    return {
+      ...strip,
+      x: from + (to - from) * easeInOut(Math.min(1, t / EVAL_MOVE_SECONDS)),
+      swing:
+        m !== null && m >= 0 && m < EVAL_FLASH_SECONDS
+          ? { from, to, t: m / EVAL_FLASH_SECONDS }
+          : null,
+    };
+  };
+  /** When each ply's blunder or brilliant mark started, for the strip. */
+  const markAt = new Map();
+  /** Whether the strip still moves on the board `boardIndex`. */
+  const evalMoving = (boardIndex) => {
+    if (!wallz || !EDL?.evalStrip || !(boardIndex > 0)) return false;
+    const landed = moveTimes.findLast((m) => m.ply === boardIndex - 1);
+    return !!landed && elapsed - landed.at < EVAL_MOVE_SECONDS;
+  };
   /** An EDL event has played from `start` to now. */
   const spanOf = (ev, start) =>
     eventSpans.push({
@@ -4481,6 +4833,14 @@ const renderStyle = async (styleName) => {
         ? {
             redraw: w.asset.redraw,
             art: REACTOR_ART.get(w.ev)?.url ?? null,
+          }
+        : {}),
+      // The pointing pawns: the other pawn's art and both seats' colours.
+      ...(w.asset.redraw === "pointing"
+        ? {
+            art2: REACTOR_ART.get(w.ev)?.url2 ?? null,
+            hex: side(facts.player).hex,
+            hex2: side(REACTOR_ART.get(w.ev).player2).hex,
           }
         : {}),
       // Who emotes it: a ring in the pawn's seat colour, and the tail its
@@ -5079,7 +5439,7 @@ const renderStyle = async (styleName) => {
         `a frame draws a walk on a board that is not a position (${state.board})`,
       );
     }
-    const grid = REPLAYED.states[index].grid;
+    const grid = gridShown(index, state.erase);
     const name = ([r, c]) => `${String.fromCharCode(97 + c)}${GRID.rows - r}`;
     lines.forEach((l, n) => {
       if (!(l.alpha > 0 && l.drawn > 0)) return;
@@ -5104,15 +5464,25 @@ const renderStyle = async (styleName) => {
       !!state.capture &&
       captureLandAt !== null &&
       elapsed - captureLandAt < CAPTURE_POUNCE_SECONDS;
-    if (!vs() && !overlaid() && !pouncing()) {
+    // The evaluation strip moving to a move's value, frame by frame.
+    const striping = () =>
+      !!state.evalStrip && evalMoving(boardIndexOf.get(state.board));
+    if (!vs() && !overlaid() && !pouncing() && !striping()) {
       await shoot(state, seconds, meta);
       return;
     }
     const frames = Math.round(seconds * FPS);
     let used = 0;
-    for (; used < frames && (vs() || overlaid() || pouncing()); used += 1) {
+    for (
+      ;
+      used < frames && (vs() || overlaid() || pouncing() || striping());
+      used += 1
+    ) {
       let s = state;
       let kind = meta.kind;
+      if (striping()) {
+        s = { ...s, evalStrip: evalStripAt(boardIndexOf.get(state.board)) };
+      }
       if (pouncing()) {
         s = {
           ...s,
@@ -5144,7 +5514,13 @@ const renderStyle = async (styleName) => {
       }
       await shoot(s, 1 / FPS, { ...meta, kind });
     }
-    if (used < frames) await shoot(state, (frames - used) / FPS, meta);
+    if (used < frames) {
+      // The strip at rest now, not as it was when the state was made.
+      const rest = state.evalStrip
+        ? { ...state, evalStrip: evalStripAt(boardIndexOf.get(state.board)) }
+        : state;
+      await shoot(rest, (frames - used) / FPS, meta);
+    }
   };
 
   /**
@@ -5360,6 +5736,7 @@ const renderStyle = async (styleName) => {
   const playState = (boardIndex, extra = {}) => ({
     segment: "play",
     look: style.look,
+    evalStrip: evalStripAt(boardIndex),
     caption: wallz ? captionAt(boardIndex) : "",
     board: fileUrl(boardFrames[boardIndex]),
     top: side(seats.top),
@@ -5398,7 +5775,7 @@ const renderStyle = async (styleName) => {
       path: {
         ...extra.path,
         lines: extra.path.lines.map((l) =>
-          onBoard(l, REPLAYED.states[boardIndex].grid),
+          onBoard(l, gridShown(boardIndex, extra.erase)),
         ),
         pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y, w, h }) => ({
           x,
@@ -6057,6 +6434,23 @@ const renderStyle = async (styleName) => {
         },
       };
     }
+    if (ev.kind === "plant") {
+      return {
+        trap: {
+          t,
+          fade:
+            1 -
+            Math.max(
+              0,
+              Math.min(
+                1,
+                (t - (PLANT_SECONDS - PLANT_FADE_SECONDS)) / PLANT_FADE_SECONDS,
+              ),
+            ),
+          ...litWalls([ev.wall], ply),
+        },
+      };
+    }
     if (ev.kind === "trap") {
       return {
         trap: { t, ...litWalls(ev.walls, ply) },
@@ -6284,6 +6678,173 @@ const renderStyle = async (styleName) => {
   };
 
   /**
+   * A callback explain (edl.mjs "explain" with `callback`) on the move of
+   * `plyIndex`: the move lands and the counter ticks; then, on the position
+   * after it, the old wall fades out and the hunter's walk without it
+   * draws (no line for a walk of 1 step: Nil, 2026-10-30, C17); the wall
+   * fades back in with the trap's glow, and the real walk draws over the
+   * ghost of the other one, cut where the wall stops it (onBoard). Faults:
+   * the script's `expect` (explain-mismatch), a change too small to show
+   * (explain-flat), and the joints and page marks the old spot cannot
+   * stand in for (callback-joint, callback-cover).
+   */
+  const playCallback = async (ply, plyIndex, ev) => {
+    const f = CALLBACKS.get(ev);
+    const start = elapsed;
+    lintVoice(ev, plyIndex);
+    for (const m of f.faults.joint) fault("callback-joint", plyIndex, m);
+    for (const m of f.faults.cover) fault("callback-cover", plyIndex, m);
+    const [was, now] = f.steps;
+    const said = [];
+    if (ev.expect?.without !== undefined && ev.expect.without !== was) {
+      said.push(
+        `${ev.expect.without} steps without ${f.term}, the game has ${was}`,
+      );
+    }
+    if (ev.expect?.with !== undefined && ev.expect.with !== now) {
+      said.push(`${ev.expect.with} steps with it, the game has ${now}`);
+    }
+    if (said.length > 0) {
+      fault(
+        "explain-mismatch",
+        plyIndex,
+        `the callback explain on ply ${plyIndex} expects ${seatColors[f.player]}: ${said.join("; ")}`,
+      );
+    }
+    if (Math.abs(now - was) < EXPLAIN_MIN_CHANGE) {
+      fault(
+        "explain-flat",
+        plyIndex,
+        `the callback explain on ply ${plyIndex} shows ${seatColors[f.player]}'s steps ${was} without ${f.term} and ${now} with it; it has little to show under a change of ${EXPLAIN_MIN_CHANGE}`,
+      );
+    }
+    const hex = side(f.player).hex;
+    const span01 = (x) => Math.max(0, Math.min(1, x));
+    const line = (walk, drawn, alpha) => ({
+      hex,
+      cells: walk.cells,
+      points: walk.points,
+      holes: walk.holes,
+      steps: walk.points.length - 1,
+      drawn,
+      alpha,
+    });
+    const erase = (a) => ({
+      a,
+      wall: f.term,
+      old: fileUrl(boardFrames[f.erase.oldBoard]),
+      cur: fileUrl(boardFrames[ply]),
+      box: f.erase.box,
+      caps: f.erase.caps,
+    });
+    const frames = (seconds) => Math.round(seconds * FPS);
+    const meta = { kind: "explain", ply: plyIndex };
+    // 1. The move lands, as any move, and the counter ticks.
+    land(plyIndex);
+    for (let i = 0; i < frames(CALLBACK_LAND_SECONDS); i += 1) {
+      await emit(
+        playState(ply, { race: raceHud(ply, i / FPS) }),
+        1 / FPS,
+        meta,
+      );
+    }
+    /*
+      The wall's own click as it goes, low and soft, and as it comes back:
+      the board is still while it changes, and a walk of 1 step ticks
+      nothing (a silence of 1.8 s on 2Xnv0iiY ply 37, 2026-10-31).
+    */
+    const wallClick = (rate, step) => ({
+      name: "wall",
+      file: join(AUDIO_DIR, "wall.wav"),
+      rate,
+      gain: SITE_VOLUMES.wall * MOVE_GAIN * step,
+    });
+    cue(wallClick(0.75, SETTLE_STEP), "tick");
+    // 2. The old wall fades out.
+    for (let i = 0; i < frames(CALLBACK_FADE_SECONDS); i += 1) {
+      await emit(
+        playState(ply, {
+          erase: erase(easeInOut((i + 1) / frames(CALLBACK_FADE_SECONDS))),
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 3. The walk without it, on the board without it.
+    const [walkNo, walkYes] = f.walks;
+    const drawn = was > 1;
+    const drawNo = drawSeconds(walkNo.points);
+    if (drawn) cueWalkTicks(walkNo.points, elapsed, { fromStart: true });
+    const goneFrames = frames(
+      drawn ? drawNo + EXPLAIN_BEFORE_REST_SECONDS : CALLBACK_GONE_SECONDS,
+    );
+    for (let i = 0; i < goneFrames; i += 1) {
+      if (i === goneFrames - 1) {
+        stillNext = { ply: plyIndex, kind: "callback-without", sound: null };
+      }
+      await emit(
+        playState(ply, {
+          erase: erase(1),
+          path: {
+            cell: GRID.pitchX,
+            lines: drawn ? [line(walkNo, span01(i / FPS / drawNo), 1)] : [],
+          },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 4. The wall comes back, glowing; the walk without it stays as a ghost.
+    const lit = litWalls([f.term], ply);
+    const back = elapsed;
+    cue(wallClick(1, 1), "tick");
+    const ghost = (alpha) =>
+      drawn ? [line(walkNo, 1, EXPLAIN_GHOST * alpha)] : [];
+    for (let i = 0; i < frames(CALLBACK_FADE_SECONDS); i += 1) {
+      await emit(
+        playState(ply, {
+          erase: erase(1 - easeInOut((i + 1) / frames(CALLBACK_FADE_SECONDS))),
+          trap: { t: elapsed - back, ...lit },
+          path: { cell: GRID.pitchX, lines: ghost(1) },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 5. The real walk draws over the ghost, and holds.
+    const drawYes = drawSeconds(walkYes.points);
+    cueWalkTicks(walkYes.points, elapsed, { fromStart: true });
+    if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawYes);
+    const afterSeconds = drawYes + EXPLAIN_AFTER_HOLD_SECONDS;
+    const afterFrames = frames(afterSeconds);
+    for (let i = 0; i < afterFrames; i += 1) {
+      const t = i / FPS;
+      if (i === frames(drawYes + 0.2)) {
+        stillNext = {
+          ply: plyIndex,
+          kind: "callback-with",
+          sound: ev.sound ?? null,
+        };
+      }
+      const fade =
+        1 -
+        span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
+      await emit(
+        playState(ply, {
+          trap: { t: elapsed - back, ...lit },
+          path: {
+            cell: GRID.pitchX,
+            lines: [...ghost(fade), line(walkYes, span01(t / drawYes), fade)],
+          },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    spanOf(ev, start);
+  };
+
+  /**
    * A lead zoom (edl.mjs "lead": true), around the move of `plyIndex`: the
    * camera pushes in on `frame` over the position before the move, in
    * colour; the move lands inside the zoom with its click and the zoom's
@@ -6383,6 +6944,9 @@ const renderStyle = async (styleName) => {
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
+      if (ev.kind === "blunder" || ev.kind === "brilliant") {
+        markAt.set(plyIndex, start);
+      }
       if (ev.kind === "race" && RACE_DISTANCES) {
         const before = RACE_DISTANCES[plyIndex];
         const after = RACE_DISTANCES[plyIndex + 1];
@@ -6449,6 +7013,7 @@ const renderStyle = async (styleName) => {
         ...MARK_SECONDS,
         stamp: STAMP_LAND_AT + stampSeconds(ev.text),
         trap: Math.max(TRAP_SECONDS, TRAP_STAMP_AT + stampSeconds(ev.text)),
+        plant: PLANT_SECONDS,
         race: RACE_FLASH_SECONDS,
         path: ev.kind === "path" ? pathSeconds(ev) : 0,
       }[ev.kind];
@@ -6666,6 +7231,8 @@ const renderStyle = async (styleName) => {
       leftZoom = await playLeadZoom(ply, plyIndex, lead, {
         pullOut: !leadIntoEnding,
       });
+    } else if (explain?.callback) {
+      await playCallback(ply, plyIndex, explain);
     } else if (explain) {
       await playExplain(ply, plyIndex, explain);
     } else {

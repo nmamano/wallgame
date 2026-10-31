@@ -387,6 +387,14 @@
         inset: 0;
         background: #ef4444;
       }
+      #eraseFx,
+      #eraseFx img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+      }
       #trapSvg,
       #pathSvg {
         position: absolute;
@@ -430,6 +438,45 @@
       }
       #hud > * {
         grid-area: 1 / 1;
+      }
+      /*
+        The evaluation strip (edl.mjs evalStrip): the site's evaluation bar
+        (info/evaluation_bar.md), thin and across the board's width, in the
+        middle of the gap between the head row and the board, so it takes
+        no room from the board. The left part is red's share, the rest is
+        blue's; a thin line marks the even split.
+      */
+      #root.wallz #hud.on {
+        position: relative;
+      }
+      #evalStrip {
+        position: absolute;
+        left: 50%;
+        top: calc(100% + (var(--head-gap) - 14px) / 2);
+        width: var(--board);
+        height: 14px;
+        transform: translateX(-50%);
+        border-radius: 7px;
+        overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+      }
+      #evalLeft,
+      #evalSwing,
+      #evalMid {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+      }
+      #evalLeft {
+        left: 0;
+      }
+      #evalSwing {
+        background: #fff;
+      }
+      #evalMid {
+        left: calc(50% - 1px);
+        width: 2px;
+        background: rgba(255, 255, 255, 0.55);
       }
       #race {
         display: flex;
@@ -1288,6 +1335,11 @@
             </div>
           </div>
           <div id="goal"></div>
+          <div id="evalStrip" class="hidden">
+            <div id="evalLeft"></div>
+            <div id="evalSwing"></div>
+            <div id="evalMid"></div>
+          </div>
         </div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
@@ -1298,6 +1350,11 @@
           <div id="boardCam">
             <img id="boardImg" />
             <img id="boardPrev" class="hidden" />
+            <div id="eraseFx" class="hidden">
+              <img id="eraseOld" />
+              <img id="eraseCap0" />
+              <img id="eraseCap1" />
+            </div>
             <div id="captureFx" class="hidden">
               <div id="capUnder"></div>
               <img id="capMouse" />
@@ -2422,6 +2479,85 @@
             '" stroke-width="2.5"/></svg>'
           );
         }
+        if (o.redraw === "pointing") {
+          /*
+            The mirror pose: the seat's hunter on the left, the piece it
+            hunts on the right, mirrored, so they face each other; each
+            points an arm at the other, in its seat's colour. The arms jab
+            in turn, a beat each, as the pointing sound's two voices do.
+          */
+          const jab = (a) => Math.sin(Math.PI * span(t, a, a + 0.3));
+          const arm = (x0, dir, hex, k) => {
+            const x1 = x0 + dir * (20 + 6 * k);
+            const fx = x1 + dir * 4;
+            return (
+              '<path d="M' +
+              x0 +
+              " 40 Q" +
+              (x0 + dir * 8) +
+              " 31 " +
+              x1 +
+              ' 31" fill="none" stroke="' +
+              ink +
+              '" stroke-width="6.4" stroke-linecap="round"/>' +
+              '<path d="M' +
+              x0 +
+              " 40 Q" +
+              (x0 + dir * 8) +
+              " 31 " +
+              x1 +
+              ' 31" fill="none" stroke="' +
+              hex +
+              '" stroke-width="4" stroke-linecap="round"/>' +
+              '<line x1="' +
+              x1 +
+              '" y1="31" x2="' +
+              (fx + dir * 7) +
+              '" y2="31" stroke="' +
+              ink +
+              '" stroke-width="4.2" stroke-linecap="round"/>' +
+              '<line x1="' +
+              x1 +
+              '" y1="31" x2="' +
+              (fx + dir * 7) +
+              '" y2="31" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' +
+              '<circle cx="' +
+              (x1 + dir * 1.5) +
+              '" cy="32.5" r="4.6" fill="#fff" stroke="' +
+              ink +
+              '" stroke-width="1.6"/>'
+            );
+          };
+          const k1 = Math.max(jab(0.15), jab(1.35));
+          const k2 = Math.max(jab(0.75), jab(1.95));
+          // A dark band, each pawn on a soft glow in its seat's colour.
+          const glow = (hex, id) =>
+            '<radialGradient id="' +
+            id +
+            '"><stop offset="0" stop-color="' +
+            hex +
+            '" stop-opacity="0.55"/><stop offset="1" stop-color="' +
+            hex +
+            '" stop-opacity="0"/></radialGradient>';
+          return (
+            '<svg viewBox="0 0 200 64"><defs>' +
+            glow(o.hex, "rdPtA") +
+            glow(o.hex2, "rdPtB") +
+            "</defs>" +
+            '<rect x="2" y="2" width="196" height="60" rx="12" fill="#0f172a" stroke="#fff" stroke-width="2"/>' +
+            '<circle cx="38" cy="32" r="30" fill="url(#rdPtA)"/>' +
+            '<circle cx="162" cy="32" r="30" fill="url(#rdPtB)"/>' +
+            arm(58, 1, o.hex, k1) +
+            arm(142, -1, o.hex2, k2) +
+            '<image href="' +
+            art +
+            '" x="14" y="8" width="48" height="48"/>' +
+            '<g transform="translate(200 0) scale(-1 1)"><image href="' +
+            esc(o.art2) +
+            '" x="14" y="8" width="48" height="48"/></g>' +
+            "</svg>"
+          );
+        }
         if (o.redraw === "this-is-fine") {
           // Two beats: a calm sip, then the flames grow.
           const grow = 0.5 + 0.5 * easeOut3(span(t, 1.0, 1.5));
@@ -2862,10 +2998,14 @@
           }
         } else if (o.draw === "redraw") {
           el.innerHTML = redrawSvg(o, esc);
-          el.firstChild.style.filter = ringFilter(
-            o.ring,
-            Math.max(2, el.clientWidth * 0.025),
-          );
+          // A pawn's redraw is ringed in its seat's colour; the pointing
+          // band draws its own edge.
+          if (o.ring) {
+            el.firstChild.style.filter = ringFilter(
+              o.ring,
+              Math.max(2, el.clientWidth * 0.025),
+            );
+          }
         } else if (o.draw === "reactor") {
           /*
             Each motion is a pure function of t, so a frame is the same
@@ -3039,11 +3179,77 @@
         at the board's edge ends flat there, and its round end does not
         run off the board.
       */
+      /*
+        A callback's old wall taken away (render-game-video.mjs playCallback):
+        the same spot of the screenshot from before that wall's move, over
+        its groove and its joints, at opacity e.a; and at a joint where a
+        later wall ends, that wall's round end, a disc of its own pixels from
+        one groove further along it (e.caps). Plain images, as the board's:
+        the renderer preloads every file it names (fileUrlsIn).
+      */
+      /*
+        The evaluation strip: e = { left, right: the two seats' colours,
+        x: the left seat's share (0..1), swing: { from, to, t: 0..1 } while
+        a marked move's swing flashes, or null }. The swing's part of the
+        strip flashes white and the strip swells, once, as sin^2.
+      */
+      const paintEval = (e) => {
+        show($("evalStrip"), !!e);
+        if (!e) return;
+        $("evalStrip").style.background = e.right;
+        $("evalLeft").style.background = e.left;
+        $("evalLeft").style.width = e.x * 100 + "%";
+        const w = e.swing;
+        const pulse = w ? Math.sin(Math.PI * w.t) ** 2 : 0;
+        show($("evalSwing"), !!w);
+        if (w) {
+          $("evalSwing").style.left = Math.min(w.from, w.to) * 100 + "%";
+          $("evalSwing").style.width = Math.abs(w.to - w.from) * 100 + "%";
+          $("evalSwing").style.opacity = 0.85 * pulse;
+        }
+        $("evalStrip").style.transform =
+          "translateX(-50%) scaleY(" + (1 + 0.6 * pulse) + ")";
+      };
+      const paintErase = (e) => {
+        show($("eraseFx"), !!e);
+        if (!e) return;
+        const pc = (v) => v * 100 + "%";
+        // Set a src only when it changes, as the board's own image does.
+        const src = (img, url) => {
+          if (img.getAttribute("src") !== url) img.setAttribute("src", url);
+        };
+        $("eraseFx").style.opacity = e.a;
+        const [x0, y0, x1, y1] = e.box;
+        src($("eraseOld"), e.old);
+        $("eraseOld").style.clipPath =
+          "inset(" + [y0, 1 - x1, 1 - y1, x0].map(pc).join(" ") + ")";
+        [0, 1].forEach((i) => {
+          const img = $("eraseCap" + i);
+          const c = e.caps[i];
+          show(img, !!c);
+          if (!c) return;
+          src(img, e.cur);
+          // The clip is in the image's own box, which the shift moves.
+          img.style.transform = "translate(" + pc(c.dx) + ", " + pc(c.dy) + ")";
+          img.style.clipPath =
+            "ellipse(" +
+            pc(c.rx) +
+            " " +
+            pc(c.ry) +
+            " at " +
+            pc(c.cx - c.dx) +
+            " " +
+            pc(c.cy - c.dy) +
+            ")";
+        });
+      };
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);
         if (!tr) return;
-        const on = tr.lit ? 1 : easeOut3(span(tr.t, 0, 0.15));
+        // tr.fade (0..1, absent 1): a plant's glow going out.
+        const on =
+          (tr.lit ? 1 : easeOut3(span(tr.t, 0, 0.15))) * (tr.fade ?? 1);
         // The groove's width in the svg's units, across the wall.
         const across = ([x1, , x2]) =>
           (x1 === x2 ? tr.groove.x : tr.groove.y) * 1000;
@@ -3720,6 +3926,8 @@
           paintMidStamp(s.midStamp);
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
+          paintEval(s.evalStrip);
+          paintErase(s.erase);
           paintTrap(s.trap);
           window.__crowdedWalks = paintPath(s.path);
           paintOverlay(s.overlay);

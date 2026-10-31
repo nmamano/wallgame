@@ -806,6 +806,30 @@ export const OVERLAYS = {
     rating: null,
   },
   /*
+    POINTING-PAWNS (visual-memes.md, for spiderman-point; Wall Game
+    Director, 2026-10-31, R2): the standoff's two pawns face each other in
+    a band, each with a drawn arm that points at the other, a mirror pose;
+    the arms jab in turn on the beats of pointing-2 (2.8 s). The EDL's
+    `seat` is the cat's seat; the other pawn is the piece that cat hunts.
+    Not used in a posted video before Nil has seen a still (the Director's
+    ask): our earlier redraws of known memes did not land (C23).
+  */
+  "pointing-pawns": {
+    form: "panel",
+    draw: "redraw",
+    redraw: "pointing",
+    seat: true,
+    text: "none",
+    seconds: 2.8,
+    size: { w: 0.9, h: 0.28 },
+    places: ["board"],
+    source:
+      "drawn by us (stage.html): the standoff's own two pawns in the mirror pose of Spider-Man pointing at Spider-Man",
+    claim: "LOW: our own drawing of a known meme's layout",
+    likeness: "None",
+    rating: null,
+  },
+  /*
     Green-screen clips, keyed by prepare-overlay-clip.mjs on 2026-10-31.
     Their risks come from the Director Rewriter's source checks
     (meme-pack.md "Source checks", director repo b75d3cb and facaf65): Nil's
