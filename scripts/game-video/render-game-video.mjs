@@ -115,6 +115,8 @@ import {
   reactorRole,
   loadingPercent,
   NO_REACH,
+  COVER_HIDE_SHARE,
+  COVER_PLACE,
   overlayPlaces,
   placeName,
   placeOverlay,
@@ -135,8 +137,14 @@ import {
   helpRulesFor,
   helpVariantFor,
 } from "../../shared/domain/variant-rules.ts";
-import { MEME_SOUNDS, isVoice, memeGain } from "./meme-sounds.mjs";
-import { clipFrameIndex, loadClip } from "./overlay-clips.mjs";
+import { MEME_SOUNDS, isVoice, levelGain, memeGain } from "./meme-sounds.mjs";
+import {
+  boardToCover,
+  clipCoverage,
+  clipFrameIndex,
+  coverOver,
+  loadClip,
+} from "./overlay-clips.mjs";
 import {
   MUSIC_TRACKS,
   creditLine,
@@ -479,6 +487,22 @@ const captionAt = (boardIndex) =>
   PAYOFF && boardIndex > PAYOFF.ply ? PAYOFF.text : CAPTION;
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
+/**
+ * The EDL's opening clip (edl.mjs `opening`) as an overlay event: it opens
+ * with the VS overlay, not on a move, and plays muted. Its ply is the first
+ * the video plays, for the messages. Not in EVENTS: no move opens it.
+ */
+const OPENING = EDL?.opening
+  ? {
+      kind: "overlay",
+      form: "cover",
+      asset: EDL.opening,
+      ply: EDL.startPly,
+      // The whole clip: it closes on its own (null would never close it).
+      seconds: OVERLAYS[EDL.opening].seconds,
+      opening: true,
+    }
+  : null;
 /**
  * --plies FROM..TO previews only those plies of an EDL, from the capture
  * cache, so the director can look at one moment in seconds. The board, the
@@ -3477,7 +3501,10 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *            holds while it shows, so the pawn stays there).
  */
 const OVERLAY_FACTS = new Map();
-for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
+for (const ev of [
+  ...EVENTS.filter((e) => e.kind === "overlay"),
+  ...(OPENING ? [OPENING] : []),
+]) {
   const draw = OVERLAYS[ev.asset].draw;
   if (takesPawn(OVERLAYS[ev.asset])) {
     const pawn = parsePawn(ev.pawn);
@@ -3516,8 +3543,21 @@ for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
   }
   if (draw === "sequence") {
     try {
-      const clip = loadClip(ev.asset, OVERLAYS[ev.asset].sequence, REPO);
-      OVERLAY_FACTS.set(ev, { fps: clip.fps, frames: clip.files.map(fileUrl) });
+      const asset = OVERLAYS[ev.asset];
+      const clip = loadClip(ev.asset, asset.sequence, REPO);
+      OVERLAY_FACTS.set(ev, {
+        fps: clip.fps,
+        frames: clip.files.map(fileUrl),
+        // Its own sound, when the EDL plays it (edl.mjs `audio`).
+        audio: ev.audio === "own" ? clip.audio : null,
+        // A cover clip's pixels, for what it hides (placeOverlays).
+        ...(asset.form === "cover"
+          ? {
+              coverage: clipCoverage(clip.files, clip.width, clip.height),
+              aspect: clip.width / clip.height,
+            }
+          : {}),
+      });
     } catch (err) {
       console.error(`ply ${ev.ply}: ${err.message}`);
       await browser.close();
@@ -3950,8 +3990,9 @@ const renderStyle = async (styleName) => {
       gain: sound.gain,
       at,
       rate: sound.rate ?? 1,
-      // A meme sound is measured against the rest of the mix (mix-loudness.mjs).
-      meme: sound.name in MEME_SOUNDS ? sound.name : null,
+      // A meme sound is measured against the rest of the mix (mix-loudness.mjs);
+      // so is an overlay clip's own sound, which names itself.
+      meme: sound.meme ?? (sound.name in MEME_SOUNDS ? sound.name : null),
       // For RESULT.timeline (timeline-frames.mjs videoTimeline).
       name: sound.name,
       role,
@@ -4204,6 +4245,19 @@ const renderStyle = async (styleName) => {
       frames: [],
     });
     if (ev.sound) cueEvent(meme(ev.sound), ev);
+    const own = OVERLAY_FACTS.get(ev)?.audio;
+    if (own) {
+      // Levelled as a meme sound is, and measured with them (`meme`).
+      cueEvent(
+        {
+          name: `clip:${ev.asset}`,
+          meme: `clip:${ev.asset}`,
+          file: own.path,
+          gain: levelGain(own),
+        },
+        ev,
+      );
+    }
   };
   /** A ply's overlays that open as its move lands (the bar is the ending's). */
   const plyOverlays = (plyIndex) =>
@@ -4269,6 +4323,7 @@ const renderStyle = async (styleName) => {
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
+      ...(w.asset.fit ? { fit: w.asset.fit } : {}),
       t: elapsed - w.start,
       alpha: 1,
       place: w.place,
@@ -4609,6 +4664,40 @@ const renderStyle = async (styleName) => {
    */
   /** A cell's size in the board, for a tail (overlays.mjs placeNear). */
   const PITCH = { x: GRID.pitchX, y: GRID.pitchY };
+  /**
+   * What a cover clip hides (overlays.mjs, form "cover"): on each frame it
+   * covered, the share of each pawn's box and of each thing in play under
+   * its pixels (overlay-clips.mjs coverOver), the clip drawn as the stage
+   * draws it, filling the board. The worst over COVER_HIDE_SHARE, or null.
+   * An opening's frames under the VS banners are free: no move is shown
+   * there, and the banners cover the board anyway.
+   */
+  const coverHides = async (w) => {
+    const r = await stage.evaluate(() => {
+      const b = document.getElementById("boardWrap").getBoundingClientRect();
+      return b.width / b.height;
+    });
+    const facts = OVERLAY_FACTS.get(w.ev);
+    const { cols, rows, grids } = facts.coverage;
+    let worst = null;
+    for (const f of w.frames) {
+      if (w.ev.opening && f.state.vsOverlay) continue;
+      const grid =
+        grids[clipFrameIndex(f.at - w.start, facts.fps, grids.length)];
+      for (const b of [...inPlay(f.state), ...pawnBoxes(f.state)]) {
+        const share = coverOver(
+          grid,
+          cols,
+          rows,
+          boardToCover(b, r, facts.aspect, w.asset.fit),
+        );
+        if (share > COVER_HIDE_SHARE && (!worst || share > worst.share)) {
+          worst = { share, what: b.what, at: f.at };
+        }
+      }
+    }
+    return worst;
+  };
   const placeOverlays = async () => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
@@ -4671,6 +4760,18 @@ const renderStyle = async (styleName) => {
         ply holds while it shows, so the pawn stands still under the tail;
         a zoom on that ply would move it, so the render stops.
       */
+      if (w.asset.form === "cover") {
+        const hid = await coverHides(w);
+        if (hid) {
+          fault(
+            "overlay-place",
+            w.ev.ply,
+            `${where} hides the ${hid.what} at ${hid.at.toFixed(2)} s: its pixels cover ${Math.round(hid.share * 100)}% of it (at most ${Math.round(COVER_HIDE_SHARE * 100)}%); put it on a ply where nothing in play is under its art, or cut it shorter`,
+            hid.at,
+          );
+          continue;
+        }
+      }
       const pawnAt = takesPawn(w.asset)
         ? cellAt(OVERLAY_FACTS.get(w.ev).cell)
         : null;
@@ -4708,18 +4809,21 @@ const renderStyle = async (styleName) => {
               ) > 0.5,
           )
         : [];
-      const place = pawnAt
-        ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
-            place: w.ev.place,
-            // Every wall it shows, old and new: it keeps off them first.
-            walls: w.frames.flatMap((f) =>
-              wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
-                const box = boxOnScreen(b, f.state.zoom);
-                return box ? [box] : [];
-              }),
-            ),
-          })
-        : placeOverlay(w.asset, busy, reach, offRoom);
+      const place =
+        w.asset.form === "cover"
+          ? COVER_PLACE
+          : pawnAt
+            ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
+                place: w.ev.place,
+                // Every wall it shows, old and new: it keeps off them first.
+                walls: w.frames.flatMap((f) =>
+                  wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
+                    const box = boxOnScreen(b, f.state.zoom);
+                    return box ? [box] : [];
+                  }),
+                ),
+              })
+            : placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
         // What is under each place, each thing once, and what stops each
         // place off the board: the director moves the overlay to a ply
@@ -4774,13 +4878,16 @@ const renderStyle = async (styleName) => {
           Math.min(1, (w.end - f.at) / TEXT_TIMING.overlayFade),
         );
       }
-      eventSpans.push({
-        index: EVENTS.indexOf(w.ev),
-        ply: w.ev.ply,
-        kind: "overlay",
-        start: w.start,
-        end: w.end,
-      });
+      // The opening is no event of the list: the VS still shows it.
+      if (!w.ev.opening) {
+        eventSpans.push({
+          index: EVENTS.indexOf(w.ev),
+          ply: w.ev.ply,
+          kind: "overlay",
+          start: w.start,
+          end: w.end,
+        });
+      }
       /*
         Its lines fit its box (stage.html paintOverlay shrinks one, down to
         a floor): each different thing it shows painted once at its place,
@@ -4820,7 +4927,8 @@ const renderStyle = async (styleName) => {
         stills.push({
           ply: w.ev.ply,
           kind: "overlay",
-          sound: w.ev.sound ?? null,
+          sound:
+            w.ev.sound ?? (w.ev.audio === "own" ? `clip:${w.ev.asset}` : null),
           place: { where: place.where, scale: place.scale },
           file: timeline[mid.image].file,
           at: mid.at,
@@ -5232,6 +5340,9 @@ const renderStyle = async (styleName) => {
   }
 
   goalOn = Boolean(overlay);
+  // The opening clip plays over the board from the VS overlay's start,
+  // under its banners (edl.mjs `opening`).
+  if (OPENING && overlay) openOverlay(OPENING);
   // The overlay's punch gets the VS sound, at the second the mark lands.
   const vsHitAt = overlay
     ? overlayStart + overlay.entry * vsPunchFraction

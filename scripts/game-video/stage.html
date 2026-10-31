@@ -655,6 +655,14 @@
         object-fit: contain;
         filter: drop-shadow(0 0.15em 0.4em rgba(0, 0, 0, 0.6));
       }
+      /* A cover clip (overlays.mjs form "cover") fills the whole board, its
+         overflow cut equally on both sides (overlay-clips.mjs boardToCover
+         measures what it hides in the same frame): no shadow, no pop. */
+      #overlay.sequence.cover img {
+        object-fit: cover;
+        object-position: center;
+        filter: none;
+      }
       /* The ending's caption: black on a white bar, the model video's last
          beat. One line, fitted. */
       #overlay.whitebar,
@@ -2494,7 +2502,12 @@
           : "";
         if (!placed) return;
         const p = o.place;
-        el.className = o.draw === "card" ? "card " + o.card : o.draw;
+        el.className =
+          o.draw === "card"
+            ? "card " + o.card
+            : o.form === "cover"
+              ? o.draw + " cover"
+              : o.draw;
         let room = "ok";
         // The scale of its content: a clip's small size, or the margin.
         let scale = p.scale;
@@ -2553,7 +2566,10 @@
           el.style.height = p.h * 100 + "%";
         }
         const pop = easeOut3(span(o.t, 0, window.__TEXT_TIMING.overlayPop));
-        el.style.opacity = pop * o.alpha;
+        // A cover clip is its own animation: no pop (a curtain that faded
+        // in would show the board first), only the fade at its end.
+        const cover = o.form === "cover";
+        el.style.opacity = (cover ? 1 : pop) * o.alpha;
         // Who emotes it: a tail from it to the pawn (placeNear), as faded.
         if (o.ring && p.tail) {
           const tail = $("overlayTail");
@@ -2598,7 +2614,11 @@
           ? 3 * (1 - hit) * Math.sin(o.error.t * Math.PI * 2 * 14)
           : 0;
         el.style.transform =
-          "translateX(" + shake + "%) scale(" + (0.85 + 0.15 * pop) + ")";
+          "translateX(" +
+          shake +
+          "%) scale(" +
+          (cover ? 1 : 0.85 + 0.15 * pop) +
+          ")";
         el.style.fontSize = "";
         // A clip at its small size (overlays.mjs `small`) or in the margin
         // draws its content scaled with its box, before the fit measures it.
@@ -2614,6 +2634,13 @@
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
         if (o.draw === "whitebar") {
           el.innerHTML = "<div>" + esc(o.text) + "</div>";
+        } else if (o.draw === "sequence" && o.form === "cover") {
+          el.innerHTML =
+            '<img src="' +
+            esc(o.src) +
+            '"' +
+            (o.fit === "fill" ? ' style="object-fit:fill"' : "") +
+            " />";
         } else if (o.draw === "sequence") {
           // Its corner's edges: "bottom-right" stands it on the bottom and
           // pushes it right, toward the board's rim, not into the middle.

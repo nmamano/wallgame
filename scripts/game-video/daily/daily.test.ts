@@ -2919,6 +2919,8 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     "the smudge-cat overlay has a MEDIUM claim risk, and Nil has not OKed it",
   );
   expect((await picture("the-scream")).status).toBe(200);
+  // The opening clip goes through the same gate; a LOW one passes.
+  expect((await told({ opening: "curtain-open" })).status).toBe(200);
   const offCounter = await told({ caption: "Ruby was 2 steps away" });
   expect(offCounter.status).toBe(409);
   expect(offCounter.body.error).toContain("the caption says 2");

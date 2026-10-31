@@ -1130,3 +1130,58 @@ describe("the ending's caption bar", () => {
     expect(accept({ ...base, ending: "ko", events: [] }).ending).toBe("ko");
   });
 });
+
+describe("the meme pack's clips", () => {
+  const withEvent = (ev: object, more: object = {}) => ({
+    ...base,
+    ...more,
+    events: [{ ply: 3, kind: "overlay", ...ev }],
+  });
+  const errorsOf = (raw: object): string[] =>
+    (validateEdl(raw).errors as string[] | undefined) ?? [];
+  const stamp = { form: "clip", asset: "stupid-stamp" };
+
+  test("a clip with its own sound says whether it plays", () => {
+    expect(
+      accept(withEvent({ ...stamp, audio: "own" })).events[0],
+    ).toMatchObject({ audio: "own", seconds: 3 });
+    expect(
+      accept(withEvent({ ...stamp, audio: "muted", sound: "boom-2" }))
+        .events[0],
+    ).toMatchObject({ audio: "muted", sound: "boom-2" });
+    expect(errorsOf(withEvent(stamp))).toEqual([
+      'events[0]: stupid-stamp has its own sound; audio must be "own" (it plays) or "muted"',
+    ]);
+    expect(
+      errorsOf(withEvent({ ...stamp, audio: "own", sound: "boom-2" })),
+    ).toEqual([
+      'events[0]: stupid-stamp plays its own sound; give no "sound", or make it "muted"',
+    ]);
+    // A clip whose sound is silence keeps none, so it takes no "audio".
+    expect(
+      errorsOf(withEvent({ form: "cover", asset: "confetti", audio: "own" })),
+    ).toEqual(['events[0]: confetti has no sound of its own; give no "audio"']);
+  });
+
+  test("a cover clip is cut shorter, never held longer", () => {
+    expect(
+      accept(withEvent({ form: "cover", asset: "anime-zoom", seconds: 1.2 }))
+        .events[0],
+    ).toMatchObject({ seconds: 1.2 });
+    expect(
+      errorsOf(withEvent({ form: "cover", asset: "anime-zoom", seconds: 2.5 })),
+    ).toEqual([
+      "events[0]: anime-zoom is a 2 s clip; seconds may be at most that",
+    ]);
+  });
+
+  test("the opening is a cover clip, stored only when set", () => {
+    expect(accept({ ...base, opening: "curtain-open" }).opening).toBe(
+      "curtain-open",
+    );
+    expect("opening" in accept(base)).toBe(false);
+    expect(errorsOf({ ...base, opening: "stupid-stamp" })).toEqual([
+      'opening must be a cover clip (anime-zoom, confetti, curtain-open), or absent for none; got "stupid-stamp"',
+    ]);
+  });
+});

@@ -258,8 +258,16 @@ export const MEME_TARGET_LUFS = -21;
 export const MEME_TRUE_PEAK_CEILING = -10;
 
 /** The linear gain that brings clip `key` to the target, within the ceiling. */
-export const memeGain = (key) => {
-  const { lufs, truePeak } = MEME_SOUNDS[key];
+export const memeGain = (key) => levelGain(MEME_SOUNDS[key]);
+
+/**
+ * The gain that brings a sound of this loudest 400 ms and true peak to
+ * MEME_TARGET_LUFS, or lower where its true peak would pass
+ * MEME_TRUE_PEAK_CEILING: a meme sound's (memeGain), and an overlay clip's
+ * own sound (overlay-clips.mjs), measured the same way.
+ * @param {{ lufs: number, truePeak: number }} level
+ */
+export const levelGain = ({ lufs, truePeak }) => {
   const db = Math.min(
     MEME_TARGET_LUFS - lufs,
     MEME_TRUE_PEAK_CEILING - truePeak,

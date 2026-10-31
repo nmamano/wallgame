@@ -76,6 +76,12 @@
  *   vsSound, finishSound
  *            optional: the meme sound on the VS overlay's punch and on the
  *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
+ *   opening  optional: a cover clip (overlays.mjs, form "cover") that plays
+ *            over the board from the VS overlay's start, under its banners:
+ *            "the show starts" (the Director's line for Curtain Opening,
+ *            meme-pack.md, 2026-10-31). It must hide nothing once the VS
+ *            overlay ends, as any cover clip. Muted: the VS slot has its
+ *            sound. Absent: none.
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
  *            A range with "fastForward": true (audit item 5) runs a quiet
@@ -403,7 +409,16 @@ const KIND_FIELDS = {
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
-  overlay: ["form", "asset", "text", "seconds", "seat", "pawn", "place"],
+  overlay: [
+    "form",
+    "asset",
+    "text",
+    "seconds",
+    "seat",
+    "pawn",
+    "place",
+    "audio",
+  ],
   explain: ["hunter", "label", "expect"],
 };
 /** The kinds that name one cell, which must be on the board. */
@@ -536,6 +551,7 @@ export const validateEdl = (raw) => {
       "introPaths",
       "vsSound",
       "finishSound",
+      "opening",
       "pace",
       "events",
     ],
@@ -685,6 +701,18 @@ export const validateEdl = (raw) => {
     }
   }
 
+  const opening = raw.opening ?? null;
+  if (opening !== null) {
+    const asset = Object.hasOwn(OVERLAYS, opening) ? OVERLAYS[opening] : null;
+    if (!asset || asset.form !== "cover") {
+      fail(
+        `opening must be a cover clip (${Object.keys(OVERLAYS)
+          .filter((k) => OVERLAYS[k].form === "cover")
+          .join(", ")}), or absent for none; got ${JSON.stringify(opening)}`,
+      );
+    }
+  }
+
   const pace = raw.pace ?? [];
   if (!Array.isArray(pace)) {
     fail("pace must be a list");
@@ -789,6 +817,22 @@ export const validateEdl = (raw) => {
           `${where}: ${ev.asset} is a picture a pawn emotes; it needs a "sound" as it opens`,
         );
       }
+    }
+    // A clip with its own sound plays it or not, said out loud: its sound
+    // carries its owner's claim (meme-pack.md: "Muting a clip's sound and
+    // using one of our own sounds lowers the risk").
+    if (asset.sequence?.audio) {
+      if (ev.audio !== "own" && ev.audio !== "muted") {
+        fail(
+          `${where}: ${ev.asset} has its own sound; audio must be "own" (it plays) or "muted"`,
+        );
+      } else if (ev.audio === "own" && ev.sound != null) {
+        fail(
+          `${where}: ${ev.asset} plays its own sound; give no "sound", or make it "muted"`,
+        );
+      }
+    } else if (ev.audio !== undefined) {
+      fail(`${where}: ${ev.asset} has no sound of its own; give no "audio"`);
     }
     // null is "not set": validateEdl writes it for an overlay that the
     // asset or a fast-forward times, and the renderer validates that copy
@@ -1139,6 +1183,8 @@ export const validateEdl = (raw) => {
       coldOpenPly,
       introPaths,
       ...slots,
+      // Only when set, so a list without one stores the same bytes as before.
+      ...(opening !== null ? { opening } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
     },

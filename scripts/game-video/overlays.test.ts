@@ -61,9 +61,9 @@ describe("overlays", () => {
           true,
         ]);
       }
-      // Only a picture from the web, or a known meme's look (a card, a
-      // redraw), has a risk.
-      if (!["card", "image", "redraw"].includes(a.draw)) {
+      // Only a picture or a clip from the web, or a known meme's look (a
+      // card, a redraw), has a risk.
+      if (!["card", "image", "redraw", "sequence"].includes(a.draw)) {
         expect([name, a.claim, a.likeness]).toEqual([name, "None", "None"]);
       }
       const places = placesOf(a);
@@ -94,16 +94,20 @@ describe("overlays", () => {
         expect([name, a.image]).toEqual([name, undefined]);
       }
       if (a.form === "clip") expect(a.size).toBeDefined();
-      // A clip's frames: a corner clip, its length its frames' length.
+      // A clip's frames: a corner clip or a cover, its length its frames'
+      // length (to the ms prepare-overlay-clip.mjs prints).
       if (a.draw === "sequence") {
-        expect([name, a.form]).toEqual([name, "clip"]);
-        expect([name, a.seconds]).toEqual([
+        expect([name, ["clip", "cover"].includes(a.form)]).toEqual([
           name,
-          a.sequence!.frames / a.sequence!.fps,
+          true,
         ]);
+        expect(a.seconds!).toBeCloseTo(a.sequence!.frames / a.sequence!.fps, 3);
       } else {
         expect([name, a.sequence]).toEqual([name, undefined]);
       }
+      // Only a clip covers the board: the pawn test reads its pixels.
+      if (a.form === "cover")
+        expect([name, a.draw]).toEqual([name, "sequence"]);
     }
   });
 

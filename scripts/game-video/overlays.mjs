@@ -8,6 +8,14 @@
  *          reactor, the compare numbers) or a toast.
  *   panel  a band across the board, as tall as its content (the loading
  *          bar), at the top, the bottom, or any height between.
+ *   cover  a clip over the whole board, scaled to fill it (object-fit:
+ *          cover): speed lines, confetti, a stage curtain (Nil's meme pack,
+ *          Wall Game PM, 2026-10-31). Its box is every pawn's, so what it
+ *          hides is MEASURED from its pixels: on no frame may its alpha
+ *          cover COVER_HIDE_SHARE of a pawn's box or of a thing in play
+ *          (coverOver). A "sequence" draw only. `fit` "fill" stretches it
+ *          to the board instead (speed lines: a 16:9 clip cut to a square
+ *          board loses the sides, where its lines are; 2026-10-31 proof).
  *   bar    the ending's white caption bar (the model video's last beat):
  *          on the last move only, from the ending's impact to its end (the
  *          ending holds longer when its line needs the reading time), in
@@ -119,9 +127,31 @@
  *            fps, count, and the sha256 of the manifest that
  *            prepare-overlay-clip.mjs printed (the render stops if the
  *            frames on the box differ). `seconds` is the clip's length; an
- *            EDL may cut it shorter, never hold it longer.
+ *            EDL may cut it shorter, never hold it longer. `audio`: the clip
+ *            keeps its own sound (audio.wav, pinned by the manifest), and an
+ *            EDL must say whether it plays ("own") or not ("muted", with a
+ *            meme "sound" if it wants one).
  */
-export const OVERLAY_FORMS = ["clip", "panel", "bar"];
+export const OVERLAY_FORMS = ["clip", "panel", "bar", "cover"];
+
+/**
+ * The most of a pawn's box, or of a thing in play, that a cover clip's
+ * pixels may hide on one frame (the mean alpha over the box, 0..1). Speed
+ * lines and confetti pass over a pawn; a piece of confetti does not hide
+ * it, a curtain does.
+ */
+export const COVER_HIDE_SHARE = 0.25;
+
+/** The whole board: a cover clip's one place. */
+export const COVER_PLACE = {
+  where: "board",
+  x: 0,
+  y: 0,
+  w: 1,
+  h: 1,
+  scale: 1,
+  full: { x: 0, y: 0, w: 1, h: 1 },
+};
 
 /** The places an asset may take (`places`). */
 export const PLACE_KINDS = ["board", "margin", "caption"];
@@ -287,7 +317,7 @@ const SCREAM_OUTLINE = [
 
 /**
  * @typedef {{
- *   form: "clip" | "panel" | "bar",
+ *   form: "clip" | "panel" | "bar" | "cover",
  *   draw:
  *     | "toast"
  *     | "loading"
@@ -315,7 +345,8 @@ const SCREAM_OUTLINE = [
  *   seconds: number | null,
  *   size?: { w: number, h: number },
  *   small?: { w: number, h: number },
- *   sequence?: { dir: string, fps: number, frames: number, sha256: string },
+ *   sequence?: { dir: string, fps: number, frames: number, sha256: string, audio?: true },
+ *   fit?: "fill",
  *   source: string,
  *   claim: string,
  *   likeness: string,
@@ -777,6 +808,90 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  /*
+    Nil's meme pack, Green Screen (meme-pack.md in the director's repo,
+    2026-10-31), keyed by prepare-overlay-clip.mjs on 2026-10-31. The pack
+    grants no license; each clip keeps its owner's claim risk, the
+    Director's first estimate until its source check.
+  */
+  "anime-zoom": {
+    form: "cover",
+    draw: "sequence",
+    fit: "fill",
+    text: "none",
+    seconds: 2,
+    sequence: {
+      dir: "anime-zoom",
+      fps: 30,
+      frames: 60,
+      sha256:
+        "61e8dc5ee5817f9213dcd388b13105627bc225411e552415ed574cf607d0d30e",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Anime Zoom Greenscreen.mp4, 0-2 s (its sound is silence)",
+    claim: "LOW: generic speed lines",
+    likeness: "None",
+    rating: null,
+  },
+  confetti: {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 3,
+    sequence: {
+      dir: "confetti",
+      fps: 30,
+      frames: 90,
+      sha256:
+        "80ec5af06dcf9c449ffcdd78a5f721bdde17bacffee029ab8b04b4c54105f55a",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Confetti.mp4, 0.5-3.5 s (its sound is silence)",
+    claim: "LOW: generic confetti",
+    likeness: "None",
+    rating: null,
+  },
+  "curtain-open": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 3.233,
+    sequence: {
+      dir: "curtain-open",
+      fps: 30,
+      frames: 97,
+      sha256:
+        "dedafb03dc42e2f9ea43cd271fbab75fc336d5f946a55bebc6efb2d325d33f2d",
+    },
+    source:
+      'Nil\'s meme pack: Green Screen/Curtain Opening Effect - Green Screen Royalty Free Footage.mp4, 1.5-8 s at 2x (its sound is silence; "Royalty Free" in its name)',
+    claim: "LOW: generic stage curtains",
+    likeness: "None",
+    rating: null,
+  },
+  "stupid-stamp": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 3,
+    // 1280x480 after the trim: the stamp and the hand that brings it.
+    size: { w: 0.62, h: 0.23 },
+    small: { w: 0.48, h: 0.18 },
+    places: ["board", "caption"],
+    sequence: {
+      dir: "stupid-stamp",
+      fps: 30,
+      frames: 90,
+      sha256:
+        "bc44a7b86eb1888d554f0148783100e3549803a2b778dccd289c419197491be8",
+      audio: true,
+    },
+    source:
+      "Nil's meme pack: Green Screen/Stupid Stamp - Chroma Key Template [Mpgun.com].mp4, 1-4 s, trimmed to its art",
+    claim: "LOW: a generic stamp template (its stamp thud: unknown source)",
+    likeness: "None",
+    rating: null,
+  },
 };
 
 /** The pawn types an EDL names (shared/domain/pawns.ts PawnType). */
@@ -968,12 +1083,13 @@ export const NO_REACH = () => ({ top: 0, right: 0, bottom: 0, left: 0 });
  * after its corners (a picture a pawn emotes, placeNear: Wall Game
  * Director, 2026-10-30, a pawn boxed in a corner has a free place nearer
  * it there).
- * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, small?: { w: number, h: number } }} asset
+ * @param {{ form: "clip" | "panel" | "bar" | "cover", size?: { w: number, h: number }, small?: { w: number, h: number } }} asset
  * @param {(scale: number) => Reach} reach
  * @param {{ middles?: boolean }} [options]
  * @returns {Place[]}
  */
 export const overlayPlaces = (asset, reach, { middles = false } = {}) => {
+  if (asset.form === "cover") return [COVER_PLACE];
   if (asset.form === "bar" || asset.form === "panel") {
     // The edges first; then every band from the top down: for an ending
     // that covers both edges (ko: its pawn on top, its banner below), and
@@ -1094,7 +1210,7 @@ export const coveredBy = (p, boxes) =>
 /**
  * The off-board place `kind` of `asset`: the caption's at the board bar's
  * size (the bar's first place), the margin at the shape of its size.
- * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
+ * @param {{ form: "clip" | "panel" | "bar" | "cover", size?: { w: number, h: number } }} asset
  * @param {"caption" | "margin"} kind
  * @returns {OffPlace}
  */
@@ -1115,7 +1231,7 @@ export const offBoardPlace = (asset, kind) => {
  * no board place is free, and the caption hides while it shows (Wall Game
  * Director, 2026-10-30: the last line replaces the stale caption, and the
  * credit stays under it). Null when no place is free.
- * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, places?: string[] }} asset
+ * @param {{ form: "clip" | "panel" | "bar" | "cover", size?: { w: number, h: number }, places?: string[] }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  * @param {(scale: number) => Reach} reach
  * @param {(kind: "caption" | "margin") => string | null} offRoom
