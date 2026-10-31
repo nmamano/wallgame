@@ -47,8 +47,17 @@ export const APP_NAME = "game-video";
 /** Nil's username in the office, for the ask's `member`. */
 export const REVIEWER_USERNAME = "nil";
 export const ASK_PRIORITY = "P3";
-/** The office trims options, so "Revise: " is stored as "Revise:". */
-export const ASK_OPTIONS = ["Approve", "Revise:", "Discard:"];
+/**
+ * The placeholders of the options that need notes: a tap puts the option
+ * in Nil's reply field, so they tell him to type his notes (VR1, review
+ * 111 N1). parseAnswer removes them: a placeholder is not a note.
+ */
+const NOTE_PLACEHOLDERS = ["<what to change>", "<why>"];
+export const ASK_OPTIONS = [
+  "Approve",
+  `Revise: ${NOTE_PLACEHOLDERS[0]}`,
+  `Discard: ${NOTE_PLACEHOLDERS[1]}`,
+];
 
 /** How often the app syncs its asks with no crew call (app/server.mjs). */
 export const ASK_SYNC_MS = 60_000;
@@ -79,9 +88,11 @@ export const askPrompt = (item, card) =>
 
 /**
  * Nil's words as an action: "Approve", "Revise: <notes>" or "Discard:
- * <notes>", any case, with ":" or "-" or nothing after the word. Approve
- * may carry notes; revise and discard need them (store.review). Null when
- * the words are not one of these.
+ * <notes>", any case, with ":" or "-" or nothing after the word, the
+ * options' placeholders removed. Approve may carry notes; a revise or
+ * discard with no notes comes back with empty notes, and the sync applies
+ * nothing (store.review needs them). Null when the words are not one of
+ * these.
  * @param {string | undefined} answer
  * @returns {{ action: "approve" | "revise" | "discard", notes: string } | null}
  */
@@ -94,8 +105,10 @@ export const parseAnswer = (answer) => {
   const action = /** @type {"approve" | "revise" | "discard"} */ (
     m[1].toLowerCase()
   );
-  const notes = m[2].trim();
-  if (action !== "approve" && !notes) return null;
+  const notes = NOTE_PLACEHOLDERS.reduce(
+    (text, placeholder) => text.split(placeholder).join(""),
+    m[2],
+  ).trim();
   return { action, notes };
 };
 
@@ -259,6 +272,15 @@ export const syncReviewAsks = async ({
           ...quoteLines(answer ?? ""),
           "Ask him again in your own words, or he can use the review page.",
         ].join("\n"),
+      );
+      continue;
+    }
+    if (chosen.action !== "approve" && !chosen.notes) {
+      const action = chosen.action === "revise" ? "Revise" : "Discard";
+      close(itemId, record, "no-notes", chosen.action);
+      await tell(
+        itemId,
+        `ASK: Nil chose ${action} with no notes on ask ${record.askId} (${itemId}); nothing done. Ask him what to ${chosen.action === "revise" ? "change" : "say"}, or he can use the review page.`,
       );
       continue;
     }

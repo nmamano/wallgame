@@ -1362,9 +1362,18 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
       action: "discard",
       notes: "bad pick",
     });
-    // Revise and discard need notes; other words are no action.
-    expect(parseAnswer("Revise:")).toBeNull();
-    expect(parseAnswer("Discard")).toBeNull();
+    // A placeholder of the options is not a note; a revise or discard
+    // with no notes comes back with none (the sync applies nothing).
+    expect(parseAnswer("Revise: <what to change>")).toEqual({
+      action: "revise",
+      notes: "",
+    });
+    expect(parseAnswer("Revise: <what to change> the caption")).toEqual({
+      action: "revise",
+      notes: "the caption",
+    });
+    expect(parseAnswer("Discard")).toEqual({ action: "discard", notes: "" });
+    // Other words are no action.
     expect(parseAnswer("approved it yesterday")).toBeNull();
     expect(parseAnswer("yes")).toBeNull();
     expect(parseAnswer(undefined)).toBeNull();
@@ -1471,6 +1480,22 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
       expect(feedbackOf(store)).toHaveLength(0);
       expect(told.at(-1)).toMatch(/nothing changed/i);
     }
+  });
+
+  test("the Revise option sent with no notes changes nothing; the director is told so", async () => {
+    const { store, office, sync, told } = withAsks();
+    await sync();
+    const [askId] = office.openIds();
+    office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: ASK_OPTIONS[1],
+    });
+    expect((await sync()).applied).toEqual([]);
+    expect(itemOf(store).state).toBe("finished");
+    expect(feedbackOf(store)).toHaveLength(0);
+    expect(told.at(-1)).toContain("Nil chose Revise with no notes");
+    expect(told.at(-1)).toContain("nothing done");
   });
 
   test("words that are not an action change nothing; the director gets them verbatim", async () => {
