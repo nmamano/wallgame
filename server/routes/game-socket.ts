@@ -1636,7 +1636,12 @@ const handleTakebackOffer = (socket: SessionSocket) => {
       socket.sessionId,
       opponent.botCompositeId,
       "takeback",
-    );
+    ).catch((error: unknown) => {
+      console.error("[ws] takeback rebuild failed", {
+        error,
+        sessionId: socket.sessionId,
+      });
+    });
     console.info("[ws] takeback-offer auto-accepted (bot opponent)", {
       sessionId: socket.sessionId,
       playerId,
@@ -1693,7 +1698,12 @@ const handleTakebackAccept = (socket: SessionSocket) => {
       socket.sessionId,
       botPlayer.botCompositeId,
       "takeback",
-    );
+    ).catch((error: unknown) => {
+      console.error("[ws] takeback rebuild failed", {
+        error,
+        sessionId: socket.sessionId,
+      });
+    });
   }
 
   console.info("[ws] takeback-accept processed", {
@@ -2280,7 +2290,12 @@ const handleActionRequest = async (
           socket.sessionId,
           opponent.botCompositeId,
           "takeback",
-        );
+        ).catch((error: unknown) => {
+          console.error("[ws] takeback rebuild failed", {
+            error,
+            sessionId: socket.sessionId,
+          });
+        });
         sendActionAck(socket, message);
         console.info(
           "[ws] action-requestTakeback auto-accepted (bot opponent)",

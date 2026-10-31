@@ -162,6 +162,12 @@ interface BgsRequestResolver<T> {
   timeoutId: ReturnType<typeof setTimeout>;
   /** Expected response type — used to detect stale responses after resolver overwrite */
   expectedResponseType: BotResponseType;
+  /**
+   * True for a drain: a slot that only waits for the reply to a request that
+   * was already cancelled. Nothing waits on its answer, so it is never
+   * cancelled itself - the reply it waits for must arrive before End.
+   */
+  drain: boolean;
 }
 
 /** Pending request resolvers by bgsId */
@@ -1086,6 +1092,7 @@ export const startBgsSession = async (
       reject,
       timeoutId,
       expectedResponseType: "game_session_started",
+      drain: false,
     });
 
     // Track pending request in BGS
@@ -1115,9 +1122,6 @@ export const startBgsSession = async (
  * takes its slot, so the bot's natural reply is consumed rather than read as
  * the answer to a later request. Returns a promise that settles when that
  * reply arrives (or at the request timeout), or null if nothing was in flight.
- *
- * Cancelling a drain installs a fresh one: the reply it waits for has still
- * not arrived.
  */
 const cancelInFlightRequest = (bgsId: string): Promise<void> | null => {
   const existingResolver = pendingResolvers.get(bgsId);
@@ -1146,6 +1150,7 @@ const cancelInFlightRequest = (bgsId: string): Promise<void> | null => {
         drainResolve();
       }, BGS_REQUEST_TIMEOUT_MS),
       expectedResponseType: existingResolver.expectedResponseType,
+      drain: true,
     };
     pendingResolvers.set(bgsId, drainResolver);
   });
@@ -1159,7 +1164,9 @@ const cancelInFlightRequest = (bgsId: string): Promise<void> | null => {
  * delete. The drain is not awaited: the next endBgsSession takes it over.
  */
 export const cancelBgsSearch = (bgsId: string): void => {
-  const type = pendingResolvers.get(bgsId)?.expectedResponseType;
+  const resolver = pendingResolvers.get(bgsId);
+  if (!resolver || resolver.drain) return;
+  const type = resolver.expectedResponseType;
   if (type !== "evaluate_response" && type !== "move_applied") return;
   void cancelInFlightRequest(bgsId);
 };
@@ -1226,6 +1233,7 @@ export const endBgsSession = async (
       reject,
       timeoutId,
       expectedResponseType: "game_session_ended",
+      drain: false,
     });
 
     setPendingRequest(bgsId, {
@@ -1358,6 +1366,7 @@ export const requestEvaluation = async (
       reject,
       timeoutId,
       expectedResponseType: "evaluate_response",
+      drain: false,
     });
 
     setPendingRequest(bgsId, {
@@ -1435,6 +1444,7 @@ export const applyBgsMove = async (
       reject,
       timeoutId,
       expectedResponseType: "move_applied",
+      drain: false,
     });
 
     setPendingRequest(bgsId, {
