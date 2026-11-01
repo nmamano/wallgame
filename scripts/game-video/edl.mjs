@@ -526,7 +526,10 @@ export const EDL_LIMITS = {
   captionWords: 6,
   captionChars: 32,
   stampChars: 12,
-  secondsPerMove: [0.2, 3],
+  // Up to 4 s a move, for a long sound that must finish on its ply (Wall
+  // Game Director, 2026-11-01, f00bf5b6 item 40: -12 ply 26's sting-1 is
+  // 3.7 s); scripts still aim at 3 s or less.
+  secondsPerMove: [0.2, 4],
   fastForwardSecondsPerMove: [0.2, 0.3],
   zoomScale: [1.1, 3],
   zoomHoldSeconds: [0.2, 3],

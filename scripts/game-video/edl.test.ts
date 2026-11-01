@@ -102,6 +102,19 @@ describe("validateEdl", () => {
     });
     expect(r.ok).toBe(false);
   });
+
+  test("a ply holds up to 4 s, for a long sound that must finish on it", () => {
+    const pace = (secondsPerMove: number) =>
+      validateEdl({
+        ...base,
+        pace: [{ fromPly: 2, toPly: 2, secondsPerMove }],
+      });
+    expect(pace(3.7).ok).toBe(true);
+    expect(pace(4).ok).toBe(true);
+    expect(pace(4.1).errors).toEqual([
+      "pace[0]: secondsPerMove must be 0.2..4",
+    ]);
+  });
 });
 
 describe("the moment kinds", () => {
