@@ -5193,3 +5193,56 @@ describe("Nil's revise of v-2026-10-31-6: a call to action on every video, tick-
     expect((await direct({})).status).toBe(200);
   });
 });
+
+describe("Nil's revision asks show only what changed (Nil, 2026-11-01, C54)", () => {
+  test("after a Revise, direct needs what changed and stores it; with no Revise it refuses it", async () => {
+    const dir = tempDir();
+    const stub = join(dir, "stub-render.cjs");
+    writeFileSync(stub, STUB_RENDER);
+    const base = await serve(dir, stub);
+    const picked = await call(base, "/api/daily/pick", { report: REPORT });
+    expect(picked.status).toBe(200);
+    const id = picked.body.id;
+    await call(base, "/api/daily/script-review", { item: id, ...SCRIPT_PASS });
+    const ending = (await dailyState(base)).suggestedEnding;
+    const direct = (extra: object) =>
+      call(base, "/api/daily/direct", {
+        item: id,
+        edl: { ...EDL, ending },
+        noLint: true,
+        ...extra,
+      });
+    const changed = {
+      plies: [22],
+      beats: [],
+      end: false,
+      what: "a new sound on 22",
+    };
+    const first = await direct({ changed });
+    expect(first.status).toBe(409);
+    expect(first.body.error).toContain("has no Revise from Nil to answer");
+    expect((await direct({})).status).toBe(200);
+    // Nil's Revise of that video.
+    const file = join(dir, "daily", "items", `${id}.json`);
+    const it = JSON.parse(readFileSync(file, "utf8")) as {
+      reviews: object[];
+    };
+    it.reviews = [
+      { action: "revise", notes: "a sound", at: new Date().toISOString() },
+    ];
+    writeFileSync(file, JSON.stringify(it));
+    const bare = await direct({});
+    expect(bare.status).toBe(409);
+    expect(bare.body.error).toContain(
+      'direct --changed <plies|end|all> --what "<one line>"): changed is missing',
+    );
+    const past = await direct({ changed: { ...changed, plies: [999] } });
+    expect(past.status).toBe(409);
+    expect(past.body.error).toContain("the game's plies are 0 to");
+    expect((await direct({ changed })).status).toBe(200);
+    const stored = JSON.parse(readFileSync(file, "utf8")) as {
+      edl: { changed: unknown };
+    };
+    expect(stored.edl.changed).toEqual(changed);
+  });
+});

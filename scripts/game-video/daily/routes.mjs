@@ -91,6 +91,7 @@ import {
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { OVERLAYS, needsNilOk, riskLevel } from "../overlays.mjs";
 import { timelineOf } from "./strips.mjs";
+import { changedProblem } from "./changed-clip.mjs";
 import { siteMove } from "../site-move.mjs";
 import { gridOf } from "./tools.mjs";
 import { lintNotes, lintRecapture, lintStops } from "./lint.mjs";
@@ -2088,12 +2089,32 @@ export const createDaily = ({
       if (errors.length) throw new StepRefused(errors.join("; "));
       const text = listText(edl);
       const linted = lintGate(item, text, body);
+      // After Nil's Revise, the list names what it changed, so his next
+      // ask shows only that moment (Nil, 2026-11-01, CASES C54).
+      const revised = item.reviews.at(-1)?.action === "revise";
+      if (revised) {
+        const problem = changedProblem(
+          body.changed,
+          item.candidate.movesCount - 1,
+          edl.events,
+        );
+        if (problem) {
+          throw new StepRefused(
+            `${item.id} follows Nil's Revise, so its list names what changed (direct --changed <plies|end|all> --what "<one line>"): ${problem}`,
+          );
+        }
+      } else if (body.changed) {
+        throw new StepRefused(
+          `${item.id} has no Revise from Nil to answer: a first review shows the whole video, so direct takes no --changed`,
+        );
+      }
       json(
         res,
         200,
         store.direct(item.id, {
           edl,
           text,
+          changed: revised ? body.changed : null,
           needsPawnArt: linted.needsPawnArt,
           summary: [
             ...edlSummary(edl),

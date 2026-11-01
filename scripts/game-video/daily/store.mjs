@@ -999,9 +999,11 @@ export const openStore = (dataDir) => {
      * no pawn art, which a reactor of the list shows (routes.mjs lintGate):
      * its render captures live while the 4090's capture has none.
      * @param {string} id
-     * @param {{ edl: any, text: string, summary: unknown[], needsPawnArt: boolean }} list
+     * @param {{ edl: any, text: string, changed?: any, summary: unknown[], needsPawnArt: boolean }} list
+     *   `changed`: after Nil's Revise, what the list changed
+     *   (changed-clip.mjs), else null
      */
-    direct(id, { edl, text, summary, needsPawnArt }) {
+    direct(id, { edl, text, changed = null, summary, needsPawnArt }) {
       const sha = createHash("sha256").update(text).digest("hex");
       return updateItem(
         id,
@@ -1015,6 +1017,7 @@ export const openStore = (dataDir) => {
             sha256: sha,
             summary,
             needsPawnArt,
+            changed,
             directedAt: new Date().toISOString(),
           };
           item.render = null;
