@@ -1113,6 +1113,69 @@ export const OVERLAYS = {
       'Nil, for this clip: "on that wall that increased distance to 35 moves, you could have played one of these green screen memes. save them for occasions like this like when you get destroyed by a move" (Nil to Wall Game PM, 2026-11-01 about 10:05 UTC)',
     rating: null,
   },
+  /*
+    A man with his hands on his head, shocked, for a move that destroys
+    the other side (Nil, 2026-11-01, via Wall Game PM, with gs-laugh-cry:
+    "save them for occasions like this like when you get destroyed by a
+    move"). 0-1.0 s: he leaves the frame after it. Its track is silent, so
+    the event names its sound. The source's file name is not used on any
+    surface (Wall Game PM, 2026-11-01).
+  */
+  "gs-hands-on-head": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 1,
+    pawn: true,
+    tail: false,
+    size: { w: 0.4, h: 0.225 },
+    small: { w: 0.34, h: 0.191 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-hands-on-head",
+      fps: 30,
+      frames: 30,
+      sha256:
+        "7ef8ba0454ff8ce332dd3cfbfd901dd3b51c55c21fd8cdd0578c253154f67cfc",
+    },
+    source:
+      "Nil's clip, 2026-11-01: a man with his hands on his head, on green (origin not known), 0-1.0 s; its track is silent",
+    claim: "MEDIUM: a clip of unknown origin",
+    likeness: "HIGH: a real person's face",
+    nilOk:
+      'Nil, for this clip: "save them for occasions like this like when you get destroyed by a move" (Nil to Wall Game PM, 2026-11-01 about 10:05 UTC)',
+    rating: null,
+  },
+  /*
+    Squidward dancing, as "bm" (bad manners) after a good move (Nil,
+    2026-11-01, to the Wall Game Director: "use this as "bm" after a good
+    move"): beside the pawn of the side that made it. The whole clip;
+    its track is silent, so the event names its sound.
+  */
+  "gs-squidward-bm": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 3.867,
+    pawn: true,
+    tail: false,
+    size: { w: 0.161, h: 0.36 },
+    small: { w: 0.134, h: 0.3 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-squidward-bm",
+      fps: 30,
+      frames: 116,
+      sha256:
+        "5e644a02302c3c04f1e5e6a2e5037c202c47eb18cdf8964fa7da720ce3262ee0",
+    },
+    source:
+      "Nil's clip, 2026-11-01: squidward twerking.mp4 (SpongeBob SquarePants, Nickelodeon), the whole 3.87 s, keyed; its track is silent",
+    claim: "HIGH: a TV cartoon clip (Nickelodeon / Paramount)",
+    likeness: "None",
+    nilOk: `Nil, for this clip: "use this as "bm" after a good move" (Nil to the Wall Game Director, 2026-11-01)`,
+    rating: null,
+  },
   "gs-confused-travolta": {
     form: "clip",
     draw: "sequence",

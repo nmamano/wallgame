@@ -434,6 +434,8 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       "stupid-stamp",
       "gs-jjj-laugh",
       "gs-laugh-cry",
+      "gs-hands-on-head",
+      "gs-squidward-bm",
       "gs-confused-travolta",
       "gs-terio-ooh",
       "gs-crying-man",
