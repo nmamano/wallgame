@@ -470,7 +470,9 @@ export const syncReviewAsks = async ({
     // director armed it (store.armFixedApproval): approve it, and open no
     // ask. A refusal (one video of a game, the file's bytes) opens the
     // ask after all, so Nil decides.
-    // Held for this key: its armed approval was refused once already.
+    // Held for this key: skip the armed approval here. If the arm came
+    // first, it was refused once already; an arm placed after the hold
+    // started was applied at once by the approve-fixed route itself.
     const heldNow =
       record?.status === "held" && sameKey(record, key) ? record : null;
     if (item.fixedApproval && !fixedApprovalProblem(item) && !heldNow) {
