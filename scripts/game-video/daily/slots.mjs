@@ -147,7 +147,8 @@ export const zonedInstant = (day, hhmm) => {
   return guess - offsetMs(first);
 };
 
-const nextDay = (day) =>
+/** The calendar day after `day` (YYYY-MM-DD). */
+export const nextDay = (day) =>
   new Date(Date.parse(`${day}T12:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 
 /** "Thu 2026-10-29 09:00 PT", for messages and the status route. */

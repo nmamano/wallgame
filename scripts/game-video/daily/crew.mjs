@@ -312,6 +312,7 @@ import {
   seatColors,
 } from "./script.mjs";
 import { timelineOf } from "./strips.mjs";
+import { heldWords } from "./review-asks.mjs";
 
 const OFFICE = "http://localhost:4000";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -643,7 +644,11 @@ const state = () => app("GET", "/api/daily/state");
 const itemSummary = async (id) => {
   const s = await state();
   const k = s.items.find((x) => x.id === id) ?? (await itemNamed(id));
-  return itemLines(k, k.renderProgress).join("\n");
+  const ask = (await app("GET", "/api/daily/asks"))[k.id];
+  return [
+    ...itemLines(k, k.renderProgress),
+    ...(ask ? [`review ask: ${askRecordLine(ask)}`] : []),
+  ].join("\n");
 };
 
 /**
@@ -818,17 +823,20 @@ const runTool = async (fn, options, source) => {
 /**
  * What one ask sync did, and each item's last ask (review-asks.mjs).
  * @param {{ opened: string[], applied: string[], withdrawn: string[],
- *   told: string[], asks: Record<string, any> }} did
+ *   told: string[], held: string[], asks: Record<string, any> }} did
  */
 export const askLines = (did) => [
-  `asks: opened ${did.opened.join(", ") || "-"}; applied ${did.applied.join(", ") || "-"}; withdrawn ${did.withdrawn.join(", ") || "-"}; director told about ${did.told.join(", ") || "-"}`,
+  `asks: opened ${did.opened.join(", ") || "-"}; applied ${did.applied.join(", ") || "-"}; withdrawn ${did.withdrawn.join(", ") || "-"}; held ${did.held.join(", ") || "-"}; director told about ${did.told.join(", ") || "-"}`,
   ...Object.entries(did.asks)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(
-      ([id, r]) =>
-        `  ${id}: ask ${r.askId ?? "-"} ${r.status}${r.note ? ` (${r.note})` : ""}, video ${String(r.videoSha256).slice(0, 12)}`,
-    ),
+    .map(([id, r]) => `  ${id}: ${askRecordLine(r)}`),
 ];
+
+/** An item's ask record in one line (review-asks.mjs), for asks and status. */
+export const askRecordLine = (r) =>
+  r.status === "held"
+    ? `no ask yet: ${heldWords(r.batchAt)}, video ${String(r.videoSha256).slice(0, 12)}`
+    : `ask ${r.askId ?? "-"} ${r.status}${r.note ? ` (${r.note})` : ""}, video ${String(r.videoSha256).slice(0, 12)}`;
 
 const commands = {
   async status() {

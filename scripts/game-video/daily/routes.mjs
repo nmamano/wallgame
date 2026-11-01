@@ -1870,6 +1870,9 @@ export const createDaily = ({
     },
 
     "GET /api/daily/state": (req, res) => json(res, 200, state()),
+    // Each item's last review ask, or its hold for the day's batch
+    // (review-asks.mjs), for crew.mjs status.
+    "GET /api/daily/asks": (req, res) => json(res, 200, askRecords.all()),
 
     // Nil's review queue (review.mjs): the page the app opens on (Nil,
     // 2026-10-28), and its first address, which links already carry.

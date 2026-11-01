@@ -27,6 +27,16 @@
  * sync opens a new one when the item is in review again with another video,
  * block or round. One that closed in another way is not opened again.
  *
+ * One batch a day (Nil, 2026-11-01: "let's batch video reviews so I get
+ * only one batch a day, at a specific time of your chosing every day. no
+ * more notifications throughout the day now that we have a backlog"; the
+ * Director chose 09:00 America/Los_Angeles, kept to local time by Wall Game
+ * PM). An item that enters review is held: its ask opens at the first
+ * REVIEW_BATCH_TIME after it entered, with every other item held by then.
+ * A new render or block after that time waits for the next day's batch.
+ * An ask the Director asks for again (askAgain) or one the office refused
+ * to open is not held.
+ *
  * The review page stays: the fallback, and its Approved tab for Undo.
  *
  * The record (review-asks.json in the data dir) keeps the last ask of each
@@ -41,6 +51,13 @@ import { writeAtomic, StepRefused, fixedApprovalProblem } from "./store.mjs";
 import { REVIEWER_MEMBER_ID, reviewView, directorText } from "./review.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
+import {
+  SLOT_ZONE,
+  nextDay,
+  pacificDay,
+  pacificLabel,
+  zonedInstant,
+} from "./slots.mjs";
 
 /** The app that opens the asks (its registry name). */
 export const APP_NAME = "game-video";
@@ -58,6 +75,24 @@ export const ASK_OPTIONS = [
   `Revise: ${NOTE_PLACEHOLDERS[0]}`,
   `Discard: ${NOTE_PLACEHOLDERS[1]}`,
 ];
+
+/** The time of Nil's one review batch a day, in SLOT_ZONE's wall clock. */
+export const REVIEW_BATCH_TIME = "09:00";
+
+/**
+ * The first batch time at or after `ms` (epoch ms): today's 09:00 in
+ * SLOT_ZONE, or tomorrow's once today's has passed.
+ * @param {number} ms
+ */
+export const reviewBatchAfter = (ms) => {
+  const day = pacificDay(ms);
+  const today = zonedInstant(day, REVIEW_BATCH_TIME);
+  return today >= ms ? today : zonedInstant(nextDay(day), REVIEW_BATCH_TIME);
+};
+
+/** "held for the 09:00 PT batch (Sun 2026-11-01 09:00 PT)", for crew.mjs. */
+export const heldWords = (batchAt) =>
+  `held for the ${REVIEW_BATCH_TIME} PT batch (${pacificLabel(Date.parse(batchAt))}, ${SLOT_ZONE})`;
 
 /** How often the app syncs its asks with no crew call (app/server.mjs). */
 export const ASK_SYNC_MS = 60_000;
@@ -248,7 +283,7 @@ export const askAgain = (records, itemId) => {
  * @param {{ pacific: string, willPost: boolean, why: string | null }} deps.nextSlot
  * @param {{ warn: (m: string) => void }} [deps.log]
  * @param {() => Date} [deps.now]
- * @returns {Promise<{ opened: string[], applied: string[], withdrawn: string[], told: string[] }>}
+ * @returns {Promise<{ opened: string[], applied: string[], withdrawn: string[], told: string[], held: string[] }>}
  */
 export const syncReviewAsks = async ({
   store,
@@ -259,7 +294,7 @@ export const syncReviewAsks = async ({
   log = console,
   now = () => new Date(),
 }) => {
-  const out = { opened: [], applied: [], withdrawn: [], told: [] };
+  const out = { opened: [], applied: [], withdrawn: [], told: [], held: [] };
   const tell = async (itemId, text) => {
     try {
       await send(DIRECTOR_AGENT_ID, text);
@@ -427,7 +462,7 @@ export const syncReviewAsks = async ({
     if (
       record &&
       sameKey(record, key) &&
-      !["open-failed", "again"].includes(record.status)
+      !["open-failed", "again", "held"].includes(record.status)
     ) {
       continue;
     }
@@ -435,7 +470,10 @@ export const syncReviewAsks = async ({
     // director armed it (store.armFixedApproval): approve it, and open no
     // ask. A refusal (one video of a game, the file's bytes) opens the
     // ask after all, so Nil decides.
-    if (item.fixedApproval && !fixedApprovalProblem(item)) {
+    // Held for this key: its armed approval was refused once already.
+    const heldNow =
+      record?.status === "held" && sameKey(record, key) ? record : null;
+    if (item.fixedApproval && !fixedApprovalProblem(item) && !heldNow) {
       try {
         const done = store.approveFixed(card.id);
         out.applied.push(card.id);
@@ -452,10 +490,27 @@ export const syncReviewAsks = async ({
         );
       }
     }
+    // Held until the day's batch: a new key starts its hold now. The
+    // item's last ask stays in it, for the ask's "replaces" line.
+    const previous = heldNow ? (heldNow.previous ?? null) : (record ?? null);
+    if (!record || !sameKey(record, key) || heldNow) {
+      const held = heldNow ?? {
+        ...key,
+        status: "held",
+        heldAt: now().toISOString(),
+        batchAt: new Date(reviewBatchAfter(now().getTime())).toISOString(),
+        previous,
+      };
+      if (now().getTime() < Date.parse(held.batchAt)) {
+        if (held !== record) records.put(card.id, held);
+        out.held.push(card.id);
+        continue;
+      }
+    }
     let ask;
     try {
       ask = await office.open({
-        text: askPrompt(item, card, record),
+        text: askPrompt(item, card, previous),
         member: REVIEWER_USERNAME,
         priority: ASK_PRIORITY,
         options: ASK_OPTIONS,

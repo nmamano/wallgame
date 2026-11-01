@@ -21,7 +21,13 @@ import {
 } from "./store.mjs";
 import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
-import { feedbackLines, holdLine, storyWarning, timingLines } from "./crew.mjs";
+import {
+  askRecordLine,
+  feedbackLines,
+  holdLine,
+  storyWarning,
+  timingLines,
+} from "./crew.mjs";
 import { noStoryLine, STORY_MAX_BYTES } from "./post-instagram.mjs";
 import { quoteLines } from "./quote.mjs";
 import {
@@ -40,6 +46,7 @@ import {
   askAgain,
   openAskRecords,
   parseAnswer,
+  reviewBatchAfter,
   syncReviewAsks,
 } from "./review-asks.mjs";
 
@@ -1360,12 +1367,19 @@ const fakeOffice = () => {
   };
 };
 
+/**
+ * A review batch time: 09:00 PDT on 2026-10-31. The tests' clock starts
+ * there, so an item in review gets its ask in the first sync.
+ */
+const BATCH_AT = "2026-10-31T16:00:00.000Z";
+
 /** One app with one item in review, its fake office and the director's inbox. */
 const withAsks = () => {
   const base = withItemInReview();
   const office = fakeOffice();
   const records = openAskRecords(base.store.dirs.root);
   const told: string[] = [];
+  const clock = { at: BATCH_AT };
   const sync = () =>
     syncReviewAsks({
       store: base.store,
@@ -1377,8 +1391,9 @@ const withAsks = () => {
       },
       nextSlot: NEXT_SLOT,
       log: { warn: () => undefined },
+      now: () => new Date(clock.at),
     });
-  return { ...base, office, records, told, sync };
+  return { ...base, office, records, told, sync, clock };
 };
 
 const ID = "v-2026-10-28-1";
@@ -1461,6 +1476,54 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     expect(parseAnswer("approved it yesterday")).toBeNull();
     expect(parseAnswer("yes")).toBeNull();
     expect(parseAnswer(undefined)).toBeNull();
+  });
+
+  test("the review batch is 09:00 in Los Angeles, PST or PDT (Nil, 2026-11-01)", () => {
+    const at = (iso: string) =>
+      new Date(reviewBatchAfter(Date.parse(iso))).toISOString();
+    // 2026-11-01 03:00 PST: today's 09:00 PST.
+    expect(at("2026-11-01T11:00:00.000Z")).toBe("2026-11-01T17:00:00.000Z");
+    // At the batch time it is that batch; a second later, the next day's.
+    expect(at("2026-11-01T17:00:00.000Z")).toBe("2026-11-01T17:00:00.000Z");
+    expect(at("2026-11-01T17:00:01.000Z")).toBe("2026-11-02T17:00:00.000Z");
+    // Before the change (PDT) and after the spring one: 16:00 UTC.
+    expect(at("2026-10-31T15:00:00.000Z")).toBe(BATCH_AT);
+    expect(at("2027-03-14T12:00:00.000Z")).toBe("2027-03-14T16:00:00.000Z");
+  });
+
+  test("an item that enters review after the batch is held until the next day's batch", async () => {
+    const { office, records, sync, clock } = withAsks();
+    clock.at = "2026-10-31T16:30:00.000Z";
+    expect(await sync()).toMatchObject({ opened: [], held: [ID] });
+    expect(office.openIds()).toEqual([]);
+    expect(records.get(ID)).toMatchObject({
+      status: "held",
+      heldAt: "2026-10-31T16:30:00.000Z",
+      batchAt: "2026-11-01T17:00:00.000Z",
+    });
+    // Still held a minute before the batch, its hold unchanged.
+    clock.at = "2026-11-01T16:59:00.000Z";
+    expect(await sync()).toMatchObject({ opened: [], held: [ID] });
+    expect(records.get(ID)).toMatchObject({
+      heldAt: "2026-10-31T16:30:00.000Z",
+    });
+    // At the batch its ask opens.
+    clock.at = "2026-11-01T17:00:00.000Z";
+    expect(await sync()).toMatchObject({ opened: [ID], held: [] });
+    expect(office.openIds()).toHaveLength(1);
+    expect(records.get(ID)).toMatchObject({ status: "open" });
+  });
+
+  test("crew.mjs names a held item's batch", () => {
+    expect(
+      askRecordLine({
+        status: "held",
+        batchAt: "2026-11-01T17:00:00.000Z",
+        videoSha256: "abcdef0123456789",
+      }),
+    ).toBe(
+      "no ask yet: held for the 09:00 PT batch (Sun 2026-11-01 09:00 PT, America/Los_Angeles), video abcdef012345",
+    );
   });
 
   test("one ask for an item in review: Nil, P3, the video, Approve recommended; a second sync opens none", async () => {
@@ -1707,6 +1770,7 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
       applied: [],
       withdrawn: [],
       told: [],
+      held: [],
     });
     expect(itemOf(store).state).toBe("finished");
   });
