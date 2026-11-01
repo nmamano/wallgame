@@ -2995,7 +2995,10 @@ const cellAt = ([row, col]) => ({
 /**
  * The cell a turn is about: where its pawn landed, or else where its first
  * wall went, as a 0-based [row from the top, column]. Null when the notation
- * names no cell (a resignation has no move).
+ * names no cell (a resignation has no move). A pawn that steps twice in one
+ * turn lands on its LAST cell: "Cb4.Cb5" is about b5 (z5S6UPIi ply 39, render
+ * vet 2026-11-01: the capture picture looked for the caught mouse on b4 and
+ * left the page's two small pawns on the catch).
  */
 const cellOfPly = (plyIndex) => {
   const terms = String(history[plyIndex]?.notation ?? "")
@@ -3006,7 +3009,10 @@ const cellOfPly = (plyIndex) => {
     if (!m) return null;
     return [GRID.rows - Number(m[2]), m[1].charCodeAt(0) - "a".charCodeAt(0)];
   };
-  const pawn = terms.find((t) => !t.startsWith(">") && !t.startsWith("^"));
+  const pawns = terms.filter((t) => !t.startsWith(">") && !t.startsWith("^"));
+  // The first pawn that moved, at its last step (its letter, C M D or E:
+  // shared/domain/standard-notation.ts).
+  const pawn = pawns.filter((t) => t[0] === pawns[0]?.[0]).at(-1);
   return (pawn && parse(pawn)) ?? (terms[0] ? parse(terms[0]) : null);
 };
 
