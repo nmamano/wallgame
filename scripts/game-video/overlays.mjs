@@ -541,6 +541,10 @@ export const OVERLAYS = {
     line: "{loser} resigns",
     seconds: 2.2,
     pawn: true,
+    // No pointer: "<Bot|Human> resigns" already names the side, and the
+    // tail is the blue triangle Nil called ugly (Wall Game Director,
+    // 2026-11-01, on the 1102d proof; CASES C45).
+    tail: false,
     // No small size: its words are the only ones on the board that say
     // how the game ended (render vet, 2026-11-01, v-2026-11-01-8).
     size: { w: 0.38, h: 0.36 },

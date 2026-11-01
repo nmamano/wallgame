@@ -497,6 +497,8 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     const gs = Object.entries(OVERLAYS).filter(([k]) => k.startsWith("gs-"));
     expect(gs.length).toBeGreaterThan(0);
     for (const [, asset] of gs) expect(asset).toMatchObject({ tail: false });
+    // So does the resign flag: its words name the side.
+    expect(OVERLAYS["resign-flag"]).toMatchObject({ tail: false });
   });
 
   test("the EDL's place is the only one tried, under the same faults", () => {
