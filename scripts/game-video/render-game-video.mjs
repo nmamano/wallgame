@@ -4726,7 +4726,8 @@ const renderStyle = async (styleName) => {
     // The name mask: every frame passes here (the cold open, the overlays
     // and the VS card too), and no daily frame carries a human seat's name.
     if (wallz) {
-      const shown = shownNames(state, HUMAN_NAMES);
+      // The kit's own folder (/home/nilo/nil on the 4090) is no seat's name.
+      const shown = shownNames(state, HUMAN_NAMES, [dirname(REPO)]);
       if (shown.length > 0) {
         throw new Error(
           `the name mask: a frame (${meta.kind ?? "?"}, ply ${meta.ply ?? "-"}, ${elapsed.toFixed(2)} s) carries the seat name ${shown.map((n) => JSON.stringify(n)).join(", ")}; a daily frame names a seat only Bot, Human, Red or Blue. If the list's own text holds the name (a caption, an overlay line), change that text`,

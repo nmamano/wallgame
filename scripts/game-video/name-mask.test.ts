@@ -23,6 +23,31 @@ describe("the name mask (Nil, 2026-11-01: ALL games, no names)", () => {
     expect(shownNames({ caption: "go bo go" }, ["bo"])).toEqual([]);
   });
 
+  test("only the kit's own folder is not looked in (Nil's account is \"Nil\")", () => {
+    const KIT = "/home/nilo/nil";
+    const state = {
+      top: { name: "Blue", portrait: `${KIT}/wallgame-video/p2.png` },
+      overlay: { src: `file://${KIT}/wallgame-video/tmp/a.png` },
+      caption: "bro built a maze",
+    };
+    expect(shownNames(state, ["Nil"])).toEqual(["Nil"]);
+    expect(shownNames(state, ["Nil"], [KIT])).toEqual([]);
+    // Any other place still stops: a caption, another path, a URL.
+    for (const extra of [
+      { caption: "nil built a maze" },
+      { other: "/srv/nil/a.png" },
+      { link: "https://wallgame.io/u/nil" },
+    ]) {
+      expect(shownNames({ ...state, ...extra }, ["Nil"], [KIT])).toEqual([
+        "Nil",
+      ]);
+    }
+    // The folder does not hide a name that is only next to it.
+    expect(
+      shownNames({ caption: `${KIT}/maria_k92.png` }, [MEMBER], [KIT]),
+    ).toEqual([MEMBER]);
+  });
+
   test("a daily frame of a member's game carries the username nowhere", () => {
     // The seats as the replay page gives them: a member against a bot.
     const names = dailySeatNames({

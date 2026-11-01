@@ -7,7 +7,11 @@
  * name (a member's account or a guest's) anywhere in the frame's state stops
  * the render. The state holds what changes from frame to frame (the names,
  * the caption, the overlay texts, the call to action, file paths); the
- * stage's fixed words are not in it.
+ * stage's fixed words are not in it. The render kit's own folder is the one
+ * text not looked in (`ignore`): its path (/home/nilo/nil/...) holds "nil",
+ * Nil's account name (z5S6UPIi, 2026-11-01: every frame of his game stopped
+ * on it). Every other path, URL and text is read (Wall Game PM, 2026-11-01:
+ * the guard stays strict for every other name).
  */
 
 /**
@@ -16,10 +20,14 @@
  * looked for: it would match ordinary words.
  * @param {unknown} state a stage state, as the renderer sends it
  * @param {string[]} names the human seats' display names
+ * @param {string[]} [ignore] texts taken out before the search: the render
+ *   kit's own folder
  * @returns {string[]}
  */
-export const shownNames = (state, names) => {
-  const text = JSON.stringify(state);
+export const shownNames = (state, names, ignore = []) => {
+  const text = ignore
+    .filter((t) => t.length > 0)
+    .reduce((s, t) => s.split(t).join(" "), JSON.stringify(state));
   return names.filter((name) => {
     const n = name.trim();
     if (n.length < 3) return false;
