@@ -1754,9 +1754,10 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     expect(body.readFiles).toEqual([`${video}#26.6-41.9`]);
     const lines = String(body.text).split("\n");
     expect(lines[0]).toStartWith("Revision after your Revise of ");
-    expect(lines.slice(1, 4)).toEqual([
+    expect(lines.slice(1, 5)).toEqual([
       "> what if both pawns wave the flag?",
       "Changed: both of bro's pawns wave flags, 26.6-41.9 s. The clip shows only that moment.",
+      "The rest of the video passed the vet.",
       "Post this video?",
     ]);
   });

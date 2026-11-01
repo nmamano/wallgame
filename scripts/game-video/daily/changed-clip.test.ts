@@ -45,7 +45,7 @@ const EVENTS = [
   { ply: 20, kind: "overlay", asset: "gs-fire", sound: "boom-4" },
   { ply: 20, kind: "overlay", asset: "gs-laugh-cry" },
   { ply: 20, kind: "overlay", asset: "resign-flag" },
-  { ply: 20, kind: "overlay", asset: "ending-caption" },
+  { ply: 20, kind: "overlay", form: "bar", asset: "ending-caption" },
 ];
 
 describe("a revision's clip (Nil, 2026-11-01, C54)", () => {
@@ -155,7 +155,7 @@ describe("a revision's clip (Nil, 2026-11-01, C54)", () => {
     ).toEqual({ from: 23.2, to: 28.6 });
   });
 
-  test("the last ply and the end card run to the video's end; an explain's build-up is in the lead-in", () => {
+  test("the last ply and the end card run to the video's end; an explain's build-up is in the lead-in; the end card starts at its bar", () => {
     // Ply 20's explain starts at 26.13 s, before its move lands at 28.6 s.
     expect(
       changedSpan(
@@ -173,7 +173,9 @@ describe("a revision's clip (Nil, 2026-11-01, C54)", () => {
         EVENTS,
       ),
     ).toEqual({
-      from: 26.6,
+      // The end card opens with the ending's bar (36.8 s), not at the
+      // last move (Wall Game Director, 2026-11-01).
+      from: 34.8,
       to: 41.9,
     });
     expect(

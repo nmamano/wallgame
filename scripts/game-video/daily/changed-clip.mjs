@@ -25,7 +25,7 @@ export const CHANGED_WHAT_MAX = 200;
  * sound, such as "20:resign-flag"), and the end card.
  * @typedef {{ plies: "all" } | { plies: number[], beats: { ply: number, name: string }[], end: boolean }} ChangedScope
  * @typedef {ChangedScope & { what: string }} Changed
- * @typedef {{ ply: number, kind?: string, asset?: string, sound?: string }} ListEvent
+ * @typedef {{ ply: number, kind?: string, form?: string, asset?: string, sound?: string }} ListEvent
  */
 
 /**
@@ -114,7 +114,8 @@ export const changedProblem = (changed, lastPly, events) => {
  * changed beat and ends with the last one. A ply is its move and all its
  * events (an explain's build-up comes before its move), and ends with
  * them, or at the next move when it has none; a beat is its own events
- * only. The end card, or a changed last ply, runs to the video's end.
+ * only. The end card (from the ending's bar), or a changed last ply,
+ * runs to the video's end.
  * @param {{ moves: { ply: number, at: number }[], events: { index: number, ply: number, start: number, end: number }[] }} timeline
  * @param {ChangedScope} changed
  * @param {number} duration the video's seconds
@@ -147,9 +148,20 @@ export const changedSpan = (timeline, changed, duration, events) => {
     }
   }
   if (changed.end) {
-    // The end card: from the last move, which the ending follows.
+    // The end card (Wall Game Director, 2026-11-01: the GG card and the
+    // last line, not the last move's beats): from the ending's bar, which
+    // the card opens with; with no bar, from the end of the last ply's
+    // beats, or from its move when it has none.
+    const lastSpans = timeline.events.filter((e) => e.ply === lastPly);
+    const bar = lastSpans.find((e) => events[e.index]?.form === "bar");
     const last = timeline.moves.find((m) => m.ply === lastPly);
-    starts.push(last ? last.at : duration);
+    starts.push(
+      bar
+        ? bar.start
+        : lastSpans.length
+          ? Math.max(...lastSpans.map((e) => e.end))
+          : (last?.at ?? duration),
+    );
     ends.push(duration);
   }
   if (!starts.length) return null;

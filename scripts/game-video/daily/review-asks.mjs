@@ -177,6 +177,9 @@ export const askPrompt = (item, card, previous, change = null) =>
     ...(change
       ? [
           `Changed: ${change.what}, ${change.from.toFixed(1)}-${change.to.toFixed(1)} s. The clip shows only that moment.`,
+          // True of every ask: an item is in review only after its video
+          // passed the vet (Wall Game PM, review 142).
+          "The rest of the video passed the vet.",
         ]
       : []),
     "Post this video?",
