@@ -374,3 +374,56 @@ sound effect is funny".
 | Key    | Made from  | Length | Command (ffmpeg)                                                                          |
 | ------ | ---------- | ------ | ----------------------------------------------------------------------------------------- |
 | nono-1 | Nil's file | 2.8 s  | `-ss 4.34 -to 7.13 -i <file> -vn -af "afade=t=in:st=0:d=0.01,afade=t=out:st=2.73:d=0.06"` |
+
+## Laughs and fear sounds, Freesound CC0 voices (2026-11-01)
+
+Nil, C33: "you reuse the same laugh effect and the same 'oh no' a lot. try
+more variety". The pack's own laughs and screams had no origin, so the
+Director Rewriter fetched these nine (meme-pack bfdfc22: each page shows
+"Creative Commons 0", and each page's text says the uploader recorded or
+performed the sound; page, uploader and sha256 are in the director's
+meme-pack.md). LOW claim risk. A key is `<family>-<n>`, so the director's
+scream-f-2 and scream-m-2 are scream-1 and scream-2 here: one family, one of
+the two a video. The files are Freesound's HQ preview mp3.
+
+Words check (Whisper small, on the 4090, 2026-11-01), on the whole upload
+and again on each cut. Agents cannot hear, so this and the cut points come
+from Whisper and the level per 20 ms, not from listening:
+
+- haha-1: "Uh-huh" (0-0.4 s), one short laugh; the whole upload.
+- giggle-1: 30 s of a pitched-up voice that also says words ("It's me!",
+  "Bye", 18-26 s). The cut, 6.40-7.32 s, reads as "Hahahaha!" only.
+- crowdlaugh-2: Whisper writes different words on each pass ("Incredible,
+  that's very important"; on the cut alone "Really Hetty Pie", then "Ha!"):
+  guesses at crowd noise, not speech, and the page says "no dialogue". The
+  cut is the loudest laugh, 8.95-10.75 s, with soft edges. A buried real
+  voice cannot be ruled out by Whisper alone.
+- evillaugh-2: "Ha ha ha ha ha!" (0-2 s); the whole upload.
+- gasp-2: no words: a quiet whimper, then a gasp at 0.4-0.85 s; the whole
+  upload.
+- uhoh-3: "Uh oh." (0-0.4 s); the first 0.58 s. A voice (VOICE_KEYS).
+- scream-1 (the director's scream-f-2, a woman): no words on the upload (on the short cut, Whisper guesses
+  noise as words in other languages). Short screams at 1.5, 2.6, 3.6 and
+  5.5 s; the cut is the first, 1.46-2.22 s.
+- scream-2 (the director's scream-m-2, a man): one long even scream, 0.2-6.3 s ("AHHHH"); the cut is its
+  first 1.6 s, faded out.
+- nooo-1: "Nooo." (0-1.1 s); the whole upload.
+
+Five had peaks high for their loudness (haha-1, giggle-1, evillaugh-2,
+uhoh-3, nooo-1; giggle-1 and evillaugh-2 also over 0 dBFS in the upload),
+so memeGain's true-peak ceiling would hold them under -21 LUFS. Each cut is
+raised, then limited at -12 dBFS (`alimiter=limit=0.251:attack=1:release=50:level=disabled`),
+as in cycle 2. evillaugh-2 still plays at about -22 LUFS: more gain only
+limits it harder.
+
+| Key          | Made from        | Length | Command (ffmpeg, from the downloaded preview)                                                                                |
+| ------------ | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| haha-1       | Freesound 572606 | 0.6 s  | `-af "atrim=0.02:0.62,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=0.45:d=0.15"`, then `volume=6dB` and the limiter |
+| giggle-1     | Freesound 243378 | 1.0 s  | `-af "atrim=6.40:7.32,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=0.8:d=0.12"`, then `volume=1dB` and the limiter  |
+| crowdlaugh-2 | Freesound 581528 | 1.8 s  | `-af "atrim=8.95:10.75,asetpts=PTS-STARTPTS,afade=t=in:d=0.15,afade=t=out:st=1.4:d=0.4"`                                     |
+| evillaugh-2  | Freesound 478934 | 2.3 s  | `-af "atrim=0:2.3,afade=t=out:st=2.2:d=0.1"`, then `volume=2dB` and the limiter                                              |
+| gasp-2       | Freesound 318078 | 1.0 s  | `-af "atrim=0:1.0,afade=t=out:st=0.9:d=0.1"`                                                                                 |
+| uhoh-3       | Freesound 801391 | 0.6 s  | `-af "atrim=0:0.58,afade=t=out:st=0.48:d=0.1"`, then `volume=1dB` and the limiter                                            |
+| scream-1     | Freesound 319258 | 0.8 s  | `-af "atrim=1.46:2.22,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=0.66:d=0.1"`                                     |
+| scream-2     | Freesound 169628 | 1.6 s  | `-af "atrim=0.10:1.70,asetpts=PTS-STARTPTS,afade=t=in:d=0.02,afade=t=out:st=1.3:d=0.3"`                                      |
+| nooo-1       | Freesound 818202 | 1.1 s  | `-af "atrim=0.02:1.12,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=1.0:d=0.1"`, then `volume=1dB` and the limiter   |

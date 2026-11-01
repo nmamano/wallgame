@@ -131,6 +131,19 @@ export const MEME_SOUNDS = {
   // Nil, 2026-11-01: "this sound effect is funny" (meme-sounds.md),
   // measured that day.
   "nono-1": { lufs: -10.9, truePeak: -4.3 },
+  // Laughs and fear sounds for more variety (Nil, C33: "you reuse the same
+  // laugh effect and the same 'oh no' a lot. try more variety"): voices
+  // the uploaders recorded themselves, CC0 on freesound.org (Director
+  // Rewriter, meme-pack bfdfc22; meme-sounds.md), measured 2026-11-01.
+  "haha-1": { lufs: -20.8, truePeak: -12.3 },
+  "giggle-1": { lufs: -20.7, truePeak: -11.2 },
+  "crowdlaugh-2": { lufs: -18.1, truePeak: -7.4 },
+  "evillaugh-2": { lufs: -23.4, truePeak: -11.5 },
+  "gasp-2": { lufs: -24.4, truePeak: -14.1 },
+  "uhoh-3": { lufs: -21.1, truePeak: -12.0 },
+  "scream-1": { lufs: -11.0, truePeak: -3.7 },
+  "scream-2": { lufs: -8.3, truePeak: -0.8 },
+  "nooo-1": { lufs: -20.9, truePeak: -12.0 },
 };
 
 /**
@@ -178,7 +191,7 @@ export const MEME_FAMILIES = {
   whoosh: "the prey gets away",
   chomp: "the capture",
   hit: "a hit that lands: the punish",
-  uhoh: "a mistake",
+  uhoh: "a mistake, or trouble coming (uhoh-3, a voice)",
   fall: "a fall: the self-trap",
   fightbell: "the VS card",
   eternity: "the eternity-later card's own voice",
@@ -187,6 +200,13 @@ export const MEME_FAMILIES = {
   crickets: "an awkward quiet: a move nobody can explain (with Travolta)",
   sneak: "got away with it: a blunder nobody punished (with Terio)",
   nono: "oh no no no no: a voice that sees the disaster coming",
+  haha: "a short mocking laugh: the other side profits",
+  giggle: "a relieved giggle: after the save",
+  crowdlaugh: "an audience laughs at it: a self-trap or a punished blunder",
+  evillaugh: "the villain's plan worked: the trap closes",
+  gasp: "a sudden gasp: a threat out of a quiet move",
+  scream: "a scream of fear: a strong threat (a woman, a man)",
+  nooo: "a dramatic nooo: the lead is lost",
 };
 
 /**
@@ -203,9 +223,11 @@ export const MEME_FAMILIES = {
  * ding (an instrument "correct"), alert, clang, bell, dundun, reveal (a
  * "shhh", then a sting), fail, horn, violin, buzzer, levelwin and
  * accomplished (made with synths), whistle (a whistled tune), and the
- * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh, fall and
- * fightbell, and chomp (a mouth's bite, no word). Not known (no source line
- * says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
+ * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh-1 (a sting),
+ * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
+ * audience off screen, as ooh), and gasp and scream (no word,
+ * as scared-2). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
 export const VOICE_FAMILIES = [
@@ -219,8 +241,12 @@ export const VOICE_FAMILIES = [
   "fuahhh",
   "ambulance",
   "eternity",
+  "haha",
+  "giggle",
+  "evillaugh",
+  "nooo",
 ];
-export const VOICE_KEYS = ["win-1", "scared-1", "shotgun-4"];
+export const VOICE_KEYS = ["win-1", "scared-1", "shotgun-4", "uhoh-3"];
 
 /** Whether the sound `key` is a voice (VOICE_FAMILIES, VOICE_KEYS). */
 export const isVoice = (key) =>
