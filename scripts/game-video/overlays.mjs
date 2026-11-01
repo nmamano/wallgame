@@ -1031,18 +1031,21 @@ export const OVERLAYS = {
     // He looks one way, then the other, and opens his hand.
     seconds: 2.467,
     pawn: true,
-    size: { w: 0.31, h: 0.3 },
-    small: { w: 0.25, h: 0.24 },
+    // 316x352: the letterbox cut leaves the screen's soft edge out, which
+    // keyed to a thin line down the right side (render vet, 2026-11-01,
+    // v-2026-11-01-4 at 14.5 s); the box keeps his old height.
+    size: { w: 0.264, h: 0.294 },
+    small: { w: 0.211, h: 0.235 },
     places: ["board"],
     sequence: {
       dir: "gs-confused-travolta",
       fps: 30,
       frames: 74,
       sha256:
-        "0590a21d6340cc67028bbeb8d2e07f4d64323d2bf214a09d85880f3c46c4e095",
+        "a35e58d652f96f3a4c26bf6783a496926379149e05d5ee68c5f5b08120e63b09",
     },
     source:
-      "Nil's meme pack: Green Screen/Green Screen - Orang Bertanya Sendiri!!.mp4 (John Travolta, Pulp Fiction, 1994), letterbox cut (crop 844:674:218:22), 1.1-3.55 s, silent",
+      "Nil's meme pack: Green Screen/Green Screen - Orang Bertanya Sendiri!!.mp4 (John Travolta, Pulp Fiction, 1994), letterbox cut inside the screen's soft edge (crop 834:670:222:26), 1.1-3.55 s, silent",
     claim: "HIGH: a film clip (Miramax)",
     likeness: "HIGH: a real actor's face",
     nilOk:
