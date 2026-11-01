@@ -163,6 +163,7 @@ import {
   musicGain,
 } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
+import { shownNames } from "./name-mask.mjs";
 import { siteMove } from "./site-move.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import {
@@ -1560,6 +1561,11 @@ const CELL_COUNT =
 const LAST_BOARD = PLY_WINDOW ? PLY_WINDOW.to + 1 : history.length;
 
 const apiPlayers = replay.matchStatus.players;
+/** The human seats' own names, which no daily frame carries (name-mask.mjs). */
+const HUMAN_NAMES = apiPlayers
+  .filter((p) => p.configType !== "bot")
+  .map((p) => p.displayName ?? "")
+  .filter((n) => n.trim() !== "");
 const nameOf = (playerId) =>
   apiPlayers.find((p) => p.playerId === playerId)?.displayName ??
   `Player ${playerId}`;
@@ -4337,8 +4343,15 @@ const renderStyle = async (styleName) => {
    * Bot and Human, as everywhere else), drawn in the side's colour. No
    * emoji: Nil found the first version "too crowded".
    */
+  /**
+   * A side as a frame of this look carries it. In the daily look its name
+   * is the daily one, so a seat's own name (a member's account, a guest's)
+   * never enters the stage, not even under a hidden plate (name-mask.mjs).
+   */
+  const filmedSide = (id) =>
+    wallz ? { ...side(id), name: dailyName(id) } : side(id);
   const overlaySide = (playerId) => ({
-    ...side(playerId),
+    ...filmedSide(playerId),
     word: dailyName(playerId),
   });
   /**
@@ -4664,6 +4677,16 @@ const renderStyle = async (styleName) => {
    */
   const crowdedWalks = new Map();
   const shoot = async (state, seconds, meta) => {
+    // The name mask: every frame passes here (the cold open, the overlays
+    // and the VS card too), and no daily frame carries a human seat's name.
+    if (wallz) {
+      const shown = shownNames(state, HUMAN_NAMES);
+      if (shown.length > 0) {
+        throw new Error(
+          `the name mask: a frame (${meta.kind ?? "?"}, ply ${meta.ply ?? "-"}, ${elapsed.toFixed(2)} s) carries the seat name ${shown.map((n) => JSON.stringify(n)).join(", ")}; a daily frame names a seat only Bot, Human, Red or Blue. If the list's own text holds the name (a caption, an overlay line), change that text`,
+        );
+      }
+    }
     firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
     const crowded = await stage.evaluate((s) => {
@@ -5880,8 +5903,8 @@ const renderStyle = async (styleName) => {
     evalStrip: evalStripAt(boardIndex),
     caption: wallz ? captionAt(boardIndex) : "",
     board: fileUrl(boardFrames[boardIndex]),
-    top: side(seats.top),
-    bottom: side(seats.bottom),
+    top: filmedSide(seats.top),
+    bottom: filmedSide(seats.bottom),
     race: raceHud(boardIndex),
     goal: wallz && goalOn ? GOAL_LINE : null,
     fastForward: fastForwardAt(boardIndex),
@@ -6102,8 +6125,8 @@ const renderStyle = async (styleName) => {
           segment: "vs",
           look: style.look,
           t: i / (vsFrames - 1),
-          a: side(seats.top),
-          b: side(seats.bottom),
+          a: filmedSide(seats.top),
+          b: filmedSide(seats.bottom),
         },
         1 / FPS,
         { kind: "vs-transition" },
