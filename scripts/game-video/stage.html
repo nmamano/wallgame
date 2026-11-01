@@ -414,6 +414,10 @@
         line-height: 1;
         white-space: nowrap;
       }
+      .resignFlag {
+        position: absolute;
+        overflow: visible;
+      }
       #cellEmoji {
         position: absolute;
         left: 50%;
@@ -1448,6 +1452,16 @@
               <div id="cellEmoji"></div>
               <div id="cellBadge"></div>
             </div>
+            <svg
+              id="resignFlag0"
+              class="resignFlag hidden"
+              viewBox="0 0 100 100"
+            ></svg>
+            <svg
+              id="resignFlag1"
+              class="resignFlag hidden"
+              viewBox="0 0 100 100"
+            ></svg>
           </div>
           <div id="vhsFx" class="hidden">
             <div id="vhsBand"></div>
@@ -2083,6 +2097,14 @@
       window.__beatBox = (b, ts) => boxOver(paintBeat, $("pawnBubble"), b, ts);
 
       /**
+       * The box one resign flag (paintResignFlags with `f` its only flag)
+       * covers over the times `ts` (boxOver), so the renderer can put it on
+       * a side of its pawn where it covers no wall and hides no pawn.
+       */
+      window.__resignFlagBox = (f, ts) =>
+        boxOver(paintResignFlags, $("resignFlag0"), f, ts);
+
+      /**
        * Place a bubble next to a cell-sized box, on the side the renderer
        * measured to be clear (as the mouse beat's bubble), popped by `pop`.
        */
@@ -2125,6 +2147,82 @@
             '" stroke-linecap="round"/>';
         }
         return out;
+      };
+
+      /*
+        The resign card's flags (Nil, 2026-11-01, ask 3d2f28e7: "what if we
+        make both pawns weave the resign flag?"): a small white flag held up
+        beside each pawn of the side that resigned, on the side the renderer
+        measured to be clear, with no pointer (C45). Each is
+        RESIGN_FLAG_CELLS of a cell, its middle RESIGN_FLAG_OUT of a cell
+        from its pawn's, kept inside the board. It rises over its first
+        0.45 s, then its cloth waves, as the old card's flag did.
+      */
+      const RESIGN_FLAG_CELLS = 0.7;
+      const RESIGN_FLAG_OUT = 0.72;
+      const resignFlagSvg = (t) => {
+        const up = easeOut3(span(t, 0, 0.45));
+        const y = (k) => Math.sin(t * 7 - k * 1.3) * 3;
+        const cloth =
+          "M22 " +
+          (14 + y(0)).toFixed(1) +
+          " C40 " +
+          (7 + y(1)).toFixed(1) +
+          " 60 " +
+          (21 + y(2)).toFixed(1) +
+          " 92 " +
+          (11 + y(3)).toFixed(1) +
+          " L92 " +
+          (47 + y(3)).toFixed(1) +
+          " C60 " +
+          (57 + y(2)).toFixed(1) +
+          " 40 " +
+          (43 + y(1)).toFixed(1) +
+          " 22 " +
+          (50 + y(0)).toFixed(1) +
+          " Z";
+        return (
+          '<g transform="translate(0 ' +
+          ((1 - up) * 40).toFixed(1) +
+          ')">' +
+          '<rect x="14" y="8" width="7" height="88" rx="3.5" fill="#8b5a2b" stroke="#3b2410" stroke-width="2.5"/>' +
+          '<circle cx="17.5" cy="7" r="6" fill="#e8c35a" stroke="#3b2410" stroke-width="2.5"/>' +
+          '<path d="' +
+          cloth +
+          '" fill="#fff" stroke="#3b4252" stroke-width="3" stroke-linejoin="round"/>' +
+          "</g>"
+        );
+      };
+      /**
+       * f = { t: seconds into the card, alpha: its fade, size: one cell's
+       *       width (0..1), flags: [{ cell: {x, y} its pawn's centre in the
+       *       board image (0..1), side: up, down, left or right }] }
+       */
+      const paintResignFlags = (f) => {
+        const W = $("boardWrap").clientWidth;
+        ["resignFlag0", "resignFlag1"].forEach((id, i) => {
+          const el = $(id);
+          const one = f?.flags[i];
+          show(el, !!one);
+          if (!one) return;
+          const px = f.size * W;
+          const half = (px * RESIGN_FLAG_CELLS) / 2;
+          const [dx, dy] = {
+            up: [0, -1],
+            down: [0, 1],
+            left: [-1, 0],
+            right: [1, 0],
+          }[one.side];
+          const clamp = (v) => Math.max(half, Math.min(W - half, v));
+          const x = clamp(one.cell.x * W + dx * px * RESIGN_FLAG_OUT);
+          const y = clamp(one.cell.y * W + dy * px * RESIGN_FLAG_OUT);
+          el.style.left = x - half + "px";
+          el.style.top = y - half + "px";
+          el.style.width = half * 2 + "px";
+          el.style.height = half * 2 + "px";
+          el.style.opacity = f.alpha;
+          el.innerHTML = resignFlagSvg(f.t);
+        });
       };
 
       /**
@@ -2507,35 +2605,13 @@
         }
         if (o.card === "resign-flag") {
           /*
-            A white flag on a pole: it rises over its first 0.45 s, then its
-            cloth waves (a travelling ripple), the same in every render. The
-            words are in the drawing, two lines under the flag ("Human" /
-            "resigns"), so the card scales as one picture to its box and
-            never overflows it. The words are large: at 40 of 330 they read
-            about 20 px high, a third of the payoff (render vet, 2026-11-01,
-            v-2026-11-01-8).
+            The resign card's words, two lines ("Human" / "resigns"), in
+            the drawing so they scale as one picture to its box and never
+            overflow it. They are large: at 40 of 330 they read about 20 px
+            high, a third of the payoff (render vet, 2026-11-01,
+            v-2026-11-01-8). The flags are beside the resigner's pawns
+            (paintResignFlags), not in the card.
           */
-          const t = o.t ?? 0;
-          const up = easeOut3(span(t, 0, 0.45));
-          const y = (k) => Math.sin(t * 7 - k * 1.3) * 7;
-          const cloth =
-            "M70 " +
-            (30 + y(0)).toFixed(1) +
-            " C110 " +
-            (14 + y(1)).toFixed(1) +
-            " 150 " +
-            (46 + y(2)).toFixed(1) +
-            " 200 " +
-            (24 + y(3)).toFixed(1) +
-            " L200 " +
-            (104 + y(3)).toFixed(1) +
-            " C150 " +
-            (126 + y(2)).toFixed(1) +
-            " 110 " +
-            (94 + y(1)).toFixed(1) +
-            " 70 " +
-            (110 + y(0)).toFixed(1) +
-            " Z";
           const [who, ...rest] = String(o.text ?? "").split(" ");
           const word = (text, at) =>
             '<text x="150" y="' +
@@ -2544,18 +2620,9 @@
             esc(text) +
             "</text>";
           return (
-            '<svg viewBox="0 0 300 350" style="height:100%;width:100%">' +
-            '<g transform="translate(0 ' +
-            ((1 - up) * 90).toFixed(1) +
-            ')">' +
-            '<rect x="60" y="18" width="10" height="200" rx="5" fill="#8b5a2b" stroke="#3b2410" stroke-width="3"/>' +
-            '<circle cx="65" cy="16" r="9" fill="#e8c35a" stroke="#3b2410" stroke-width="3"/>' +
-            '<path d="' +
-            cloth +
-            '" fill="#fff" stroke="#c9ced6" stroke-width="4" stroke-linejoin="round"/>' +
-            "</g>" +
-            word(who, 280) +
-            word(rest.join(" "), 340) +
+            '<svg viewBox="0 0 300 150" style="height:100%;width:100%">' +
+            word(who, 66) +
+            word(rest.join(" "), 132) +
             "</svg>"
           );
         }
@@ -4132,6 +4199,11 @@
           paintMidStamp(s.midStamp);
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
+          paintResignFlags(
+            s.overlay?.flags
+              ? { ...s.overlay.flags, t: s.overlay.t, alpha: s.overlay.alpha }
+              : null,
+          );
           paintEval(s.evalStrip);
           paintErase(s.erase);
           paintFlashback(s.flashback);

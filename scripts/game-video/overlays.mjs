@@ -529,9 +529,11 @@ export const OVERLAYS = {
     The resign ending's death card (Nil, 2026-11-01, ask 084f7f40, CASES
     C42: "maybe we could also use those but with some resign animation
     like a flag or something (and showing remaining idstances to make clear
-    that it's lost)"). A white flag rises and waves beside the resigner's
-    pawn, over "<Bot|Human> resigns"; the race counter flashes while it
-    shows. Only on a game the record says was resigned (end-reason).
+    that it's lost)"). "<Bot|Human> resigns" near the resigner's pawn, and a
+    small white flag rises and waves beside each pawn of the side that
+    resigned (Nil, 2026-11-01, ask 3d2f28e7: "what if we make both pawns
+    weave the resign flag?"); the race counter flashes while it shows. Only
+    on a game the record says was resigned (end-reason).
   */
   "resign-flag": {
     form: "clip",
@@ -547,9 +549,11 @@ export const OVERLAYS = {
     tail: false,
     // No small size: its words are the only ones on the board that say
     // how the game ended (render vet, 2026-11-01, v-2026-11-01-8).
-    size: { w: 0.38, h: 0.36 },
+    // The words alone: at this size they are as large as when the card
+    // also held the flag (62 of 350 at 0.36 high).
+    size: { w: 0.38, h: 0.155 },
     places: ["board"],
-    source: "drawn by us (stage.html), a white flag",
+    source: "drawn by us (stage.html), white flags and words",
     claim: "None",
     likeness: "None",
     rating: null,

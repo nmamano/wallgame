@@ -5032,6 +5032,9 @@ const renderStyle = async (styleName) => {
             card: w.asset.card,
             text: overlayText(w.ev),
             hex: facts ? side(facts.player).hex : null,
+            ...(RESIGN_FLAGS.has(w.ev)
+              ? { flags: RESIGN_FLAGS.get(w.ev) }
+              : {}),
           }
         : {}),
       ...(w.asset.draw === "image"
@@ -5429,6 +5432,12 @@ const renderStyle = async (styleName) => {
           : w.frames.flatMap((f) => [
               ...inPlay(f.state),
               ...pawnBoxes(f.state),
+              // The resign card's own flags (RESIGN_FLAGS): its words keep
+              // off them.
+              ...(f.o.flags?.boxes ?? []).flatMap((b) => {
+                const box = boxOnScreen(b, f.state.zoom);
+                return box ? [{ ...box, what: b.what }] : [];
+              }),
             ]);
       const reach = await reachOf(w);
       const offRoom = await offBoardRoom(w);
@@ -6504,6 +6513,101 @@ const renderStyle = async (styleName) => {
     log(
       `${ev.kind} on ${ev.cell}, ply ${ev.ply}: ${side}${hides.size > 0 ? ` (hides a pawn: ${[...hides].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}${covers.size > 0 ? ` (covers a wall: ${[...covers].map(([k, w]) => `${k} ${w}`).join(", ")})` : ""}`,
     );
+  }
+  /*
+    The resign card's flags (Nil, 2026-11-01, ask 3d2f28e7: "what if we
+    make both pawns weave the resign flag?"; Wall Game Director: a small
+    white flag beside each pawn of the side that resigned, no pointer).
+    Each takes a side of its pawn as a mark does (bubbleSide), measured on
+    the stage over the card's time (__resignFlagBox): it hides no other
+    pawn and not the flag before it, or the render stops, and it covers no
+    wall when a side can, or the lint warns. The card's words keep off
+    both (placeOverlays, `flags`).
+  */
+  const RESIGN_FLAGS = new Map();
+  for (const ev of EVENTS) {
+    if (ev.kind !== "overlay" || OVERLAYS[ev.asset].card !== "resign-flag") {
+      continue;
+    }
+    if (!outcome?.winnerId) continue;
+    const board = ev.ply + 1;
+    const loser = outcome.winnerId === 1 ? 2 : 1;
+    const walls = wallBoxes(board);
+    const ts = Array.from(
+      { length: Math.round(OVERLAYS[ev.asset].seconds * FPS) },
+      (_, i) => i / FPS,
+    );
+    const flags = [];
+    const boxes = [];
+    const hidden = [];
+    const covered = [];
+    for (const piece of ["cat", "mouse", "elephant", "dog"]) {
+      const cell = pawnCell(REPLAYED.states[board].pawns, loser, piece);
+      if (!cell) continue;
+      const at = cellAt(cell);
+      const term = termOfCell(cell);
+      const keepOff = [
+        ...(pawnSpots.get(board) ?? [])
+          .filter(
+            (p) =>
+              Math.hypot(
+                (p.x - at.x) / GRID.pitchX,
+                (p.y - at.y) / GRID.pitchY,
+              ) > 0.3,
+          )
+          .map((p) => ({
+            x0: p.x - p.w / 2,
+            y0: p.y - p.h / 2,
+            x1: p.x + p.w / 2,
+            y1: p.y + p.h / 2,
+            what: `pawn on ${cellUnder(p.x, p.y)}`,
+          })),
+        ...boxes,
+      ];
+      const hides = new Map();
+      const covers = new Map();
+      const measured = new Map();
+      for (const side of Object.keys(BUBBLE_SIDES)) {
+        const box = await stage.evaluate(
+          ([f, t]) => window.__resignFlagBox(f, t),
+          [{ size: GRID.pitchX, alpha: 1, flags: [{ cell: at, side }] }, ts],
+        );
+        measured.set(side, box);
+        const hit = walls.find((k) => depthInto(box, k) > TOUCH_CELLS);
+        if (hit) covers.set(side, hit.what);
+        const under = keepOff.find((k) => depthInto(box, k) > TOUCH_CELLS);
+        if (under) hides.set(side, under.what);
+      }
+      const side = bubbleSide(
+        board,
+        at,
+        new Set(covers.keys()),
+        new Set(hides.keys()),
+      );
+      const box = measured.get(side);
+      flags.push({ cell: at, side });
+      boxes.push({
+        x0: box.x,
+        y0: box.y,
+        x1: box.x + box.w,
+        y1: box.y + box.h,
+        what: `the flag of the ${piece} on ${term}`,
+      });
+      if (hides.has(side)) {
+        hidden.push(
+          `the resign flag of the ${piece} on ${term} hides the ${hides.get(side)}: every side it can take does`,
+        );
+      }
+      if (covers.has(side)) {
+        covered.push(
+          `the resign flag of the ${piece} on ${term} covers the ${covers.get(side)}: every side it can take ${hides.size > 0 ? "hides something or " : ""}covers a wall`,
+        );
+      }
+      log(`resign flag of the ${piece} on ${term}: ${side}`);
+    }
+    RESIGN_FLAGS.set(ev, { size: GRID.pitchX, flags, boxes });
+    if (hidden.length > 0) fxHides.set(ev, hidden.join("; "));
+    if (covered.length > 0) fxCovers.set(ev, covered.join("; "));
   }
   if (wallz) {
     for (const ev of EVENTS) {
