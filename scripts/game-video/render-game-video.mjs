@@ -8019,15 +8019,40 @@ const renderStyle = async (styleName) => {
         if (cardMore > 0) {
           log(`ending held +${cardMore.toFixed(1)} s for the GG card`);
         }
-        await emit(
-          playState(ply, {
-            ending: ending(timing.seconds),
-            credit: creditAt(timing.seconds),
-          }),
+        const holdSeconds =
           timing.hold +
-            Math.max(bar ? holdFor(barShows, timing.flash) : 0, cardMore),
-          { kind: "ending-hold", ply: plyIndex },
-        );
+          Math.max(bar ? holdFor(barShows, timing.flash) : 0, cardMore);
+        if (style.ending === "gg") {
+          /*
+            The GG card's call to action keeps moving while the ending
+            holds (Nil, 2026-11-01: "start giving the CTA some animation
+            to make it stand out more at the end of the short"): one frame
+            at a time, its clock (`cta`) running on from the ending's.
+          */
+          const holdFrames = Math.round(holdSeconds * FPS);
+          for (let i = 0; i < holdFrames; i += 1) {
+            await emit(
+              playState(ply, {
+                ending: {
+                  ...ending(timing.seconds),
+                  cta: timing.seconds + i / FPS,
+                },
+                credit: creditAt(timing.seconds),
+              }),
+              1 / FPS,
+              { kind: "ending-hold", ply: plyIndex },
+            );
+          }
+        } else {
+          await emit(
+            playState(ply, {
+              ending: ending(timing.seconds),
+              credit: creditAt(timing.seconds),
+            }),
+            holdSeconds,
+            { kind: "ending-hold", ply: plyIndex },
+          );
+        }
       } else if (creditText) {
         /*
           A draw has no ending, so its hold carries the credit: faded in
