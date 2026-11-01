@@ -897,6 +897,39 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  /*
+    A band of fire along the bottom of the board, for a move that destroys
+    the other side (Nil, 2026-11-01, via Wall Game PM: "you can also put
+    this at the time the move is played (with anticipation and slow zoom
+    maybe), then one of the others after while it's showing the new
+    distance path"). Nil's clip has no blast and no sound: 25 s of flames
+    along the bottom of its frame. Four time-shifted copies of 2.0-3.5 s
+    stand side by side, a quarter of the frame high, so the flames stay in
+    the board's lowest 17% (under the row 2/3 line on 8 rows; Wall Game
+    Director, 2026-11-01: never over the walls the boom points at). They
+    rise from below over 0.3 s and sink over the last 0.3 s. Its sound is
+    the event's (boom-4 in the script).
+  */
+  "gs-fire": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 1.5,
+    sequence: {
+      dir: "gs-fire",
+      fps: 30,
+      frames: 45,
+      sha256:
+        "86c5a628d4dee25d3ab644073d15c6d7c87831ee4a83358bdfc3222144f2ea45",
+    },
+    source:
+      "Nil's clip, 2026-11-01: Explosion Fire Burn.wmv (origin not known), 2.0-3.5 s, the flames cut out, four copies side by side, keyed at 0x29BC19; its track is silent",
+    claim: "MEDIUM: a clip of unknown origin",
+    likeness: "None",
+    nilOk:
+      'Nil, for this clip: "you can also put this at the time the move is played (with anticipation and slow zoom maybe), then one of the others after while it\'s showing the new distance path" (Nil to Wall Game PM, 2026-11-01 about 10:15 UTC)',
+    rating: null,
+  },
   confetti: {
     form: "cover",
     draw: "sequence",

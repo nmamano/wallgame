@@ -497,7 +497,9 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     expect(noTail?.where).toBe(near(pawn)?.where);
     expect(noTail?.tail).toBeNull();
     // Every green-screen cut-out stands beside its pawn with no pointer.
-    const gs = Object.entries(OVERLAYS).filter(([k]) => k.startsWith("gs-"));
+    const gs = Object.entries(OVERLAYS).filter(
+      ([k, a]) => k.startsWith("gs-") && takesPawn(a),
+    );
     expect(gs.length).toBeGreaterThan(0);
     for (const [, asset] of gs) expect(asset).toMatchObject({ tail: false });
     // So does the resign flag: its words name the side.
