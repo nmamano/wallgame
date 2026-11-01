@@ -383,7 +383,9 @@ describe("the pawn a reactor shows (Nil, 2026-10-29: cats are pursuers)", () => 
 
 describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
   const PITCH = { x: 0.125, y: 0.125 };
-  const scream = OVERLAYS["the-scream"];
+  // The-scream's shape, with the tail a picture has unless it says
+  // `tail: false` (the-scream itself has none since C45).
+  const scream = { ...OVERLAYS["the-scream"], tail: undefined };
   /** A busy box, named as the render names one. */
   const busyCell = (x: number, y: number, size?: number) => ({
     ...cell(x, y, size),

@@ -2154,12 +2154,14 @@
         make both pawns weave the resign flag?"): a small white flag held up
         beside each pawn of the side that resigned, on the side the renderer
         measured to be clear, with no pointer (C45). Each is
-        RESIGN_FLAG_CELLS of a cell, its middle RESIGN_FLAG_OUT of a cell
-        from its pawn's, kept inside the board. It rises over its first
+        RESIGN_FLAG_CELLS of a cell, large enough to read at a glance on a
+        phone (Wall Game Director, 2026-11-01: at 0.7 it read as a small
+        mark), its middle RESIGN_FLAG_OUT of a cell from its pawn's, kept
+        inside the board. It rises over its first
         0.45 s, then its cloth waves, as the old card's flag did.
       */
-      const RESIGN_FLAG_CELLS = 0.7;
-      const RESIGN_FLAG_OUT = 0.72;
+      const RESIGN_FLAG_CELLS = 0.85;
+      const RESIGN_FLAG_OUT = 0.8;
       const resignFlagSvg = (t) => {
         const up = easeOut3(span(t, 0, 0.45));
         const y = (k) => Math.sin(t * 7 - k * 1.3) * 3;

@@ -612,6 +612,9 @@ export const OVERLAYS = {
       fade: 0.13,
     },
     pawn: true,
+    // No pointer (Nil, 2026-11-01, C45: the triangles are ugly; Wall Game
+    // Director, script v-2026-11-01-7 v2.3).
+    tail: false,
     text: "none",
     seconds: 1.4,
     size: { w: 0.25, h: 0.41 },
