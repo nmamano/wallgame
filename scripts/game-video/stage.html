@@ -2511,7 +2511,9 @@
             cloth waves (a travelling ripple), the same in every render. The
             words are in the drawing, two lines under the flag ("Human" /
             "resigns"), so the card scales as one picture to its box and
-            never overflows it.
+            never overflows it. The words are large: at 40 of 330 they read
+            about 20 px high, a third of the payoff (render vet, 2026-11-01,
+            v-2026-11-01-8).
           */
           const t = o.t ?? 0;
           const up = easeOut3(span(t, 0, 0.45));
@@ -2536,13 +2538,13 @@
             " Z";
           const [who, ...rest] = String(o.text ?? "").split(" ");
           const word = (text, at) =>
-            '<text x="130" y="' +
+            '<text x="150" y="' +
             at +
-            '" text-anchor="middle" font-size="40" font-weight="900" fill="#fff" stroke="#0b1020" stroke-width="7" paint-order="stroke fill" font-family="TikTok Sans, sans-serif">' +
+            '" text-anchor="middle" font-size="62" font-weight="900" fill="#fff" stroke="#0b1020" stroke-width="9" paint-order="stroke fill" font-family="TikTok Sans, sans-serif">' +
             esc(text) +
             "</text>";
           return (
-            '<svg viewBox="0 0 260 330" style="height:100%;width:100%">' +
+            '<svg viewBox="0 0 300 350" style="height:100%;width:100%">' +
             '<g transform="translate(0 ' +
             ((1 - up) * 90).toFixed(1) +
             ')">' +
@@ -2552,8 +2554,8 @@
             cloth +
             '" fill="#fff" stroke="#c9ced6" stroke-width="4" stroke-linejoin="round"/>' +
             "</g>" +
-            word(who, 262) +
-            word(rest.join(" "), 310) +
+            word(who, 280) +
+            word(rest.join(" "), 340) +
             "</svg>"
           );
         }

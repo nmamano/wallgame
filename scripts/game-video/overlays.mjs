@@ -101,6 +101,11 @@
  *            and its ply holds until it closes, so the pawn stays under
  *            the tail. `pieces` limits the pawn's type where the meme names
  *            one (the scream mouse).
+ *   tail     false: a picture tied to a pawn has no tail; it takes the
+ *            place nearest the pawn all the same, and its ring says who
+ *            emotes it (Nil, 2026-11-01, CASES C45: "the arrows/triangles
+ *            on the green screen memes are ugly. the laughing man without
+ *            arrow worked well"). Every green-screen cut-out (gs-*).
  *   places   where it may go, in the order they are tried: "board" (its
  *            form's places on the board, overlayPlaces), "margin" (the
  *            left margin, at its size's shape) and "caption" (the
@@ -536,8 +541,9 @@ export const OVERLAYS = {
     line: "{loser} resigns",
     seconds: 2.2,
     pawn: true,
+    // No small size: its words are the only ones on the board that say
+    // how the game ended (render vet, 2026-11-01, v-2026-11-01-8).
     size: { w: 0.38, h: 0.36 },
-    small: { w: 0.3, h: 0.3 },
     places: ["board"],
     source: "drawn by us (stage.html), a white flag",
     claim: "None",
@@ -1000,9 +1006,13 @@ export const OVERLAYS = {
     form: "clip",
     draw: "sequence",
     text: "none",
-    // The whole clip: he laughs from the first frame to the last.
-    seconds: 2.9,
+    // The whole clip: he laughs from the first frame to the last. The
+    // source's last frame is empty, so it is cut: held through the fade,
+    // it took him off 0.35 s before his ring (render vet, 2026-11-01,
+    // v-2026-11-01-8 at 24.85 s).
+    seconds: 2.867,
     pawn: true,
+    tail: false,
     // Big enough that his face reads on a phone, even at the small size
     // (Wall Game Director, 2026-11-01, on the 1102b proof).
     size: { w: 0.4, h: 0.28 },
@@ -1011,13 +1021,13 @@ export const OVERLAYS = {
     sequence: {
       dir: "gs-jjj-laugh",
       fps: 30,
-      frames: 87,
+      frames: 86,
       sha256:
-        "2a3ea0ed2ea2de3dff30544b9b5d8d0ae1e71f12a3ac9b470f2c0e5669fdc07c",
+        "d493dcc246b7f098b7ff6f95731f14bbc45a22ca7a04c28cb2341863486d12f6",
       audio: true,
     },
     source:
-      "Nil's meme pack: Green Screen/Green Screen - Man Laughing Peter Parker.mp4 (J. K. Simmons as J. Jonah Jameson, Spider-Man, 2002), 0-2.9 s, its laugh kept",
+      "Nil's meme pack: Green Screen/Green Screen - Man Laughing Peter Parker.mp4 (J. K. Simmons as J. Jonah Jameson, Spider-Man, 2002), 0-2.87 s (its empty last frame cut), its laugh kept",
     claim: "HIGH: a film clip (Sony Pictures), with its audio",
     likeness: "HIGH: a real actor's face",
     nilOk:
@@ -1031,6 +1041,7 @@ export const OVERLAYS = {
     // He looks one way, then the other, and opens his hand.
     seconds: 2.467,
     pawn: true,
+    tail: false,
     // 316x352: the letterbox cut leaves the screen's soft edge out, which
     // keyed to a thin line down the right side (render vet, 2026-11-01,
     // v-2026-11-01-4 at 14.5 s); the box keeps his old height.
@@ -1058,6 +1069,7 @@ export const OVERLAYS = {
     text: "none",
     seconds: 2.533,
     pawn: true,
+    tail: false,
     size: { w: 0.19, h: 0.41 },
     small: { w: 0.15, h: 0.33 },
     places: ["board"],
@@ -1082,6 +1094,7 @@ export const OVERLAYS = {
     text: "none",
     seconds: 2.5,
     pawn: true,
+    tail: false,
     size: { w: 0.3, h: 0.31 },
     small: { w: 0.24, h: 0.25 },
     places: ["board"],
@@ -1639,7 +1652,7 @@ export const tailLength = (tail, pitch) =>
  * tail (null when the pawn is too near for one), or null when no place is
  * free. `onWall` says that its art or tail covers a wall (every free
  * place did, or the EDL named it).
- * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number } }} asset
+ * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number }, tail?: boolean }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {(scale: number) => Reach} reach
  * @param {{ x: number, y: number }} pawn its centre in the board as shown
@@ -1660,7 +1673,10 @@ export const placeNear = (
   const ranked = overlayPlaces(asset, reach, { middles: true })
     .filter((p) => place === undefined || p.where === place)
     .map((p) => {
-      const tail = tailOf(p.full, pawn, pitch);
+      // With no tail (`tail: false`), the tail it would have still ranks
+      // the places by nearness.
+      const line = tailOf(p.full, pawn, pitch);
+      const tail = asset.tail === false ? null : line;
       return {
         p,
         tail,
@@ -1669,7 +1685,7 @@ export const placeNear = (
           (tail !== null && tailHits(tail, p.full, walls, pitch).length > 0)
             ? 1
             : 0,
-        length: tailLength(tail, pitch),
+        length: tailLength(line, pitch),
       };
     })
     .sort(

@@ -476,6 +476,29 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
     expect([p?.where, p?.scale]).toEqual(["bottom-left", 1]);
   });
 
+  test("with tail: false, the nearest free place and no tail (Nil, 2026-11-01, C45)", () => {
+    const pawn = { x: 0.2, y: 0.35 };
+    const noTail = placeNear(
+      { ...scream, tail: false } as Parameters<typeof placeNear>[0],
+      [
+        {
+          ...cell(pawn.x - PITCH.x / 2, pawn.y - PITCH.y / 2),
+          what: "the pawn",
+        },
+      ],
+      NO_REACH,
+      pawn,
+      [],
+      PITCH,
+    );
+    expect(noTail?.where).toBe(near(pawn)?.where);
+    expect(noTail?.tail).toBeNull();
+    // Every green-screen cut-out stands beside its pawn with no pointer.
+    const gs = Object.entries(OVERLAYS).filter(([k]) => k.startsWith("gs-"));
+    expect(gs.length).toBeGreaterThan(0);
+    for (const [, asset] of gs) expect(asset).toMatchObject({ tail: false });
+  });
+
   test("the EDL's place is the only one tried, under the same faults", () => {
     const names = overlayPlaces(
       scream as Parameters<typeof placeNear>[0],

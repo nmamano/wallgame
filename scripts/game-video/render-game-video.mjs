@@ -5514,7 +5514,7 @@ const renderStyle = async (styleName) => {
                 )
                 .map(
                   (p) =>
-                    `${placeName(p)}: ${nearFaults(p, pawnAt ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
+                    `${placeName(p)}: ${nearFaults(p, pawnAt && w.asset.tail !== false ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
                 )
             : [`${kind}: ${offRoom(kind)}`],
         );
