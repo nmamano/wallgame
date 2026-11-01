@@ -12,6 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CHECKPOINTS,
+  graphReason,
+  mergeReads,
+  refreshDue,
   META_INSIGHTS,
   META_INSIGHTS_SECRET,
   metaTokenCheck,
@@ -240,7 +243,13 @@ const noInsights = (req: Req): Reply => {
   if (req.url.includes("insights")) {
     return {
       status: 400,
-      json: { error: { code: 10, message: "SECRET-SU is not allowed" } },
+      json: {
+        error: {
+          code: 10,
+          message:
+            "(#10) Application does not have permission for this action SECRET-SU",
+        },
+      },
     };
   }
   if (req.url.endsWith("/IG-R1?fields=like_count,comments_count")) {
@@ -427,6 +436,92 @@ describe("readPostStats", () => {
     expect(full.numbers["instagram IG-R1"].partial).toBeUndefined();
   });
 
+  test("a Graph refusal keeps HTTP status, code and subcode; 'needs reconnect' only for a permission error", async () => {
+    const reply = (code: number, message: string, sub?: number) => ({
+      status: 400,
+      json: {
+        error: { code, message: `${message} SECRET-SU`, error_subcode: sub },
+      },
+    });
+    const step = "instagram story insights";
+    const perm = "instagram_manage_insights";
+    expect(
+      graphReason(
+        step,
+        perm,
+        reply(
+          10,
+          "(#10) Not enough viewers for the media to show insights",
+          2108006,
+        ),
+      ),
+    ).toBe("instagram story insights: HTTP 400 code 10 subcode 2108006");
+    expect(
+      graphReason(
+        step,
+        perm,
+        reply(10, "(#10) Application does not have permission for this action"),
+      ),
+    ).toBe("needs reconnect (instagram_manage_insights; HTTP 400 code 10)");
+    expect(graphReason(step, perm, reply(200, "(#200) Requires x"))).toBe(
+      "needs reconnect (instagram_manage_insights; HTTP 400 code 200)",
+    );
+    expect(graphReason(step, perm, { status: 500, json: null })).toBe(
+      "instagram story insights: HTTP 500",
+    );
+    // A Story with too few viewers: its own row says why, the read goes on,
+    // and Instagram posts fall back to the node's counts with the reason.
+    const fewViewers = (req: Req): Reply =>
+      req.url.includes("/insights")
+        ? reply(
+            10,
+            "(#10) Not enough viewers for the media to show insights",
+            2108006,
+          )
+        : req.url.endsWith("/IG-R1?fields=like_count,comments_count")
+          ? { status: 200, json: { like_count: 3, comments_count: 1 } }
+          : answers(req);
+    const { numbers, reads } = await run(fewViewers, [
+      "instagram",
+      "instagram-story",
+    ]);
+    expect(reads["instagram-story"].error).toBeNull();
+    expect(numbers["instagram-story IG-S1"].note).toBe(
+      "instagram story insights: HTTP 400 code 10 subcode 2108006",
+    );
+    expect(numbers["instagram IG-R1"]).toMatchObject({
+      likes: 3,
+      note: "views, shares, saves, reach: instagram insights: HTTP 400 code 10 subcode 2108006",
+    });
+    expect(JSON.stringify(numbers)).not.toContain("SECRET-SU");
+    expect(JSON.stringify(numbers)).not.toContain("viewers");
+  });
+
+  test("Facebook: a new reel with no reactions or actions yet shows 0, not '-'", async () => {
+    const empty = (req: Req): Reply =>
+      req.url.includes("/FB-V1/video_insights")
+        ? {
+            status: 200,
+            json: {
+              data: [
+                { name: "blue_reels_play_count", values: [{ value: 4 }] },
+                {
+                  name: "post_video_likes_by_reaction_type",
+                  values: [{ value: {} }],
+                },
+              ],
+            },
+          }
+        : answers(req);
+    const { numbers } = await run(empty, ["facebook"]);
+    expect(numbers["facebook FB-V1"]).toMatchObject({
+      views: 4,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+    });
+  });
+
   test("a platform with no post to read is not asked (no X bill)", async () => {
     const { sent, reads } = await run(answers, ["x", "bluesky"], []);
     expect(sent).toEqual([]);
@@ -447,7 +542,7 @@ describe("readPostStats", () => {
       likes: 41,
       comments: 6,
       quotes: null,
-      note: "views, shares, saves, reach: needs reconnect (instagram_manage_insights)",
+      note: "views, shares, saves, reach: needs reconnect (instagram_manage_insights; HTTP 400 code 10)",
       at,
     });
     expect(numbers["facebook FB-V1"]).toEqual({
@@ -455,17 +550,19 @@ describe("readPostStats", () => {
       likes: 11,
       comments: 3,
       quotes: null,
-      note: "views, shares: needs reconnect (read_insights)",
+      note: "views, shares: needs reconnect (read_insights; HTTP 400 code 10)",
       at,
     });
-    // A Story has no other source.
-    expect(reads["instagram-story"].error).toBe(
-      "needs reconnect (instagram_manage_insights)",
-    );
+    // A Story has no other source: the post shows the reason.
+    expect(numbers["instagram-story IG-S1"]).toMatchObject({
+      views: null,
+      note: "needs reconnect (instagram_manage_insights; HTTP 400 code 10)",
+    });
+    expect(reads["instagram-story"].error).toBeNull();
     // No reply body and no token reaches a reason or a note.
     const shown = JSON.stringify({ numbers, reads });
     for (const s of SECRETS) expect(shown).not.toContain(s);
-    expect(shown).not.toContain("not allowed");
+    expect(shown).not.toContain("does not have permission");
     // The tokens went only in headers.
     for (const r of sent) {
       for (const s of SECRETS) expect(r.url).not.toContain(s);
@@ -530,7 +627,10 @@ describe("which posts and when", () => {
   /** Every platform read `h` hours ago, with no error. */
   const readAll = (h: number) =>
     Object.fromEntries(
-      STATS_PLATFORMS.map((p) => [p, { at: ago(h), error: null }]),
+      STATS_PLATFORMS.map((p) => [
+        p,
+        { at: ago(h), error: null, refreshedAt: ago(h) },
+      ]),
     );
 
   test("the checkpoints: 1 h, 24 h, 7 d, then weekly to 4 weeks", () => {
@@ -594,7 +694,7 @@ describe("which posts and when", () => {
     expect(due(posts, { reads: tiktok, numbers })).toEqual({ tiktok: [] });
   });
 
-  test("a failed read waits 6 h; a Story is read for 1 day only", () => {
+  test("a failed read waits: X 6 h, a free platform 1 h; a Story is read for 1 day only", () => {
     const posts = [
       { platform: "x", postId: "X", utc: ago(2) },
       { platform: "instagram-story", postId: "s-new", utc: ago(23) },
@@ -610,6 +710,57 @@ describe("which posts and when", () => {
     });
     reads.x = { at: ago(6), error: "x tweets: HTTP 503" };
     expect(due(posts, { reads, numbers: {} }).x).toEqual(["X"]);
+    // A free platform: 1 h after its failed read (its refresh is old).
+    const b = [{ platform: "bluesky", postId: "B", utc: ago(30) }];
+    const failed = (h: number) => ({
+      ...readAll(0.5),
+      bluesky: {
+        at: ago(h),
+        error: "the read did not finish (TypeError)",
+        refreshedAt: ago(12),
+      },
+    });
+    expect(due(b, { reads: failed(0.9), numbers: {} })).toEqual({});
+    expect(due(b, { reads: failed(1), numbers: {} })).toEqual({
+      bluesky: ["B"],
+    });
+  });
+
+  test("a checkpoint read of one post does not delay the refresh of the others", () => {
+    const posts = [
+      { platform: "facebook", postId: "new", utc: ago(1.5) },
+      { platform: "facebook", postId: "old", utc: ago(30) },
+    ];
+    // The checkpoint read of "new" was 0.5 h ago; the refresh 6 h ago.
+    const reads = {
+      ...readAll(0.5),
+      facebook: { at: ago(0.5), error: null, refreshedAt: ago(6) },
+    };
+    const numbers = { "facebook new": { at: ago(0.5) } };
+    expect(refreshDue(reads, NOW)).toEqual(["facebook"]);
+    expect(due(posts, { reads, numbers })).toEqual({
+      facebook: ["new", "old"],
+    });
+    // After the run: a refresh moves refreshedAt; a checkpoint-only read,
+    // or a failed refresh, keeps the old one.
+    const at = ago(0);
+    const fresh = {
+      facebook: { at, error: null, posts: 2 },
+      x: { at, error: null, posts: 1 },
+      bluesky: { at, error: "bluesky posts: HTTP 502", posts: 0 },
+    };
+    const cached = {
+      x: { at: ago(30), error: null },
+      bluesky: { at: ago(7), error: null, refreshedAt: ago(7) },
+      facebook: reads.facebook,
+    };
+    const merged = mergeReads(cached, fresh, ["facebook", "bluesky"]);
+    expect(merged.facebook.refreshedAt).toBe(at);
+    expect(merged.x.refreshedAt).toBeUndefined();
+    expect(merged.bluesky).toMatchObject({
+      error: "bluesky posts: HTTP 502",
+      refreshedAt: ago(7),
+    });
   });
 });
 

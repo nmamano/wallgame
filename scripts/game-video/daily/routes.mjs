@@ -126,7 +126,9 @@ import {
   META_INSIGHTS,
   metaTokenCheck,
   readPostStats,
+  mergeReads,
   postsDue,
+  refreshDue,
 } from "./post-stats.mjs";
 import { STATS_PAGE } from "./stats-page.mjs";
 
@@ -1266,7 +1268,9 @@ export const createDaily = ({
     if (posting || statsRun) return;
     const cached = readPostStatsCache();
     const posts = readPostLog(store.postLog.live);
-    const due = postsDue(posts, cached, Date.now());
+    const nowMs = Date.now();
+    const due = postsDue(posts, cached, nowMs);
+    const refreshed = refreshDue(cached.reads, nowMs);
     if (!Object.keys(due).length) return;
     statsRun = (async () => {
       try {
@@ -1277,7 +1281,7 @@ export const createDaily = ({
         writeFileSync(
           postStatsPath,
           JSON.stringify({
-            reads: { ...cached.reads, ...fresh.reads },
+            reads: mergeReads(cached.reads, fresh.reads, refreshed),
             numbers: { ...cached.numbers, ...fresh.numbers },
           }),
         );

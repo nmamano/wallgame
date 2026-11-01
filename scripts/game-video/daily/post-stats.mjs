@@ -93,10 +93,12 @@ export const CHECKPOINTS = [
 ];
 /**
  * A free platform (all but X) is also read every 6 h while its post is
- * younger than 14 days, so the page stays fresh. A failed read of any
- * platform waits this time before the next.
+ * younger than 14 days, so the page stays fresh. A failed X read waits
+ * this time before the next (X is paid).
  */
 export const STATS_MAX_AGE_MS = 6 * HOUR_MS;
+/** A failed read of a free platform waits only this (Growth, 2026-11-01). */
+export const FREE_RETRY_MS = HOUR_MS;
 export const FRESH_WINDOW_MS = 14 * DAY_MS;
 /**
  * A checkpoint read missed by more than a day (the app was down) is not
@@ -203,11 +205,27 @@ const chunks = (xs, n) =>
   );
 
 /**
- * A Graph read: the reply's JSON, or NoCount. A permission error (code 10,
- * or 200-299) says "needs reconnect" with the permission it lacks, so the
- * caller can fall back to the numbers it may read.
+ * A Graph read: the reply's JSON, or a throw. A reply Graph refused with an
+ * error code (HTTP 4xx) is GraphRefused, so a reader can fall back to the
+ * numbers it may read; its reason keeps the HTTP status, code and subcode
+ * (Wall Game PM, 2026-11-01), never Graph's message, which can echo values.
+ * Only a real permission error says "needs reconnect": codes 200-299, or
+ * code 10 whose message names a permission. Code 10 also means other things,
+ * e.g. "Not enough viewers for the media to show insights".
  */
-class NeedsPermission extends NoCount {}
+class GraphRefused extends NoCount {}
+export const graphReason = (step, permission, reply) => {
+  const e = reply.json?.error;
+  const code = typeof e?.code === "number" ? e.code : null;
+  const sub = typeof e?.error_subcode === "number" ? e.error_subcode : null;
+  const where = `HTTP ${reply.status}${code === null ? "" : ` code ${code}`}${sub === null ? "" : ` subcode ${sub}`}`;
+  const permissionError =
+    (code !== null && code >= 200 && code < 300) ||
+    (code === 10 && /permission/i.test(String(e?.message ?? "")));
+  return permissionError
+    ? `${NEEDS_RECONNECT} (${permission}; ${where})`
+    : `${step}: ${where}`;
+};
 const graph = async (transport, step, url, token, permission) => {
   const reply = await transport.request({
     method: "GET",
@@ -215,13 +233,11 @@ const graph = async (transport, step, url, token, permission) => {
     headers: bearer(token),
   });
   if (ok(reply)) return reply.json;
-  const code = reply.json?.error?.code;
-  if (code === 10 || (code >= 200 && code < 300)) {
-    throw new NeedsPermission(`${NEEDS_RECONNECT} (${permission})`);
+  const reason = graphReason(step, permission, reply);
+  if (reply.status >= 400 && reply.status < 500 && reply.json?.error) {
+    throw new GraphRefused(reason);
   }
-  throw new NoCount(
-    `${step}: HTTP ${reply.status}${typeof code === "number" ? ` code ${code}` : ""}`,
-  );
+  throw new NoCount(reason);
 };
 
 /** {name: value} of an insights reply: data[].values[0].value. */
@@ -416,7 +432,7 @@ const READERS = {
           ...(more.partial && { partial: more.partial }),
         };
       } catch (err) {
-        if (!(err instanceof NeedsPermission)) throw err;
+        if (!(err instanceof GraphRefused)) throw err;
         // The media node's counts need only instagram_basic.
         const json = await read(transport, "instagram media", {
           url: `${FB_GRAPH}/${p.postId}?fields=like_count,comments_count`,
@@ -438,15 +454,23 @@ const READERS = {
     const token = metaStatsToken(env, tokens);
     const out = {};
     for (const p of posts) {
-      const m = insightValues(
-        await graph(
-          transport,
-          "instagram story insights",
-          `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares`,
-          token,
-          "instagram_manage_insights",
-        ),
-      );
+      let m;
+      try {
+        m = insightValues(
+          await graph(
+            transport,
+            "instagram story insights",
+            `${FB_GRAPH}/${p.postId}/insights?metric=views,replies,shares`,
+            token,
+            "instagram_manage_insights",
+          ),
+        );
+      } catch (err) {
+        if (!(err instanceof GraphRefused)) throw err;
+        // A Story has no other source: the post shows the reason.
+        out[p.postId] = { ...numbers({}), note: err.message };
+        continue;
+      }
       const more = await optionalInsights(
         transport,
         "instagram story reach",
@@ -486,14 +510,16 @@ const READERS = {
           ),
         );
         const social = m.post_video_social_actions;
+        // The reply came, so a reaction or action it does not list is none
+        // yet (a new reel): 0, not "-" (Wall Game Growth, 2026-11-01).
         out[p.postId] = numbers({
           views: num(m.blue_reels_play_count, "facebook"),
-          likes: total(m.post_video_likes_by_reaction_type, "facebook"),
-          comments: keyed(social, "comment", "facebook"),
-          shares: keyed(social, "share", "facebook"),
+          likes: total(m.post_video_likes_by_reaction_type, "facebook") ?? 0,
+          comments: keyed(social, "comment", "facebook") ?? 0,
+          shares: keyed(social, "share", "facebook") ?? 0,
         });
       } catch (err) {
-        if (!(err instanceof NeedsPermission)) throw err;
+        if (!(err instanceof GraphRefused)) throw err;
         // The video node's likes and comments: pages_read_engagement.
         const json = await read(transport, "facebook video", {
           url: `${FB_GRAPH}/${p.postId}?fields=likes.summary(true).limit(0),comments.summary(true).limit(0)`,
@@ -524,28 +550,51 @@ export const checkpointAt = (ageMs) =>
   CHECKPOINTS.filter((c) => c.ms <= ageMs).at(-1) ?? null;
 
 /**
+ * @typedef {{ at: string, error: string | null, posts?: number,
+ *   refreshedAt?: string }} PlatformRead
+ * `at`: the last read of the platform (of any post); `refreshedAt`: the last
+ * successful 6 h refresh of all its young posts. A checkpoint read of one
+ * post moves `at` only, so it does not delay the others' refresh.
+ */
+
+/**
+ * The free platforms whose 6 h refresh is due: no successful refresh in
+ * 6 h, and no failed read in the last hour (FREE_RETRY_MS).
+ * @param {Record<string, PlatformRead> | undefined} reads
+ */
+export const refreshDue = (reads, nowMs) =>
+  STATS_PLATFORMS.filter((platform) => {
+    if (platform === "x") return false;
+    const last = reads?.[platform];
+    if (last?.error && nowMs - Date.parse(last.at) < FREE_RETRY_MS) {
+      return false;
+    }
+    const refreshed = Date.parse(last?.refreshedAt ?? "");
+    return !Number.isFinite(refreshed) || nowMs - refreshed >= STATS_MAX_AGE_MS;
+  });
+
+/**
  * The posts to read now, by platform, from the cached reads and numbers:
  * - a post that passed a checkpoint (by less than a day) and was not read
  *   since;
- * - on a free platform whose last read is 6 h old, each post younger than
- *   14 days (and TikTok's status, which has no post to read).
- * A platform whose last read failed waits 6 h. A Story is read only while
- * it is up. A post with no post id is never read.
+ * - on a free platform whose refresh is due (refreshDue), each post younger
+ *   than 14 days (and TikTok's status, which has no post to read).
+ * A platform whose last read failed waits: X 6 h, a free platform 1 h. A
+ * Story is read only while it is up. A post with no post id is never read.
  * @param {Post[]} posts the live post log's rows
- * @param {{ reads?: Record<string, { at: string, error: string | null }>,
+ * @param {{ reads?: Record<string, PlatformRead>,
  *   numbers?: Record<string, { at: string }> }} cache
  * @returns {Record<string, Post[]>}
  */
 export const postsDue = (posts, cache, nowMs) => {
   /** @type {Record<string, Post[]>} */
   const out = {};
+  const refresh = refreshDue(cache.reads, nowMs);
   for (const platform of STATS_PLATFORMS) {
     const last = cache.reads?.[platform];
-    const lastMs = Date.parse(last?.at ?? "");
-    const stale =
-      !Number.isFinite(lastMs) || nowMs - lastMs >= STATS_MAX_AGE_MS;
-    if (last?.error && !stale) continue;
-    const fresh = platform !== "x" && stale;
+    const wait = platform === "x" ? STATS_MAX_AGE_MS : FREE_RETRY_MS;
+    if (last?.error && nowMs - Date.parse(last.at) < wait) continue;
+    const fresh = refresh.includes(platform);
     const list = posts.filter((p) => {
       if (p.platform !== platform || typeof p.postId !== "string") return false;
       if (!p.postId) return false;
@@ -566,6 +615,27 @@ export const postsDue = (posts, cache, nowMs) => {
   }
   return out;
 };
+
+/**
+ * The reads to keep after a run: the fresh ones over the cached ones; a
+ * platform whose refresh was due and read without error gets `refreshedAt`,
+ * any other keeps its cached one.
+ * @param {Record<string, PlatformRead>} cached
+ * @param {Record<string, PlatformRead>} fresh
+ * @param {string[]} refreshed the platforms refreshDue gave for this run
+ * @returns {Record<string, PlatformRead>}
+ */
+export const mergeReads = (cached, fresh, refreshed) =>
+  Object.fromEntries(
+    Object.entries({ ...cached, ...fresh }).map(([platform, r]) => {
+      const kept = cached[platform]?.refreshedAt;
+      const refreshedAt =
+        platform in fresh && refreshed.includes(platform) && !r.error
+          ? r.at
+          : kept;
+      return [platform, refreshedAt ? { ...r, refreshedAt } : r];
+    }),
+  );
 
 /**
  * Read the due posts (postsDue), one platform after the other. A platform
