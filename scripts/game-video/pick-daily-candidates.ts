@@ -67,6 +67,7 @@ import {
   type SeatKind,
   type StoredGameSummary,
   type Swing,
+  siteMove,
 } from "./daily-candidates";
 import {
   EngineLink,
@@ -322,20 +323,20 @@ const describe = (c: Candidate, rank: number): string => {
   ];
   for (const b of c.beats) {
     lines.push(
-      `   close call: danger move ${b.danger.moveNumber} (walk ${b.danger.walk}), save move ${b.save.moveNumber} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${b.relief.moveNumber} (walk ${b.relief.walk}), ${zoom(b.save)}`,
+      `   close call: danger move ${siteMove(b.danger.ply)} (walk ${b.danger.walk}), save move ${siteMove(b.save.ply)} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${siteMove(b.relief.ply)} (walk ${b.relief.walk}), ${zoom(b.save)}`,
       `     ${b.description}`,
     );
   }
   for (const e of c.escapes) {
     lines.push(
-      `   escape: move ${e.moveNumber} ${e.notation} (${e.walkBefore} -> ${e.walk}), ${e.prey.type} ${e.preyFrom} -> ${e.preyCell}`,
+      `   escape: move ${siteMove(e.ply)} ${e.notation} (${e.walkBefore} -> ${e.walk}), ${e.prey.type} ${e.preyFrom} -> ${e.preyCell}`,
       `     ${e.description}`,
     );
   }
   for (const p of c.picks) {
     const sign = p.jump >= 0 ? "+" : "";
     lines.push(
-      `   move ${p.moveNumber} by P${p.mover} ${p.notation}: jump ${sign}${p.jump} (mover's walk ${walk(p.ownBefore)} -> ${walk(p.ownAfter)}, opponent's ${walk(p.opponentBefore)} -> ${walk(p.opponentAfter)}), ${zoom(p)}`,
+      `   move ${siteMove(p.ply)} by P${p.mover} ${p.notation}: jump ${sign}${p.jump} (mover's walk ${walk(p.ownBefore)} -> ${walk(p.ownAfter)}, opponent's ${walk(p.opponentBefore)} -> ${walk(p.opponentAfter)}), ${zoom(p)}`,
       `     ${p.description}`,
     );
   }

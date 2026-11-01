@@ -20,6 +20,7 @@
  */
 import type { PlayerId, Variant } from "../../../shared/domain/game-types";
 import { minJumpFor, type Hunt } from "../race-replay";
+import { siteMove } from "../daily-candidates";
 import type { GameFacts, HuntChange, PlyFacts } from "./facts";
 
 export const LABELS = [
@@ -725,7 +726,7 @@ const turningPointOf = (
   const at = (k: number) => {
     const l = labels[k];
     const what = l.label === "quiet" ? "" : `, ${l.label}`;
-    return `ply ${k} (move ${k + 1}, ${names[l.mover]}${what})`;
+    return `ply ${k} (move ${siteMove(k)}, ${names[l.mover]}${what})`;
   };
   const how = scored ? "on the engine's count" : "on the counters";
   const parts = [

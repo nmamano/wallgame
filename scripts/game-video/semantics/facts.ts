@@ -31,7 +31,7 @@ import {
   wallToStandardNotation,
 } from "../../../shared/domain/standard-notation";
 import type { SeatKind } from "../daily-candidates";
-import { winChance } from "../daily-candidates";
+import { siteMoveNumber, winChance } from "../daily-candidates";
 import {
   huntsFor,
   huntWalks,
@@ -142,7 +142,7 @@ export const boxedRoom = (f: PlyFacts): MouseRoom => {
 export interface PlyFacts {
   /** 0-based index into the stored move list (edl.mjs convention). */
   ply: number;
-  /** 1-based, as the replay page counts moves. */
+  /** wallgame.io's move number (siteMoveNumber): both turns of a pair share it. */
   moveNumber: number;
   mover: PlayerId;
   notation: string;
@@ -344,7 +344,7 @@ export const gameFacts = (
     const ended = after.status === "finished" && before.status !== "finished";
     return {
       ply,
-      moveNumber: ply + 1,
+      moveNumber: siteMoveNumber(ply),
       mover,
       notation,
       steps: stepsOf(before, after, mover),

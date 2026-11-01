@@ -274,10 +274,19 @@ export const winChance = (evaluationP1: number, side: PlayerId): number => {
   return (forSide + 1) / 2;
 };
 
+/**
+ * A ply as wallgame.io's move list numbers it: both players' turns share one
+ * number, "4." for the first player and "4..." for the second
+ * (formattedHistory in frontend/src/hooks/use-game-page-controller.ts).
+ */
+export const siteMoveNumber = (ply: number): number => Math.floor(ply / 2) + 1;
+export const siteMove = (ply: number): string =>
+  `${siteMoveNumber(ply)}${ply % 2 === 0 ? "." : "..."}`;
+
 export interface Swing {
   /** 0-based index into the stored move list. */
   ply: number;
-  /** 1-based, as the replay page counts moves. */
+  /** ply + 1. Not the site's move number: see siteMove. */
   moveNumber: number;
   mover: PlayerId;
   notation: string;
@@ -339,7 +348,7 @@ export const swingsOf = (
 export interface DistanceJump {
   /** 0-based index into the stored move list. */
   ply: number;
-  /** 1-based, as the replay page counts moves. */
+  /** ply + 1. Not the site's move number: see siteMove. */
   moveNumber: number;
   mover: PlayerId;
   notation: string;

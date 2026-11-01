@@ -47,6 +47,7 @@ import {
 } from "./facts";
 import { isMoment, raceWords, type GameLabels, type Link } from "./labels";
 import type { PlySeen } from "./vision";
+import { siteMove, siteMoveNumber } from "../daily-candidates";
 
 export const MODEL = "claude-opus-5-5";
 export const MAX_WORDS = 35;
@@ -215,7 +216,7 @@ export const factsOf = (
   if (l.ownWall) {
     add(
       "ownwall",
-      `The wall ${l.ownWall.wall} between ${names[f.mover]}'s cat and the mouse is ${names[f.mover]}'s own, placed on move ${l.ownWall.ply + 1}.`,
+      `The wall ${l.ownWall.wall} between ${names[f.mover]}'s cat and the mouse is ${names[f.mover]}'s own, placed on move ${siteMoveNumber(l.ownWall.ply)}.`,
     );
   }
   const tagText = l.tags.filter((t) => t !== l.label);
@@ -711,11 +712,11 @@ export const renderTable = (s: GameSemantics): string => {
     ? `${names[s.facts.winner]} wins`
     : `a draw (${game.result.reason})`;
   const lines = [
-    `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} moves, ${result}`,
+    `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} plies (the site's move list ends at ${siteMove(game.moves.length - 1)}), ${result}`,
     "",
     `Turning point: ${s.labels.turningPoint}`,
     "",
-    `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = ply + 1 (the replay page's count)`,
+    `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = wallgame.io's move list (N. first player, N... second player); ply = 0-based turn`,
     "",
     s.seen
       ? "| move | ply | by | label | strength | race after | seen | sentence |"
@@ -725,10 +726,10 @@ export const renderTable = (s: GameSemantics): string => {
       : "|---|---|---|---|---|---|---|",
   ];
   const seen = new Map((s.seen ?? []).map((x) => [x.ply, x]));
-  const quiet: number[] = [];
+  const quiet: string[] = [];
   for (const l of s.labels.plies) {
     if (!isMoment(l)) {
-      quiet.push(l.moveNumber);
+      quiet.push(siteMove(l.ply));
       continue;
     }
     const sentence = s.sentences?.[l.ply];
@@ -737,14 +738,14 @@ export const renderTable = (s: GameSemantics): string => {
       : "";
     const tags = l.tags.filter((t) => t !== l.label);
     lines.push(
-      `| ${l.moveNumber} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""}${l.ownWall ? ` [own wall ${l.ownWall.wall}, ply ${l.ownWall.ply}]` : ""} | ${l.strength.toFixed(2)} | ${raceWords(l.race.after, names)} |${s.seen ? ` ${seenCell(seen.get(l.ply))} |` : ""} ${text} |`,
+      `| ${siteMove(l.ply)} | ${l.ply} | ${names[l.mover]} | ${l.label}${tags.length ? ` (${tags.join(", ")})` : ""}${l.ownWall ? ` [own wall ${l.ownWall.wall}, ply ${l.ownWall.ply}]` : ""} | ${l.strength.toFixed(2)} | ${raceWords(l.race.after, names)} |${s.seen ? ` ${seenCell(seen.get(l.ply))} |` : ""} ${text} |`,
     );
   }
-  lines.push("", `Quiet moves (${quiet.length}): ${quiet.join(", ")}.`);
+  lines.push("", `Quiet moves (${quiet.length}): ${quiet.join(" ")}`);
   if (s.labels.links.length) {
     lines.push(
       "",
-      `Links: ${s.labels.links.map((k) => `${k.kind} ${k.from + 1} -> ${k.to + 1}${k.kind !== "blunder-punish" ? "" : k.costShown ? " (cost shown)" : " (cost NOT shown)"}`).join("; ")}.`,
+      `Links: ${s.labels.links.map((k) => `${k.kind} ${siteMove(k.from)} -> ${siteMove(k.to)}${k.kind !== "blunder-punish" ? "" : k.costShown ? " (cost shown)" : " (cost NOT shown)"}`).join("; ")}`,
     );
   }
   return lines.join("\n") + "\n";

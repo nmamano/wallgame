@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
 import { readFileSync } from "node:fs";
+import { siteMoveNumber } from "../daily-candidates";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { countersShow, isMoment, labelGame, raceWords } from "./labels";
 import {
@@ -85,7 +86,7 @@ const gameOf = (
       : null;
     return {
       ply,
-      moveNumber: ply + 1,
+      moveNumber: siteMoveNumber(ply),
       mover,
       notation: "Ca2",
       steps: [{ type: "cat", from: "a1", to: "a2" }],
@@ -542,7 +543,9 @@ describe("the stored result over the replay's", () => {
       sentences: null,
       seen: null,
     }).split("\n")[0];
-    expect(title).toEndWith("moves, a draw (one-move-rule)");
+    expect(title).toEndWith(
+      "27 plies (the site's move list ends at 14.), a draw (one-move-rule)",
+    );
   });
 });
 
@@ -672,7 +675,7 @@ describe("the race and its moments (2Xnv0iiY, engine of 2026-10-31; C36)", () =>
     // plain step (7-9); the engine 89% -> 90%.
     expect(l.plies[26].raceGain).toBe(0);
     expect(l.plies[26].label).toBe("quiet");
-    expect(l.turningPoint).toContain("from ply 9 (move 10");
+    expect(l.turningPoint).toContain("from ply 9 (move 5..., Superhuman Bot)");
     expect(l.turningPoint).toContain("the capture at ply 40");
   });
 
