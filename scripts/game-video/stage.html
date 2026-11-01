@@ -870,18 +870,25 @@
         github.com/google/fonts ofl/grandstander; installed on the render box
         like TikTok Sans, sync-render-kit.sh checks it), the closest free
         face to SpongeBob's time-card letters; never the show's own font.
+        The colours are the card's own (Director, 2026-11-01: ours read as
+        one more caption): navy letters on a warm sand box, with a flat
+        tiki-plank grain.
       */
       :is(#overlay, #frameBar).eternity-later {
         border-radius: 0.3em;
-        background: radial-gradient(circle at 30% 30%, #5fd0f5, #1f8fc4);
-        border: 0.06em solid #fff;
+        background:
+          repeating-linear-gradient(
+            90deg,
+            transparent 0 1.6em,
+            rgba(122, 62, 20, 0.16) 1.6em 1.72em
+          ),
+          linear-gradient(#f6c46e, #e89a4c);
+        border: 0.06em solid #7a3e14;
         box-shadow: 0 0.1em 0.4em rgba(0, 0, 0, 0.6);
-        color: #fde047;
+        color: #1c2b6e;
         font-family: "Grandstander", "TikTok Sans", sans-serif;
         font-size: calc(var(--board) * 0.08);
         font-weight: 900;
-        -webkit-text-stroke: 0.08em #5b3209;
-        paint-order: stroke fill;
       }
       :is(#overlay, #frameBar).mission-passed {
         border-radius: 0.2em;
