@@ -1202,6 +1202,25 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
       'events[0]: the-scream is a picture a pawn emotes; it needs a "sound" as it opens',
     ]);
   });
+  test("a clip that plays its own sound needs no meme sound; muted, it does", () => {
+    const jjj = (o: object) =>
+      ev({ asset: "gs-jjj-laugh", pawn: "red cat", sound: undefined, ...o });
+    expect(accept(jjj({ audio: "own" })).events[0]).toMatchObject({
+      asset: "gs-jjj-laugh",
+      audio: "own",
+    });
+    expect(validateEdl(jjj({ audio: "muted" })).errors).toEqual([
+      'events[0]: gs-jjj-laugh is a picture a pawn emotes; it needs a "sound" as it opens',
+    ]);
+    // A silent clip has no sound of its own to play.
+    expect(
+      validateEdl(
+        ev({ asset: "gs-terio-ooh", pawn: "red cat", sound: undefined }),
+      ).errors,
+    ).toEqual([
+      'events[0]: gs-terio-ooh is a picture a pawn emotes; it needs a "sound" as it opens',
+    ]);
+  });
   test("may name its place, one of the pawn places, on a pawn picture only", () => {
     expect(
       accept(ev({ asset: "the-scream", pawn: "red mouse", place: "top-left" }))

@@ -928,8 +928,9 @@ export const validateEdl = (raw) => {
         );
       }
       // Nil, 2026-10-30, C23: "the scream is fine but should be paired
-      // with some sound effect".
-      if (ev.sound == null) {
+      // with some sound effect". A clip that plays its own sound (a laugh,
+      // a sob) has one.
+      if (ev.sound == null && !(asset.sequence?.audio && ev.audio === "own")) {
         fail(
           `${where}: ${ev.asset} is a picture a pawn emotes; it needs a "sound" as it opens`,
         );
