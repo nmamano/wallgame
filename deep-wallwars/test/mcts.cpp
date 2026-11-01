@@ -237,7 +237,11 @@ TEST_CASE("Sample many", "[MCTS]") {
 
     CHECK(mcts.wasted_inferences() == 0);
     CHECK(mcts.root_samples() == 1001);
-    CHECK(*policy.samples == 6);
+    // One evaluation per node of the only line. Both cats walk down their column. Red's second
+    // action at the bottom (node 6) has no edge, which is a short turn, so play passes to Blue.
+    // Blue's second action at the bottom (node 8) passes to Red, and Red's first action with no
+    // edge (node 9) is a loss that ends the line.
+    CHECK(*policy.samples == 9);
 }
 
 struct SlowDownPolicy {
