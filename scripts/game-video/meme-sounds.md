@@ -356,3 +356,21 @@ A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, 
   `scared-1` carries the tag #creycee, which may name its creator. `laugh-3`
   may come from Alvin and the Chipmunks; its origin is not confirmed.
   `scared-2`, `scared-3` and `laugh-2` name no owner.
+
+## nono-1
+
+Nil, 2026-11-01, to the Wall Game Director, with the file "No No No No -
+Sound - SR.mp3" (15.7 s, 48 kHz stereo; no credit or origin in it): "this
+sound effect is funny".
+
+- nono-1: "Oh no no no no." A transcript (Whisper small, on the 4090,
+  2026-11-01) reads the file as "Bruh. Look at this dude." (0.0-1.6 s),
+  "Wait till you see the f-" (2.7-4.3 s; the "f-" is cut off and reads as
+  the start of a swear word), then "Oh no no no no." (4.34-7.10 s). The
+  cut starts in the silence at 4.34 s, after the "f-", and ends in the dip
+  at 7.13 s; nothing before "Oh" is heard. MEDIUM claim risk: a voice from
+  a recording of unknown origin.
+
+| Key    | Made from  | Length | Command (ffmpeg)                                                                          |
+| ------ | ---------- | ------ | ----------------------------------------------------------------------------------------- |
+| nono-1 | Nil's file | 2.8 s  | `-ss 4.34 -to 7.13 -i <file> -vn -af "afade=t=in:st=0:d=0.01,afade=t=out:st=2.73:d=0.06"` |

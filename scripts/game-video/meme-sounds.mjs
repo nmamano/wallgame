@@ -128,6 +128,9 @@ export const MEME_SOUNDS = {
   // 2026-11-01, meme-list c23bb8e), ours, measured that day.
   "crickets-1": { lufs: -18.9, truePeak: -7.8 },
   "sneak-1": { lufs: -24.9, truePeak: -13.4 },
+  // Nil, 2026-11-01: "this sound effect is funny" (meme-sounds.md),
+  // measured that day.
+  "nono-1": { lufs: -10.9, truePeak: -4.3 },
 };
 
 /**
@@ -183,6 +186,7 @@ export const MEME_FAMILIES = {
   forward: "the flashback: the board plays forward to now",
   crickets: "an awkward quiet: a move nobody can explain (with Travolta)",
   sneak: "got away with it: a blunder nobody punished (with Terio)",
+  nono: "oh no no no no: a voice that sees the disaster coming",
 };
 
 /**
@@ -260,6 +264,8 @@ export const MEME_SOURCE_NOTES = {
     "high claim risk: a Spider-Man theme song (Marvel); pointing-1's first 2.8 s, may end mid-word",
   "violin-1": "high claim risk: a TV drama theme, or a Team Fortress 2 sound",
   "boom-4": "medium claim risk: a Bluezone library effect (the real vine boom)",
+  "nono-1":
+    "medium claim risk: a voice from a recording of unknown origin (Nil's file, no credit in it)",
   "bruh-3": "medium claim risk: a creator's voice (the real bruh clip)",
   "dundun-1": "medium claim risk: may be the KPM library sting",
   "dundun-2": "medium claim risk: may be the KPM library sting",
