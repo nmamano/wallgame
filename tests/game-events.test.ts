@@ -166,3 +166,21 @@ describe("eval_bar_on", () => {
     ).toEqual({ variant: "classic", board: "9x7" });
   });
 });
+
+describe("game_first_move before the snapshot (Reviewer 1, L1)", () => {
+  it("waits, unmarked, while the opponent is not known; then sends once", () => {
+    const session = workingStorage();
+    const unknown = view({ opponent: null });
+    expect(firstMovePhase(unknown)).toBe("after");
+    expect(
+      takeFirstMoveEvent({ view: unknown, sawBefore: true, session }),
+    ).toBeNull();
+    // The snapshot comes: the bot game is counted as one, once.
+    expect(
+      takeFirstMoveEvent({ view: view(), sawBefore: true, session }),
+    ).toEqual({ variant: "standard", opponent: "bot", board: "8x8" });
+    expect(
+      takeFirstMoveEvent({ view: view(), sawBefore: true, session }),
+    ).toBeNull();
+  });
+});

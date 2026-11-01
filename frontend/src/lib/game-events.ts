@@ -63,7 +63,8 @@ export interface FirstMoveView {
   /** Spectating or watching a replay. */
   isReadOnly: boolean;
   isPuzzle: boolean;
-  opponent: "bot" | "human";
+  /** Null while an online game's snapshot (the seats' types) has not come. */
+  opponent: "bot" | "human" | null;
 }
 
 /**
@@ -114,6 +115,9 @@ export function takeFirstMoveEvent({
   if (!sawBefore || !view.state || firstMovePhase(view) !== "after") {
     return null;
   }
+  // The opponent is not known yet (no snapshot): wait, unmarked; the
+  // caller keeps `sawBefore`, so the event goes out when it comes, once.
+  if (view.opponent === null) return null;
   const key = SENT_KEY_PREFIX + view.gameId;
   try {
     if (session?.getItem(key) === SENT_VALUE) return null;

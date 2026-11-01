@@ -31,6 +31,9 @@ export function useGameFirstMove({
       return;
     }
     if (phase !== "after") return;
+    // Not known yet (an online game's snapshot has not come): wait, and
+    // keep what this page saw before the first move.
+    if (opponent === null) return;
     const params = takeFirstMoveEvent({
       view,
       sawBefore: sawBeforeRef.current === gameId,

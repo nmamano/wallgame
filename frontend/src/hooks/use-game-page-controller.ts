@@ -3326,8 +3326,9 @@ export function useGamePageController(gameId: string) {
   /**
    * Count a game this player started (game_first_move, task 8ec46ee4), from
    * the live state for the same reason as the nudge above. The opponent is
-   * the other seat's type in the server's snapshot; a local game has none
-   * and its other seat is a person.
+   * the other seat's type in the server's snapshot; until an online game has
+   * it, the opponent is not known (null) and nothing is sent yet (Wall Game
+   * Reviewer 1, L1). A local game has no snapshot; its other seat is a person.
    */
   useGameFirstMove({
     gameId,
@@ -3335,9 +3336,10 @@ export function useGamePageController(gameId: string) {
     playerId: primaryLocalPlayerId,
     isReadOnly: isReadOnlySession,
     isPuzzle: isPuzzleGame,
-    opponent:
-      matchSnapshot?.players.find((p) => p.playerId !== primaryLocalPlayerId)
-        ?.configType ?? "human",
+    opponent: isRemoteFlow
+      ? (matchSnapshot?.players.find((p) => p.playerId !== primaryLocalPlayerId)
+          ?.configType ?? null)
+      : "human",
   });
 
   // Clear annotations when turn changes (move is committed)
