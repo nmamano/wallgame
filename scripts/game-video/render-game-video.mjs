@@ -1232,6 +1232,50 @@ const ff = (args) =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+/**
+ * The site's own clicks (frontend/public/audio): their hit is not at their
+ * first sample. wall.wav is quiet for 44 ms and peaks at 97 ms, pawn.wav
+ * rises from 8 ms and peaks at 118 ms, and the board shows a move on one
+ * frame: cued on that frame, the click was heard about 0.05-0.1 s after
+ * the move (Nil, 2026-11-01, C41: "the move sounds sound a bit out of sync
+ * at the beginning", where moves are 0.5 s apart and nothing else plays).
+ * cue starts such a file earlier by its body's onset, so the body lands on
+ * the cue's time.
+ */
+const AUDIO_DIR = join(REPO, "frontend/public/audio");
+const SITE_CLICKS = new Set(
+  ["wall.wav", "pawn.wav"].map((f) => join(AUDIO_DIR, f)),
+);
+const bodyOnsetOf = new Map();
+/**
+ * The seconds from a sound file's start to its body: its first sample
+ * within SOUND_BODY_DB of its own peak (the lint's "loud part"), at rate 1.
+ * @param {string} file
+ * @returns {number}
+ */
+const bodyOnsetSeconds = (file) => {
+  if (!bodyOnsetOf.has(file)) {
+    const raw = ff([
+      "-i",
+      file,
+      "-ac",
+      "1",
+      "-ar",
+      "48000",
+      "-f",
+      "s16le",
+      "pipe:1",
+    ]);
+    const x = new Int16Array(Uint8Array.from(raw).buffer);
+    let peak = 0;
+    for (const v of x) peak = Math.max(peak, Math.abs(v));
+    const body = peak * 10 ** (SOUND_BODY_DB / 20);
+    const i = x.findIndex((v) => Math.abs(v) >= body);
+    bodyOnsetOf.set(file, Math.max(0, i) / 48000);
+  }
+  return bodyOnsetOf.get(file);
+};
+
 /* ------------------------------------------------------------ game facts -- */
 
 const log = (...m) => console.log("[video]", ...m);
@@ -2577,7 +2621,6 @@ if (EDL) {
  * Nothing here carries the story. The video is built to read with the sound
  * off, because a feed autoplays muted; the audio is for whoever taps it.
  */
-const AUDIO_DIR = join(REPO, "frontend/public/audio");
 
 /**
  * The mix the site itself plays at, from frontend/src/lib/sounds.ts.
@@ -4422,10 +4465,16 @@ const renderStyle = async (styleName) => {
         `the ${sound.name} sound (${role}) has no valid time: ${at} s. A value its time is built from is missing or wrong`,
       );
     }
+    // A site click starts before its time, so its body lands on it
+    // (SITE_CLICKS); `hit` is the time the timeline reports.
+    const lead = SITE_CLICKS.has(sound.file)
+      ? bodyOnsetSeconds(sound.file) / (sound.rate ?? 1)
+      : 0;
     cues.push({
       file: sound.file,
       gain: sound.gain,
-      at,
+      at: Math.max(0, at - lead),
+      hit: at,
       rate: sound.rate ?? 1,
       // A meme sound is measured against the rest of the mix (mix-loudness.mjs);
       // so is an overlay clip's own sound, which names itself.
@@ -7239,24 +7288,30 @@ const renderStyle = async (styleName) => {
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's or trap's sound lands with its word (-12 vet, 2026-10-31:
-        // the trap's sting-1 started 0.4 s before TRAPPED appeared).
+        // the trap's sting-1 started 0.4 s before TRAPPED appeared). A
+        // "sound" event has no picture: it lands with its move, not after
+        // the race tick that plays first (Nil, 2026-11-01, C41: whoosh-1
+        // came 0.30 s after the move on -15 v4 ply 34 and -01-2 54 and 60).
         cueEvent(
           {
             ...sound,
             gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
           },
           ev,
-          elapsed +
-            (ev.kind === "stamp"
-              ? STAMP_LAND_AT
-              : ev.kind === "trap"
-                ? TRAP_STAMP_AT
-                : 0),
+          ev.kind === "sound"
+            ? moveTimes.findLast((m) => m.ply === plyIndex).at
+            : elapsed +
+                (ev.kind === "stamp"
+                  ? STAMP_LAND_AT
+                  : ev.kind === "trap"
+                    ? TRAP_STAMP_AT
+                    : 0),
         );
       }
       if (ev.kind === "sound") {
         stillNext = label;
-        spanOf(ev, start);
+        // Its span starts where its sound does: on the move's landing.
+        spanOf(ev, moveTimes.findLast((m) => m.ply === plyIndex).at);
         continue;
       }
       if (ev.kind === "zoom") {
@@ -8048,7 +8103,7 @@ const renderStyle = async (styleName) => {
       moves: moveTimes,
       events: eventSpans,
       sounds: [
-        ...played.map((c) => ({ ...c, start: c.at })),
+        ...played.map((c) => ({ ...c, start: c.hit })),
         ...music.map((m, k) => ({
           name: CUES[k].track.slug,
           role: "music",
