@@ -2038,8 +2038,10 @@ log(
   site paints them START_WALL itself since a63de775 (frontend board.tsx,
   NEUTRAL_WALL_COLOR, on wallgame.io 2026-10-31) - a wall's background, a
   pillar's fill - so the capture keeps them as they are; before, it
-  repainted the site's brown #92400e. A capture of a game with start walls
-  stops if nothing on the board is that grey: the site changed them again.
+  repainted the site's brown #92400e. Each start wall paints at least one
+  part of the board that grey, so a capture stops when fewer parts are grey
+  than the game has start walls: the site changed them again (VR1 review
+  109 N1: it passed on any one grey part).
 */
 const START_WALL = "#64748b";
 /** On the board, count the parts painted START_WALL. */
@@ -2108,9 +2110,9 @@ if (!cached && STYLE_NAMES.includes("daily")) {
   // Every position shows the start walls: no move removes one.
   const startWalls = replay.state.initialState.walls.length;
   const grey = await countStartWallPaint();
-  if (startWalls > 0 && grey === 0) {
+  if (grey < startWalls) {
     throw new Error(
-      `the game has ${startWalls} start walls, but nothing on the board is ${START_WALL}: the site changed how it paints them`,
+      `the game has ${startWalls} start walls, but only ${grey} board parts are ${START_WALL}: the site changed how it paints them`,
     );
   }
   log(`start walls: ${startWalls}, ${grey} board parts ${START_WALL}`);
