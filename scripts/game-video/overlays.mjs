@@ -967,7 +967,9 @@ export const OVERLAYS = {
     opportunities"; the Wall Game Director's picks). Each emotes a pawn,
     like the-scream: beside it, with a ring and a tail in its seat's
     colour. Keyed by prepare-overlay-clip.mjs, trimmed to the art; the
-    lines they go on are in meme-list.md.
+    lines they go on are in meme-list.md. HIGH claim and likeness: nilOk
+    records Nil's own words for each clip; a clip that gets a claim leaves
+    the list (C43).
   */
   "gs-jjj-laugh": {
     form: "clip",
@@ -976,8 +978,10 @@ export const OVERLAYS = {
     // The whole clip: he laughs from the first frame to the last.
     seconds: 2.9,
     pawn: true,
-    size: { w: 0.36, h: 0.25 },
-    small: { w: 0.29, h: 0.2 },
+    // Big enough that his face reads on a phone, even at the small size
+    // (Wall Game Director, 2026-11-01, on the 1102b proof).
+    size: { w: 0.4, h: 0.28 },
+    small: { w: 0.34, h: 0.24 },
     places: ["board"],
     sequence: {
       dir: "gs-jjj-laugh",
@@ -991,7 +995,8 @@ export const OVERLAYS = {
       "Nil's meme pack: Green Screen/Green Screen - Man Laughing Peter Parker.mp4 (J. K. Simmons as J. Jonah Jameson, Spider-Man, 2002), 0-2.9 s, its laugh kept",
     claim: "HIGH: a film clip (Sony Pictures), with its audio",
     likeness: "HIGH: a real actor's face",
-    nilOk: null,
+    nilOk:
+      'Nil, for this clip: "this one when the opponent makes a mistake" (Nil, chat to the Wall Game Director, 2026-11-01 02:53 UTC, CASES C43, sending the four clips: "Why don\'t you use the green screen memes i gave you, i just lookned at them and see so many opportunities")',
     rating: null,
   },
   "gs-confused-travolta": {
@@ -1015,7 +1020,8 @@ export const OVERLAYS = {
       "Nil's meme pack: Green Screen/Green Screen - Orang Bertanya Sendiri!!.mp4 (John Travolta, Pulp Fiction, 1994), letterbox cut (crop 844:674:218:22), 1.1-3.55 s, silent",
     claim: "HIGH: a film clip (Miramax)",
     likeness: "HIGH: a real actor's face",
-    nilOk: null,
+    nilOk:
+      'Nil, for this clip: "this one when the opponent makes amove that doesn\'t make sense" (Nil, chat to the Wall Game Director, 2026-11-01 02:53 UTC, CASES C43, sending the four clips: "Why don\'t you use the green screen memes i gave you, i just lookned at them and see so many opportunities")',
     rating: null,
   },
   "gs-terio-ooh": {
@@ -1038,7 +1044,8 @@ export const OVERLAYS = {
       "Nil's meme pack: Green Screen/Fat_Kid_Terio_In_Popeyes_Ooh_GREEN_SCREEN.mp4 (the 2014 \"ooh kill 'em\" Vine), 3.0-5.5 s; the pack's copy has no sound",
     claim: "HIGH: a viral video of a private person",
     likeness: "HIGH: a real child's face",
-    nilOk: null,
+    nilOk:
+      'Nil, for this clip: "this one when you blunder but the opponent doesn\'t realize" (Nil, chat to the Wall Game Director, 2026-11-01 02:53 UTC, CASES C43, sending the four clips: "Why don\'t you use the green screen memes i gave you, i just lookned at them and see so many opportunities")',
     rating: null,
   },
   "gs-crying-man": {
@@ -1062,7 +1069,8 @@ export const OVERLAYS = {
       "Nil's meme pack: Green Screen/crying green screen man.mp4, 5.0-7.5 s (his loudest sobbing), its sobbing kept",
     claim: "HIGH: a viral video of a private person, with its audio",
     likeness: "HIGH: a real person's face",
-    nilOk: null,
+    nilOk:
+      'Nil, for this clip: "thes one when yuo blunder" (Nil, chat to the Wall Game Director, 2026-11-01 02:53 UTC, CASES C43, sending the four clips: "Why don\'t you use the green screen memes i gave you, i just lookned at them and see so many opportunities")',
     rating: null,
   },
 };

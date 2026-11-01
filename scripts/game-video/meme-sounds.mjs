@@ -124,6 +124,10 @@ export const MEME_SOUNDS = {
   // Its fast-forward (Wall Game Director, 2026-11-01), ours, measured that
   // day (meme-sounds.md).
   "forward-1": { lufs: -13.3, truePeak: -7.5 },
+  // The sounds of the two silent green-screen clips (Wall Game Director,
+  // 2026-11-01, meme-list c23bb8e), ours, measured that day.
+  "crickets-1": { lufs: -18.9, truePeak: -7.8 },
+  "sneak-1": { lufs: -24.9, truePeak: -13.4 },
 };
 
 /**
@@ -177,6 +181,8 @@ export const MEME_FAMILIES = {
   eternity: "the eternity-later card's own voice",
   rewind: "the flashback: the board plays back",
   forward: "the flashback: the board plays forward to now",
+  crickets: "an awkward quiet: a move nobody can explain (with Travolta)",
+  sneak: "got away with it: a blunder nobody punished (with Terio)",
 };
 
 /**
