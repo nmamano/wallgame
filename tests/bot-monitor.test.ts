@@ -188,25 +188,51 @@ describe("bot monitor forfeit alarm", () => {
     expect(alerts(await run())).toEqual([]);
   });
 
-  it("alerts once when the list cannot be read, and once when it can again", async () => {
+  it("sends nothing for a short read failure, and still alerts a forfeit from that time", async () => {
+    // Nil, 2026-11-01: single failed reads on the slow VPS sent five
+    // warning/recovery pairs in a day. Eleven failed runs (55 minutes): quiet.
     rmSync(join(dir, "forfeits.txt"));
-    const failed = alerts(await run());
-    expect(failed).toHaveLength(1);
-    expect(failed[0]).toContain("Cannot read the bot forfeit list");
-    expect(alerts(await run())).toEqual([]);
-
+    for (let n = 0; n < 11; n++) expect(alerts(await run())).toEqual([]);
     // Any other answer than the list is a failure too, not an empty list.
     writeFileSync(join(dir, "forfeits.txt"), "site health: ok\n");
-    expect(alerts(await run())).toEqual([]);
 
+    // A forfeit happened while the reads failed: the next good read alerts
+    // it, and no recovery line goes out because no warning did.
     setForfeits([
       "aaaa0004|2026-11-01T01:03:00Z|wsl-transformer-001:dw-easy|client-disconnect||30",
       "aaaa0001|2026-11-01T01:00:00Z|wsl-transformer-001:dw-transformer|bgs-unavailable-after-wait||12",
     ]);
     const back = alerts(await run());
+    expect(back).toHaveLength(1);
+    expect(back[0]).toContain("Normal Bot forfeited a game");
+  }, 60_000);
+
+  it("warns once after an hour of failed reads, and says when the list is back", async () => {
+    rmSync(join(dir, "forfeits.txt"));
+    for (let n = 0; n < 11; n++) expect(alerts(await run())).toEqual([]);
+    const warned = alerts(await run());
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("Cannot read the bot forfeit list");
+    expect(warned[0]).toContain("12 checks in a row");
+    expect(alerts(await run())).toEqual([]);
+
+    setForfeits([
+      "aaaa0005|2026-11-01T02:00:00Z|wsl-transformer-001:dw-beginner|bgs-unavailable-after-wait||8",
+      "aaaa0004|2026-11-01T01:03:00Z|wsl-transformer-001:dw-easy|client-disconnect||30",
+    ]);
+    const back = alerts(await run());
     expect(back).toHaveLength(2);
     expect(back[0]).toContain("can be read again");
-    expect(back[1]).toContain("Normal Bot forfeited a game");
+    expect(back[1]).toContain("Easy Bot forfeited a game");
+    expect(alerts(await run())).toEqual([]);
+  }, 60_000);
+
+  it("still sends the recovery line for a warning sent before the count existed", async () => {
+    // The live state file of 2026-11-01: an empty marker from a sent warning.
+    writeFileSync(join(dir, "state.forfeits-failing"), "");
+    const back = alerts(await run());
+    expect(back).toHaveLength(1);
+    expect(back[0]).toContain("can be read again");
   });
 
   const rows = (prefix: string, count: number): string[] =>

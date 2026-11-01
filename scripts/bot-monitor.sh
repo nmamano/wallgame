@@ -244,6 +244,7 @@ FORFEITS_FILE="$STATE_FILE.forfeits"
 FORFEITS_FAILING_FILE="$STATE_FILE.forfeits-failing"
 FORFEITS_HEADER="game_id|started_at|bot_id|bot_resign_cause|puzzle_id|moves_count"
 FORFEITS_BURST=3 # more new forfeits than this in one tick go out as one alert
+FORFEITS_FAIL_WARN_RUNS=12 # failed reads in a row (1 hour at 5 min) before a warning
 
 # The display name for a "clientId:botId", or the id itself for any other bot.
 bot_label() {
@@ -264,16 +265,35 @@ check_forfeits() {
         -o "UserKnownHostsFile=$FORFEITS_KNOWN_HOSTS" \
         "$FORFEITS_TARGET" wallgame-bot-forfeits 2>/dev/null)" ||
      [ "$(head -n 1 <<< "$out")" != "$FORFEITS_HEADER" ]; then
-    # One alert when the reads start failing, none while they go on.
-    if [ ! -f "$FORFEITS_FAILING_FILE" ]; then
-      touch "$FORFEITS_FAILING_FILE"
-      send_discord "⚠️ **Cannot read the bot forfeit list** (${now}), so a bot forfeit would go unnoticed. The monitor tries again on its next run."
+    # A single failed read is normal on a slow host, and a forfeit in that
+    # time is not lost: the next good read still lists it. So warn only when
+    # reads have failed for FORFEITS_FAIL_WARN_RUNS runs in a row, once.
+    # The file holds: failed runs in a row, 1 if the warning went out, the
+    # epoch of the first failure. An empty file is from before the count
+    # existed, when the warning went out on the first failure.
+    local failed=0 warned=1 since="$now_epoch" mins
+    if [ -s "$FORFEITS_FAILING_FILE" ]; then
+      read -r failed warned since < "$FORFEITS_FAILING_FILE"
+    elif [ ! -f "$FORFEITS_FAILING_FILE" ]; then
+      warned=0
     fi
+    [[ "$failed" =~ ^[0-9]+$ ]] || failed=0
+    [[ "$since" =~ ^[0-9]+$ ]] || since="$now_epoch"
+    failed=$((failed + 1))
+    if [ "$warned" != "1" ] && [ "$failed" -ge "$FORFEITS_FAIL_WARN_RUNS" ]; then
+      mins=$(( (now_epoch - since) / 60 + 5 ))
+      send_discord "⚠️ **Cannot read the bot forfeit list** for ${failed} checks in a row (about ${mins} minutes, ${now}). A bot forfeit in this time is alerted only when a read works again."
+      warned=1
+    fi
+    echo "$failed $warned $since" > "$FORFEITS_FAILING_FILE"
     return
   fi
   if [ -f "$FORFEITS_FAILING_FILE" ]; then
+    # The recovery line only answers a warning; a short failure sends nothing.
+    local was_warned=1
+    [ -s "$FORFEITS_FAILING_FILE" ] && read -r _ was_warned _ < "$FORFEITS_FAILING_FILE"
     rm -f "$FORFEITS_FAILING_FILE"
-    send_discord "✅ **The bot forfeit list can be read again** (${now})."
+    [ "$was_warned" = "1" ] && send_discord "✅ **The bot forfeit list can be read again** (${now})."
   fi
 
   # The first run only learns what is already there: an alert per forfeit of
