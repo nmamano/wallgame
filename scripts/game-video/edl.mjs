@@ -249,7 +249,8 @@
  *             then one of the others after while it's showing the new
  *             distance path"): "land" opens it as the move lands, and the
  *             new walk waits until it closes; "walk" opens it as the new
- *             walk is fully drawn and its number shows. One of each a
+ *             walk is fully drawn and its number shows, and the walk
+ *             stays up until it closes. One of each a
  *             ply, never a bar. In a fastForward range the only
  *             event allowed is one overlay (not the bar) on the range's
  *             first ply, with no seconds: it lasts the range, which must

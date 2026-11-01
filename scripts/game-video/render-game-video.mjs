@@ -952,7 +952,8 @@ const drawSeconds = (points) =>
  * (drawSeconds) and rests EXPLAIN_BEFORE_REST_SECONDS before the move; the
  * move lands and its walls and pawns glow for EXPLAIN_LAND_SECONDS; the new
  * walk draws over the old one, a ghost at EXPLAIN_GHOST alpha, and holds
- * EXPLAIN_AFTER_HOLD_SECONDS, the last PATH_FADE_SECONDS of it a fade.
+ * EXPLAIN_AFTER_HOLD_SECONDS (or until an overlay at "walk" closes, if
+ * later), the last PATH_FADE_SECONDS of it a fade.
  * A change of steps under EXPLAIN_MIN_CHANGE has little to show
  * (explain-flat).
  */
@@ -7069,14 +7070,27 @@ const renderStyle = async (styleName) => {
     // The explain's sound is the reaction to the new number: it plays as
     // the new walk is fully drawn and the counter shows its steps.
     if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawAfter);
-    const afterSeconds = drawAfter + EXPLAIN_AFTER_HOLD_SECONDS;
-    const afterFrames = Math.round(afterSeconds * FPS);
+    let afterSeconds = drawAfter + EXPLAIN_AFTER_HOLD_SECONDS;
+    let afterFrames = Math.round(afterSeconds * FPS);
     const drawnAt = Math.round(drawAfter * FPS);
     for (let i = 0; i < afterFrames; i += 1) {
       const t = i / FPS;
       // An overlay at "walk" opens as the new walk is drawn and its
-      // number shows.
-      if (i === drawnAt) explainOverlays(plyIndex, "walk").forEach(openOverlay);
+      // number shows, and the walk stays up until it closes, so the
+      // reaction plays over what it reacts to (Wall Game Director,
+      // 2026-11-01, as "land" holds the landing).
+      if (i === drawnAt && explainOverlays(plyIndex, "walk").length) {
+        explainOverlays(plyIndex, "walk").forEach(openOverlay);
+        const walkLive = liveOverlay();
+        const until =
+          walkLive?.end == null
+            ? 0
+            : i + Math.ceil((walkLive.end - elapsed) * FPS - 1e-6);
+        if (until > afterFrames) {
+          afterFrames = until;
+          afterSeconds = until / FPS;
+        }
+      }
       if (i === Math.round((drawAfter + 0.2) * FPS)) {
         stillNext = {
           ply: plyIndex,
