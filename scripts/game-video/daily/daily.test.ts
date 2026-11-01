@@ -5046,6 +5046,31 @@ describe("the stored result: a game with no winner makes no video (FkQKb63y, 202
     );
   });
 
+  test("the script's Winner line tells the stored end: a resignation is never a catch (C42)", () => {
+    const resigned = candidateFromReport(
+      withResult({ winner: 1, reason: "resignation" }),
+      1,
+    );
+    const said = (line: string) =>
+      resultProblems(resigned, `SCRIPT test\nWinner: ${line}\nBEATS`);
+    expect(said("bro (blue), by resignation after ply 40")).toEqual([]);
+    expect(said("bro (blue), by capture at ply 40")).toEqual([
+      "the script's Winner line tells a capture, but the stored result says the game ended by resignation: the script's end is not the game's",
+    ]);
+    const caught = candidateFromReport(
+      withResult({ winner: 1, reason: "capture" }),
+      1,
+    );
+    expect(
+      resultProblems(
+        caught,
+        "SCRIPT test\nWinner: bro (blue), the bot resigns\nBEATS",
+      ),
+    ).toEqual([
+      "the script's Winner line tells a resignation, but the stored result says the game ended by capture: the script's end is not the game's",
+    ]);
+  });
+
   test("the script's Winner line must name the stored winner's colour", () => {
     const c = candidateFromReport(
       withResult({ winner: 1, reason: "capture" }),

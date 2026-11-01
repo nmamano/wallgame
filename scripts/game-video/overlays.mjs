@@ -162,11 +162,12 @@ export const OFF_BOARD = ["margin", "caption"];
  * wah" over WASTED is the loser's finish, and it fills the silence after
  * the catch).
  */
-export const DEATH_CARDS = ["wasted", "you-died"];
+export const DEATH_CARDS = ["wasted", "you-died", "resign-flag"];
 
 /** The cards the stage draws (stage.html paintOverlay, visual-memes.md). */
 export const CARDS = [
   "wasted",
+  "resign-flag",
   "you-died",
   "eternity-later",
   "mission-passed",
@@ -516,6 +517,30 @@ export const OVERLAYS = {
     places: ["caption", "board"],
     source: "drawn by us (stage.html), the look of GTA's mission screen",
     claim: "LOW: our own drawing of a known game screen",
+    likeness: "None",
+    rating: null,
+  },
+  /*
+    The resign ending's death card (Nil, 2026-11-01, ask 084f7f40, CASES
+    C42: "maybe we could also use those but with some resign animation
+    like a flag or something (and showing remaining idstances to make clear
+    that it's lost)"). A white flag rises and waves beside the resigner's
+    pawn, over "<Bot|Human> resigns"; the race counter flashes while it
+    shows. Only on a game the record says was resigned (end-reason).
+  */
+  "resign-flag": {
+    form: "clip",
+    draw: "card",
+    card: "resign-flag",
+    text: "none",
+    line: "{loser} resigns",
+    seconds: 2.2,
+    pawn: true,
+    size: { w: 0.38, h: 0.36 },
+    small: { w: 0.3, h: 0.3 },
+    places: ["board"],
+    source: "drawn by us (stage.html), a white flag",
+    claim: "None",
     likeness: "None",
     rating: null,
   },

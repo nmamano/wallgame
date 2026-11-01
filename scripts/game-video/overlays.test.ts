@@ -418,6 +418,7 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       .filter(([, a]) => takesPawn(a))
       .map(([k]) => k);
     expect(tied).toEqual([
+      "resign-flag",
       "the-scream",
       "smudge-cat",
       "monkey-puppet",
@@ -690,8 +691,8 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
 });
 
 describe("the death cards (Wall Game Director, 2026-10-30)", () => {
-  test("are the wasted and you-died cards, each an asset the stage draws", () => {
-    expect(DEATH_CARDS).toEqual(["wasted", "you-died"]);
+  test("are the wasted, you-died and resign cards, each an asset the stage draws", () => {
+    expect(DEATH_CARDS).toEqual(["wasted", "you-died", "resign-flag"]);
     for (const card of DEATH_CARDS) {
       expect(CARDS).toContain(card);
       expect(OVERLAYS[card]).toMatchObject({ draw: "card", card });

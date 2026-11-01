@@ -92,6 +92,23 @@ export const resultProblems = (candidate, script) => {
       `the script says ${colours[named.player]} (player ${named.player}) wins, but the stored result says ${colours[r.winner]} (player ${r.winner}) wins by ${r.reason}: the script's story is not the game's`,
     ];
   }
+  // How it ended, too (Wall Game Director, 2026-11-01, C42): a resigned
+  // game is not told as a catch, and a catch not as a resignation.
+  const line = script.split("\n").find((l) => /^\s*Winner:/i.test(l)) ?? "";
+  const says = /\bresign/i.test(line)
+    ? "resignation"
+    : /\b(captur|catch|caught)/i.test(line)
+      ? "capture"
+      : null;
+  if (
+    says !== null &&
+    (r.reason === "resignation" || r.reason === "capture") &&
+    says !== r.reason
+  ) {
+    return [
+      `the script's Winner line tells a ${says}, but the stored result says the game ended by ${r.reason}: the script's end is not the game's`,
+    ];
+  }
   return [];
 };
 
@@ -181,7 +198,10 @@ export const scriptDraft = ({ item, edl, timeline, timesNote, checklist }) => {
   const seat = (p) => c.seats.find((s) => s.playerOrder === p);
   const colorOf = (p) => colors[p];
   const last = c.movesCount - 1;
-  const winner = raceWinner(c.distances);
+  // The stored result first: a resigned game has no catch in the race
+  // (Wall Game Director, 2026-11-01, C42).
+  const winner = c.result?.winner ?? raceWinner(c.distances);
+  const reason = c.result?.reason ?? (winner ? "capture" : null);
   // distances[k] is after k plies: [0] is the start, [p + 1] after ply p.
   const steps = (k) => {
     const d = c.distances?.[k];
@@ -222,8 +242,8 @@ export const scriptDraft = ({ item, edl, timeline, timesNote, checklist }) => {
     `SCRIPT ${item.id} | game ${c.gameId} | ${c.movesCount} plies (0-${last})`,
     `Players: ${c.seats.map((s) => `${s.name} (${s.kind}) ${colorOf(s.playerOrder).toUpperCase()}`).join(", ")}.`,
     winner
-      ? `Winner: ${seat(winner).name} (${colorOf(winner)}), by capture at ply ${last}.`
-      : "Winner: <no catch in the record: how did the game end (home, resign, time)? check the storyboard>",
+      ? `Winner: ${seat(winner).name} (${colorOf(winner)}), ${reason === "capture" ? `by capture at ply ${last}` : `by ${reason} after ply ${last}${reason === "resignation" ? ": the end beat is the resign card (resign-flag), never a catch" : ""}`}.`
+      : "Winner: <no winner in the record: how did the game end? check the storyboard>",
     `Start: steps to catch ${steps(0)}. End: ${steps(c.movesCount)}.`,
     "",
     "STORY: <the shape, for example danger -> save -> relief -> caught>",

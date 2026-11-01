@@ -260,6 +260,7 @@ import {
   TEXT_TIMING,
   overlayWords,
   readingSeconds,
+  DEATH_CARDS,
 } from "./overlays.mjs";
 
 export const EDL_VERSION = 1;
@@ -436,6 +437,7 @@ export const LINT_KINDS = {
   "sounds-together": "warns",
   "race-small": "warns",
   "explain-mismatch": "stops",
+  "end-reason": "stops",
   "path-through-wall": "stops",
   "reactor-pawn": "stops",
   "reactor-capture": "stops",
@@ -930,7 +932,12 @@ export const validateEdl = (raw) => {
       // Nil, 2026-10-30, C23: "the scream is fine but should be paired
       // with some sound effect". A clip that plays its own sound (a laugh,
       // a sob) has one.
-      if (ev.sound == null && !(asset.sequence?.audio && ev.audio === "own")) {
+      // A death card's sound is the finish slot's (DEATH_CARDS).
+      if (
+        ev.sound == null &&
+        !(asset.sequence?.audio && ev.audio === "own") &&
+        !DEATH_CARDS.includes(asset.card)
+      ) {
         fail(
           `${where}: ${ev.asset} is a picture a pawn emotes; it needs a "sound" as it opens`,
         );

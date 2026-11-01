@@ -915,6 +915,13 @@
       .card.directed-by .small {
         font-size: 0.55em;
       }
+      /*
+        The resign card (C42): our own white flag over the loser's line, in
+        the look of our captions.
+      */
+      .card.resign-flag svg {
+        filter: drop-shadow(0 0.1em 0.3em rgba(0, 0, 0, 0.7));
+      }
       .card.uno-reverse svg,
       .image .pic {
         flex: none;
@@ -2496,6 +2503,58 @@
           return (
             '<div class="big">mission passed!</div>' +
             '<div class="small">respect +</div>'
+          );
+        }
+        if (o.card === "resign-flag") {
+          /*
+            A white flag on a pole: it rises over its first 0.45 s, then its
+            cloth waves (a travelling ripple), the same in every render. The
+            words are in the drawing, two lines under the flag ("Human" /
+            "resigns"), so the card scales as one picture to its box and
+            never overflows it.
+          */
+          const t = o.t ?? 0;
+          const up = easeOut3(span(t, 0, 0.45));
+          const y = (k) => Math.sin(t * 7 - k * 1.3) * 7;
+          const cloth =
+            "M70 " +
+            (30 + y(0)).toFixed(1) +
+            " C110 " +
+            (14 + y(1)).toFixed(1) +
+            " 150 " +
+            (46 + y(2)).toFixed(1) +
+            " 200 " +
+            (24 + y(3)).toFixed(1) +
+            " L200 " +
+            (104 + y(3)).toFixed(1) +
+            " C150 " +
+            (126 + y(2)).toFixed(1) +
+            " 110 " +
+            (94 + y(1)).toFixed(1) +
+            " 70 " +
+            (110 + y(0)).toFixed(1) +
+            " Z";
+          const [who, ...rest] = String(o.text ?? "").split(" ");
+          const word = (text, at) =>
+            '<text x="130" y="' +
+            at +
+            '" text-anchor="middle" font-size="40" font-weight="900" fill="#fff" stroke="#0b1020" stroke-width="7" paint-order="stroke fill" font-family="TikTok Sans, sans-serif">' +
+            esc(text) +
+            "</text>";
+          return (
+            '<svg viewBox="0 0 260 330" style="height:100%;width:100%">' +
+            '<g transform="translate(0 ' +
+            ((1 - up) * 90).toFixed(1) +
+            ')">' +
+            '<rect x="60" y="18" width="10" height="200" rx="5" fill="#8b5a2b" stroke="#3b2410" stroke-width="3"/>' +
+            '<circle cx="65" cy="16" r="9" fill="#e8c35a" stroke="#3b2410" stroke-width="3"/>' +
+            '<path d="' +
+            cloth +
+            '" fill="#fff" stroke="#c9ced6" stroke-width="4" stroke-linejoin="round"/>' +
+            "</g>" +
+            word(who, 262) +
+            word(rest.join(" "), 310) +
+            "</svg>"
           );
         }
         if (o.card === "directed-by") {

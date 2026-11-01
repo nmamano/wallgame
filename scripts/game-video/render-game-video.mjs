@@ -4463,6 +4463,40 @@ const renderStyle = async (styleName) => {
     if (how === "note") notes.push(item);
     else faults.push({ ...item, stops: how === "stops" });
   };
+  /*
+    The end beat says how the game ended, as the record does (Wall Game
+    Director, 2026-11-01, C42): the resign card only on a resigned game, on
+    its last ply; WASTED or YOU DIED (a catch) never on one.
+  */
+  for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
+    const card = OVERLAYS[ev.asset]?.card;
+    if (card === "resign-flag" && outcome?.reason !== "resignation") {
+      fault(
+        "end-reason",
+        ev.ply,
+        `the resign card on ply ${ev.ply}, but the record says the game ended by ${outcome?.reason ?? "no result"}`,
+        0,
+      );
+    } else if (card === "resign-flag" && ev.ply !== history.length - 1) {
+      fault(
+        "end-reason",
+        ev.ply,
+        `the resign card on ply ${ev.ply}: it goes on the last ply, ${history.length - 1}`,
+        0,
+      );
+    } else if (
+      DEATH_CARDS.includes(card) &&
+      card !== "resign-flag" &&
+      outcome?.reason === "resignation"
+    ) {
+      fault(
+        "end-reason",
+        ev.ply,
+        `the ${ev.asset} card on ply ${ev.ply} says somebody was caught, but the game ended by resignation: use resign-flag`,
+        0,
+      );
+    }
+  }
   // A reactor with no right pawn to show (REACTOR_ART) stops here, before
   // any frame is composed.
   for (const [ev, art] of REACTOR_ART) {
@@ -4765,7 +4799,12 @@ const renderStyle = async (styleName) => {
   const overlayText = (ev) =>
     (ev.text ?? OVERLAYS[ev.asset].line ?? "")
       .replace("{red}", stripSide(redSeat).name)
-      .replace("{blue}", stripSide(blueSeat).name);
+      .replace("{blue}", stripSide(blueSeat).name)
+      // The side that lost (the resign card's "{loser} resigns").
+      .replace(
+        "{loser}",
+        outcome?.winnerId ? stripSide(outcome.winnerId === 1 ? 2 : 1).name : "",
+      );
   /**
    * Open the overlay `ev` as its move lands. It closes after its seconds;
    * the loading bar after the save (overlayFrame); a fast-forward's overlay
@@ -5674,6 +5713,11 @@ const renderStyle = async (styleName) => {
       const o = overlayFrame(s);
       if (o) {
         s = { ...s, overlay: o };
+        // The resign card holds the race in view: the counters flash, the
+        // winner's small walk against the loser's long one (C42).
+        if (o.card === "resign-flag" && s.race) {
+          s = { ...s, race: { ...s.race, flash: o.t % 1.1 } };
+        }
         if (kind === "move" || kind === "initial") kind = "overlay";
       }
       await shoot(s, 1 / FPS, { ...meta, kind });

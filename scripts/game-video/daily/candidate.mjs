@@ -179,7 +179,10 @@ export const DOOMED_SAVE_PLIES = 10;
  * The counter in `distances` is the picker's replay, the one the renderer
  * draws (race-replay.ts).
  */
-export const storyProblems = (edl, { distances, beats, movesCount }) => {
+export const storyProblems = (
+  edl,
+  { distances, beats, movesCount, result = null },
+) => {
   const problems = [];
   const counter = (positions) =>
     [
@@ -220,7 +223,8 @@ export const storyProblems = (edl, { distances, beats, movesCount }) => {
       `around ply ${edl.payoff.ply}`,
     );
   }
-  const winner = raceWinner(distances);
+  // The stored result first: on a resigned game the race has no winner.
+  const winner = result?.winner ?? raceWinner(distances);
   const lastPly = movesCount - 1;
   for (const b of beats) {
     const gap = lastPly - b.save.ply;

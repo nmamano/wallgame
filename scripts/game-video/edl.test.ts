@@ -1202,6 +1202,12 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
       'events[0]: the-scream is a picture a pawn emotes; it needs a "sound" as it opens',
     ]);
   });
+  test("the resign card needs no meme sound: the finish slot plays as it opens", () => {
+    expect(
+      accept(ev({ asset: "resign-flag", pawn: "red mouse", sound: undefined }))
+        .events[0],
+    ).toMatchObject({ asset: "resign-flag", pawn: "red mouse" });
+  });
   test("a clip that plays its own sound needs no meme sound; muted, it does", () => {
     const jjj = (o: object) =>
       ev({ asset: "gs-jjj-laugh", pawn: "red cat", sound: undefined, ...o });
