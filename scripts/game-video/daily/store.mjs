@@ -83,6 +83,30 @@ export const ITEM_ID = /^v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/;
 export const itemId = (day, label) => `v-${day}-${label}`;
 
 /**
+ * Why an item's armed approval of its fixed render (armFixedApproval) may
+ * not apply now, or null. Void when a review came after the revise it was
+ * armed with; it waits while the item is not in review; and it never binds
+ * the video Nil revised.
+ * @param {any} item
+ * @returns {string | null}
+ */
+export const fixedApprovalProblem = (item) => {
+  const armed = item.fixedApproval;
+  if (!armed) return `${item.id} has no armed approval`;
+  const last = item.reviews.at(-1);
+  if (last?.action !== "revise" || last.askId !== armed.askId) {
+    return `${item.id}'s armed approval is void: a review came after Nil's revise (ask ${armed.askId})`;
+  }
+  if (reviewState(item) !== "in-review") {
+    return `${item.id} is not in review yet (a new render, its check and vet, and a new block)`;
+  }
+  if (item.render.video.sha256 === armed.revisedVideoSha256) {
+    return `${item.id}'s video is the one Nil revised`;
+  }
+  return null;
+};
+
+/**
  * Where a finished item stands: "in-review" when the latest independent
  * review of its current video passed (rule R10: a fail recorded later
  * takes the item out of review, Video Reviewer 2, 2026-10-28), Growth's
@@ -626,7 +650,7 @@ export const openStore = (dataDir) => {
     return null;
   };
 
-  return {
+  const api = {
     dirs,
     postLog,
     feedbackLog,
@@ -739,10 +763,22 @@ export const openStore = (dataDir) => {
      */
     review(
       id,
-      { action, notes, videoSha256, copySha256, by, memberId, askId = null },
+      {
+        action,
+        notes,
+        videoSha256,
+        copySha256,
+        by,
+        memberId,
+        askId = null,
+        fixed = null,
+      },
     ) {
       if (!REVIEW_ACTIONS.includes(action)) {
         refuse(`a review action is ${REVIEW_ACTIONS.join(", ")}`);
+      }
+      if (fixed && action !== "approve") {
+        refuse("only an approval comes from a revise's words (approveFixed)");
       }
       if (typeof notes !== "string" || notes.length > NOTES_MAX) {
         refuse(`the notes are a text of at most ${NOTES_MAX} characters`);
@@ -800,11 +836,19 @@ export const openStore = (dataDir) => {
               // His answer to the app's ask (review-asks.mjs), or null for
               // the review page.
               ...(askId ? { askId } : {}),
+              // An approval from his revise's own words (approveFixed).
+              ...(fixed ? { fixed } : {}),
             },
           ];
           it.state = AFTER_REVIEW[action];
           if (action === "approve") {
-            it.approval = { videoSha256, copySha256, by, at };
+            it.approval = {
+              videoSha256,
+              copySha256,
+              by,
+              at,
+              ...(fixed ? { fixed } : {}),
+            };
           }
           row = {
             utc: at,
@@ -817,9 +861,10 @@ export const openStore = (dataDir) => {
             notes,
             by,
             ...(askId ? { askId } : {}),
+            ...(fixed ? { fixed } : {}),
           };
         },
-        `${action} by ${by}${askId ? ` (ask ${askId})` : ""}`,
+        `${action} by ${by}${askId ? ` (ask ${askId})` : ""}${fixed ? `, from his revise's words (ask ${fixed.askId})` : ""}`,
       );
       appendFileSync(feedbackLog, JSON.stringify(row) + "\n");
       return item;
@@ -1434,6 +1479,76 @@ export const openStore = (dataDir) => {
      * is not held (isHeld). A withdraw and a new approval of the same video
      * keep it held.
      */
+    /**
+     * Nil's "if you just fix those don't need to rerun it by me" in a
+     * revise (Nil, 2026-11-01, C41, ask 2ced9ab2 on v-2026-10-31-15): the
+     * director arms the approval of the fixed render with that revise's
+     * ask. Only when the item's last review is Nil's revise from that ask:
+     * store.review writes one only from his own closed ask, after the app
+     * checked it in the office's record (review-asks.mjs). Armed, the app
+     * approves the item when it is in review again (a new render, its check
+     * and vet, a new block), in place of opening an ask (approveFixed); the
+     * approval names his words verbatim and the ask. A later review voids
+     * the arm (fixedApprovalProblem).
+     */
+    armFixedApproval(id, { askId, by }) {
+      const who = String(by ?? "").trim() || "the director";
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (it) => {
+          const last = it.reviews.at(-1);
+          if (
+            last?.action !== "revise" ||
+            last.by !== "Nil" ||
+            !last.askId ||
+            last.askId !== askId
+          ) {
+            refuse(
+              `${id}'s last review is not Nil's revise from ask ${askId}: ${last ? `it is ${last.action} by ${last.by}${last.askId ? ` from ask ${last.askId}` : " on the review page"}` : "it has none"}`,
+            );
+          }
+          it.fixedApproval = {
+            askId,
+            words: last.notes,
+            revisedVideoSha256: last.videoSha256,
+            revisedAt: last.at,
+            armedBy: who,
+            armedAt: new Date().toISOString(),
+          };
+        },
+        `approval of the fixed render armed by ${who} (Nil's revise, ask ${askId})`,
+      );
+    },
+
+    /**
+     * Approve an item from its armed revise (armFixedApproval), with every
+     * check of an approval (store.review: in review, this video and block,
+     * one video of a game, the file's bytes). By Nil, as his words grant
+     * it; `fixed` records them and the ask. Opens no ask.
+     */
+    approveFixed(id) {
+      const item = needItem(id);
+      const problem = fixedApprovalProblem(item);
+      if (problem) refuse(problem);
+      const revise = item.reviews.at(-1);
+      return api.review(id, {
+        action: "approve",
+        notes: "",
+        videoSha256: item.render.video.sha256,
+        copySha256: blockSha256(item.copy.block),
+        by: "Nil",
+        memberId: revise.memberId,
+        askId: item.fixedApproval.askId,
+        fixed: {
+          askId: item.fixedApproval.askId,
+          words: item.fixedApproval.words,
+          revisedVideoSha256: item.fixedApproval.revisedVideoSha256,
+          armedBy: item.fixedApproval.armedBy,
+        },
+      });
+    },
+
     hold(id, why, by) {
       const reason = String(why ?? "").trim();
       if (!reason) refuse("hold needs the reason");
@@ -1486,6 +1601,7 @@ export const openStore = (dataDir) => {
       );
     },
   };
+  return api;
 };
 
 /** Version 1's day states that were a candidate's production states. */

@@ -216,6 +216,17 @@
  *                                  approval kept (a render fault found after
  *                                  approval); a new approved render is not
  *                                  held. hold --item ID --release lifts it
+ *   approve-fixed --item ID --ask ASK [--by NAME]
+ *                                  Nil's revise on ASK said the fixed render
+ *                                  needs no second look ("if you just fix
+ *                                  those don't need to rerun it by me"):
+ *                                  arm the approval. Refused unless the
+ *                                  item's last review is his revise from
+ *                                  ASK. When the item is in review again
+ *                                  (new render, check, vet, new block) the
+ *                                  app approves it by Nil, with his words
+ *                                  and the ask, and opens no ask; now, if
+ *                                  it is in review already
  *   drop --item ID --why "<reason>"
  *                                  stop an item Nil has not reviewed (a game
  *                                  that does not make a video): discarded,
@@ -1162,6 +1173,23 @@ const commands = {
     const why = flag("why") ?? die('hold needs --why "<reason>" or --release');
     await app("POST", "/api/daily/hold", { item: id, why, by });
     console.log(`${id} held, approval kept: ${why}`);
+  },
+
+  async "approve-fixed"() {
+    const id = itemFlag();
+    const ask =
+      flag("ask") ??
+      die("approve-fixed needs --ask <the id of Nil's revise ask>");
+    const r = await app("POST", "/api/daily/approve-fixed", {
+      item: id,
+      ask,
+      by: flag("by") ?? undefined,
+    });
+    console.log(
+      r.approved
+        ? `${id} approved from Nil's revise (ask ${ask}); no ask opened. His words: ${JSON.stringify(r.item.approval.fixed.words)}`
+        : `${id}: approval armed from Nil's revise (ask ${ask}); the app approves it when it is in review, and opens no ask for it. Now: ${r.waits}`,
+    );
   },
 
   async drop() {

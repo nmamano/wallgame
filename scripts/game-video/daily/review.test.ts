@@ -14,6 +14,7 @@ import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
 import {
   ITEM_VERSION,
   StepRefused,
+  fixedApprovalProblem,
   openStore,
   readPostLog,
   reviewState,
@@ -55,6 +56,14 @@ const BLOCK = [
 const COPY = { ...parseCopy(BLOCK).copy!, version: "growth-copy-1" };
 
 /** The parts of an item (store.mjs) that these tests read. */
+/** An approval from Nil's revise's own words (store.approveFixed). */
+interface Fixed {
+  askId: string;
+  words: string;
+  revisedVideoSha256: string;
+  armedBy: string;
+}
+
 interface Item {
   id: string;
   state: string;
@@ -67,12 +76,14 @@ interface Item {
     by: string;
     at: string;
     askId?: string;
+    fixed?: Fixed;
   }[];
   approval: {
     videoSha256: string;
     copySha256: string;
     by: string;
     at: string;
+    fixed?: Fixed;
   } | null;
   posts: Record<string, unknown>;
   events: { what: string }[];
@@ -1766,5 +1777,115 @@ describe("a held item shows its age (VR1 review 117 N1)", () => {
         now,
       ),
     ).toBeNull();
+  });
+});
+
+describe("Nil's revise says the fix needs no second look (approve-fixed, C41)", () => {
+  const WORDS =
+    "the sound at 0021 makes no sense. Remove it. If you just fix those don't need to rerun it by me";
+  /** The app's ask, answered with Nil's revise; returns its id. */
+  const revised = async (env: ReturnType<typeof withAsks>) => {
+    await env.sync();
+    const [askId] = env.office.openIds();
+    env.office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: `Revise: ${WORDS}`,
+    });
+    await env.sync();
+    return askId;
+  };
+
+  test("armed, the fixed render is approved by Nil with his words, and no ask opens", async () => {
+    const env = withAsks();
+    const { store, office, dir, told, sync } = env;
+    const askId = await revised(env);
+    const revisedVideo = itemOf(store).render.video.sha256;
+    store.armFixedApproval(ID, { askId, by: "Wall Game Director" });
+    expect(fixedApprovalProblem(store.item(ID))).toMatch(/not in review yet/);
+    // The director's render, check, vet and Growth's block.
+    rerender(store, dir, "the fixed render", "finished");
+    const did = await sync();
+    expect(did.opened).toEqual([]);
+    expect(did.applied).toEqual([ID]);
+    expect(office.bodies).toHaveLength(1);
+    const item = itemOf(store);
+    expect(item.state).toBe("approved");
+    const fixed = {
+      askId,
+      words: WORDS,
+      revisedVideoSha256: revisedVideo,
+      armedBy: "Wall Game Director",
+    };
+    expect(item.approval).toMatchObject({
+      by: "Nil",
+      videoSha256: sha("the fixed render"),
+      fixed,
+    });
+    expect(item.reviews.at(-1)).toMatchObject({ action: "approve", fixed });
+    expect(feedbackOf(store).at(-1)).toMatchObject({ action: "approve" });
+    expect(told.at(-1)).toContain(`No ask: Nil's revise on ask ${askId}`);
+    expect(told.at(-1)).toContain(`> ${WORDS}`);
+    // Once: the next sync does nothing.
+    const again = await sync();
+    expect([again.applied, again.opened]).toEqual([[], []]);
+  });
+
+  test("arming needs his last review to be his revise from that ask", async () => {
+    const env = withAsks();
+    const { store } = env;
+    expect(() => {
+      store.armFixedApproval(ID, { askId: "ask-1", by: "d" });
+    }).toThrow(/it has none/);
+    const askId = await revised(env);
+    expect(() => {
+      store.armFixedApproval(ID, { askId: "ask-9", by: "d" });
+    }).toThrow(`last review is not Nil's revise from ask ask-9`);
+    store.armFixedApproval(ID, { askId, by: "d" });
+    // Not in review: the director's direct approval waits.
+    expect(() => {
+      store.approveFixed(ID);
+    }).toThrow(/not in review yet/);
+  });
+
+  test("a render with the bytes Nil revised, or a later review, gets his ask as before", async () => {
+    const env = withAsks();
+    const { store, dir, sync, block } = env;
+    const askId = await revised(env);
+    store.armFixedApproval(ID, { askId, by: "d" });
+    // The same bytes as the video he revised.
+    rerender(store, dir, `video of ${ID}`, "finished");
+    expect(fixedApprovalProblem(store.item(ID))).toMatch(/the one Nil revised/);
+    expect((await sync()).opened).toEqual([ID]);
+    expect(itemOf(store).state).toBe("finished");
+    // Nil revises again on the review page: the arm is void.
+    const it = itemOf(store);
+    store.review(ID, {
+      action: "revise",
+      notes: "one more change",
+      videoSha256: it.render.video.sha256,
+      copySha256: block,
+      by: "Nil",
+      memberId: "m",
+    });
+    rerender(store, dir, "the second fix", "finished");
+    expect(fixedApprovalProblem(store.item(ID))).toMatch(/void/);
+    expect((await sync()).opened).toEqual([ID]);
+  });
+
+  test("a refused approval tells the director and opens his ask after all", async () => {
+    const env = withAsks();
+    const { store, dir, sync, told } = env;
+    const askId = await revised(env);
+    store.armFixedApproval(ID, { askId, by: "d" });
+    rerender(store, dir, "the fixed render", "finished");
+    // The file is no longer the record's video.
+    writeFileSync(itemOf(store).render.video.path, "other bytes");
+    const did = await sync();
+    expect(did.applied).toEqual([]);
+    expect(did.opened).toEqual([ID]);
+    expect(
+      told.some((t) => t.includes("armed approval") && t.includes("refused")),
+    ).toBe(true);
   });
 });

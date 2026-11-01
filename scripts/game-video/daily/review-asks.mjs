@@ -37,7 +37,7 @@
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { copySha256 } from "./copy.mjs";
-import { writeAtomic, StepRefused } from "./store.mjs";
+import { writeAtomic, StepRefused, fixedApprovalProblem } from "./store.mjs";
 import { REVIEWER_MEMBER_ID, reviewView, directorText } from "./review.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
@@ -430,6 +430,27 @@ export const syncReviewAsks = async ({
       !["open-failed", "again"].includes(record.status)
     ) {
       continue;
+    }
+    // Nil's revise said the fixed render needs no second look, and the
+    // director armed it (store.armFixedApproval): approve it, and open no
+    // ask. A refusal (one video of a game, the file's bytes) opens the
+    // ask after all, so Nil decides.
+    if (item.fixedApproval && !fixedApprovalProblem(item)) {
+      try {
+        const done = store.approveFixed(card.id);
+        out.applied.push(card.id);
+        await tell(
+          card.id,
+          `${directorText(done, "approve", "")}\n(No ask: Nil's revise on ask ${item.fixedApproval.askId} said the fixed render needs no second look, and ${item.fixedApproval.armedBy} armed it. His words, verbatim:)\n${quoteLines(item.fixedApproval.words).join("\n")}`,
+        );
+        continue;
+      } catch (err) {
+        if (!(err instanceof StepRefused)) throw err;
+        await tell(
+          card.id,
+          `ASK: the armed approval of ${card.id} (Nil's revise, ask ${item.fixedApproval.askId}) is refused: ${err.message}. The app opens his ask instead.`,
+        );
+      }
     }
     let ask;
     try {

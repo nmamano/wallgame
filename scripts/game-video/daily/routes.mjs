@@ -66,6 +66,7 @@ import {
   currentVet,
   currentScriptReview,
   scriptText,
+  fixedApprovalProblem,
 } from "./store.mjs";
 import { resultProblems } from "./script.mjs";
 import {
@@ -2247,6 +2248,28 @@ export const createDaily = ({
         body.release === true
           ? store.release(id, body.by)
           : store.hold(id, body.why, body.by),
+      );
+    },
+
+    /**
+     * {item, ask, by?}: arm the approval of the fixed render from Nil's
+     * revise on `ask` (store.armFixedApproval). An item already in review
+     * is approved now; else the next ask sync approves it when it is in
+     * review, and opens no ask for it.
+     */
+    "POST /api/daily/approve-fixed": async (req, res) => {
+      const body = await readJson(req);
+      const id = itemOf(body.item).id;
+      const armed = store.armFixedApproval(id, {
+        askId: body.ask,
+        by: body.by,
+      });
+      json(
+        res,
+        200,
+        fixedApprovalProblem(armed)
+          ? { item: armed, approved: false, waits: fixedApprovalProblem(armed) }
+          : { item: store.approveFixed(id), approved: true, waits: null },
       );
     },
 
