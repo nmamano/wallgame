@@ -219,6 +219,17 @@ export const factsOf = (
       `The wall ${l.ownWall.wall} between ${names[f.mover]}'s cat and the mouse is ${names[f.mover]}'s own, placed on move ${siteMoveNumber(l.ownWall.ply)}.`,
     );
   }
+  if (l.huh) {
+    const who = names[f.mover];
+    add(
+      "huh",
+      l.huh.kind === "missed-capture"
+        ? `${who}'s cat is ${steps(l.huh.walk)} from the mouse and can take it on this move, but ${who} does not take it.`
+        : l.huh.kind === "ignored-threat"
+          ? `The cat is ${steps(l.huh.walk)} from ${who}'s mouse, and the mouse can step out of its reach, but ${who} leaves the mouse where it is.`
+          : `${who}'s walls change no walk, while a cat is ${steps(l.huh.walk)} from a mouse.`,
+    );
+  }
   const tagText = l.tags.filter((t) => t !== l.label);
   add(
     "label",

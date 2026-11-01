@@ -55,7 +55,28 @@ export type Tag =
   | "engine-losing"
   | "own-wall"
   | "dodge"
-  | "race-save";
+  | "race-save"
+  | "huh";
+
+/**
+ * huh (Director, 2026-11-01, C43, the confused-Travolta clip: "when the
+ * opponent makes a move that doesn't make sense"): a move a viewer cannot
+ * explain, with the better move there to see on the board.
+ * - missed-capture: the mover's cat could reach the mouse this turn
+ *   (walk 1 or 2) and the game goes on (qKtSFAbX plies 74-80).
+ * - ignored-threat: a cat is within 2 of the mover's mouse both before and
+ *   after, the mouse stays put, and the engine's best move steps the mouse
+ *   out of reach (ZZi1Fjp_ ply 62). Needs the engine.
+ * - idle-walls: a move of walls only that changes no walk while a cat is
+ *   within HUH_NEAR of a mouse.
+ * `walk` is the closest such walk before the move.
+ */
+export interface Huh {
+  kind: "missed-capture" | "ignored-threat" | "idle-walls";
+  walk: number;
+}
+/** idle-walls counts only with a cat this close to a mouse. */
+export const HUH_NEAR = 3;
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -165,6 +186,8 @@ export interface PlyLabel {
   raceWinner: { plainStep: PlayerId | null; played: PlayerId | null };
   /** With the own-wall tag: the wall between the cat and the mouse, and when its owner placed it. */
   ownWall?: { wall: string; ply: number };
+  /** With the huh tag: why the move makes no sense. */
+  huh?: Huh;
 }
 
 /** The race before move `ply` (or after the last when ply = length). */
@@ -288,7 +311,8 @@ const manhattan = (a: string, b: string) =>
 export const isMoment = (l: Pick<PlyLabel, "label" | "tags">): boolean =>
   l.label !== "quiet" ||
   l.tags.includes("dodge") ||
-  l.tags.includes("own-wall");
+  l.tags.includes("own-wall") ||
+  l.tags.includes("huh");
 
 /** A race gain this large makes a move a moment (C36 B). */
 export const MOMENT_GAIN = 2;
@@ -331,6 +355,39 @@ const adjacent = (a: string, b: string) => {
   const col = Math.abs(a.charCodeAt(0) - b.charCodeAt(0));
   const row = Math.abs(Number(a.slice(1)) - Number(b.slice(1)));
   return col + row === 1;
+};
+
+/** The huh of a move that does not end the game (see Huh), or null. */
+const huhOf = (f: PlyFacts): Huh | null => {
+  const closest = (hunts: HuntChange[]) =>
+    Math.min(...hunts.map((h) => h.before));
+  const reach = own(f).filter(
+    (h) => isAnimal(h) && h.before > 0 && h.before <= THREAT_WALK,
+  );
+  if (reach.length > 0) return { kind: "missed-capture", walk: closest(reach) };
+  const e = f.engine;
+  const ignored = f.hunts.filter(
+    (h, i) =>
+      h.hunter.player !== f.mover &&
+      isAnimal(h) &&
+      h.before <= THREAT_WALK &&
+      h.after <= THREAT_WALK &&
+      h.targetFrom === h.targetTo &&
+      e?.bestWalks != null &&
+      e.bestWalks[i] > THREAT_WALK &&
+      e.bestSteps.some((s) => s.pawn === h.target.type),
+  );
+  if (ignored.length > 0)
+    return { kind: "ignored-threat", walk: closest(ignored) };
+  const near = f.hunts.filter((h) => isAnimal(h) && h.before <= HUH_NEAR);
+  if (
+    f.walls.length > 0 &&
+    f.steps.length === 0 &&
+    f.hunts.every((h) => h.after === h.before) &&
+    near.length > 0
+  )
+    return { kind: "idle-walls", walk: closest(near) };
+  return null;
 };
 
 /** Each label that fits one ply on its own, with its strength and focus. */
@@ -396,6 +453,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
   /** Who placed each wall, and when. */
   const wallOwner = new Map<string, { player: PlayerId; ply: number }>();
   const ownWalls = new Map<number, { wall: string; ply: number }>();
+  const huhs = new Map<number, Huh>();
 
   plies.forEach((f, ply) => {
     for (const w of f.walls) wallOwner.set(w, { player: f.mover, ply });
@@ -607,6 +665,13 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       }
     }
 
+    // C43: a move a viewer cannot explain.
+    const huh = f.end ? null : huhOf(f);
+    if (huh) {
+      tags[ply].push("huh");
+      huhs.set(ply, huh);
+    }
+
     // A save by the race (C36): without this move (a plain step instead)
     // the opponent wins the walk-only race; with it, the mover does. The cat
     // can be far: the walls or the mouse step decide who arrives first.
@@ -665,6 +730,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       ...tags[ply],
     ]);
     const ownWall = ownWalls.get(ply);
+    const huh = huhs.get(ply);
     return {
       ply,
       moveNumber: f.moveNumber,
@@ -677,6 +743,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       raceWinner: winners[ply],
       raceGain: gains[ply],
       ...(ownWall ? { ownWall } : {}),
+      ...(huh ? { huh } : {}),
     };
   });
   return {

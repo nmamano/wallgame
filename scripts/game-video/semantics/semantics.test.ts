@@ -31,6 +31,8 @@ interface PlySpec {
   /** The other side's mouse room before and after (default 40 -> 40). */
   room?: [number, number];
   end?: boolean;
+  /** A move of walls only: no pawn step. */
+  noStep?: boolean;
 }
 
 const hunt = (
@@ -89,7 +91,7 @@ const gameOf = (
       moveNumber: siteMoveNumber(ply),
       mover,
       notation: "Ca2",
-      steps: [{ type: "cat", from: "a1", to: "a2" }],
+      steps: s.noStep ? [] : [{ type: "cat", from: "a1", to: "a2" }],
       walls: s.walls ?? [],
       hunts: [
         hunt(1, s.w1, mover === 2 && s.mouseRan),
@@ -266,6 +268,58 @@ describe("labelGame", () => {
   test("the move that reaches the mouse is the capture", () => {
     const l = labels([{ w1: [2, 0], w2: [5, 5], wc: [1, 1], end: true }], 1);
     expect(l.plies[0].label).toBe("capture");
+  });
+});
+
+describe("huh (C43)", () => {
+  test("a cat 1 or 2 from the mouse that does not take it", () => {
+    const l = labels([{ w1: [2, 1], w2: [8, 8], wc: [0.99, 0.99] }]);
+    expect(l.plies[0].tags).toContain("huh");
+    expect(l.plies[0].huh).toEqual({ kind: "missed-capture", walk: 2 });
+    expect(isMoment(l.plies[0])).toBe(true);
+    const took = labels([{ w1: [2, 0], w2: [8, 8], end: true }], 1);
+    expect(took.plies[0].tags).not.toContain("huh");
+  });
+
+  test("a threatened mouse that stays when the best move steps it away", () => {
+    const run = { pawn: "mouse" as const, to: "h7" };
+    const l = labels([
+      {
+        w1: [8, 6],
+        w2: [2, 2],
+        wc: [0.1, 0.0],
+        best: "Mh7",
+        bestSteps: [run],
+        bestWalks: [8, 4],
+      },
+    ]);
+    expect(l.plies[0].huh).toEqual({ kind: "ignored-threat", walk: 2 });
+    // The best move is a wall: no step a viewer sees.
+    const wall = labels([
+      {
+        w1: [8, 6],
+        w2: [2, 2],
+        wc: [0.1, 0.0],
+        best: ">g7",
+        bestWalks: [8, 4],
+      },
+    ]);
+    expect(wall.plies[0].tags).not.toContain("huh");
+    // No engine: no way to know a step out of reach exists.
+    expect(labels([{ w1: [8, 6], w2: [2, 2] }]).plies[0].tags).not.toContain(
+      "huh",
+    );
+  });
+
+  test("walls that change no walk with a cat within 3", () => {
+    const l = labels([
+      { w1: [5, 5], w2: [3, 3], walls: ["^a1", "^b1"], noStep: true },
+    ]);
+    expect(l.plies[0].huh).toEqual({ kind: "idle-walls", walk: 3 });
+    const far = labels([
+      { w1: [5, 5], w2: [4, 4], walls: ["^a1", "^b1"], noStep: true },
+    ]);
+    expect(far.plies[0].tags).not.toContain("huh");
   });
 });
 

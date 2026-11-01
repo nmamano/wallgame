@@ -89,6 +89,7 @@ const VISIBLE: Partial<Record<string, string>> = {
   standoff: "cat and mouse on next-door cells with a wall between them",
   capture: "the cat and the mouse meeting on one cell",
   home: "the cat reaching its home",
+  huh: "the better move the mover leaves: a cat that can reach the mouse, a mouse that can step out of the cat's reach, or new walls that change no counter",
 };
 
 /** The claims of one labelled ply, in words a picture can be checked on. */
