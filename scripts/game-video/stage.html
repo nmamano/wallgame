@@ -2896,16 +2896,26 @@
         } else if (o.draw === "sequence" && o.form === "cover") {
           el.innerHTML = '<img src="' + esc(o.src) + '" />';
         } else if (o.draw === "sequence") {
-          // Its corner's edges: "bottom-right" stands it on the bottom and
-          // pushes it right, toward the board's rim, not into the middle.
-          const [v, h] = p.where.split("-");
+          // Its place's edges: "bottom-right" stands it on the bottom and
+          // pushes it right, toward the board's rim, not into the middle;
+          // an edge's middle ("right-middle", a pawn's place) centres it
+          // along that edge. Ringed in the seat's colour when a pawn
+          // emotes it.
+          const edges = p.where.split("-");
+          const x = edges.find((e) => e === "left" || e === "right");
+          const y = edges.find((e) => e === "top" || e === "bottom");
           el.innerHTML =
             '<img src="' +
             esc(o.src) +
             '" style="object-position:' +
-            h +
+            (x ?? "center") +
             " " +
-            v +
+            (y ?? "center") +
+            ";" +
+            (o.ring
+              ? "filter:" +
+                ringFilter(o.ring, Math.max(2, el.offsetWidth * 0.03))
+              : "") +
             '" />';
         } else if (o.draw === "toast") {
           el.innerHTML =
@@ -3740,8 +3750,13 @@
             // The call to action pops as the card lands: it swells and
             // glows once, and is at rest before the ending's last frame,
             // which the hold shows (Nil, 2026-10-31: "make it pop").
+            // It swells by a fifth at most, and less for a wide one, so it
+            // stays 2% inside the card's sides (VR1 review 123 N1).
             const pop = Math.sin(Math.PI * span(t, 0.62, 0.93));
-            $("ggCta").style.transform = "scale(" + (1 + 0.2 * pop) + ")";
+            const room =
+              ($("ggCard").clientWidth * 0.96) / $("ggCta").offsetWidth;
+            const swell = Math.max(0, Math.min(0.2, room - 1));
+            $("ggCta").style.transform = "scale(" + (1 + swell * pop) + ")";
             $("ggCta").style.boxShadow =
               "0 0 " +
               (0.3 + 0.9 * pop) +

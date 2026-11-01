@@ -3952,7 +3952,9 @@ for (const ev of [
     try {
       const asset = OVERLAYS[ev.asset];
       const clip = loadClip(ev.asset, asset.sequence, REPO);
+      // Added to the pawn's facts, when a pawn emotes it (stupid-stamp).
       OVERLAY_FACTS.set(ev, {
+        ...OVERLAY_FACTS.get(ev),
         fps: clip.fps,
         frames: clip.files.map(fileUrl),
         // Its own sound, when the EDL plays it (edl.mjs `audio`).

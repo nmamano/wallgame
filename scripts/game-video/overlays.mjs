@@ -942,9 +942,12 @@ export const OVERLAYS = {
     // 384x212 after the trim: the stamp alone, cut after the hand has left
     // (Wall Game Director, 2026-10-31: "about 2x bigger", held for its
     // beat only). Its pop is the landing; our own thud goes with it.
+    // Beside the mover's pawn, with a tail to it, as meme-list.md says
+    // (f00bf5b6 item 16: v-2026-10-31-2 ply 8 put it in a free place).
+    pawn: true,
     size: { w: 0.3, h: 0.166 },
     small: { w: 0.24, h: 0.133 },
-    places: ["board", "caption"],
+    places: ["board"],
     sequence: {
       dir: "stupid-stamp",
       fps: 30,

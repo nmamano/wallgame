@@ -1233,9 +1233,12 @@ describe("the meme pack's clips", () => {
   // Director Rewriter's source check, 2026-10-31): a test clip that does.
   const SOUNDED = "test-sounded-clip";
   beforeAll(() => {
+    // Tied to no pawn, so these tests see only its sound.
+    const stamp = OVERLAYS["stupid-stamp"];
     (OVERLAYS as Record<string, unknown>)[SOUNDED] = {
-      ...OVERLAYS["stupid-stamp"],
-      sequence: { ...OVERLAYS["stupid-stamp"].sequence, audio: true },
+      ...stamp,
+      pawn: false,
+      sequence: { ...stamp.sequence, audio: true },
     };
   });
   afterAll(() => {
@@ -1262,16 +1265,35 @@ describe("the meme pack's clips", () => {
     // A clip that keeps no sound takes no "audio".
     expect(
       errorsOf(
-        withEvent({ form: "clip", asset: "stupid-stamp", audio: "muted" }),
+        withEvent({
+          form: "clip",
+          asset: "stupid-stamp",
+          pawn: "red mouse",
+          sound: "slam-1",
+          audio: "muted",
+        }),
       ),
     ).toEqual([
       'events[0]: stupid-stamp has no sound of its own; give no "audio"',
     ]);
     expect(
       accept(
-        withEvent({ form: "clip", asset: "stupid-stamp", sound: "slam-1" }),
+        withEvent({
+          form: "clip",
+          asset: "stupid-stamp",
+          pawn: "red mouse",
+          sound: "slam-1",
+        }),
       ).events[0],
-    ).toMatchObject({ seconds: 1.533, sound: "slam-1" });
+    ).toMatchObject({ seconds: 1.533, sound: "slam-1", pawn: "red mouse" });
+    // It goes beside the mover's pawn (meme-list.md), so it names it.
+    expect(
+      errorsOf(
+        withEvent({ form: "clip", asset: "stupid-stamp", sound: "slam-1" }),
+      ),
+    ).toEqual([
+      'events[0]: stupid-stamp shows who emotes it; pawn must be a seat and a piece, as "red mouse" or "blue cat"',
+    ]);
   });
 
   test("a cover clip is cut shorter, never held longer", () => {
