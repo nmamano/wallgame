@@ -16,8 +16,9 @@
 # box runs Node 18 and Playwright needs 20, so everything there runs on bun.
 #
 # The wallz caption needs two fonts in the box's user font folder: TikTok Sans
-# and Noto Color Emoji, both OFL, from github.com/google/fonts. This script
-# does not fetch fonts; it stops if they are missing.
+# and Noto Color Emoji, and the eternity-later card Grandstander, all OFL,
+# from github.com/google/fonts. This script does not fetch fonts; it stops if
+# they are missing.
 set -euo pipefail
 
 host="${1:?usage: sync-render-kit.sh <ssh target of the 4090 WSL>}"
@@ -78,5 +79,6 @@ if [ "$have" != "$version" ]; then
 fi
 fc-list : family | grep -q "TikTok Sans" || { echo "font TikTok Sans missing on the render box" >&2; exit 1; }
 fc-list : family | grep -q "Noto Color Emoji" || { echo "font Noto Color Emoji missing on the render box" >&2; exit 1; }
+fc-list : family | grep -q "Grandstander" || { echo "font Grandstander missing on the render box" >&2; exit 1; }
 echo "render kit ready: $kit, playwright-core $version"
 REMOTE

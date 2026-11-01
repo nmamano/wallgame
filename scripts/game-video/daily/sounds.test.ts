@@ -298,6 +298,7 @@ describe("claim risk", () => {
       "alert-1",
       "bell-1",
       "bell-2",
+      "eternity-1",
       "fail-1",
       "horn-1",
       "laugh-1",

@@ -554,6 +554,7 @@ const landingEventsAt = (plyIndex) =>
     (e) =>
       e.kind !== "freeze" &&
       e.kind !== "explain" &&
+      e.kind !== "flashback" &&
       e.kind !== "overlay" &&
       !(e.kind === "zoom" && e.lead),
   );
@@ -972,6 +973,20 @@ const EXPLAIN_MIN_CHANGE = 2;
 const PLANT_SECONDS = 0.8;
 const PLANT_FADE_SECONDS = 0.25;
 const CALLBACK_LAND_SECONDS = 0.6;
+/**
+ * A flashback (edl.mjs "flashback", Nil's C39): the move lands for
+ * FLASHBACK_LAND_SECONDS; the rewind plays back over
+ * FLASHBACK_REWIND_SECONDS; the past shows the position before the old move
+ * FLASHBACK_PAST_BEFORE_SECONDS, then its walls land and hold to
+ * FLASHBACK_PAST_SECONDS; the forward plays over FLASHBACK_FORWARD_SECONDS;
+ * then the wall glows now, as a plant's (PLANT_SECONDS). The strip moves to
+ * the old move's value over EVAL_MOVE_SECONDS, as it does at a landing.
+ */
+const FLASHBACK_LAND_SECONDS = 0.6;
+const FLASHBACK_REWIND_SECONDS = 1.0;
+const FLASHBACK_PAST_BEFORE_SECONDS = 0.3;
+const FLASHBACK_PAST_SECONDS = 1.4;
+const FLASHBACK_FORWARD_SECONDS = 0.7;
 /**
  * The evaluation strip (edl.mjs evalStrip), under the players' names: it
  * moves to a move's value over
@@ -6947,6 +6962,144 @@ const renderStyle = async (styleName) => {
    * The ply's other events and its rest follow, as for any move.
    */
   /**
+   * A flashback (edl.mjs "flashback"): the move lands; the board plays
+   * back to the position before ev.toPly under a VHS look, turning sepia;
+   * that move's walls land again in their colour, ev.wall with a plant's
+   * glow; the board plays forward to now, its colour back; then ev.wall
+   * glows on this board. Every frame shows a real position, so the
+   * counters and the strip follow it; the caption holds the setup until
+   * the glow now, and no speed tag shows.
+   */
+  const playFlashback = async (ply, plyIndex, ev) => {
+    const start = elapsed;
+    const meta = { kind: "flashback", ply: plyIndex };
+    const frames = (seconds) => Math.round(seconds * FPS);
+    const hold = { caption: CAPTION, fastForward: null };
+    const vhs = (sepia, label) => ({
+      flashback: { sepia, label, t: elapsed - start },
+    });
+    // The position before the old move, and after it.
+    const before = ev.toPly;
+    const after = ev.toPly + 1;
+    // 1. The move lands, as any move, and the counter ticks.
+    land(plyIndex);
+    for (let i = 0; i < frames(FLASHBACK_LAND_SECONDS); i += 1) {
+      await emit(
+        playState(ply, { ...hold, race: raceHud(ply, i / FPS) }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 2. REWIND: back through every position to the one before the move.
+    if (ev.sound) cueEvent(meme(ev.sound), ev);
+    const back = frames(FLASHBACK_REWIND_SECONDS);
+    for (let i = 0; i < back; i += 1) {
+      const f = (i + 1) / back;
+      if (i === Math.floor(back / 2)) {
+        stillNext = { ply: plyIndex, kind: "flashback-rewind", sound: null };
+      }
+      const b = Math.round(ply - (ply - before) * easeInOut(f));
+      await emit(
+        playState(b, { ...hold, ...vhs(f, "<< REWIND") }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 3. THE PAST: "MOVE N"; the move's walls land again in their colour.
+    const label = `MOVE ${ev.toPly + 1}`;
+    for (let i = 0; i < frames(FLASHBACK_PAST_BEFORE_SECONDS); i += 1) {
+      await emit(
+        playState(before, { ...hold, ...vhs(1, label) }),
+        1 / FPS,
+        meta,
+      );
+    }
+    const terms = String(history[ev.toPly].notation ?? "")
+      .split(".")
+      .filter((t) => t.startsWith(">") || t.startsWith("^"));
+    const lit = {
+      ...litWalls(terms, after),
+      plain: terms.map((t) => t !== ev.wall),
+    };
+    const from = evalStripAt(before);
+    const to = evalStripAt(after);
+    const landed = elapsed;
+    const past = frames(FLASHBACK_PAST_SECONDS - FLASHBACK_PAST_BEFORE_SECONDS);
+    for (let i = 0; i < past; i += 1) {
+      const t = i / FPS;
+      if (i === frames(0.5)) {
+        stillNext = { ply: plyIndex, kind: "flashback-past", sound: null };
+      }
+      await emit(
+        playState(after, {
+          ...hold,
+          ...vhs(1, label),
+          trap: { t: elapsed - landed, ...lit },
+          evalStrip: to && {
+            ...to,
+            x:
+              from.x +
+              (to.x - from.x) * easeInOut(Math.min(1, t / EVAL_MOVE_SECONDS)),
+            swing: null,
+          },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 4. FORWARD: on to now, the colour coming back; the old walls' light
+    // goes out as the board moves on.
+    const fwd = frames(FLASHBACK_FORWARD_SECONDS);
+    for (let i = 0; i < fwd; i += 1) {
+      const f = (i + 1) / fwd;
+      const b = Math.round(after + (ply - after) * easeInOut(f));
+      await emit(
+        playState(b, {
+          ...hold,
+          ...vhs(1 - f, i === fwd - 1 ? null : ">>"),
+          trap:
+            f < 0.3 ? { t: elapsed - landed, fade: 1 - f / 0.3, ...lit } : null,
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    // 5. NOW: the wall glows on this board, with its sound, as a plant's.
+    if (ev.nowSound) cueEvent(meme(ev.nowSound), ev);
+    const glow = litWalls([ev.wall], ply);
+    for (let i = 0; i < frames(PLANT_SECONDS); i += 1) {
+      const t = i / FPS;
+      if (i === frames(0.3)) {
+        stillNext = {
+          ply: plyIndex,
+          kind: "flashback-now",
+          sound: ev.nowSound ?? null,
+        };
+      }
+      await emit(
+        playState(ply, {
+          trap: {
+            t,
+            fade:
+              1 -
+              Math.max(
+                0,
+                Math.min(
+                  1,
+                  (t - (PLANT_SECONDS - PLANT_FADE_SECONDS)) /
+                    PLANT_FADE_SECONDS,
+                ),
+              ),
+            ...glow,
+          },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    spanOf(ev, start);
+  };
+  /**
    * `pullOut` false: the zoom holds to its last frame and the ending cuts
    * in from it (intoEnding, below).
    */
@@ -7309,6 +7462,9 @@ const renderStyle = async (styleName) => {
     const explain = wallz
       ? eventsAt(plyIndex).find((e) => e.kind === "explain")
       : undefined;
+    const flashback = wallz
+      ? eventsAt(plyIndex).find((e) => e.kind === "flashback")
+      : undefined;
     /*
       The capture's zoom runs straight into the ending's impact: no pull-out
       and no still board before it (Wall Game Director, 2026-10-29: a still,
@@ -7331,6 +7487,8 @@ const renderStyle = async (styleName) => {
       leftZoom = await playLeadZoom(ply, plyIndex, lead, {
         pullOut: !leadIntoEnding,
       });
+    } else if (flashback) {
+      await playFlashback(ply, plyIndex, flashback);
     } else if (explain?.callback) {
       await playCallback(ply, plyIndex, explain);
     } else if (explain) {
@@ -7353,9 +7511,10 @@ const renderStyle = async (styleName) => {
     */
     const plainMove =
       wallz && !isLast && landingEventsAt(plyIndex).length === 0;
-    // A lead zoom and an explain tick the counter in their own frames.
+    // A lead zoom, an explain and a flashback tick the counter in their own
+    // frames.
     const ticked =
-      wallz && !lead && !explain
+      wallz && !lead && !explain && !flashback
         ? await playRaceTick(
             ply,
             plyIndex,

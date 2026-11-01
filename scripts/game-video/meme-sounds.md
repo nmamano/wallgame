@@ -308,6 +308,29 @@ Each is then written with `-c:a libmp3lame -b:a 128k -ar 44100 -ac 2`.
 slam-1 and fall-1 are the previews as fetched; hit-1 is the preview,
 limited.
 
+## For -15 v4 (eternity-1, rewind-1)
+
+Nil, 2026-11-01 (revise of v-2026-10-31-15, CASES C39): "one eternity later
+has a sponge bob voice line, no? add it."
+
+- eternity-1: the narrator's "One eternity later", from the meme pack's
+  "Meme Videos/SpongeBob Time Cards In Order By Time.mp4" (Nil's pack, a
+  compilation upload with no origin page). The card shows from about
+  198.2 s; its audio starts after the edit's digital silence at
+  198.25-198.29 s, and "later" ends in the dip before the next card's "so
+  much later" (200.22 s). A transcript (Whisper small, on the 4090,
+  2026-11-01) reads "one eternity later" at 198.0-200.24 s. HIGH claim
+  risk (Nickelodeon): Nil asked for it, so it is OK'd for -15 v4.
+- rewind-1: ours, made with ffmpeg (no input): two rising tones with a fast
+  flutter and a little noise, a tape-rewind whir.
+
+| Key        | Made from         | Length | Command (ffmpeg)                                                                                                                                                                                                                                                     |
+| ---------- | ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| eternity-1 | the pack's video  | 1.9 s  | `-ss 198.29 -to 200.17 -i <video> -vn -af "afade=t=in:st=0:d=0.01,afade=t=out:st=1.82:d=0.06"`                                                                                                                                                                       |
+| rewind-1   | ffmpeg (no input) | 1.1 s  | `-f lavfi -i "aevalsrc='0.35*sin(2*PI*(260*t+900*t*t))*(0.55+0.45*sin(2*PI*31*t))+0.25*sin(2*PI*(520*t+1800*t*t))*(0.5+0.5*sin(2*PI*47*t))+0.12*(random(0)-0.5)':s=44100:d=1.1" -af "highpass=f=180,lowpass=f=6000,afade=t=in:st=0:d=0.04,afade=t=out:st=0.9:d=0.2"` |
+
+Each is written with `-c:a libmp3lame -b:a 128k -ar 44100 -ac 2`.
+
 ## Copyright risk
 
 A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, or swap the clip in `SOUNDS`.

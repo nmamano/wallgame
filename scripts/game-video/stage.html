@@ -248,6 +248,45 @@
         object-fit: fill;
       }
       /*
+        A flashback (render-game-video.mjs playFlashback, Nil's C39): the
+        board turns sepia (on the board's image only, so the walls that
+        land again keep their colour over it) under a VHS look, scan lines
+        and a rolling band, with its stamp top left.
+      */
+      #vhsFx {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.05) 0 2px,
+          rgba(0, 0, 0, 0.2) 2px 5px
+        );
+      }
+      #vhsBand {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 7%;
+        background: rgba(255, 255, 255, 0.12);
+        filter: blur(4px);
+      }
+      #vhsLabel {
+        position: absolute;
+        left: 4%;
+        top: 3%;
+        font-family: "DejaVu Sans Mono", monospace;
+        font-weight: 700;
+        font-size: calc(var(--board) * 0.075);
+        letter-spacing: 0.06em;
+        color: #fff;
+        text-shadow:
+          0.05em 0 rgba(255, 0, 80, 0.7),
+          -0.05em 0 rgba(0, 200, 255, 0.7),
+          0 0 0.3em rgba(0, 0, 0, 0.9);
+      }
+      /*
         The camera. The board screenshot rides on it, and so does the position
         before the last move during the instant replay. #boardWrap clips it, so a zoom stays
         inside the board's square and never covers the caption.
@@ -826,13 +865,20 @@
         font-size: calc(var(--board) * 0.11);
         letter-spacing: 0.14em;
       }
+      /*
+        The time card: Grandstander Black (OFL, Tyler Finck / ETC, from
+        github.com/google/fonts ofl/grandstander; installed on the render box
+        like TikTok Sans, sync-render-kit.sh checks it), the closest free
+        face to SpongeBob's time-card letters; never the show's own font.
+      */
       :is(#overlay, #frameBar).eternity-later {
         border-radius: 0.3em;
         background: radial-gradient(circle at 30% 30%, #5fd0f5, #1f8fc4);
         border: 0.06em solid #fff;
         box-shadow: 0 0.1em 0.4em rgba(0, 0, 0, 0.6);
         color: #fde047;
-        font-size: calc(var(--board) * 0.075);
+        font-family: "Grandstander", "TikTok Sans", sans-serif;
+        font-size: calc(var(--board) * 0.08);
         font-weight: 900;
         -webkit-text-stroke: 0.08em #5b3209;
         paint-order: stroke fill;
@@ -1388,6 +1434,10 @@
               <div id="cellEmoji"></div>
               <div id="cellBadge"></div>
             </div>
+          </div>
+          <div id="vhsFx" class="hidden">
+            <div id="vhsBand"></div>
+            <div id="vhsLabel"></div>
           </div>
           <div id="fxFlash" class="hidden"></div>
           <div id="freezeBadge" class="hidden">
@@ -2391,11 +2441,50 @@
         It lies out of the Reels safe area's 6% inset, which keeps clear of
         the buttons on the right; the left edge has none.
       */
+      /**
+       * The eternity-later card's letters, as SpongeBob's time cards set
+       * them: [tilt in degrees, lift in em], in turn (Nil, C39: "the sponge
+       * bob font would also be a nice touch").
+       */
+      const TIME_CARD_BOUNCE = [
+        [-4, 0.02],
+        [3, -0.04],
+        [-2, 0.03],
+        [5, -0.02],
+        [-3, 0.04],
+        [2, -0.03],
+        [-5, 0.01],
+      ];
       /** A card's inside (overlays.mjs CARDS), in our own art. */
       const cardHtml = (o, esc) => {
         if (o.card === "wasted") return "<div>wasted</div>";
         if (o.card === "you-died") return "<div>YOU DIED</div>";
-        if (o.card === "eternity-later") return "<div>ONE ETERNITY LATER</div>";
+        if (o.card === "eternity-later") {
+          // The time card's own bounce: each letter tilts and lifts a little,
+          // the same way in every render (TIME_CARD_BOUNCE).
+          let k = 0;
+          return (
+            "<div>" +
+            "One Eternity Later"
+              .split("")
+              .map((ch) => {
+                if (ch === " ") return " ";
+                const [deg, lift] =
+                  TIME_CARD_BOUNCE[k++ % TIME_CARD_BOUNCE.length];
+                return (
+                  '<span style="display:inline-block;transform:rotate(' +
+                  deg +
+                  "deg) translateY(" +
+                  lift +
+                  'em)">' +
+                  ch +
+                  "</span>"
+                );
+              })
+              .join("") +
+            "</div>"
+          );
+        }
         if (o.card === "mission-passed") {
           return (
             '<div class="big">mission passed!</div>' +
@@ -3262,11 +3351,30 @@
             ")";
         });
       };
+      /**
+       * A flashback's look: f = { sepia: 0..1, label: "<< REWIND",
+       * "MOVE 8", ">>" or null, t: seconds into it }, or null. The VHS
+       * look shows while the board is sepia at all; its band rolls down
+       * with t (from the state: workers shoot the frames apart).
+       */
+      const paintFlashback = (f) => {
+        const on = !!f && f.sepia > 0;
+        show($("vhsFx"), on);
+        $("boardImg").style.filter = on
+          ? "sepia(" + f.sepia + ") saturate(" + (1 - 0.3 * f.sepia) + ")"
+          : "";
+        if (!on) return;
+        $("vhsFx").style.opacity = Math.min(1, f.sepia * 3);
+        $("vhsBand").style.top = ((f.t * 93) % 107) - 7 + "%";
+        $("vhsLabel").textContent = f.label ?? "";
+      };
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);
         if (!tr) return;
-        // tr.fade (0..1, absent 1): a plant's glow going out.
+        // tr.fade (0..1, absent 1): a plant's glow going out. tr.plain[i]:
+        // wall i in its own colour at the groove's width, not lit (a
+        // flashback's other walls, over a sepia board).
         const on =
           (tr.lit ? 1 : easeOut3(span(tr.t, 0, 0.15))) * (tr.fade ?? 1);
         // The groove's width in the svg's units, across the wall.
@@ -3304,9 +3412,9 @@
                 '" y2="' +
                 by * 1000 +
                 '" stroke="' +
-                lighter(tr.colors[i]) +
+                (tr.plain?.[i] ? tr.colors[i] : lighter(tr.colors[i])) +
                 '" stroke-width="' +
-                across([ax, ay, bx, by]) * TRAP_THICK +
+                across([ax, ay, bx, by]) * (tr.plain?.[i] ? 1 : TRAP_THICK) +
                 '" stroke-linecap="round"/>',
             )
             .join("") +
@@ -3958,6 +4066,7 @@
           paintCellFx(s.cellFx);
           paintEval(s.evalStrip);
           paintErase(s.erase);
+          paintFlashback(s.flashback);
           paintTrap(s.trap);
           window.__crowdedWalks = paintPath(s.path);
           paintOverlay(s.overlay);

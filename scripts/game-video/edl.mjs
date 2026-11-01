@@ -189,6 +189,20 @@
  *     plant   the setup of a later callback: on the ply that places
  *             `wall`, as its move lands, that wall glows for 0.8 s, with
  *             no word, so the viewer has seen it once.
+ *     flashback  the board goes back in time to the move that built
+ *             `wall` (Nil, 2026-11-01, C39: "you need to show clearly
+ *             that you are showing the past"). `toPly` is the ply that
+ *             placed it, before this one. The move lands; REWIND: a VHS
+ *             look, "<< REWIND", `sound` (a rewind whir), the board plays
+ *             back to the position before toPly, turning sepia; THE PAST:
+ *             "MOVE <toPly + 1>", toPly's walls land again in their
+ *             colour on the sepia board, `wall` with the plant's glow;
+ *             FORWARD: ">>", the board plays forward to now, its colour
+ *             back; NOW: `wall` glows on this board, with `nowSound`.
+ *             The counters and the evaluation strip follow the positions
+ *             shown; the caption holds until NOW. It plays before the
+ *             ply's other events, alone: not with an explain, a freeze, a
+ *             path or a lead zoom on its ply.
  *     overlay a meme over the board while the game goes on under it
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
@@ -455,6 +469,7 @@ export const EVENT_KINDS = [
   "overlay",
   "explain",
   "plant",
+  "flashback",
 ];
 
 /** The fields each kind takes, besides ply, kind and sound. */
@@ -483,7 +498,18 @@ const KIND_FIELDS = {
   ],
   explain: ["hunter", "label", "expect", "callback"],
   plant: ["wall"],
+  flashback: ["toPly", "wall", "nowSound"],
 };
+/**
+ * The meme sounds an event plays, in order: its `sound`, and a flashback's
+ * `nowSound`. Every reader of a list's sounds goes through it (the claim
+ * risk, the repeats), so none misses the second one.
+ * @param {{ sound?: string | null, nowSound?: string }} ev
+ * @returns {string[]}
+ */
+export const eventSoundKeys = (ev) =>
+  [ev.sound, ev.nowSound].filter((k) => typeof k === "string");
+
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
 /** How long a path event holds its (last) path, by default. */
@@ -1153,10 +1179,20 @@ export const validateEdl = (raw) => {
         }
       }
       if (
-        ev.kind === "plant" &&
+        (ev.kind === "plant" || ev.kind === "flashback") &&
         !(typeof ev.wall === "string" && WALL.test(ev.wall))
       ) {
         fail(`${where}: wall must be a wall (^h4, >h4)`);
+      }
+      if (ev.kind === "flashback") {
+        if (!isPly(ev.toPly) || !(ev.toPly < ev.ply)) {
+          fail(`${where}: toPly must be a ply before ${ev.ply}`);
+        }
+        if (ev.nowSound !== undefined && !(ev.nowSound in MEME_SOUNDS)) {
+          fail(
+            `${where}: nowSound ${JSON.stringify(ev.nowSound)} is not known`,
+          );
+        }
       }
       if (ev.kind === "path") {
         // Only when set, so a list without one stores the same bytes.
@@ -1241,19 +1277,22 @@ export const validateEdl = (raw) => {
 
   // An explain is its ply's explanation: one a ply, with no other
   // explanation (a freeze, a lead zoom or a path) beside it.
-  for (const e of filled.filter((x) => x.kind === "explain")) {
+  for (const e of filled.filter(
+    (x) => x.kind === "explain" || x.kind === "flashback",
+  )) {
     const others = filled.filter(
       (x) =>
         x !== e &&
         x.ply === e.ply &&
         (x.kind === "explain" ||
+          x.kind === "flashback" ||
           x.kind === "freeze" ||
           x.kind === "path" ||
           (x.kind === "zoom" && x.lead)),
     );
     if (others.length > 0) {
       fail(
-        `ply ${e.ply} has an explain and ${others.map((x) => (x.kind === "zoom" ? "a lead zoom" : x.kind === "explain" ? "another explain" : `a ${x.kind}`)).join(", ")}; the explain is the ply's explanation, so use it alone`,
+        `ply ${e.ply} has ${e.kind === "explain" ? "an explain" : "a flashback"} and ${others.map((x) => (x.kind === "zoom" ? "a lead zoom" : x.kind === e.kind ? `another ${x.kind}` : x.kind === "explain" ? "an explain" : `a ${x.kind}`)).join(", ")}; the ${e.kind} is the ply's explanation, so use it alone`,
       );
     }
   }
@@ -1448,6 +1487,11 @@ export const checkEdlAgainstGame = (
   const placedBy = (term) =>
     notations.findIndex((n) => String(n).split(".").includes(term));
   edl.events.forEach((ev, i) => {
+    if (ev.kind === "flashback" && placedBy(ev.wall) !== ev.toPly) {
+      errors.push(
+        `events[${i}]: a flashback goes back to the move that built its wall, and ply ${ev.toPly} (${notations[ev.toPly]}) does not place ${ev.wall}`,
+      );
+    }
     if (ev.kind === "plant" && placedBy(ev.wall) !== ev.ply) {
       errors.push(
         `events[${i}]: a plant lights its own move's wall, and ply ${ev.ply} (${notations[ev.ply]}) does not place ${ev.wall}`,

@@ -116,6 +116,11 @@ export const MEME_SOUNDS = {
   "uhoh-1": { lufs: -16.7, truePeak: -6.7 },
   "fall-1": { lufs: -6.5, truePeak: -7.3 },
   "fightbell-1": { lufs: -12.8, truePeak: -4.4 },
+  // For -15 v4 (Nil's revise, C39), measured 2026-11-01: the narrator's
+  // "one eternity later" (a SpongeBob time card) and our own tape-rewind
+  // whir for the flashback (meme-sounds.md).
+  "eternity-1": { lufs: -17.5, truePeak: -4.8 },
+  "rewind-1": { lufs: -13.0, truePeak: -8.1 },
 };
 
 /**
@@ -166,6 +171,8 @@ export const MEME_FAMILIES = {
   uhoh: "a mistake",
   fall: "a fall: the self-trap",
   fightbell: "the VS card",
+  eternity: "the eternity-later card's own voice",
+  rewind: "the flashback: the board plays back",
 };
 
 /**
@@ -197,6 +204,7 @@ export const VOICE_FAMILIES = [
   "wow",
   "fuahhh",
   "ambulance",
+  "eternity",
 ];
 export const VOICE_KEYS = ["win-1", "scared-1", "shotgun-4"];
 
@@ -229,6 +237,8 @@ export const MEME_SOURCE_NOTES = {
   "bell-1": "high claim risk: the Undertaker's WWE entrance theme",
   "bell-2":
     "high claim risk: the Undertaker's WWE entrance theme; bell-1's first 2.2 s",
+  "eternity-1":
+    "high claim risk: SpongeBob SquarePants (Nickelodeon), the narrator of a time card",
   "reveal-1": "high claim risk: Among Us game audio (Innersloth)",
   "wow-1": "high claim risk: a Konami game and anime voice",
   "wow-2": "high claim risk: a Konami game and anime voice",

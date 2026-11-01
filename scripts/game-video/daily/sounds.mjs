@@ -35,7 +35,7 @@ import {
   memeGain,
   memeLevel,
 } from "../meme-sounds.mjs";
-import { DEFAULT_SLOT_SOUNDS } from "../edl.mjs";
+import { DEFAULT_SLOT_SOUNDS, eventSoundKeys } from "../edl.mjs";
 import { writeAtomic, StepRefused } from "./store.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -100,9 +100,9 @@ export const retired = (key) =>
  */
 export const soundUses = (edl) => [
   ...Object.keys(DEFAULT_SLOT_SOUNDS).map((slot) => [slot, edl[slot]]),
-  ...edl.events
-    .filter((e) => e.sound !== undefined)
-    .map((e) => [`ply ${e.ply}`, e.sound]),
+  ...edl.events.flatMap((e) =>
+    eventSoundKeys(e).map((key) => [`ply ${e.ply}`, key]),
+  ),
 ];
 
 /** The choices, kept in `<root>/sound-picks.json`. */
@@ -306,9 +306,7 @@ const MADE_STATES = ["approved", "posting", "post-failed", "posted"];
 /** The meme sounds of a list's events, each once. */
 const eventSounds = (edl) => [
   ...new Set(
-    edl.events
-      .filter((e) => e.sound !== undefined && e.sound !== "muted")
-      .map((e) => e.sound),
+    edl.events.flatMap(eventSoundKeys).filter((key) => key !== "muted"),
   ),
 ];
 

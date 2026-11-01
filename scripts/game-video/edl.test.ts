@@ -17,6 +17,7 @@ import {
   STRIP_AREA,
   areaOf,
   validateEdl,
+  eventSoundKeys,
 } from "./edl.mjs";
 import { OVERLAYS } from "./overlays.mjs";
 import { goalSentenceFor } from "../../shared/domain/variant-rules";
@@ -358,6 +359,49 @@ describe("checkEdlAgainstGame", () => {
     expect(check({ evalStrip: [0, 0.1, 0.2] })).toEqual([
       "evalStrip lists 3 values, and the game's 3 moves have 4 positions",
     ]);
+  });
+
+  test("a flashback goes back to the move that built its wall: fields, its ply alone, its sounds", () => {
+    const errorsOf = (raw: object): string[] =>
+      (validateEdl(raw).errors as string[] | undefined) ?? [];
+    const games = ["Ce7", "^h4", "Cf7", "Ce6"];
+    const check = (raw: object) =>
+      checkEdlAgainstGame(accept({ ...base, ...raw }), {
+        notations: games,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      });
+    const fb = (over: object = {}) => ({
+      ply: 3,
+      kind: "flashback",
+      toPly: 1,
+      wall: "^h4",
+      sound: "rewind-1",
+      nowSound: "clang-1",
+      ...over,
+    });
+    expect(check({ events: [fb()] })).toEqual([]);
+    expect(check({ events: [fb({ toPly: 0 })] })).toEqual([
+      "events[0]: a flashback goes back to the move that built its wall, and ply 0 (Ce7) does not place ^h4",
+    ]);
+    expect(errorsOf({ ...base, events: [fb({ toPly: 3 })] })).toEqual([
+      "events[0]: toPly must be a ply before 3",
+    ]);
+    expect(errorsOf({ ...base, events: [fb({ nowSound: "nope-1" })] })).toEqual(
+      ['events[0]: nowSound "nope-1" is not known'],
+    );
+    expect(
+      errorsOf({
+        ...base,
+        events: [fb(), { ply: 3, kind: "freeze" }],
+      }),
+    ).toEqual([
+      "ply 3 has a flashback and a freeze; the flashback is the ply's explanation, so use it alone",
+    ]);
+    // Every reader of a list's sounds sees both of its sounds.
+    expect(eventSoundKeys(fb())).toEqual(["rewind-1", "clang-1"]);
+    expect(eventSoundKeys({ sound: "slam-1" })).toEqual(["slam-1"]);
   });
 
   test("rejects a ply past the last move and a cell off the board", () => {

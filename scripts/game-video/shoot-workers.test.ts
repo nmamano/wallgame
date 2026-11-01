@@ -155,6 +155,29 @@ describe("isRestShot: no part starts inside any effect", () => {
         },
       },
     ],
+    // Its landing (the caption held), the rewind, the past, and the glow now.
+    flashback: [
+      { kind: "flashback", state: plain },
+      {
+        kind: "flashback",
+        state: {
+          ...plain,
+          flashback: { sepia: 0.5, label: "<< REWIND", t: 0.3 },
+        },
+      },
+      {
+        kind: "flashback",
+        state: {
+          ...plain,
+          flashback: { sepia: 1, label: "MOVE 8", t: 1.2 },
+          trap: { t: 0.2, walls: [], plain: [true] },
+        },
+      },
+      {
+        kind: "flashback",
+        state: { ...plain, trap: { t: 0.2, fade: 1, walls: [] } },
+      },
+    ],
     plant: [
       {
         kind: "beat-plant",
