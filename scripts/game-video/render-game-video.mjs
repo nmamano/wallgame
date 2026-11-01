@@ -4876,7 +4876,12 @@ const renderStyle = async (styleName) => {
   };
   /** A ply's overlays that open as its move lands (the bar is the ending's). */
   const plyOverlays = (plyIndex) =>
-    eventsAt(plyIndex).filter((e) => e.kind === "overlay" && e.form !== "bar");
+    eventsAt(plyIndex).filter(
+      (e) => e.kind === "overlay" && e.form !== "bar" && !e.at,
+    );
+  /** The overlays a ply's explain opens itself (edl.mjs `at`). */
+  const explainOverlays = (plyIndex, at) =>
+    eventsAt(plyIndex).filter((e) => e.kind === "overlay" && e.at === at);
   /**
    * The landing event a ply's overlays open after, or null: they open as
    * the move lands. A ply with a trap opens them after the last trap's
@@ -4950,8 +4955,11 @@ const renderStyle = async (styleName) => {
   const openPlyOverlays = async (ply, plyIndex) => {
     const overlays = plyOverlays(plyIndex);
     const live = liveOverlay();
-    if (overlays.length > 0 && live?.asset.draw === "loading") {
-      startLoadingError(live, ply);
+    // So do they for one the ply's explain opened (edl.mjs `at`): on the
+    // last ply the death card follows the clip of the new walk.
+    const ownExplain = live?.ev.at !== undefined && live.ev.ply === plyIndex;
+    if (overlays.length > 0 && (live?.asset.draw === "loading" || ownExplain)) {
+      if (!ownExplain) startLoadingError(live, ply);
       const rest = live.end === null ? 0 : live.end - elapsed;
       if (rest > 0.5 / FPS) {
         await emit(playState(ply), rest, { kind: "move", ply: plyIndex });
@@ -6981,13 +6989,66 @@ const renderStyle = async (styleName) => {
       race: raceHud(ply - 1),
       caption: wallz ? captionAt(ply - 1) : "",
     };
-    // 2. The move lands; its walls and its pawns' steps glow.
+    /*
+      1b. The build-up (edl.mjs `buildUp`; Nil, 2026-11-01: "with
+      anticipation and slow zoom maybe"): the camera pushes in slowly on
+      the position before the move, the old walk drawn, with no sound.
+    */
+    const build = ev.buildUp
+      ? frameZoom(ev.buildUp.frame, ev.buildUp.scale, {
+          boards: [ply - 1, ply],
+          drift: ZOOM_DRIFT,
+          label: `build-up zoom on ply ${plyIndex}`,
+          report: (kind, m) => fault(kind, plyIndex, m),
+        })
+      : null;
+    if (build) {
+      const push = Math.round(ev.buildUp.seconds * FPS);
+      for (let i = 0; i < push; i += 1) {
+        const x = (i + 1) / push;
+        const scale = 1 + (build.scale - 1) * x * x * (3 - 2 * x);
+        await emit(
+          playState(ply - 1, {
+            zoom: { ...build, scale },
+            path: {
+              cell: GRID.pitchX,
+              lines: oldWalk ? [line(f.before, 1, 1)] : [],
+            },
+            fastForward: null,
+          }),
+          1 / FPS,
+          { kind: "explain", ply: plyIndex },
+        );
+      }
+    }
+    // 2. The move lands; its walls and its pawns' steps glow. An overlay
+    // at "land" opens with it, and the new walk waits until it closes;
+    // the build-up's camera goes back out meanwhile.
     land(plyIndex);
     const landed = elapsed;
-    const landFrames = Math.round(EXPLAIN_LAND_SECONDS * FPS);
+    explainOverlays(plyIndex, "land").forEach(openOverlay);
+    const landLive = explainOverlays(plyIndex, "land").length
+      ? liveOverlay()
+      : null;
+    const landFrames = Math.max(
+      Math.round(EXPLAIN_LAND_SECONDS * FPS),
+      landLive?.end == null
+        ? 0
+        : Math.ceil((landLive.end - elapsed) * FPS - 1e-6),
+    );
     for (let i = 0; i < landFrames; i += 1) {
+      const out = build
+        ? {
+            zoom: {
+              ...build,
+              scale:
+                1 + (build.scale - 1) * (1 - easeOut((i + 1) / landFrames)),
+            },
+          }
+        : {};
       await emit(
         playState(ply, {
+          ...out,
           // The counter keeps the old numbers until the new walk draws, so
           // it never disagrees with the walk's own number (Wall Game PM,
           // 2026-10-29).
@@ -7010,8 +7071,12 @@ const renderStyle = async (styleName) => {
     if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawAfter);
     const afterSeconds = drawAfter + EXPLAIN_AFTER_HOLD_SECONDS;
     const afterFrames = Math.round(afterSeconds * FPS);
+    const drawnAt = Math.round(drawAfter * FPS);
     for (let i = 0; i < afterFrames; i += 1) {
       const t = i / FPS;
+      // An overlay at "walk" opens as the new walk is drawn and its
+      // number shows.
+      if (i === drawnAt) explainOverlays(plyIndex, "walk").forEach(openOverlay);
       if (i === Math.round((drawAfter + 0.2) * FPS)) {
         stillNext = {
           ply: plyIndex,

@@ -190,6 +190,13 @@
  *             >b2 of ply 7: 1, then 5). `expect` is then { without, with },
  *             the hunter's steps; `hunter` absent, the side whose steps
  *             the wall changes most. No number names the wall.
+ *             With `buildUp` ({ frame, seconds, scale }; not with
+ *             `callback`) the camera pushes in slowly on `frame` (cells
+ *             and walls, as a zoom's) after the old walk is drawn, over
+ *             `seconds` (default 1.0) with no sound, so the viewer waits
+ *             for the move; the move lands inside it and the camera goes
+ *             back out while it lands (Nil, 2026-11-01: "with
+ *             anticipation and slow zoom maybe").
  *     plant   the setup of a later callback: on the ply that places
  *             `wall`, as its move lands, that wall glows for 0.8 s, with
  *             no word, so the viewer has seen it once.
@@ -236,7 +243,14 @@
  *             such an overlay never goes in a fast-forward. The renderer puts it where it hides no pawn and
  *             nothing in play on any frame it covers, or stops and names
  *             what is under each place. One overlay at a time, and the
- *             ending cuts one still open. In a fastForward range the only
+ *             ending cuts one still open. On a ply with an explain (not a
+ *             callback) `at` may time it inside the explain (Nil,
+ *             2026-11-01: a clip "at the time the move is played ...
+ *             then one of the others after while it's showing the new
+ *             distance path"): "land" opens it as the move lands, and the
+ *             new walk waits until it closes; "walk" opens it as the new
+ *             walk is fully drawn and its number shows. One of each a
+ *             ply, never a bar. In a fastForward range the only
  *             event allowed is one overlay (not the bar) on the range's
  *             first ply, with no seconds: it lasts the range, which must
  *             be on screen for EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
@@ -482,6 +496,9 @@ export const EVENT_KINDS = [
   "flashback",
 ];
 
+/** When an overlay on an explain's ply opens (`at`): see the header. */
+export const OVERLAY_ATS = ["land", "walk"];
+
 /** The fields each kind takes, besides ply, kind and sound. */
 const KIND_FIELDS = {
   zoom: ["frame", "scale", "holdSeconds", "lead"],
@@ -505,8 +522,9 @@ const KIND_FIELDS = {
     "pawn",
     "place",
     "audio",
+    "at",
   ],
-  explain: ["hunter", "label", "expect", "callback"],
+  explain: ["hunter", "label", "expect", "callback", "buildUp"],
   plant: ["wall"],
   flashback: ["toPly", "wall", "forwardSound", "nowSound"],
 };
@@ -548,6 +566,8 @@ export const fastForwardTag = (secondsPerMove) =>
   `x${Math.round(DEFAULT_SECONDS_PER_MOVE / secondsPerMove)}`;
 /** The zoom's most scale and its hold, where the EDL sets none. */
 export const DEFAULT_ZOOM_SCALE = 1.5;
+/** How long an explain's build-up zoom pushes in, by default. */
+export const DEFAULT_BUILD_UP_SECONDS = 1.0;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
 /**
  * The longest video that a story can carry (Instagram, 2026-10-29: a Story
@@ -569,6 +589,7 @@ export const EDL_LIMITS = {
   fastForwardSecondsPerMove: [0.2, 0.3],
   zoomScale: [1.1, 3],
   zoomHoldSeconds: [0.2, 3],
+  buildUpSeconds: [0.5, 2],
   frameTerms: 6,
   freezeHoldSeconds: [0.4, 2],
   pathHoldSeconds: [0.3, 2],
@@ -1000,6 +1021,13 @@ export const validateEdl = (raw) => {
     ) {
       fail(`${where}: seconds must be ${EDL_LIMITS.overlaySeconds.join("..")}`);
     }
+    if (ev.at !== undefined && !OVERLAY_ATS.includes(ev.at)) {
+      fail(
+        `${where}: at must be one of ${OVERLAY_ATS.join(", ")} (inside its ply's explain), got ${JSON.stringify(ev.at)}`,
+      );
+    } else if (ev.at !== undefined && asset.form === "bar") {
+      fail(`${where}: a bar is the ending's; it takes no "at"`);
+    }
     // A clip's last frame held still reads as a frozen video: cut it
     // shorter, never longer.
     if (asset.draw === "sequence" && out.seconds > asset.seconds) {
@@ -1160,6 +1188,45 @@ export const validateEdl = (raw) => {
             unknown(callback, ["wall"], `${where}.callback`);
           }
         }
+        const buildUp = ev.buildUp ?? null;
+        if (buildUp !== null) {
+          const b = buildUp;
+          if (typeof b !== "object" || Array.isArray(b)) {
+            fail(`${where}: buildUp must be { frame, seconds, scale }`);
+          } else {
+            unknown(b, ["frame", "seconds", "scale"], `${where}.buildUp`);
+            if (callback !== null) {
+              fail(
+                `${where}: a callback has no buildUp (its move lands first)`,
+              );
+            }
+            if (
+              !Array.isArray(b.frame) ||
+              b.frame.length === 0 ||
+              b.frame.length > EDL_LIMITS.frameTerms ||
+              b.frame.some((t) => !CELL.test(t) && !WALL.test(t))
+            ) {
+              fail(
+                `${where}: buildUp.frame must list 1..${EDL_LIMITS.frameTerms} cells (g4) or walls (^h4, >h4)`,
+              );
+            }
+            out.buildUp = {
+              frame: b.frame,
+              seconds: b.seconds ?? DEFAULT_BUILD_UP_SECONDS,
+              scale: b.scale ?? DEFAULT_ZOOM_SCALE,
+            };
+            if (!isNumberIn(out.buildUp.seconds, EDL_LIMITS.buildUpSeconds)) {
+              fail(
+                `${where}: buildUp.seconds must be ${EDL_LIMITS.buildUpSeconds.join("..")}`,
+              );
+            }
+            if (!isNumberIn(out.buildUp.scale, EDL_LIMITS.zoomScale)) {
+              fail(
+                `${where}: buildUp.scale must be ${EDL_LIMITS.zoomScale.join("..")}`,
+              );
+            }
+          }
+        }
         const steps =
           callback !== null ? ["without", "with"] : ["before", "after"];
         const shape =
@@ -1293,6 +1360,24 @@ export const validateEdl = (raw) => {
 
   // An explain is its ply's explanation: one a ply, with no other
   // explanation (a freeze, a lead zoom or a path) beside it.
+  // An overlay timed inside an explain (`at`): its ply has one, not a
+  // callback, and one overlay for each time.
+  for (const o of filled.filter((x) => x.kind === "overlay" && x.at)) {
+    const explain = filled.find((x) => x.kind === "explain" && x.ply === o.ply);
+    if (!explain || explain.callback) {
+      fail(
+        `the ${o.asset} overlay on ply ${o.ply} opens at its explain's ${o.at === "land" ? "landing" : "new walk"}, but ply ${o.ply} has ${explain ? "a callback" : "no explain"}`,
+      );
+    }
+    if (
+      filled.some(
+        (x) =>
+          x !== o && x.kind === "overlay" && x.ply === o.ply && x.at === o.at,
+      )
+    ) {
+      fail(`ply ${o.ply} has two overlays at "${o.at}"; one of each`);
+    }
+  }
   for (const e of filled.filter(
     (x) => x.kind === "explain" || x.kind === "flashback",
   )) {

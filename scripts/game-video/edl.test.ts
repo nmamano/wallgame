@@ -250,6 +250,66 @@ describe("the moment kinds", () => {
     );
   });
 
+  test("an explain's build-up zoom, and overlays timed inside the explain (Nil, 2026-11-01)", () => {
+    const explain = { ply: 12, kind: "explain", hunter: "blue" };
+    const fire = {
+      ply: 12,
+      kind: "overlay",
+      form: "cover",
+      asset: "gs-fire",
+      sound: "boom-4",
+      at: "land",
+    };
+    const shock = {
+      ply: 12,
+      kind: "overlay",
+      form: "clip",
+      asset: "reactor-shock",
+      seat: "blue",
+      at: "walk",
+    };
+    const edl = accept({
+      ...base,
+      events: [{ ...explain, buildUp: { frame: ["b3", "^b3"] } }, fire, shock],
+    });
+    expect(edl.events[0]).toMatchObject({
+      buildUp: { frame: ["b3", "^b3"], seconds: 1, scale: 1.5 },
+    });
+    expect(edl.events.slice(1).map((e: { at?: string }) => e.at)).toEqual([
+      "land",
+      "walk",
+    ]);
+    // Absent, a list stores no buildUp and no at: the same bytes as before.
+    const plain = accept({ ...base, events: [explain] }).events[0] as object;
+    expect("buildUp" in plain).toBe(false);
+    const errors = (events: object[]) =>
+      (validateEdl({ ...base, events }).errors ?? []) as string[];
+    expect(
+      errors([{ ...explain, buildUp: { frame: ["b3"], seconds: 3 } }]),
+    ).toContain("events[0]: buildUp.seconds must be 0.5..2");
+    expect(errors([{ ...explain, buildUp: { frame: [] } }])).toContain(
+      "events[0]: buildUp.frame must list 1..6 cells (g4) or walls (^h4, >h4)",
+    );
+    expect(
+      errors([
+        {
+          ...explain,
+          callback: { wall: ">b2" },
+          buildUp: { frame: ["b3"] },
+        },
+      ]),
+    ).toContain("events[0]: a callback has no buildUp (its move lands first)");
+    expect(errors([{ ...shock, at: "later" }])).toContain(
+      'events[0]: at must be one of land, walk (inside its ply\'s explain), got "later"',
+    );
+    expect(errors([shock])).toContain(
+      "the reactor-shock overlay on ply 12 opens at its explain's new walk, but ply 12 has no explain",
+    );
+    expect(errors([explain, shock, { ...shock, seat: "red" }])).toContain(
+      'ply 12 has two overlays at "walk"; one of each',
+    );
+  });
+
   test("an evaluation strip lists one value a position, each -1..1, and is off when absent", () => {
     expect("evalStrip" in accept(base)).toBe(false);
     expect(accept({ ...base, evalStrip: [-0.3, 0.1, 1] }).evalStrip).toEqual([
@@ -1419,7 +1479,7 @@ describe("the meme pack's clips", () => {
     );
     expect("opening" in accept(base)).toBe(false);
     expect(errorsOf({ ...base, opening: "stupid-stamp" })).toEqual([
-      'opening must be a cover clip (curtain-open, confetti, curtain-open-pack, confetti-pack, rec-frame), or absent for none; got "stupid-stamp"',
+      'opening must be a cover clip (curtain-open, gs-fire, confetti, curtain-open-pack, confetti-pack, rec-frame), or absent for none; got "stupid-stamp"',
     ]);
   });
 });
