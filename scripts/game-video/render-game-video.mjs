@@ -5386,7 +5386,16 @@ const renderStyle = async (styleName) => {
         w.asset.form === "bar" && winnerId !== null
           ? Math.max(TEXT_TIMING.overlayPop, endingTimings[style.ending].flash)
           : TEXT_TIMING.overlayPop;
-      const fullFor = showsFor - comesIn - TEXT_TIMING.overlayFade;
+      /*
+        The loading bar's words are read before the save turns it to ERROR
+        (its ERROR has LOADING_ERROR_SECONDS of its own): v-2026-11-01-3
+        ply 25 showed "CAPTURE LOADING 98%" fully 1.2 s, and its whole
+        window, ERROR included, passed (render vet, 2026-11-01).
+      */
+      const fullFor =
+        w.asset.draw === "loading" && w.errorAt !== undefined
+          ? w.errorAt - w.start - comesIn
+          : showsFor - comesIn - TEXT_TIMING.overlayFade;
       if (fullFor + 0.5 / FPS < read) {
         fault(
           "reading-time",
