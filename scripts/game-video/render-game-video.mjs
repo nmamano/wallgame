@@ -1569,6 +1569,15 @@ const HUMAN_NAMES = apiPlayers
 const nameOf = (playerId) =>
   apiPlayers.find((p) => p.playerId === playerId)?.displayName ??
   `Player ${playerId}`;
+/**
+ * A seat as the render's log names it: a bot by its name, a human seat
+ * only as "Player 1" or "Player 2" (Video Reviewer 1, review 134 N1: logs
+ * get quoted into reports and asks; Nil, 2026-11-01: "no names").
+ */
+const logName = (playerId) =>
+  apiPlayers.find((p) => p.playerId === playerId)?.configType === "bot"
+    ? nameOf(playerId)
+    : `Player ${playerId}`;
 
 /**
  * The outcome, taken from the recorded result rather than matched by name.
@@ -1656,8 +1665,10 @@ const REASON_WORDS = {
 };
 
 log(
-  `${history.length} plies, ${nameOf(1)} vs ${nameOf(2)}` +
-    (outcome ? `, winner ${nameOf(outcome.winnerId)} (${outcome.reason})` : ""),
+  `${history.length} plies, ${logName(1)} vs ${logName(2)}` +
+    (outcome
+      ? `, winner ${logName(outcome.winnerId)} (${outcome.reason})`
+      : ""),
 );
 
 /**
@@ -1759,7 +1770,7 @@ const attribute = () => {
 };
 
 const seats = attribute();
-log(`seats: top = ${nameOf(seats.top)}, bottom = ${nameOf(seats.bottom)}`);
+log(`seats: top = ${logName(seats.top)}, bottom = ${logName(seats.bottom)}`);
 
 const cardFor = (playerId) => cards[seats.top === playerId ? 0 : 1];
 
@@ -1889,7 +1900,7 @@ if (cached) {
 
     if (!accents[playerId]) {
       log(
-        `could not sample a colour for ${nameOf(playerId)}; falling back to neutral`,
+        `could not sample a colour for ${logName(playerId)}; falling back to neutral`,
       );
       accents[playerId] = [148, 163, 184];
     }
@@ -1898,7 +1909,7 @@ if (cached) {
 }
 log(
   `portraits captured; colours ${[1, 2]
-    .map((id) => `${nameOf(id)}=rgb(${accents[id].join(",")})`)
+    .map((id) => `${logName(id)}=rgb(${accents[id].join(",")})`)
     .join(", ")}`,
 );
 
@@ -1930,7 +1941,7 @@ for (const [playerId, color] of Object.entries(
 )) {
   if (!COLOR_CHECK[color](accents[playerId])) {
     throw new Error(
-      `${nameOf(Number(playerId))} should show ${color} but sampled rgb(${accents[playerId].join(",")}); the page did not use the forced seat colour`,
+      `${logName(Number(playerId))} should show ${color} but sampled rgb(${accents[playerId].join(",")}); the page did not use the forced seat colour`,
     );
   }
 }
@@ -7542,7 +7553,7 @@ const renderStyle = async (styleName) => {
   const introStart = elapsed;
   for (const w of INTRO_PLAN) {
     cueWalkTicks(w.points, introStart + w.start);
-    log(`intro path: ${side(w.player).name}, ${w.points.length - 1} steps`);
+    log(`intro path: ${logName(w.player)}, ${w.points.length - 1} steps`);
   }
   if (INTRO_PLAN.length > 0) {
     const last = INTRO_PLAN.at(-1);
