@@ -817,7 +817,8 @@ def run_label_audit(output_dir):
     """
     audit_script = Path(__file__).resolve().parent / "audit_labels.py"
     print(f"Auditing labels in {output_dir}...")
-    result = subprocess.run([sys.executable, str(audit_script), output_dir])
+    result = subprocess.run(
+        [sys.executable, str(audit_script), output_dir, "--channels", str(input_channels)])
     if result.returncode != 0:
         print(f"Error: label audit FAILED for {output_dir} (details above).")
         print("Training halted so corrupted labels are never trained on.")
