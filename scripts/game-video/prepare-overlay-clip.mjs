@@ -10,6 +10,9 @@
  *                              frame's border: the meme pack's screens are
  *                              not one green (Confetti's is dark, Stupid
  *                              Stamp's is lime; 2026-10-31)
+ *     [--crop W:H:X:Y]         cut the video's frame to this box first (a
+ *                              letterboxed clip: its black bars are not the
+ *                              screen, and auto measures the border)
  *     [--from <s>] [--to <s>]  the part of the video to keep (its own time)
  *     [--speed <x>]            play it x times as fast (sound too)
  *     [--audio own|none]       keep its sound as audio.wav (default own when
@@ -207,10 +210,11 @@ export const pngInfo = (bytes) => {
  * 0xRRGGBB (KEYS, or the one auto measured).
  * @param {{ input: string, out: string, key: string, from?: number,
  *   to?: number, speed?: number, fps: number, height: number,
- *   similarity: number, blend: number }} o
+ *   similarity: number, blend: number, crop?: string }} o
  */
 export const ffmpegArgs = (o) => {
   const filters = [
+    ...(o.crop ? [`crop=${o.crop}`] : []),
     ...(o.speed && o.speed !== 1 ? [`setpts=PTS/${o.speed}`] : []),
     `fps=${o.fps}`,
     `scale=-2:${o.height}:flags=lanczos`,
@@ -301,6 +305,7 @@ const main = () => {
       in: { type: "string" },
       dir: { type: "string" },
       key: { type: "string", default: "auto" },
+      crop: { type: "string" },
       from: { type: "string" },
       to: { type: "string" },
       speed: { type: "string", default: "1" },
@@ -337,6 +342,9 @@ const main = () => {
     }
     return v;
   };
+  if (a.crop !== undefined && !/^\d+:\d+:\d+:\d+$/.test(a.crop)) {
+    fail(`--crop must be W:H:X:Y in pixels, got ${JSON.stringify(a.crop)}`);
+  }
   const input = resolve(a.in);
   const sound = a.audio ?? (hasAudio(input) ? "own" : "none");
   if (sound !== "own" && sound !== "none") fail(`--audio must be own or none`);
@@ -344,6 +352,7 @@ const main = () => {
   const o = {
     input,
     key: a.key,
+    crop: a.crop,
     from: num("from", 0, 3600),
     to: num("to", 0, 3600),
     speed: num("speed", 0.25, 4),
@@ -368,7 +377,7 @@ const main = () => {
         "-i",
         input,
         "-vf",
-        `fps=${KEY_SAMPLES / span},scale=${w}:${h}:flags=area`,
+        `${o.crop ? `crop=${o.crop},` : ""}fps=${KEY_SAMPLES / span},scale=${w}:${h}:flags=area`,
         "-frames:v",
         String(KEY_SAMPLES),
         "-f",
@@ -546,6 +555,8 @@ const main = () => {
         input: basename(o.input),
         inputSha256: sha256(readFileSync(o.input)),
         key: o.key,
+        // Only when given: a clip made without one keeps its manifest bytes.
+        ...(o.crop ? { crop: o.crop } : {}),
         from: o.from ?? null,
         to: o.to ?? null,
         speed: o.speed,

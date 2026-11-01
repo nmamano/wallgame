@@ -429,6 +429,10 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       "this-is-fine-mouse",
       "scream-mouse",
       "stupid-stamp",
+      "gs-jjj-laugh",
+      "gs-confused-travolta",
+      "gs-terio-ooh",
+      "gs-crying-man",
     ]);
     for (const k of tied)
       expect([k, placesOf(OVERLAYS[k])]).toEqual([k, ["board"]]);

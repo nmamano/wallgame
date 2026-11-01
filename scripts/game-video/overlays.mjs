@@ -961,6 +961,110 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  /*
+    Four green-screen cut-outs from Nil's meme pack (Nil, 2026-11-01, CASES
+    C43: "Why don't you use the green screen memes i gave you ... so many
+    opportunities"; the Wall Game Director's picks). Each emotes a pawn,
+    like the-scream: beside it, with a ring and a tail in its seat's
+    colour. Keyed by prepare-overlay-clip.mjs, trimmed to the art; the
+    lines they go on are in meme-list.md.
+  */
+  "gs-jjj-laugh": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    // The whole clip: he laughs from the first frame to the last.
+    seconds: 2.9,
+    pawn: true,
+    size: { w: 0.36, h: 0.25 },
+    small: { w: 0.29, h: 0.2 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-jjj-laugh",
+      fps: 30,
+      frames: 87,
+      sha256:
+        "2a3ea0ed2ea2de3dff30544b9b5d8d0ae1e71f12a3ac9b470f2c0e5669fdc07c",
+      audio: true,
+    },
+    source:
+      "Nil's meme pack: Green Screen/Green Screen - Man Laughing Peter Parker.mp4 (J. K. Simmons as J. Jonah Jameson, Spider-Man, 2002), 0-2.9 s, its laugh kept",
+    claim: "HIGH: a film clip (Sony Pictures), with its audio",
+    likeness: "HIGH: a real actor's face",
+    nilOk: null,
+    rating: null,
+  },
+  "gs-confused-travolta": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    // He looks one way, then the other, and opens his hand.
+    seconds: 2.467,
+    pawn: true,
+    size: { w: 0.31, h: 0.3 },
+    small: { w: 0.25, h: 0.24 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-confused-travolta",
+      fps: 30,
+      frames: 74,
+      sha256:
+        "0590a21d6340cc67028bbeb8d2e07f4d64323d2bf214a09d85880f3c46c4e095",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Green Screen - Orang Bertanya Sendiri!!.mp4 (John Travolta, Pulp Fiction, 1994), letterbox cut (crop 844:674:218:22), 1.1-3.55 s, silent",
+    claim: "HIGH: a film clip (Miramax)",
+    likeness: "HIGH: a real actor's face",
+    nilOk: null,
+    rating: null,
+  },
+  "gs-terio-ooh": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 2.533,
+    pawn: true,
+    size: { w: 0.19, h: 0.41 },
+    small: { w: 0.15, h: 0.33 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-terio-ooh",
+      fps: 30,
+      frames: 76,
+      sha256:
+        "a7e2d693a75bdf47e4d1614385629c0b8f93f6cc12baaa415b845321febca608",
+    },
+    source:
+      "Nil's meme pack: Green Screen/Fat_Kid_Terio_In_Popeyes_Ooh_GREEN_SCREEN.mp4 (the 2014 \"ooh kill 'em\" Vine), 3.0-5.5 s; the pack's copy has no sound",
+    claim: "HIGH: a viral video of a private person",
+    likeness: "HIGH: a real child's face",
+    nilOk: null,
+    rating: null,
+  },
+  "gs-crying-man": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 2.5,
+    pawn: true,
+    size: { w: 0.3, h: 0.31 },
+    small: { w: 0.24, h: 0.25 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-crying-man",
+      fps: 30,
+      frames: 75,
+      sha256:
+        "ba4a9d269bbfa11e0fa0f4c457e49f81ee2df6f6c7e73fc868935b39b7c28d6a",
+      audio: true,
+    },
+    source:
+      "Nil's meme pack: Green Screen/crying green screen man.mp4, 5.0-7.5 s (his loudest sobbing), its sobbing kept",
+    claim: "HIGH: a viral video of a private person, with its audio",
+    likeness: "HIGH: a real person's face",
+    nilOk: null,
+    rating: null,
+  },
 };
 
 /** The pawn types an EDL names (shared/domain/pawns.ts PawnType). */

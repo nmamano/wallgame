@@ -309,3 +309,25 @@ describe("overlay clips", () => {
     expect(coverOver(grid, 2, 1, { x0: 1.2, y0: 0, x1: 1.5, y1: 1 })).toBe(0);
   });
 });
+
+describe("prepare-overlay-clip --crop", () => {
+  test("a letterboxed clip is cut to its picture first, before the key", () => {
+    const base = {
+      input: "in.mp4",
+      out: "out",
+      key: "0x00FF00",
+      fps: 30,
+      height: 540,
+      similarity: 0.15,
+      blend: 0.1,
+    };
+    const vf = (o: Record<string, unknown>) => {
+      const args = ffmpegArgs({ ...base, ...o });
+      return args[args.indexOf("-vf") + 1];
+    };
+    expect(vf({ crop: "844:674:218:22", speed: 2 })).toBe(
+      "crop=844:674:218:22,setpts=PTS/2,fps=30,scale=-2:540:flags=lanczos,chromakey=0x00FF00:0.15:0.1,despill=type=green,format=rgba",
+    );
+    expect(vf({})).not.toContain("crop");
+  });
+});
