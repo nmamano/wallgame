@@ -4762,6 +4762,38 @@ const renderStyle = async (styleName) => {
       });
     }
   };
+  /**
+   * The loading bar's ERROR starts on the first frame of the save's board
+   * (OVERLAY_FACTS rise), and the bar closes LOADING_ERROR_SECONDS later.
+   */
+  const startLoadingError = (w, boardIndex) => {
+    if (
+      w.asset.draw === "loading" &&
+      w.end === null &&
+      boardIndex >= OVERLAY_FACTS.get(w.ev).rise
+    ) {
+      w.end = elapsed + LOADING_ERROR_SECONDS;
+      w.errorAt = elapsed;
+    }
+  };
+  /**
+   * Open the overlays of a ply. On the save's ply, the loading bar shows
+   * its ERROR: they wait until it closes, so the ERROR is read in full and
+   * one overlay shows at a time (v-2026-10-31-4 ply 13-14 stopped with
+   * overlay-overlap).
+   */
+  const openPlyOverlays = async (ply, plyIndex) => {
+    const overlays = plyOverlays(plyIndex);
+    const live = liveOverlay();
+    if (overlays.length > 0 && live?.asset.draw === "loading") {
+      startLoadingError(live, ply);
+      const rest = live.end === null ? 0 : live.end - elapsed;
+      if (rest > 0.5 / FPS) {
+        await emit(playState(ply), rest, { kind: "move", ply: plyIndex });
+      }
+    }
+    overlays.forEach(openOverlay);
+  };
   /** Close the live overlay now (the ending, or the end of a preview). */
   const closeOverlay = () => {
     const live = liveOverlay();
@@ -4781,10 +4813,7 @@ const renderStyle = async (styleName) => {
       return null;
     }
     const facts = OVERLAY_FACTS.get(w.ev);
-    if (w.asset.draw === "loading" && w.end === null && b >= facts.rise) {
-      w.end = elapsed + LOADING_ERROR_SECONDS;
-      w.errorAt = elapsed;
-    }
+    startLoadingError(w, b);
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
@@ -7032,14 +7061,20 @@ const renderStyle = async (styleName) => {
       if (fxHides.has(ev)) fault("mark-covers-pawn", plyIndex, fxHides.get(ev));
       if (ev.sound) {
         const sound = meme(ev.sound);
-        // A stamp's sound lands with its word.
+        // A stamp's or trap's sound lands with its word (-12 vet, 2026-10-31:
+        // the trap's sting-1 started 0.4 s before TRAPPED appeared).
         cueEvent(
           {
             ...sound,
             gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
           },
           ev,
-          elapsed + (ev.kind === "stamp" ? STAMP_LAND_AT : 0),
+          elapsed +
+            (ev.kind === "stamp"
+              ? STAMP_LAND_AT
+              : ev.kind === "trap"
+                ? TRAP_STAMP_AT
+                : 0),
         );
       }
       if (ev.kind === "sound") {
@@ -7127,7 +7162,7 @@ const renderStyle = async (styleName) => {
       spanOf(ev, start);
       // After the ply's last trap: its word has shown (hasTrap).
       if (ev === landing.findLast((e) => e.kind === "trap")) {
-        plyOverlays(plyIndex).forEach(openOverlay);
+        await openPlyOverlays(ply, plyIndex);
       }
     }
     if (!endsInZoom) {
@@ -7306,7 +7341,7 @@ const renderStyle = async (styleName) => {
         closeOverlay();
       }
       // On a trap's ply they open after its word (playEvents).
-      if (!hasTrap(plyIndex)) plyOverlays(plyIndex).forEach(openOverlay);
+      if (!hasTrap(plyIndex)) await openPlyOverlays(ply, plyIndex);
     }
     /*
       The tick takes its time from a plain move's hold, leaving that hold
