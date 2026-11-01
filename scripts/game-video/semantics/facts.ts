@@ -160,6 +160,13 @@ export interface PlyFacts {
    * result's winner and reason (SemanticGame.result).
    */
   end: { winner: PlayerId | null; reason: string } | null;
+  /**
+   * After this move the other side has no legal reply that keeps every
+   * animal the mover hunts out of one turn's reach (more than CAPTURE_REACH
+   * steps) or wins at once: the mover captures next move unless it errs
+   * (noSafeReply). False on the move that ends the game.
+   */
+  noEscape: boolean;
 }
 
 export interface GameFacts {
@@ -208,6 +215,90 @@ const walksAfter = (state: GameState, notation: string): number[] | null => {
   } catch {
     return null;
   }
+};
+
+/** A cat this close reaches its prey in one turn of two steps. */
+export const CAPTURE_REACH = 2;
+
+/**
+ * Whether the side to move in `state` has no reply after which every animal
+ * hunt of `mover` needs more than CAPTURE_REACH steps, and no reply that wins
+ * at once. Tries every move of one or two actions: walls, and steps of one or
+ * two of its pawns (a two-step move is one action in the notation).
+ */
+export const noSafeReply = (state: GameState, mover: PlayerId): boolean => {
+  if (state.status === "finished") return false;
+  const hunts = huntsFor(state.config.variant);
+  const reach = hunts.flatMap((h, i) =>
+    h.hunter.player === mover && h.target.type !== "home" ? [i] : [],
+  );
+  const caught = (walks: number[]) =>
+    reach.some((i) => walks[i] <= CAPTURE_REACH);
+  // Walls never shorten a walk, so with no hunt in reach any wall is safe.
+  if (!caught(huntWalks(state))) return false;
+  const height = state.config.boardHeight;
+  const width = state.config.boardWidth;
+  const defender = state.turn;
+  const cells: Cell[] = [];
+  for (let r = 0; r < height; r++)
+    for (let c = 0; c < width; c++) cells.push([r, c]);
+  const name = (c: Cell) => cellToStandardNotation(c, height);
+  const walls = cells.flatMap((c) => [`>${name(c)}`, `^${name(c)}`]);
+  const pawns = (["cat", "mouse", "dog", "elephant"] as GamePawnType[])
+    .map((type) => ({ type, at: pawnCell(state.pawns, defender, type) }))
+    .filter((p): p is { type: GamePawnType; at: Cell } => p.at !== undefined);
+  const letter: Record<string, string> = {
+    cat: "C",
+    mouse: "M",
+    dog: "D",
+    elephant: "E",
+  };
+  const targetsOf = (p: { type: GamePawnType; at: Cell }) =>
+    cells
+      .filter(
+        (c) =>
+          Math.abs(c[0] - p.at[0]) + Math.abs(c[1] - p.at[1]) <= 2 &&
+          (c[0] !== p.at[0] || c[1] !== p.at[1]),
+      )
+      .map((c) => `${letter[p.type]}${name(c)}`);
+  const pawnSteps = pawns.map(targetsOf);
+  const safe = (notation: string): boolean => {
+    let next: GameState;
+    try {
+      next = state.applyGameAction({
+        kind: "move",
+        move: moveFromStandardNotation(notation, height),
+        playerId: defender,
+        timestamp: 0,
+      });
+    } catch {
+      return false;
+    }
+    if (next.status === "finished") return next.result?.winner === defender;
+    return !caught(huntWalks(next));
+  };
+  const steps = pawnSteps.flat();
+  const moves = function* (): Generator<string> {
+    yield* steps;
+    yield* walls;
+    for (const s of steps)
+      for (const w of walls) {
+        yield `${s}.${w}`;
+        yield `${w}.${s}`;
+      }
+    for (let a = 0; a < pawnSteps.length; a++)
+      for (let b = a + 1; b < pawnSteps.length; b++)
+        for (const s of pawnSteps[a])
+          for (const t of pawnSteps[b]) {
+            yield `${s}.${t}`;
+            yield `${t}.${s}`;
+          }
+    for (let a = 0; a < walls.length; a++)
+      for (let b = a + 1; b < walls.length; b++)
+        yield `${walls[a]}.${walls[b]}`;
+  };
+  for (const m of moves()) if (safe(m)) return false;
+  return true;
 };
 
 /** Steps from `start` to every cell it reaches through `grid`. */
@@ -364,6 +455,7 @@ export const gameFacts = (
       end: ended
         ? { winner: game.result.winner ?? null, reason: game.result.reason }
         : null,
+      noEscape: !ended && noSafeReply(after, mover),
     };
   });
   return {

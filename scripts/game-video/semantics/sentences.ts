@@ -219,6 +219,13 @@ export const factsOf = (
       `The wall ${l.ownWall.wall} between ${names[f.mover]}'s cat and the mouse is ${names[f.mover]}'s own, placed on move ${siteMoveNumber(l.ownWall.ply)}.`,
     );
   }
+  if (f.noEscape) {
+    const other: PlayerId = f.mover === 1 ? 2 : 1;
+    add(
+      "noescape",
+      `After this move ${names[other]} has no move that keeps the mouse out of the cat's reach: ${names[f.mover]} can capture on the next move (a trap).`,
+    );
+  }
   if (l.huh) {
     const who = names[f.mover];
     add(

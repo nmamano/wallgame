@@ -33,6 +33,8 @@ interface PlySpec {
   end?: boolean;
   /** A move of walls only: no pawn step. */
   noStep?: boolean;
+  /** The other side has no reply that stops a capture next move. */
+  noEscape?: boolean;
 }
 
 const hunt = (
@@ -107,6 +109,7 @@ const gameOf = (
       ],
       engine,
       end: s.end ? { winner: mover, reason: "capture" } : null,
+      noEscape: s.noEscape ?? false,
     };
   }),
 });
@@ -333,6 +336,39 @@ describe("huh (C43)", () => {
       { w1: [5, 5], w2: [4, 4], walls: ["^a1", "^b1"], noStep: true },
     ]);
     expect(far.plies[0].tags).not.toContain("huh");
+  });
+});
+
+describe("trap-closes on the board (Director, 2026-11-01)", () => {
+  test("the move after which the other side first has no safe reply", () => {
+    const l = labels([
+      { w1: [5, 3], w2: [8, 8] },
+      { w1: [3, 3], w2: [8, 8] },
+      { w1: [3, 1], w2: [8, 8], noEscape: true },
+      { w1: [1, 1], w2: [8, 8] },
+    ]);
+    expect(l.plies[2].label).toBe("trap-closes");
+    expect(l.plies[2].tags).toContain("no-escape");
+    expect(l.plies[0].tags).not.toContain("no-escape");
+  });
+
+  test("a trap that was already closed is not closed again", () => {
+    const l = labels([
+      { w1: [3, 1], w2: [8, 8], noEscape: true },
+      { w1: [1, 1], w2: [8, 8] },
+      { w1: [1, 1], w2: [8, 8], noEscape: true },
+    ]);
+    expect(l.plies[0].label).toBe("trap-closes");
+    expect(l.plies[2].tags).not.toContain("no-escape");
+  });
+
+  test("JbpdRM9D: the cat on f2, the only way out of g2, closes it (ply 20)", () => {
+    const l = fixtureLabels("JbpdRM9D");
+    const closed = l.plies.filter((p) => p.tags.includes("no-escape"));
+    expect(closed.map((p) => p.ply)).toEqual([20]);
+    expect(l.plies[20].label).toBe("trap-closes");
+    // Ply 15: the cat 1 from the mouse, but the bot walls it off.
+    expect(l.plies[15].tags).not.toContain("no-escape");
   });
 });
 
@@ -650,8 +686,12 @@ describe("fixtures: what a move means", () => {
     const l = fixtureLabels("8FroT1GU");
     expect(l.plies[44].label).toBe("capture");
     // The engine crosses 90% on a move that swings it by under 15 points:
-    // nothing a viewer sees, so no trap-closes and no sealed-capture link.
-    expect(l.plies.filter((p) => p.label === "trap-closes")).toEqual([]);
+    // nothing a viewer sees, so no seal and no sealed-capture link. The trap
+    // on the board closes at ply 42 (the cat's Cf2), two plies before.
+    expect(
+      l.plies.filter((p) => p.label === "trap-closes").map((p) => p.ply),
+    ).toEqual([42]);
+    expect(l.plies[42].tags).toContain("no-escape");
     expect(l.links.filter((k) => k.kind === "sealed-capture")).toEqual([]);
     expect(l.plies.filter((p) => p.ply > 7 && p.tags.includes("turn"))).toEqual(
       [],
@@ -752,7 +792,10 @@ describe("the race and its moments (2Xnv0iiY, engine of 2026-10-31; C36)", () =>
 
   test("a save by the race: the bot's ^g1 at G0Oa_TzU ply 31", () => {
     const g = fixtureLabels("G0Oa_TzU");
-    expect(g.plies[31].label).toBe("save");
+    // It also leaves the guest no reply that stops the capture: the trap
+    // label outranks the save, which stays a tag.
+    expect(g.plies[31].label).toBe("trap-closes");
+    expect(g.plies[31].tags).toContain("save");
     expect(g.plies[31].tags).toContain("race-save");
     expect(g.plies[31].raceWinner).toEqual({ plainStep: 1, played: 2 });
     // The opening wall war flips the walk-only race too, far from the end.

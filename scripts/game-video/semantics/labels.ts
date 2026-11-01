@@ -56,7 +56,8 @@ export type Tag =
   | "own-wall"
   | "dodge"
   | "race-save"
-  | "huh";
+  | "huh"
+  | "no-escape";
 
 /**
  * huh (Director, 2026-11-01, C43, the confused-Travolta clip: "when the
@@ -685,6 +686,19 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     }
 
     fit(ply, "quiet", 0, moved);
+  });
+
+  // A trap on the board (Director, 2026-11-01, DIRECTOR.md FORCED CAPTURE;
+  // JbpdRM9D ply 20, RkLlIxBI ply 48): after the move the other side has no
+  // reply that stops a capture next move (noEscape), and after the mover's
+  // move before it, it had one. A cat step or walls; the tag no-escape tells
+  // this rule from the engine's seal below, and a meme that needs "made by a
+  // wall" reads the move's walls.
+  plies.forEach((f, ply) => {
+    if (!f.noEscape || plies[ply - 2]?.noEscape) return;
+    const h = largest(own(f).filter(isAnimal), (x) => -x.after) ?? f.hunts[0];
+    fit(ply, "trap-closes", 0.8, h);
+    tags[ply].push("no-escape");
   });
 
   // The winner's move that seals the game: from it on, the winner stays at

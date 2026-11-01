@@ -1,0 +1,93 @@
+{
+  "note": "JbpdRM9D (Normal Bot vs Guest Manatee, 2026-08-15) with the dw-transformer engine of 2026-11-01: the board trap at ply 20 (Director, 2026-11-01).",
+  "game": {
+    "gameId": "JbpdRM9D",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": { "cat": [5, 0], "mouse": [6, 1] },
+        "p2": { "cat": [5, 7], "mouse": [6, 6] }
+      },
+      "walls": [
+        { "cell": [1, 1], "orientation": "horizontal" },
+        { "cell": [1, 3], "orientation": "horizontal" },
+        { "cell": [1, 4], "orientation": "horizontal" },
+        { "cell": [1, 6], "orientation": "horizontal" },
+        { "cell": [4, 0], "orientation": "vertical" },
+        { "cell": [4, 6], "orientation": "vertical" }
+      ]
+    },
+    "moves": [
+      "Cc3",
+      "Cf3",
+      "Ce3",
+      "Cd3",
+      "Cg3",
+      "Cc3.^g2",
+      ">b3.^c2",
+      "Cd2",
+      ">c2.>c1",
+      "Cc3",
+      "Ch2",
+      "Cc4.>g2",
+      "Cg1",
+      "^f1.^g1",
+      "Ce1",
+      "Cb3",
+      ">a3.^b2",
+      "Cb5",
+      ">a5.^b5",
+      "Cc6",
+      "Cf2",
+      "Mf3",
+      "Cf3"
+    ],
+    "seats": [
+      { "playerOrder": 1, "kind": "official bot", "name": "Normal Bot" },
+      { "playerOrder": 2, "kind": "guest", "name": "Guest Manatee" }
+    ],
+    "result": { "winner": 1, "reason": "capture" }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.41270941495895386, 0.4434850513935089, 0.4376024305820465,
+      0.24248507618904114, 0.5254284143447876, -0.555854320526123,
+      -0.5149173736572266, -0.5449464321136475, 0.6375730633735657,
+      0.6601415276527405, 0.7700921893119812, 0.6473111510276794,
+      0.8770806789398193, 0.5416690111160278, 0.6030616164207458,
+      -0.5500823855400085, 0.4839143455028534, 0.6095220446586609,
+      0.8773197531700134, 0.642204225063324, 0.9015752077102661,
+      0.9904406666755676, 0.9999849200248718, 0.9999526739120483
+    ],
+    "bestMoves": [
+      ">g3.^h2",
+      "Cg3.>d3",
+      "Cd3.>c1",
+      "Ce3.>e3",
+      ">c3.>c2",
+      "^g2.Cc3",
+      "^b2.^c2",
+      ">f3.^h2",
+      ">c2.>c1",
+      ">f3.>g3",
+      "^c3.^d3",
+      ">g2.^h1",
+      ">f2.>f1",
+      ">f1.^g1",
+      ">b4.^c4",
+      "Cb4.^a3",
+      ">a3.^b2",
+      ">e2.^e1",
+      "Ce2.^f2",
+      ">d1.^e1",
+      "Ce2.^f2",
+      "Ca6",
+      "Cf3",
+      "Cb6"
+    ],
+    "finalFromResult": false
+  }
+}

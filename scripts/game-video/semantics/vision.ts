@@ -89,6 +89,8 @@ const VISIBLE: Partial<Record<string, string>> = {
   standoff: "cat and mouse on next-door cells with a wall between them",
   capture: "the cat and the mouse meeting on one cell",
   home: "the cat reaching its home",
+  "no-escape":
+    "the mouse's last way out closed: the cat on its only open side, or new walls that shut it, so every way the mouse can go is in the cat's reach",
   huh: "the better move the mover leaves: a cat that can reach the mouse, a mouse that can step out of the cat's reach, or new walls that change no counter",
 };
 
