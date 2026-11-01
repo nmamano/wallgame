@@ -323,11 +323,15 @@ has a sponge bob voice line, no? add it."
   risk (Nickelodeon): Nil asked for it, so it is OK'd for -15 v4.
 - rewind-1: ours, made with ffmpeg (no input): two rising tones with a fast
   flutter and a little noise, a tape-rewind whir.
+- forward-1: ours, the same recipe higher and shorter, the fast-forward
+  back to now (Wall Game Director, 2026-11-01: without it the flashback's
+  past and forward ran 2.2 s quiet).
 
-| Key        | Made from         | Length | Command (ffmpeg)                                                                                                                                                                                                                                                     |
-| ---------- | ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| eternity-1 | the pack's video  | 1.9 s  | `-ss 198.29 -to 200.17 -i <video> -vn -af "afade=t=in:st=0:d=0.01,afade=t=out:st=1.82:d=0.06"`                                                                                                                                                                       |
-| rewind-1   | ffmpeg (no input) | 1.1 s  | `-f lavfi -i "aevalsrc='0.35*sin(2*PI*(260*t+900*t*t))*(0.55+0.45*sin(2*PI*31*t))+0.25*sin(2*PI*(520*t+1800*t*t))*(0.5+0.5*sin(2*PI*47*t))+0.12*(random(0)-0.5)':s=44100:d=1.1" -af "highpass=f=180,lowpass=f=6000,afade=t=in:st=0:d=0.04,afade=t=out:st=0.9:d=0.2"` |
+| Key        | Made from         | Length | Command (ffmpeg)                                                                                                                                                                                                                                                      |
+| ---------- | ----------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| eternity-1 | the pack's video  | 1.9 s  | `-ss 198.29 -to 200.17 -i <video> -vn -af "afade=t=in:st=0:d=0.01,afade=t=out:st=1.82:d=0.06"`                                                                                                                                                                        |
+| forward-1  | ffmpeg (no input) | 0.8 s  | `-f lavfi -i "aevalsrc='0.35*sin(2*PI*(420*t+1600*t*t))*(0.55+0.45*sin(2*PI*43*t))+0.25*sin(2*PI*(840*t+3200*t*t))*(0.5+0.5*sin(2*PI*61*t))+0.12*(random(0)-0.5)':s=44100:d=0.8" -af "highpass=f=180,lowpass=f=7000,afade=t=in:st=0:d=0.03,afade=t=out:st=0.6:d=0.2"` |
+| rewind-1   | ffmpeg (no input) | 1.1 s  | `-f lavfi -i "aevalsrc='0.35*sin(2*PI*(260*t+900*t*t))*(0.55+0.45*sin(2*PI*31*t))+0.25*sin(2*PI*(520*t+1800*t*t))*(0.5+0.5*sin(2*PI*47*t))+0.12*(random(0)-0.5)':s=44100:d=1.1" -af "highpass=f=180,lowpass=f=6000,afade=t=in:st=0:d=0.04,afade=t=out:st=0.9:d=0.2"`  |
 
 Each is written with `-c:a libmp3lame -b:a 128k -ar 44100 -ac 2`.
 

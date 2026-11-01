@@ -121,6 +121,9 @@ export const MEME_SOUNDS = {
   // whir for the flashback (meme-sounds.md).
   "eternity-1": { lufs: -17.5, truePeak: -4.8 },
   "rewind-1": { lufs: -13.0, truePeak: -8.1 },
+  // Its fast-forward (Wall Game Director, 2026-11-01), ours, measured that
+  // day (meme-sounds.md).
+  "forward-1": { lufs: -13.3, truePeak: -7.5 },
 };
 
 /**
@@ -173,6 +176,7 @@ export const MEME_FAMILIES = {
   fightbell: "the VS card",
   eternity: "the eternity-later card's own voice",
   rewind: "the flashback: the board plays back",
+  forward: "the flashback: the board plays forward to now",
 };
 
 /**

@@ -199,7 +199,9 @@
  *             pair of plies), toPly's walls land again in their colour on
  *             the sepia board, `wall` with the plant's glow;
  *             FORWARD: ">>", the board plays forward to now, its colour
- *             back; NOW: `wall` glows on this board, with `nowSound`.
+ *             back, with `forwardSound` (a fast-forward whir: without it
+ *             the past and the forward ran 2.2 s quiet, -15 v4); NOW:
+ *             `wall` glows on this board, with `nowSound`.
  *             The counters and the evaluation strip follow the positions
  *             shown; the caption holds until NOW. It plays before the
  *             ply's other events, alone: not with an explain, a freeze, a
@@ -500,17 +502,17 @@ const KIND_FIELDS = {
   ],
   explain: ["hunter", "label", "expect", "callback"],
   plant: ["wall"],
-  flashback: ["toPly", "wall", "nowSound"],
+  flashback: ["toPly", "wall", "forwardSound", "nowSound"],
 };
 /**
  * The meme sounds an event plays, in order: its `sound`, and a flashback's
- * `nowSound`. Every reader of a list's sounds goes through it (the claim
- * risk, the repeats), so none misses the second one.
- * @param {{ sound?: string | null, nowSound?: string }} ev
+ * `forwardSound` and `nowSound`. Every reader of a list's sounds goes
+ * through it (the claim risk, the repeats), so none misses one.
+ * @param {{ sound?: string | null, forwardSound?: string, nowSound?: string }} ev
  * @returns {string[]}
  */
 export const eventSoundKeys = (ev) =>
-  [ev.sound, ev.nowSound].filter((k) => typeof k === "string");
+  [ev.sound, ev.forwardSound, ev.nowSound].filter((k) => typeof k === "string");
 
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
@@ -1190,10 +1192,10 @@ export const validateEdl = (raw) => {
         if (!isPly(ev.toPly) || !(ev.toPly < ev.ply)) {
           fail(`${where}: toPly must be a ply before ${ev.ply}`);
         }
-        if (ev.nowSound !== undefined && !(ev.nowSound in MEME_SOUNDS)) {
-          fail(
-            `${where}: nowSound ${JSON.stringify(ev.nowSound)} is not known`,
-          );
+        for (const key of ["forwardSound", "nowSound"]) {
+          if (ev[key] !== undefined && !(ev[key] in MEME_SOUNDS)) {
+            fail(`${where}: ${key} ${JSON.stringify(ev[key])} is not known`);
+          }
         }
       }
       if (ev.kind === "path") {

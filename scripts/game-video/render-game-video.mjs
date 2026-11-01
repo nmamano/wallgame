@@ -7065,8 +7065,9 @@ const renderStyle = async (styleName) => {
         meta,
       );
     }
-    // 4. FORWARD: on to now, the colour coming back; the old walls' light
-    // goes out as the board moves on.
+    // 4. FORWARD: on to now, the colour coming back, with its whir; the
+    // old walls' light goes out as the board moves on.
+    if (ev.forwardSound) cueEvent(meme(ev.forwardSound), ev);
     const fwd = frames(FLASHBACK_FORWARD_SECONDS);
     for (let i = 0; i < fwd; i += 1) {
       const f = (i + 1) / fwd;

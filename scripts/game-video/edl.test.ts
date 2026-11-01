@@ -378,6 +378,7 @@ describe("checkEdlAgainstGame", () => {
       toPly: 1,
       wall: "^h4",
       sound: "rewind-1",
+      forwardSound: "forward-1",
       nowSound: "clang-1",
       ...over,
     });
@@ -392,6 +393,9 @@ describe("checkEdlAgainstGame", () => {
       ['events[0]: nowSound "nope-1" is not known'],
     );
     expect(
+      errorsOf({ ...base, events: [fb({ forwardSound: "nope-1" })] }),
+    ).toEqual(['events[0]: forwardSound "nope-1" is not known']);
+    expect(
       errorsOf({
         ...base,
         events: [fb(), { ply: 3, kind: "freeze" }],
@@ -400,7 +404,7 @@ describe("checkEdlAgainstGame", () => {
       "ply 3 has a flashback and a freeze; the flashback is the ply's explanation, so use it alone",
     ]);
     // Every reader of a list's sounds sees both of its sounds.
-    expect(eventSoundKeys(fb())).toEqual(["rewind-1", "clang-1"]);
+    expect(eventSoundKeys(fb())).toEqual(["rewind-1", "forward-1", "clang-1"]);
     expect(eventSoundKeys({ sound: "slam-1" })).toEqual(["slam-1"]);
   });
 
