@@ -13,6 +13,7 @@ import { join } from "node:path";
 import {
   CHECKPOINTS,
   graphReason,
+  keepNumbers,
   mergeReads,
   refreshDue,
   META_INSIGHTS,
@@ -798,5 +799,51 @@ describe("metaTokenCheck", () => {
     expect(down.text).toBe(
       "Saved, but the test read (Graph /me) did not finish (TypeError).",
     );
+  });
+});
+
+describe("keepNumbers (Wall Game Reviewer 1, M1)", () => {
+  test("a refused read keeps a post's last numbers and shows the refusal; nothing goes to the history", () => {
+    const good = {
+      views: 40,
+      likes: null,
+      comments: 1,
+      shares: 0,
+      saves: null,
+      reach: 30,
+      quotes: null,
+      at: ago(5),
+    };
+    const refused = {
+      views: null,
+      likes: null,
+      comments: null,
+      shares: null,
+      saves: null,
+      reach: null,
+      quotes: null,
+      note: "instagram story insights: HTTP 400 code 4",
+      at: ago(0),
+    };
+    const fresh = {
+      "instagram-story S": refused,
+      "x X": { ...good, at: ago(0) },
+    };
+    const { kept, recorded } = keepNumbers(
+      { "instagram-story S": good, "instagram-story T": good },
+      fresh,
+    );
+    expect(kept["instagram-story S"]).toEqual({
+      ...good,
+      partial: "last read refused: instagram story insights: HTTP 400 code 4",
+      refusedAt: ago(0),
+    });
+    expect(kept["instagram-story T"]).toEqual(good);
+    expect(kept["x X"]).toMatchObject({ views: 40 });
+    expect(Object.keys(recorded)).toEqual(["x X"]);
+    // With no earlier numbers, the refused row is kept as it is (its note).
+    const first = keepNumbers({}, { "instagram-story S": refused });
+    expect(first.kept["instagram-story S"]).toEqual(refused);
+    expect(first.recorded).toEqual({});
   });
 });

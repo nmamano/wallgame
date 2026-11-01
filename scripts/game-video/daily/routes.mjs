@@ -126,6 +126,7 @@ import {
   META_INSIGHTS,
   metaTokenCheck,
   readPostStats,
+  keepNumbers,
   mergeReads,
   postsDue,
   refreshDue,
@@ -1278,15 +1279,16 @@ export const createDaily = ({
           { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
           due,
         );
+        const { kept, recorded } = keepNumbers(cached.numbers, fresh.numbers);
         writeFileSync(
           postStatsPath,
           JSON.stringify({
             reads: mergeReads(cached.reads, fresh.reads, refreshed),
-            numbers: { ...cached.numbers, ...fresh.numbers },
+            numbers: kept,
           }),
         );
-        postStatsHistory.record(fresh.numbers);
-        postCheckpoints.record(fresh.numbers, posts);
+        postStatsHistory.record(recorded);
+        postCheckpoints.record(recorded, posts);
       } catch (err) {
         console.warn(`post stats: not recorded: ${err?.message ?? err}`);
       } finally {

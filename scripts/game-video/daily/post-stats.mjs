@@ -637,6 +637,52 @@ export const mergeReads = (cached, fresh, refreshed) =>
     }),
   );
 
+/** The numbers fields of a post, in one list. */
+const METRIC_KEYS = [
+  "views",
+  "likes",
+  "comments",
+  "shares",
+  "saves",
+  "reach",
+  "quotes",
+];
+
+/**
+ * The numbers to keep after a run, and the ones to record in the history.
+ * A post refused this time (a note and no number at all, e.g. a refused
+ * Story) keeps its last numbers, with the refusal as `partial` and
+ * `refusedAt`, so a refused last read of a Story does not lose its final
+ * numbers (Wall Game Reviewer 1, M1). Only a fresh entry with a number goes
+ * to the history and the checkpoints.
+ * @param {Record<string, any>} cached
+ * @param {Record<string, any>} fresh
+ */
+export const keepNumbers = (cached, fresh) => {
+  const kept = { ...cached };
+  /** @type {Record<string, any>} */
+  const recorded = {};
+  for (const [key, n] of Object.entries(fresh)) {
+    const none = METRIC_KEYS.every((m) => n[m] === null || n[m] === undefined);
+    const before = cached[key];
+    const hadAny =
+      before && METRIC_KEYS.some((m) => typeof before[m] === "number");
+    if (none && n.note && hadAny) {
+      // An old fallback row keeps its own `note` (views missing), which
+      // the page shows before the partial.
+      kept[key] = {
+        ...before,
+        partial: `last read refused: ${n.note}`,
+        refusedAt: n.at,
+      };
+      continue;
+    }
+    kept[key] = n;
+    if (!none) recorded[key] = n;
+  }
+  return { kept, recorded };
+};
+
 /**
  * Read the due posts (postsDue), one platform after the other. A platform
  * with no post to read is not asked (no X bill), but TikTok is: its read
