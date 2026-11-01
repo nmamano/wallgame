@@ -91,7 +91,7 @@ const VISIBLE: Partial<Record<string, string>> = {
   home: "the cat reaching its home",
   "no-escape":
     "the mouse's last way out closed: the cat on its only open side, or new walls that shut it, so every way the mouse can go is in the cat's reach",
-  huh: "the better move the mover leaves: a cat that can reach the mouse, a mouse that can step out of the cat's reach, or new walls that change no counter",
+  huh: "the odd move: a cat that can reach the mouse and does not, a mouse left in or stepping into the cat's reach, or a player's cat standing on that player's own mouse",
 };
 
 /** The claims of one labelled ply, in words a picture can be checked on. */

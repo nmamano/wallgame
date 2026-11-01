@@ -1,0 +1,94 @@
+{
+  "note": "Stored game NxKhTj4H with its engine scores (dw-transformer, 2026-10-31); a regression fixture by game id and ply only.",
+  "game": {
+    "gameId": "NxKhTj4H",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": { "cat": [0, 1], "mouse": [4, 1] },
+        "p2": { "cat": [0, 6], "mouse": [4, 6] }
+      },
+      "walls": [
+        { "cell": [0, 3], "orientation": "vertical" },
+        { "cell": [2, 2], "orientation": "vertical" },
+        { "cell": [2, 4], "orientation": "vertical" },
+        { "cell": [5, 3], "orientation": "horizontal" },
+        { "cell": [5, 4], "orientation": "horizontal" },
+        { "cell": [6, 0], "orientation": "horizontal" },
+        { "cell": [6, 7], "orientation": "horizontal" }
+      ]
+    },
+    "moves": [
+      ">c4.Cb7",
+      "Mg6",
+      "^b4.^c4",
+      "Mg8",
+      "^a4.^g5",
+      "Cg6",
+      "Cd7",
+      "Mg6",
+      "Cf7",
+      ">f6.^g6",
+      "Ch7",
+      ">g7.^h6",
+      ">e8.>e7",
+      "Mh5",
+      "Cg8",
+      "Ch5",
+      "^g4.^h4",
+      "Cf5",
+      "^e4.^f4",
+      "Cd5",
+      "Cf7",
+      "Mf5",
+      "Cf5"
+    ],
+    "seats": [
+      { "playerOrder": 1, "kind": "official bot", "name": "Normal Bot" },
+      { "playerOrder": 2, "kind": "guest", "name": "Guest Dingo" }
+    ],
+    "result": { "winner": 1, "reason": "capture" }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      -0.29456669092178345, -0.37108728289604187, 0.4144020080566406,
+      0.5315142273902893, 0.5706483125686646, 0.5492830276489258,
+      0.596603512763977, 0.5753495693206787, 0.7749528288841248,
+      0.8758082389831543, 0.8192799687385559, 0.26802757382392883,
+      0.5520023703575134, 0.6348244547843933, 0.6813401579856873,
+      0.6956008076667786, 0.7715433835983276, 0.8336248993873596,
+      0.8645079135894775, 0.8276069164276123, 0.8835347890853882,
+      0.9051523208618164, 0.9962809085845947, 1
+    ],
+    "bestMoves": [
+      "Mb5.>c5",
+      ">e5.>e4",
+      "^b4.^c4",
+      ">e5.>e4",
+      "^a4.^g5",
+      ">d7.^e6",
+      "^f5.^h5",
+      ">d7.^d6",
+      "Cf7",
+      ">f7.^f6",
+      "^h5.Cg7",
+      "^f5.^h6",
+      ">e8.>e7",
+      ">f5.>f4",
+      "^g4.^h4",
+      ">f5.>f4",
+      "^g4.^h4",
+      "^a6.^h1",
+      "^e4.^f4",
+      "Mh6.^h1",
+      "Cf7",
+      "Mg6",
+      "Cf5",
+      "Me5"
+    ],
+    "finalFromResult": false
+  }
+}

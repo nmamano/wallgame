@@ -57,7 +57,20 @@ export type Tag =
   | "dodge"
   | "race-save"
   | "huh"
-  | "no-escape";
+  | "no-escape"
+  | "strong-threat"
+  | "weak-threat";
+
+/**
+ * The threat split (2026-11-01; measured over 30 games the same day: 122
+ * threats). On a threat, from facts.ts defence:
+ * - strong-threat: only a full turn answers it (two-actions), or nothing
+ *   does (no-answer). 22 of 122; the engine gives the threat's side 99% (median).
+ * - weak-threat: the other side captures first (wins-first). 6 of 122; the
+ *   engine gives the threat's side 1% (median). A cheer meme never goes here.
+ * A threat that one action answers (a step or one wall, 94 of 122) has
+ * neither tag.
+ */
 
 /**
  * huh (Director, 2026-11-01, C43, the confused-Travolta clip: "when the
@@ -68,16 +81,23 @@ export type Tag =
  * - ignored-threat: a cat is within 2 of the mover's mouse both before and
  *   after, the mouse stays put, and the engine's best move steps the mouse
  *   out of reach (ZZi1Fjp_ ply 62). Needs the engine.
- * - idle-walls: a move of walls only that changes no walk while a cat is
- *   within HUH_NEAR of a mouse.
- * `walk` is the closest such walk before the move.
+ * - mouse-into-reach: the mover's own mouse steps from out of the cat's
+ *   reach into it (NxKhTj4H ply 21, C28: "a doomed run").
+ * - cat-on-own-mouse: the mover's cat and mouse end on one cell, and did not
+ *   start on one (NxKhTj4H plies 3, 7, 15, C28: "his cat stands on his
+ *   mouse's square").
+ * `walk` is the closest such walk (for mouse-into-reach, after the move).
+ * Walls that change no counter are no huh (C45, X-TQBFZA ply 11: Nil "didn't
+ * make sense"): the board shows nothing odd.
  */
 export interface Huh {
-  kind: "missed-capture" | "ignored-threat" | "idle-walls";
+  kind:
+    | "missed-capture"
+    | "ignored-threat"
+    | "mouse-into-reach"
+    | "cat-on-own-mouse";
   walk: number;
 }
-/** idle-walls counts only with a cat this close to a mouse. */
-export const HUH_NEAR = 3;
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -226,10 +246,13 @@ const tempo = (r: RaceState): number | null => {
  * Who wins the race if both sides only walk from here, two steps a move: the
  * side to move needs ceil(walk / 2) moves and goes first. Null with no race.
  */
+/** A cat walks up to 2 steps a move: the moves a walk takes (C17). */
+export const movesToCatch = (walk: number): number => Math.ceil(walk / 2);
+
 export const raceWinner = (r: RaceState): PlayerId | null => {
   const { 1: a, 2: b } = r.walks;
   if (a === null || b === null) return null;
-  const need = { 1: Math.ceil(a / 2), 2: Math.ceil(b / 2) };
+  const need = { 1: movesToCatch(a), 2: movesToCatch(b) };
   const first = r.toMove;
   const second: PlayerId = first === 1 ? 2 : 1;
   return need[first] <= need[second] ? first : second;
@@ -381,14 +404,28 @@ const huhOf = (f: PlyFacts): Huh | null => {
   );
   if (ignored.length > 0)
     return { kind: "ignored-threat", walk: closest(ignored) };
-  const near = f.hunts.filter((h) => isAnimal(h) && h.before <= HUH_NEAR);
+  const into = theirs(f).filter(
+    (h) =>
+      isAnimal(h) &&
+      h.targetFrom !== h.targetTo &&
+      h.before > THREAT_WALK &&
+      h.after <= THREAT_WALK,
+  );
+  if (into.length > 0)
+    return {
+      kind: "mouse-into-reach",
+      walk: Math.min(...into.map((h) => h.after)),
+    };
+  // The mover's own cat (a hunter) and own mouse (a target) on one cell.
+  const cat = own(f).find((h) => h.hunter.type === "cat");
+  const mouse = theirs(f).find((h) => h.target.type === "mouse");
   if (
-    f.walls.length > 0 &&
-    f.steps.length === 0 &&
-    f.hunts.every((h) => h.after === h.before) &&
-    near.length > 0
+    cat &&
+    mouse &&
+    cat.hunterTo === mouse.targetTo &&
+    cat.hunterFrom !== mouse.targetFrom
   )
-    return { kind: "idle-walls", walk: closest(near) };
+    return { kind: "cat-on-own-mouse", walk: mouse.after };
   return null;
 };
 
@@ -559,6 +596,11 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       fit(ply, "threat", e ? Math.max(0.2, (e.after - 0.5) * 2) : 0.5, h);
       if (e && e.after < 0.5) tags[ply].push("engine-losing");
     }
+    if (threats.has(ply)) {
+      if (f.defence === "two-actions" || f.defence === "no-answer")
+        tags[ply].push("strong-threat");
+      if (f.defence === "wins-first") tags[ply].push("weak-threat");
+    }
 
     // The defender's answer to the threat just before.
     const threat = threats.get(ply - 1);
@@ -690,12 +732,13 @@ export const labelGame = (facts: GameFacts): GameLabels => {
 
   // A trap on the board (Director, 2026-11-01, DIRECTOR.md FORCED CAPTURE;
   // JbpdRM9D ply 20, RkLlIxBI ply 48): after the move the other side has no
-  // reply that stops a capture next move (noEscape), and after the mover's
+  // reply that stops a capture next move (defence no-answer), and after the mover's
   // move before it, it had one. A cat step or walls; the tag no-escape tells
   // this rule from the engine's seal below, and a meme that needs "made by a
   // wall" reads the move's walls.
   plies.forEach((f, ply) => {
-    if (!f.noEscape || plies[ply - 2]?.noEscape) return;
+    const trapped = (k: number) => plies[k]?.defence === "no-answer";
+    if (!trapped(ply) || trapped(ply - 2)) return;
     const h = largest(own(f).filter(isAnimal), (x) => -x.after) ?? f.hunts[0];
     fit(ply, "trap-closes", 0.8, h);
     tags[ply].push("no-escape");

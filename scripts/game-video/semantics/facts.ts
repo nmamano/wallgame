@@ -161,12 +161,11 @@ export interface PlyFacts {
    */
   end: { winner: PlayerId | null; reason: string } | null;
   /**
-   * After this move the other side has no legal reply that keeps every
-   * animal the mover hunts out of one turn's reach (more than CAPTURE_REACH
-   * steps) or wins at once: the mover captures next move unless it errs
-   * (noSafeReply). False on the move that ends the game.
+   * How the other side can answer the mover's hunts after this move
+   * (defenceOf); null on the move that ends the game. "no-answer" is a
+   * trap: the mover captures next move unless it errs.
    */
-  noEscape: boolean;
+  defence: Defence | null;
 }
 
 export interface GameFacts {
@@ -221,47 +220,67 @@ const walksAfter = (state: GameState, notation: string): number[] | null => {
 export const CAPTURE_REACH = 2;
 
 /**
- * Whether the side to move in `state` has no reply after which every animal
- * hunt of `mover` needs more than CAPTURE_REACH steps, and no reply that wins
- * at once. Tries every move of one or two actions: walls, and steps of one or
- * two of its pawns (a two-step move is one action in the notation).
+ * How the side to move can answer the mover's hunts after a move (the
+ * threat split, 2026-11-01; the board trap of 2026-11-01):
+ * - out-of-reach: no animal hunt of the mover is within CAPTURE_REACH.
+ * - wins-first: one is, but the side to move captures first (its own hunt
+ *   is within CAPTURE_REACH).
+ * - one-action: one action answers it (a one-cell step or one wall).
+ * - two-actions: only a full turn answers it (two walls, a two-cell step,
+ *   a step and a wall).
+ * - no-answer: no reply keeps every animal out of reach: a trap.
  */
-export const noSafeReply = (state: GameState, mover: PlayerId): boolean => {
-  if (state.status === "finished") return false;
+export type Defence =
+  | "out-of-reach"
+  | "wins-first"
+  | "one-action"
+  | "two-actions"
+  | "no-answer";
+
+/** The Defence of the side to move in `state` against `mover`'s hunts. */
+export const defenceOf = (state: GameState, mover: PlayerId): Defence => {
   const hunts = huntsFor(state.config.variant);
-  const reach = hunts.flatMap((h, i) =>
-    h.hunter.player === mover && h.target.type !== "home" ? [i] : [],
-  );
+  const animal = (by: PlayerId) =>
+    hunts.flatMap((h, i) =>
+      h.hunter.player === by && h.target.type !== "home" ? [i] : [],
+    );
+  const reach = animal(mover);
   const caught = (walks: number[]) =>
     reach.some((i) => walks[i] <= CAPTURE_REACH);
+  const now = huntWalks(state);
   // Walls never shorten a walk, so with no hunt in reach any wall is safe.
-  if (!caught(huntWalks(state))) return false;
+  if (!caught(now)) return "out-of-reach";
+  const defender = state.turn;
+  if (animal(defender).some((i) => now[i] <= CAPTURE_REACH)) {
+    return "wins-first";
+  }
   const height = state.config.boardHeight;
   const width = state.config.boardWidth;
-  const defender = state.turn;
   const cells: Cell[] = [];
   for (let r = 0; r < height; r++)
     for (let c = 0; c < width; c++) cells.push([r, c]);
   const name = (c: Cell) => cellToStandardNotation(c, height);
   const walls = cells.flatMap((c) => [`>${name(c)}`, `^${name(c)}`]);
-  const pawns = (["cat", "mouse", "dog", "elephant"] as GamePawnType[])
-    .map((type) => ({ type, at: pawnCell(state.pawns, defender, type) }))
-    .filter((p): p is { type: GamePawnType; at: Cell } => p.at !== undefined);
   const letter: Record<string, string> = {
     cat: "C",
     mouse: "M",
     dog: "D",
     elephant: "E",
   };
-  const targetsOf = (p: { type: GamePawnType; at: Cell }) =>
-    cells
-      .filter(
-        (c) =>
-          Math.abs(c[0] - p.at[0]) + Math.abs(c[1] - p.at[1]) <= 2 &&
-          (c[0] !== p.at[0] || c[1] !== p.at[1]),
-      )
-      .map((c) => `${letter[p.type]}${name(c)}`);
-  const pawnSteps = pawns.map(targetsOf);
+  // Each pawn's steps by length: a step of 2 cells costs both actions, so
+  // it never pairs with anything (VR1, review 135 N1).
+  const pawns = (["cat", "mouse", "dog", "elephant"] as GamePawnType[])
+    .map((type) => ({ type, at: pawnCell(state.pawns, defender, type) }))
+    .filter((p): p is { type: GamePawnType; at: Cell } => p.at !== undefined)
+    .map((p) => {
+      const at = (d: number) =>
+        cells
+          .filter(
+            (c) => Math.abs(c[0] - p.at[0]) + Math.abs(c[1] - p.at[1]) === d,
+          )
+          .map((c) => `${letter[p.type]}${name(c)}`);
+      return { near: at(1), far: at(2) };
+    });
   const safe = (notation: string): boolean => {
     let next: GameState;
     try {
@@ -277,19 +296,19 @@ export const noSafeReply = (state: GameState, mover: PlayerId): boolean => {
     if (next.status === "finished") return next.result?.winner === defender;
     return !caught(huntWalks(next));
   };
-  const steps = pawnSteps.flat();
-  const moves = function* (): Generator<string> {
-    yield* steps;
-    yield* walls;
-    for (const s of steps)
+  const near = pawns.flatMap((p) => p.near);
+  if ([...near, ...walls].some(safe)) return "one-action";
+  const full = function* (): Generator<string> {
+    for (const p of pawns) yield* p.far;
+    for (const s of near)
       for (const w of walls) {
         yield `${s}.${w}`;
         yield `${w}.${s}`;
       }
-    for (let a = 0; a < pawnSteps.length; a++)
-      for (let b = a + 1; b < pawnSteps.length; b++)
-        for (const s of pawnSteps[a])
-          for (const t of pawnSteps[b]) {
+    for (let a = 0; a < pawns.length; a++)
+      for (let b = a + 1; b < pawns.length; b++)
+        for (const s of pawns[a].near)
+          for (const t of pawns[b].near) {
             yield `${s}.${t}`;
             yield `${t}.${s}`;
           }
@@ -297,8 +316,8 @@ export const noSafeReply = (state: GameState, mover: PlayerId): boolean => {
       for (let b = a + 1; b < walls.length; b++)
         yield `${walls[a]}.${walls[b]}`;
   };
-  for (const m of moves()) if (safe(m)) return false;
-  return true;
+  for (const m of full()) if (safe(m)) return "two-actions";
+  return "no-answer";
 };
 
 /** Steps from `start` to every cell it reaches through `grid`. */
@@ -455,7 +474,7 @@ export const gameFacts = (
       end: ended
         ? { winner: game.result.winner ?? null, reason: game.result.reason }
         : null,
-      noEscape: !ended && noSafeReply(after, mover),
+      defence: ended ? null : defenceOf(after, mover),
     };
   });
   return {

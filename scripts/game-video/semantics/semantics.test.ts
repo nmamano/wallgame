@@ -1,10 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import type { PlayerId } from "../../../shared/domain/game-types";
-import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
+import type {
+  Defence,
+  EngineFacts,
+  GameFacts,
+  HuntChange,
+  PlyFacts,
+} from "./facts";
 import { readFileSync } from "node:fs";
 import { siteMoveNumber } from "../site-move.mjs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
-import { countersShow, isMoment, labelGame, raceWords } from "./labels";
+import {
+  countersShow,
+  isMoment,
+  labelGame,
+  movesToCatch,
+  raceWords,
+} from "./labels";
 import {
   checkSentence,
   factsOf,
@@ -33,8 +45,8 @@ interface PlySpec {
   end?: boolean;
   /** A move of walls only: no pawn step. */
   noStep?: boolean;
-  /** The other side has no reply that stops a capture next move. */
-  noEscape?: boolean;
+  /** How the other side can answer (default out-of-reach). */
+  defence?: Defence;
 }
 
 const hunt = (
@@ -109,7 +121,7 @@ const gameOf = (
       ],
       engine,
       end: s.end ? { winner: mover, reason: "capture" } : null,
-      noEscape: s.noEscape ?? false,
+      defence: s.end ? null : (s.defence ?? "out-of-reach"),
     };
   }),
 });
@@ -327,15 +339,41 @@ describe("huh (C43)", () => {
     );
   });
 
-  test("walls that change no walk with a cat within 3", () => {
+  test("walls that change no counter are no huh (C45, X-TQBFZA ply 11)", () => {
     const l = labels([
       { w1: [5, 5], w2: [3, 3], walls: ["^a1", "^b1"], noStep: true },
     ]);
-    expect(l.plies[0].huh).toEqual({ kind: "idle-walls", walk: 3 });
-    const far = labels([
-      { w1: [5, 5], w2: [4, 4], walls: ["^a1", "^b1"], noStep: true },
+    expect(l.plies[0].tags).not.toContain("huh");
+    expect(fixtureLabels("X-TQBFZA").plies[11].tags).not.toContain("huh");
+  });
+
+  test("a mouse that steps into the cat's reach", () => {
+    // P1 moves; hunt 2 is P2's cat on P1's mouse, which runs 4 -> 2.
+    const l = labels([{ w1: [8, 8], w2: [4, 2], mouseRan: true }]);
+    expect(l.plies[0].huh).toEqual({ kind: "mouse-into-reach", walk: 2 });
+  });
+});
+
+describe("strong and weak threats (2026-11-01)", () => {
+  test("z5S6UPIi 37: only a full turn answers Nil's threat: strong", () => {
+    const l = fixtureLabels("z5S6UPIi");
+    expect(l.plies[37].label).toBe("threat");
+    expect(l.plies[37].tags).toContain("strong-threat");
+  });
+
+  test("FTFHyntE 32: the guest captures first: weak", () => {
+    const l = fixtureLabels("FTFHyntE");
+    expect(l.plies[32].tags).toContain("threat");
+    expect(l.plies[32].tags).toContain("weak-threat");
+    expect(l.plies[33].label).toBe("capture");
+  });
+
+  test("a threat one action answers has neither tag", () => {
+    const l = labels([
+      { w1: [4, 2], w2: [8, 8], wc: [0.5, 0.8], defence: "one-action" },
     ]);
-    expect(far.plies[0].tags).not.toContain("huh");
+    expect(l.plies[0].tags).not.toContain("strong-threat");
+    expect(l.plies[0].tags).not.toContain("weak-threat");
   });
 });
 
@@ -344,7 +382,7 @@ describe("trap-closes on the board (Director, 2026-11-01)", () => {
     const l = labels([
       { w1: [5, 3], w2: [8, 8] },
       { w1: [3, 3], w2: [8, 8] },
-      { w1: [3, 1], w2: [8, 8], noEscape: true },
+      { w1: [3, 1], w2: [8, 8], defence: "no-answer" },
       { w1: [1, 1], w2: [8, 8] },
     ]);
     expect(l.plies[2].label).toBe("trap-closes");
@@ -354,9 +392,9 @@ describe("trap-closes on the board (Director, 2026-11-01)", () => {
 
   test("a trap that was already closed is not closed again", () => {
     const l = labels([
-      { w1: [3, 1], w2: [8, 8], noEscape: true },
+      { w1: [3, 1], w2: [8, 8], defence: "no-answer" },
       { w1: [1, 1], w2: [8, 8] },
-      { w1: [1, 1], w2: [8, 8], noEscape: true },
+      { w1: [1, 1], w2: [8, 8], defence: "no-answer" },
     ]);
     expect(l.plies[0].label).toBe("trap-closes");
     expect(l.plies[2].tags).not.toContain("no-escape");
@@ -1078,5 +1116,53 @@ describe("checkSeen (the image check)", () => {
     };
     expect(run([0.5, 0.6])).toEqual({ label: "detour", seen: true });
     expect(run([0.7, 0.4])).toEqual({ label: "blunder", seen: false });
+  });
+});
+
+describe("CASES from C16 on: what a move means (2026-11-01)", () => {
+  test("C17 ZJPRJ_kq: 1 step at ply 37 is one move; 3 steps at the end are two", () => {
+    const l = fixtureLabels("ZJPRJ_kq");
+    expect(l.plies[37].label).toBe("threat");
+    expect(l.plies[37].focus.after).toBe(1);
+    expect(movesToCatch(l.plies[37].focus.after)).toBe(1);
+    // The ending bar's board: the guest's cat 3 steps from the mouse.
+    const end = l.plies[42];
+    expect(end.label).toBe("capture");
+    expect(end.race.before.walks[2]).toBe(3);
+    expect(movesToCatch(3)).toBe(2);
+  });
+
+  test("C28 NxKhTj4H: the guest's cat on its own mouse, then a run into the cat", () => {
+    const l = fixtureLabels("NxKhTj4H");
+    const odd = l.plies.filter((p) => p.huh).map((p) => [p.ply, p.huh!.kind]);
+    expect(odd).toEqual([
+      [3, "cat-on-own-mouse"],
+      [7, "cat-on-own-mouse"],
+      [15, "cat-on-own-mouse"],
+      [21, "mouse-into-reach"],
+    ]);
+  });
+
+  test("C32 PnGQWON1: the bot's cat beside the mouse at 13 and 19 is a threat; 20 saves", () => {
+    const l = fixtureLabels("PnGQWON1");
+    expect(l.plies[13].tags).toContain("threat");
+    expect(l.plies[19].label).toBe("threat");
+    expect(l.plies[20].tags).toContain("save");
+  });
+
+  test("C36: opening walls the other side matched are no moment; the deciding move is", () => {
+    const y = fixtureLabels("YGlYwnRu");
+    expect(isMoment(y.plies[4])).toBe(false);
+    expect(isMoment(y.plies[21])).toBe(true);
+    expect(isMoment(fixtureLabels("9L8BLuex").plies[8])).toBe(false);
+    expect(isMoment(fixtureLabels("G0Oa_TzU").plies[11])).toBe(false);
+  });
+
+  test("C37 YGlYwnRu 24: the bot's cat stopped by its own wall; nothing ends", () => {
+    const l = fixtureLabels("YGlYwnRu");
+    expect(l.plies[24].label).toBe("standoff");
+    expect(l.plies[24].tags).toContain("own-wall");
+    expect(l.plies[24].tags).not.toContain("capture");
+    expect(l.plies[24].tags).not.toContain("blunder");
   });
 });
