@@ -8,4 +8,4 @@ runbook for access, logs, drain, migration and restart rules. Deployment and
 production writes require Nil's explicit approval. Run `bun run migrate` only
 with the intended database selected and the applicable approval.
 
-Production moved from Fly/Neon to the VPS on 2026-10-05; Fly and Neon were deleted on 2026-10-25.
+Production moved from Fly/Neon to the VPS on 2026-10-05; Fly was deleted on 2026-10-25 and Neon on 2026-11-01.
