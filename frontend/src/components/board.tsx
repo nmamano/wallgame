@@ -67,6 +67,8 @@ export interface LastMove {
   fromCol: number;
   toRow: number;
   toCol: number;
+  /** The corner of a diagonal 2-step move: the arrow turns there. */
+  via?: Cell;
   playerColor?: PlayerColor;
 }
 
@@ -671,11 +673,32 @@ export function Board({
       const { strokeWidth, markerSize, markerRef } = arrowVisuals;
       const fromCenter = getCellCenterPosition(move.fromRow, move.fromCol);
       const toCenter = getCellCenterPosition(move.toRow, move.toCol);
-      const { start, end } = shortenLineBetweenCenters(
-        { x: fromCenter.x, y: fromCenter.y },
-        { x: toCenter.x, y: toCenter.y },
-        getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol),
-      );
+      let pathData: string;
+      if (move.via) {
+        // The L the pawn walked, turning at the corner cell's centre. Each
+        // end is cut back as much as on a straight 2-step arrow, whose cut
+        // is measured over 2 cells: so twice the segment's share here.
+        const corner = getCellCenterPosition(move.via[0], move.via[1]);
+        const cut = (1 - getArrowScale(0, 0, 0, 2)) / 2;
+        const startCut = (2 * cut) / 3;
+        const endCut = 2 * cut;
+        const start = {
+          x: fromCenter.x + (corner.x - fromCenter.x) * startCut,
+          y: fromCenter.y + (corner.y - fromCenter.y) * startCut,
+        };
+        const end = {
+          x: toCenter.x - (toCenter.x - corner.x) * endCut,
+          y: toCenter.y - (toCenter.y - corner.y) * endCut,
+        };
+        pathData = `M ${start.x} ${start.y} L ${corner.x} ${corner.y} L ${end.x} ${end.y}`;
+      } else {
+        const { start, end } = shortenLineBetweenCenters(
+          { x: fromCenter.x, y: fromCenter.y },
+          { x: toCenter.x, y: toCenter.y },
+          getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol),
+        );
+        pathData = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+      }
 
       const arrowColor = move.playerColor
         ? colorHexMap[move.playerColor] || "#94a3b8"
@@ -708,11 +731,9 @@ export function Board({
               />
             </marker>
           </defs>
-          <line
-            x1={start.x}
-            y1={start.y}
-            x2={end.x}
-            y2={end.y}
+          <path
+            d={pathData}
+            fill="none"
             stroke={arrowColor}
             strokeWidth={strokeWidth}
             strokeLinecap="round"

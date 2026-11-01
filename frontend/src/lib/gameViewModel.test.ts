@@ -10,8 +10,10 @@ import {
 import type { PlayerColor } from "./player-colors";
 import { GameState } from "../../../shared/domain/game-state";
 import type {
+  Cell,
   GameConfiguration,
   PlayerId,
+  WallPosition,
 } from "../../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
 import { buildSavedPuzzleSeedRows } from "../../../shared/domain/saved-puzzles";
@@ -180,5 +182,62 @@ describe("colored wrappers (showcase/history consumers) stay equivalent", () => 
     expect(next).not.toBeNull();
     const diffs = computeLastMoveDiffs(next);
     expect(diffs!.every((diff) => diff.playerId === 2)).toBe(true);
+  });
+});
+
+describe("the corner of a diagonal 2-step move", () => {
+  const standard = (walls: WallPosition[] = []): GameConfiguration => ({
+    timeControl: { ...TIME, preset: "rapid" },
+    variant: "standard",
+    randomStart: false,
+    rated: false,
+    boardWidth: 5,
+    boardHeight: 5,
+    variantConfig: { ...buildStandardInitialState(5, 5), walls },
+  });
+
+  /** Player 1's cat leaves a5 [0,0] in one action; the diff of that move. */
+  const catMove = (config: GameConfiguration, target: Cell) =>
+    computeLastMoveDiffs(
+      new GameState(config, 0).applyGameAction({
+        kind: "move",
+        playerId: 1,
+        move: { actions: [{ type: "cat", target }] },
+        timestamp: 1,
+      }),
+    )![0];
+
+  it("turns along the row first when both corners are open", () => {
+    expect(catMove(standard(), [1, 1]).via).toEqual([0, 1]);
+  });
+
+  it("takes the column corner when a wall blocks the row corner", () => {
+    const wall: WallPosition = { cell: [0, 0], orientation: "vertical" };
+    expect(catMove(standard([wall]), [1, 1]).via).toEqual([1, 0]);
+  });
+
+  it("gives straight moves no corner", () => {
+    expect(catMove(standard(), [0, 2]).via).toBeUndefined();
+    expect(catMove(standard(), [0, 1]).via).toBeUndefined();
+  });
+
+  it("never turns on the Animal Cycle teammate's cell", () => {
+    const config: GameConfiguration = {
+      timeControl: { ...TIME, preset: "rapid" },
+      variant: "animal-cycle",
+      randomStart: false,
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: {
+        // The elephant stands on the row corner of the cat's move.
+        pawns: {
+          p1: { cat: [0, 0], elephant: [0, 1] },
+          p2: { mouse: [0, 4], dog: [4, 0] },
+        },
+        walls: [],
+      },
+    };
+    expect(catMove(config, [1, 1]).via).toEqual([1, 0]);
   });
 });
