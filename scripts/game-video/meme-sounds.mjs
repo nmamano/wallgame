@@ -120,7 +120,7 @@ export const MEME_SOUNDS = {
   // "one eternity later" (a SpongeBob time card) and our own tape-rewind
   // whir for the flashback (meme-sounds.md).
   "eternity-1": { lufs: -17.5, truePeak: -4.8 },
-  "rewind-1": { lufs: -13.0, truePeak: -8.1 },
+  "rewind-1": { lufs: -13.8, truePeak: -8.1 },
   // Its fast-forward (Wall Game Director, 2026-11-01), ours, measured that
   // day (meme-sounds.md).
   "forward-1": { lufs: -13.3, truePeak: -7.5 },
