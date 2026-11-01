@@ -7,7 +7,8 @@ import {
 } from "@/components/ui/card";
 import { GameShowcase } from "@/components/game-showcase";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { DISCORD_INVITE_URL } from "@/lib/external-links";
+import { DISCORD_INVITE_URL, SOCIAL_ACCOUNTS } from "@/lib/external-links";
+import { SocialLogo } from "@/components/social-logo";
 import { isEmbedded } from "@/lib/embedded-mode";
 import { Brain, Bot, Users, UserPlus } from "lucide-react";
 
@@ -211,6 +212,24 @@ function Index() {
               </>
             )}
           </div>
+          {!embedded && (
+            <ul className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-muted-foreground">
+              {SOCIAL_ACCOUNTS.map(({ platform, url }) => (
+                <li key={platform}>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={platform}
+                    title={platform}
+                    className="block hover:text-primary transition-colors"
+                  >
+                    <SocialLogo platform={platform} className="size-5" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </footer>
     </div>
