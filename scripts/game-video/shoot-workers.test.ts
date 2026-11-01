@@ -169,7 +169,7 @@ describe("isRestShot: no part starts inside any effect", () => {
         kind: "flashback",
         state: {
           ...plain,
-          flashback: { sepia: 1, label: "MOVE 8", t: 1.2 },
+          flashback: { sepia: 1, label: "MOVE 4", t: 1.2 },
           trap: { t: 0.2, walls: [], plain: [true] },
         },
       },

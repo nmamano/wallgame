@@ -4747,13 +4747,25 @@ const renderStyle = async (styleName) => {
   const plyOverlays = (plyIndex) =>
     eventsAt(plyIndex).filter((e) => e.kind === "overlay" && e.form !== "bar");
   /**
-   * A ply with a trap opens its overlays after the trap's word, not as the
-   * move lands, so the beat reads word, then face, and the word never
-   * stamps over a cut-out (Wall Game Director, 2026-10-29, v-2026-10-29-1
-   * ply 4: "BOXED IN" stamped over the mouse's cut-out for about 1 s).
+   * The landing event a ply's overlays open after, or null: they open as
+   * the move lands. A ply with a trap opens them after the last trap's
+   * word, so the beat reads word, then face, and the word never stamps
+   * over a cut-out (Wall Game Director, 2026-10-29, v-2026-10-29-1 ply 4:
+   * "BOXED IN" stamped over the mouse's cut-out for about 1 s). A ply with
+   * a death card (overlays.mjs DEATH_CARDS) opens them after its last
+   * mark, so the mark reads first and the card closes the beat (Wall Game
+   * Director, 2026-11-01, v-2026-11-01-2 ply 63: the skull and YOU DIED
+   * opened together).
    */
-  const hasTrap = (plyIndex) =>
-    eventsAt(plyIndex).some((e) => e.kind === "trap");
+  const overlaysOpenAfter = (plyIndex) => {
+    const landing = landingEventsAt(plyIndex);
+    const trap = landing.findLast((e) => e.kind === "trap");
+    if (trap) return trap;
+    const deathCard = plyOverlays(plyIndex).some((e) =>
+      DEATH_CARDS.includes(OVERLAYS[e.asset].card),
+    );
+    return deathCard ? (landing.at(-1) ?? null) : null;
+  };
   /**
    * Hold the ply until the live overlay closes, when a pawn emotes it
    * (overlays.mjs `pawn`): the next move waits, as it waits for a mark, so
@@ -4773,7 +4785,10 @@ const renderStyle = async (styleName) => {
     const live = liveOverlay();
     if (!live || live.end === null) return;
     if (!ending && !takesPawn(live.asset)) return;
-    const rest = live.end - elapsed;
+    // Whole frames up to its end: the pop and fade put the end between two
+    // frames, and a rounded-down hold cut the you-died card's reading time
+    // by half a frame (v-2026-11-01-2 ply 63, once it waited for the skull).
+    const rest = Math.ceil((live.end - elapsed) * FPS - 1e-6) / FPS;
     if (rest > 0.5 / FPS) {
       await emit(zoom ? playState(ply, { zoom }) : playState(ply), rest, {
         kind: zoom ? "swing-zoom" : "move",
@@ -7006,7 +7021,10 @@ const renderStyle = async (styleName) => {
       );
     }
     // 3. THE PAST: "MOVE N"; the move's walls land again in their colour.
-    const label = `MOVE ${ev.toPly + 1}`;
+    // N is the number wallgame.io's move list shows for that move (a move
+    // is a pair of plies: use-game-page-controller's formattedHistory), so
+    // a viewer who opens the game finds it under the same number.
+    const label = `MOVE ${Math.ceil(history[ev.toPly].index / 2)}`;
     for (let i = 0; i < frames(FLASHBACK_PAST_BEFORE_SECONDS); i += 1) {
       await emit(
         playState(before, { ...hold, ...vhs(1, label) }),
@@ -7317,8 +7335,8 @@ const renderStyle = async (styleName) => {
         }
       }
       spanOf(ev, start);
-      // After the ply's last trap: its word has shown (hasTrap).
-      if (ev === landing.findLast((e) => e.kind === "trap")) {
+      // After its trap's word, or its marks (overlaysOpenAfter).
+      if (ev === overlaysOpenAfter(plyIndex)) {
         await openPlyOverlays(ply, plyIndex);
       }
     }
@@ -7502,8 +7520,8 @@ const renderStyle = async (styleName) => {
       if (live && live.closesOnBoard !== null && ply >= live.closesOnBoard) {
         closeOverlay();
       }
-      // On a trap's ply they open after its word (playEvents).
-      if (!hasTrap(plyIndex)) await openPlyOverlays(ply, plyIndex);
+      // Some open after a landing event instead (playEvents).
+      if (!overlaysOpenAfter(plyIndex)) await openPlyOverlays(ply, plyIndex);
     }
     /*
       The tick takes its time from a plain move's hold, leaving that hold

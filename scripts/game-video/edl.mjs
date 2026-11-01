@@ -195,8 +195,9 @@
  *             placed it, before this one. The move lands; REWIND: a VHS
  *             look, "<< REWIND", `sound` (a rewind whir), the board plays
  *             back to the position before toPly, turning sepia; THE PAST:
- *             "MOVE <toPly + 1>", toPly's walls land again in their
- *             colour on the sepia board, `wall` with the plant's glow;
+ *             "MOVE <n>" (n as in the site's move list, where a move is a
+ *             pair of plies), toPly's walls land again in their colour on
+ *             the sepia board, `wall` with the plant's glow;
  *             FORWARD: ">>", the board plays forward to now, its colour
  *             back; NOW: `wall` glows on this board, with `nowSound`.
  *             The counters and the evaluation strip follow the positions
@@ -207,7 +208,8 @@
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
  *             band across the board). It opens as the move lands (on a
- *             ply with a trap: after the trap's word) and shows for
+ *             ply with a trap: after the trap's word; on a ply with a
+ *             death card: after the ply's marks) and shows for
  *             `seconds` (default the asset's, or its words' reading time
  *             if longer; the capture loading bar lasts until the save and
  *             takes none). An overlay with words shows at least their
