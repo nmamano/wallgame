@@ -173,7 +173,11 @@
  *             the race counter does; `expect` (optional: { walls, before,
  *             after }, the steps of that hunter) is what the script says,
  *             and a render whose game says otherwise stops
- *             (explain-mismatch). `label` (optional, kebab-case: detour,
+ *             (explain-mismatch). `expect.walls` may name only some of
+ *             the move's walls: then only those glow, and the render
+ *             stops unless they alone make the change (with the move's
+ *             other walls taken out, the walk after is as long; Wall Game
+ *             Director, 2026-11-01). `label` (optional, kebab-case: detour,
  *             near-catch, blunder, punish) goes to RESULT.timeline only.
  *             At most one on a ply, and not with a freeze, a lead zoom or
  *             a path on that ply: it is the ply's explanation.

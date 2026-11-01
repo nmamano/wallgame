@@ -6765,9 +6765,37 @@ const renderStyle = async (styleName) => {
     }
     const sameWalls = (a, b) =>
       a.length === b.length && a.every((w) => b.includes(w));
-    if (ev.expect?.walls && !sameWalls(ev.expect.walls, f.walls)) {
+    /*
+      The walls that glow: all the move placed, or only those the list
+      names, when they alone make the change (Wall Game Director,
+      2026-11-01: X-TQBFZA ply 21, >b5 >e2, where >b5 changes no walk).
+      The proof: with the move's other walls taken out, the hunter's walk
+      after the move is still as long.
+    */
+    const named = ev.expect?.walls ?? null;
+    const others =
+      named && named.every((w) => f.walls.includes(w))
+        ? f.walls.filter((w) => !named.includes(w))
+        : null;
+    let glowing = f.walls;
+    if (named && others && others.length > 0 && named.length > 0) {
+      const state = REPLAYED.states[plyIndex + 1];
+      const grid = others.reduce((g, t) => gridWithout(g, t), state.grid);
+      const alone = Math.min(
+        ...huntsFor(state.config.variant)
+          .filter((h) => h.hunter.player === f.player)
+          .map((h) => huntPath(grid, state.pawns, h).length - 1),
+      );
+      if (alone === now) {
+        glowing = named;
+      } else {
+        said.push(
+          `walls ${named.join(" ")} alone make ${seatColors[f.player]}'s walk ${alone}, not ${now}: the move's ${others.join(" ")} makes part of the change, so name it too`,
+        );
+      }
+    } else if (named && !sameWalls(named, f.walls)) {
       said.push(
-        `walls ${ev.expect.walls.join(" ") || "none"}, the move places ${f.walls.join(" ") || "none"}`,
+        `walls ${named.join(" ") || "none"}, the move places ${f.walls.join(" ") || "none"}`,
       );
     }
     if (said.length > 0) {
@@ -6795,7 +6823,7 @@ const renderStyle = async (styleName) => {
       drawn,
       alpha,
     });
-    const lit = litWalls(f.walls, ply);
+    const lit = litWalls(glowing, ply);
     const glow = (t) => ({ t, ...lit });
     const oldWalk = was > 1;
     // 1. The old walk, on the position before the move.
