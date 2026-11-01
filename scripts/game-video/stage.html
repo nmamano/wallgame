@@ -24,6 +24,9 @@
         --dim: #94a3b8;
         --bg: #0b0f1c;
         --panel: #121a2e;
+        /* The call to action's pill: the GG card's and the strip's, and
+           the GG card's shine, which lays its band over this fill. */
+        --cta-fill: linear-gradient(180deg, #ffb24d, #ff7a1a);
       }
       * {
         margin: 0;
@@ -1110,14 +1113,17 @@
       */
       #ggCard .cta {
         margin-top: 1%;
-        max-width: 100%;
+        /* 97%, not 100%: its breath swells it by CTA_BREATH (1.08), and
+           at that size it must stay 2% inside the card's sides (VR1
+           review 123 N1; the card's padding is 0.04 of 0.8 board). */
+        max-width: 97%;
         box-sizing: border-box;
         text-align: center;
         text-wrap: balance;
         line-height: 1.15;
         padding: 0.22em 0.8em;
         border-radius: 0.7em;
-        background: linear-gradient(180deg, #ffb24d, #ff7a1a);
+        background: var(--cta-fill);
         color: #0b0f1c;
         font-size: calc(var(--board) * 0.045);
         font-weight: 900;
@@ -1267,7 +1273,7 @@
         margin-top: 0.8em;
         padding: 0.18em 0.85em;
         border-radius: 999px;
-        background: linear-gradient(180deg, #ffb24d, #ff7a1a);
+        background: var(--cta-fill);
         color: #0b0f1c;
         font-size: 1em;
         font-weight: 900;
@@ -1603,15 +1609,17 @@
        */
       /*
         The GG card's call to action after its pop (seconds on the
-        ending's clock): one shine across it from CTA_SHINE_AT, over
-        CTA_SHINE; then it breathes from CTA_PULSE_FROM every CTA_PULSE:
-        it swells by CTA_PULSE_SWELL of its room, glows and brightens.
+        ending's clock): a shine crosses it from CTA_SHINE_AT, over
+        CTA_SHINE, and again every second breath; it breathes from
+        CTA_PULSE_FROM every CTA_PULSE: it swells to CTA_BREATH (within
+        its room), glows and brightens. The Wall Game Director,
+        2026-11-01: a 3% swell does not read as motion on a phone.
       */
       const CTA_SHINE_AT = 1.05;
       const CTA_SHINE = 0.6;
       const CTA_PULSE_FROM = 1.75;
       const CTA_PULSE = 1.3;
-      const CTA_PULSE_SWELL = 0.8;
+      const CTA_BREATH = 1.08;
       window.__ENDINGS = {
         replay: { seconds: 2.0, impact: 1.4, hold: 1.3, flash: 0 },
         gg: { seconds: 1.0, impact: 0, hold: 1.6, flash: 0.18, cardIn: 0.95 },
@@ -4007,8 +4015,8 @@
             // glows once (Nil, 2026-10-31: "make it pop"). Then, while the
             // ending holds (`e.cta`, the clock that runs on; Nil,
             // 2026-11-01: "start giving the CTA some animation to make it
-            // stand out more"), a shine crosses it once and it breathes:
-            // a slow swell and glow every CTA_PULSE seconds.
+            // stand out more"), it breathes, a slow swell and glow every
+            // CTA_PULSE seconds, and a shine crosses it every second breath.
             // It swells by a fifth at most, and less for a wide one, so it
             // stays 2% inside the card's sides (VR1 review 123 N1).
             const ct = e.cta ?? t;
@@ -4024,10 +4032,13 @@
             const room =
               ($("ggCard").clientWidth * 0.96) / $("ggCta").offsetWidth;
             const swell = Math.max(0, Math.min(0.2, room - 1));
-            // The breath has little room to swell (the pill nearly fills
-            // the card), so it also glows and brightens.
-            const grow = Math.max(pop, CTA_PULSE_SWELL * breathe);
-            $("ggCta").style.transform = "scale(" + (1 + swell * grow) + ")";
+            // The breath swells to CTA_BREATH, within the same room, and
+            // also glows and brightens.
+            const grow = Math.max(
+              swell * pop,
+              Math.min(CTA_BREATH - 1, swell) * breathe,
+            );
+            $("ggCta").style.transform = "scale(" + (1 + grow) + ")";
             $("ggCta").style.boxShadow =
               "0 0 " +
               (0.3 + 0.9 * pop + 1.2 * breathe) +
@@ -4036,8 +4047,12 @@
               ")";
             $("ggCta").style.filter =
               breathe > 0 ? "brightness(" + (1 + 0.2 * breathe) + ")" : "";
-            // The shine: a light band across the pill, left to right.
-            const shine = span(ct, CTA_SHINE_AT, CTA_SHINE_AT + CTA_SHINE);
+            // The shine: a light band across the pill, left to right, at
+            // CTA_SHINE_AT and every second breath after it.
+            const shine =
+              ct < CTA_SHINE_AT
+                ? 0
+                : span((ct - CTA_SHINE_AT) % (2 * CTA_PULSE), 0, CTA_SHINE);
             $("ggCta").style.backgroundImage =
               shine > 0 && shine < 1
                 ? "linear-gradient(105deg, transparent " +
@@ -4046,7 +4061,7 @@
                   (-30 + 160 * shine) +
                   "%, transparent " +
                   (-30 + 160 * shine + 12) +
-                  "%), linear-gradient(180deg, #ffb24d, #ff7a1a)"
+                  "%), var(--cta-fill)"
                 : "";
           }
         }
