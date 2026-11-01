@@ -1045,6 +1045,41 @@ export const OVERLAYS = {
       'Nil, for this clip: "this one when the opponent makes a mistake" (Nil, chat to the Wall Game Director, 2026-11-01 02:53 UTC, CASES C43, sending the four clips: "Why don\'t you use the green screen memes i gave you, i just lookned at them and see so many opportunities")',
     rating: null,
   },
+  /*
+    The laughing-crying man ("Ngaaaa"), for a move that destroys the other
+    side (Nil, 2026-11-01, via Wall Game PM: "on that wall that increased
+    distance to 35 moves, you could have played one of these green screen
+    memes. save them for occasions like this like when you get destroyed by
+    a move"). Cut to 0.5-3.0 s: Whisper finds no words there; a possible
+    word comes at 5.8 s.
+  */
+  "gs-laugh-cry": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    seconds: 2.5,
+    pawn: true,
+    tail: false,
+    // Head and shoulders, as large as JJJ's, so the face reads on a phone.
+    size: { w: 0.4, h: 0.252 },
+    small: { w: 0.34, h: 0.214 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-laugh-cry",
+      fps: 30,
+      frames: 75,
+      sha256:
+        "7f2ef0b24d1c567a3c6c72243385a37633377ef70b7e3b4e4a28ae21d2e30898",
+      audio: true,
+    },
+    source:
+      "Nil's clip, 2026-11-01: Green Screen - Ortua - Meinangis - Ngaaaaaaaaa (origin not known), 0.5-3.0 s, its black bars cropped, its voice kept",
+    claim: "MEDIUM: a clip of unknown origin, with its audio",
+    likeness: "HIGH: a real person's face",
+    nilOk:
+      'Nil, for this clip: "on that wall that increased distance to 35 moves, you could have played one of these green screen memes. save them for occasions like this like when you get destroyed by a move" (Nil to Wall Game PM, 2026-11-01 about 10:05 UTC)',
+    rating: null,
+  },
   "gs-confused-travolta": {
     form: "clip",
     draw: "sequence",
