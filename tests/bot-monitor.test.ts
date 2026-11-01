@@ -208,4 +208,32 @@ describe("bot monitor forfeit alarm", () => {
     expect(back[0]).toContain("can be read again");
     expect(back[1]).toContain("Normal Bot forfeited a game");
   });
+
+  const rows = (prefix: string, count: number): string[] =>
+    Array.from(
+      { length: count },
+      (_, n) =>
+        `${prefix}${String(n).padStart(3, "0")}|2026-11-01T04:00:00Z|wsl-transformer-001:dw-easy|bgs-restart-failed:reattach:engine-refused||9`,
+    );
+
+  it("sends 3 new forfeits in one tick as 3 alerts", async () => {
+    setForfeits(rows("trio", 3));
+    const found = alerts(await run());
+    expect(found).toHaveLength(3);
+    for (const alert of found) {
+      expect(alert).toContain("Normal Bot forfeited a game");
+    }
+  });
+
+  it("sends more than 3 new forfeits in one tick as ONE alert that lists them", async () => {
+    setForfeits(rows("mass", 40));
+    const found = alerts(await run());
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("40 bot games were forfeited");
+    expect(found[0]).toContain("/game/mass000");
+    // The list is cut to stay under Discord's limit, and says what it cut.
+    expect(found[0].length).toBeLessThanOrEqual(1900);
+    expect(found[0]).toMatch(/- and \d+ more: game_details\.bot_resign_cause/);
+    expect(alerts(await run())).toEqual([]);
+  });
 });

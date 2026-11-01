@@ -243,6 +243,7 @@ fi
 FORFEITS_FILE="$STATE_FILE.forfeits"
 FORFEITS_FAILING_FILE="$STATE_FILE.forfeits-failing"
 FORFEITS_HEADER="game_id|started_at|bot_id|bot_resign_cause|puzzle_id|moves_count"
+FORFEITS_BURST=3 # more new forfeits than this in one tick go out as one alert
 
 # The display name for a "clientId:botId", or the id itself for any other bot.
 bot_label() {
@@ -280,6 +281,7 @@ check_forfeits() {
   # list holds, so an empty first list still ends the first run.
   [ -f "$FORFEITS_FILE" ] || first_run=1
   touch "$FORFEITS_FILE"
+  local -a singles=() lines=()
   while IFS='|' read -r id started bot cause puzzle moves; do
     [ -n "$id" ] || continue
     grep -qxF -e "$id" "$FORFEITS_FILE" && continue
@@ -287,8 +289,29 @@ check_forfeits() {
     [ "$first_run" = "1" ] && continue
     where="$API_BASE/game/$id"
     [ -n "$puzzle" ] && where="$where (puzzle $puzzle)"
-    send_discord "🏳️ **$(bot_label "$bot") forfeited a game**: $where. Cause: \`$cause\`, $moves moves, started $started (seen ${now}). Bots do not resign by design, so an internal failure ended this game: investigate it."
+    singles+=("🏳️ **$(bot_label "$bot") forfeited a game**: $where. Cause: \`$cause\`, $moves moves, started $started (seen ${now}). Bots do not resign by design, so an internal failure ended this game: investigate it.")
+    lines+=("- $(bot_label "$bot"): $where \`$cause\`")
   done <<< "$(tail -n +2 <<< "$out")"
+
+  # A bot-client drop or an engine crash forfeits many games in one tick. One
+  # alert per game would then run into Discord's webhook rate limit, and a
+  # refused send is lost for good (its id is already recorded). So more than
+  # FORFEITS_BURST new games go out as ONE alert that lists them.
+  local msg line shown=0
+  if [ "${#singles[@]}" -gt "$FORFEITS_BURST" ]; then
+    msg="🏳️ **${#singles[@]} bot games were forfeited** since the last check (seen ${now}). Many at once usually means one cause, such as a bot-client drop or an engine crash. Bots do not resign by design: investigate."
+    for line in "${lines[@]}"; do
+      [ $(( ${#msg} + ${#line} )) -gt 1700 ] && break
+      msg="$msg"$'\n'"$line"
+      shown=$((shown + 1))
+    done
+    if [ "$shown" -lt "${#lines[@]}" ]; then
+      msg="$msg"$'\n'"- and $(( ${#lines[@]} - shown )) more: game_details.bot_resign_cause has them all."
+    fi
+    send_discord "$msg"
+  else
+    for msg in "${singles[@]}"; do send_discord "$msg"; done
+  fi
   # The list holds 50 games; 500 ids is far more than can return.
   tail -n 500 "$FORFEITS_FILE" > "$FORFEITS_FILE.tmp" && mv "$FORFEITS_FILE.tmp" "$FORFEITS_FILE"
 }
