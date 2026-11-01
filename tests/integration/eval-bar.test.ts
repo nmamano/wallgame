@@ -44,10 +44,15 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 let createApp: typeof import("../../server/app").createApp;
+let bgsStore: typeof import("../../server/games/bgs-store");
+let sweepStaleBgs: typeof import("../../server/routes/bgs-janitor").sweepStaleBgs;
 
 async function importServerModules() {
   const serverModule = await import("../../server/app");
   createApp = serverModule.createApp;
+  bgsStore = await import("../../server/games/bgs-store");
+  sweepStaleBgs = (await import("../../server/routes/bgs-janitor"))
+    .sweepStaleBgs;
 }
 
 function startTestServer() {
@@ -1204,6 +1209,105 @@ describe("eval bar integration tests", () => {
       // which is the expected behavior per the spec
     } finally {
       replayEvalSocket?.close();
+      hostSocket?.close();
+      joinerSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
+
+  it("janitor: a leaked shared eval BGS leaves no shared entry behind", async () => {
+    const hostUserId = "eval-janitor-host";
+    const joinerUserId = "eval-janitor-joiner";
+    const clientId = "eval-janitor-client";
+    const botId = "eval-janitor-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let hostSocket: HumanSocket | null = null;
+    let joinerSocket: HumanSocket | null = null;
+    let firstViewer: EvalSocket | null = null;
+    let nextViewer: EvalSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      randomStart: false,
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: buildStandardInitialState(5, 5),
+    };
+
+    try {
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: "Eval Janitor Bot",
+        engine: "bun run ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const hostGame = await createFriendGame(hostUserId, gameConfig, true);
+      const gameId = hostGame.gameId;
+      const joinerGame = await joinFriendGame(joinerUserId, gameId);
+      hostSocket = await openHumanSocket(
+        hostUserId,
+        gameId,
+        hostGame.socketToken,
+      );
+      joinerSocket = await openHumanSocket(
+        joinerUserId,
+        gameId,
+        joinerGame.socketToken,
+      );
+      const initial = await hostSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(initial.state.status).toBe("playing");
+
+      // The first viewer builds the game's shared eval BGS.
+      firstViewer = await openEvalSocket(gameId);
+      await sleep(100);
+      firstViewer.sendHandshake(gameId, "standard", 5, 5);
+      await firstViewer.waitForMessage("eval-history");
+      const shared = bgsStore.getBgs(gameId);
+      expect(shared?.status).toBe("ready");
+
+      // Leak it: idle past the limit, then one sweep.
+      const now = Date.now();
+      shared!.updatedAt = now - bgsStore.BGS_MAX_IDLE_MS - 1;
+      expect(await sweepStaleBgs(now)).toBe(1);
+      expect(bgsStore.getBgs(gameId)).toBeUndefined();
+
+      // With the shared entry gone, the next viewer builds a new BGS. A
+      // shared entry left behind would serve its cached history from the
+      // ended BGS and build nothing.
+      nextViewer = await openEvalSocket(gameId);
+      await sleep(100);
+      nextViewer.sendHandshake(gameId, "standard", 5, 5);
+      await nextViewer.waitForMessage("eval-history");
+      expect(bgsStore.getBgs(gameId)?.status).toBe("ready");
+
+      hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await hostSocket.waitForState((s) => s.state.status === "finished");
+    } finally {
+      firstViewer?.close();
+      nextViewer?.close();
       hostSocket?.close();
       joinerSocket?.close();
       if (botClient) {

@@ -67,7 +67,6 @@ import {
   setPendingRequest,
   clearPendingRequest,
   endAllBgsForBot,
-  findStaleBgs,
   type BgsHistoryEntry,
 } from "../games/bgs-store";
 
@@ -1244,59 +1243,6 @@ export const endBgsSession = async (
       resolve: () => resolve(),
     });
   });
-};
-
-/** How often the janitor looks for stale BGS. */
-export const BGS_JANITOR_INTERVAL_MS = 60 * 60 * 1000;
-
-/**
- * End every BGS idle longer than BGS_MAX_IDLE_MS (bgs-store.ts), one at a
- * time, the same way a game end does. Returns how many it ended.
- *
- * Defense in depth: each end path (game end, start timeout, client
- * disconnect) already ends its session, so in normal operation this finds
- * nothing. A session it finds is a leak, so it logs a warning per session.
- */
-export const sweepStaleBgs = async (now: number): Promise<number> => {
-  const stale = findStaleBgs(now);
-  for (const session of stale) {
-    const { bgsId, botCompositeId, gameId } = session;
-    console.warn("[custom-bot-ws] janitor ending stale BGS", {
-      bgsId,
-      botCompositeId,
-      gameId,
-      idleMs: now - session.updatedAt,
-    });
-    try {
-      await endBgsSession(botCompositeId, bgsId);
-    } catch (error) {
-      console.error("[custom-bot-ws] janitor failed to end BGS", {
-        error,
-        bgsId,
-      });
-      // Clean up locally anyway, as the game-end path does.
-      endBgs(bgsId);
-      const [clientId] = botCompositeId.split(":");
-      removeClientBgsSession(clientId, bgsId);
-    }
-  }
-  return stale.length;
-};
-
-/** Started once by the process entrypoint, never by createApp or an import. */
-export const startBgsJanitor = (): Timer => {
-  let running = false;
-  const timer = setInterval(() => {
-    if (running) return;
-    running = true;
-    void sweepStaleBgs(Date.now())
-      .catch(() => console.error("[custom-bot-ws] janitor sweep failed"))
-      .finally(() => {
-        running = false;
-      });
-  }, BGS_JANITOR_INTERVAL_MS);
-  timer.unref();
-  return timer;
 };
 
 /**

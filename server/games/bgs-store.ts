@@ -547,8 +547,8 @@ export const BGS_MAX_IDLE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The sessions with no update for MORE than `maxIdleMs` before `now`.
- * Ends nothing: the janitor in custom-bot-socket.ts ends them through
- * endBgsSession, which also tells the engine, where a bare endBgs would
+ * Ends nothing: the janitor (routes/bgs-janitor.ts) ends them through the
+ * normal end paths, which also tell the engine, where a bare endBgs would
  * forget a session the engine still holds.
  */
 export const findStaleBgs = (

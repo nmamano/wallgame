@@ -149,7 +149,8 @@ let startBgsSession: typeof import("../../server/routes/custom-bot-socket").star
 let requestEvaluation: typeof import("../../server/routes/custom-bot-socket").requestEvaluation;
 let applyBgsMove: typeof import("../../server/routes/custom-bot-socket").applyBgsMove;
 let endBgsSession: typeof import("../../server/routes/custom-bot-socket").endBgsSession;
-let startBgsJanitor: typeof import("../../server/routes/custom-bot-socket").startBgsJanitor;
+let startBgsJanitor: typeof import("../../server/routes/bgs-janitor").startBgsJanitor;
+let getActiveGame: typeof import("../../server/games/custom-bot-store").getActiveGame;
 let janitorIntervalMs: number;
 let maxIdleMs: number;
 let timeoutMs: number;
@@ -234,8 +235,10 @@ beforeAll(async () => {
   requestEvaluation = socketModule.requestEvaluation;
   applyBgsMove = socketModule.applyBgsMove;
   endBgsSession = socketModule.endBgsSession;
-  startBgsJanitor = socketModule.startBgsJanitor;
-  janitorIntervalMs = socketModule.BGS_JANITOR_INTERVAL_MS;
+  const janitorModule = await import("../../server/routes/bgs-janitor");
+  startBgsJanitor = janitorModule.startBgsJanitor;
+  janitorIntervalMs = janitorModule.BGS_JANITOR_INTERVAL_MS;
+  getActiveGame = botStore.getActiveGame;
   maxIdleMs = bgsStore.BGS_MAX_IDLE_MS;
   timeoutMs = socketModule.BGS_REQUEST_TIMEOUT_MS;
   getBgs = bgsStore.getBgs;
@@ -511,6 +514,10 @@ const createBotGame = async (): Promise<string> => {
 describe("stale-BGS janitor", () => {
   it("on its timer, ends only sessions idle past the limit, engine included", async () => {
     for (const id of ["janitor-stale", "janitor-edge", "janitor-fresh"]) {
+      // A bot's game: its BGS and its active-game entry, as game-socket
+      // creates them.
+      addActiveGame(BOT_ID, id, 1, "Opponent");
+      createdGameIds.push(id);
       await start(id);
     }
     timers.useFakeTimers();
@@ -534,7 +541,9 @@ describe("stale-BGS janitor", () => {
       );
       expect(engine.events).toContain("end_game_session:janitor-stale");
       expect(engine.sessions.has("janitor-stale")).toBe(false);
+      expect(getActiveGame(BOT_ID, "janitor-stale")).toBeUndefined();
       for (const id of ["janitor-edge", "janitor-fresh"]) {
+        expect(getActiveGame(BOT_ID, id)).toBeDefined();
         expect(getBgs(id)?.status).toBe("ready");
         expect(engine.sessions.has(id)).toBe(true);
         expect(engine.events).not.toContain(`end_game_session:${id}`);
