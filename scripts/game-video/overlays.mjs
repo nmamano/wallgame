@@ -930,6 +930,33 @@ export const OVERLAYS = {
       'Nil, for this clip: "you can also put this at the time the move is played (with anticipation and slow zoom maybe), then one of the others after while it\'s showing the new distance path" (Nil to Wall Game PM, 2026-11-01 about 10:15 UTC)',
     rating: null,
   },
+  /*
+    Chalk equations floating over the board, the "thinking" meme, for a
+    zoom onto the human's cat just before the human's good move (Nil,
+    2026-11-01, to the Wall Game Director: "this meme with a zoom in on
+    the cat can be before a good move (by human, not bot), save it for a
+    different video"). 2.0-4.5 s of Nil's clip; its track is silent.
+  */
+  "gs-math": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    seconds: 2.533,
+    sequence: {
+      dir: "gs-math",
+      fps: 30,
+      frames: 76,
+      sha256:
+        "7bc446650b96dbda989679a408b1003298e4dcad7ea1ddf23babc6d506a0e481",
+    },
+    source:
+      "Nil's clip, 2026-11-01: 4K Math Background Greenscreen effect Chromakey Copyright free.mp4 (origin not known; its name says copyright free), 2.0-4.5 s, keyed; its track is silent",
+    claim: "MEDIUM: a clip of unknown origin, said to be copyright free",
+    likeness: "None",
+    nilOk:
+      'Nil, for this clip: "this meme with a zoom in on the cat can be before a good move (by human, not bot), save it for a different video" (Nil to the Wall Game Director, 2026-11-01)',
+    rating: null,
+  },
   confetti: {
     form: "cover",
     draw: "sequence",
