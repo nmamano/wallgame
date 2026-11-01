@@ -294,6 +294,19 @@ describe("huh (C43)", () => {
       },
     ]);
     expect(l.plies[0].huh).toEqual({ kind: "ignored-threat", walk: 2 });
+    // bestWalks is in hunts order (VR1, review 133 N1): the step that saves
+    // P1's mouse must raise hunts[1] (P2's cat), not hunts[0].
+    const other = labels([
+      {
+        w1: [8, 6],
+        w2: [2, 2],
+        wc: [0.1, 0.0],
+        best: "Mh7",
+        bestSteps: [run],
+        bestWalks: [8, 2],
+      },
+    ]);
+    expect(other.plies[0].tags).not.toContain("huh");
     // The best move is a wall: no step a viewer sees.
     const wall = labels([
       {

@@ -5,10 +5,12 @@
  * network. `pick-daily-candidates.ts` feeds them stored rows; the tests feed
  * them fixtures.
  *
- * ELIGIBILITY (Nil, 2026-10-25). Every seat must be a guest, an official bot
- * or Nil's own account. One seat held by any other signed-in member, or by a
- * bot that is not official, takes the whole game out. Every variant is in.
- * BOT VS BOT IS OUT (Nil, 2026-10-26): at least one seat is a guest or Nil.
+ * ELIGIBILITY (Nil, 2026-10-25; members in since 2026-11-01). Every seat must
+ * be a guest, a signed-in member (Nil, ask d3c35245: "Yes, ALL games, no
+ * names") or an official bot. A bot that is not official takes the whole game
+ * out. Every variant is in. A member other than Nil is never named: the
+ * report calls the seat by its colour (memberSeatName).
+ * BOT VS BOT IS OUT (Nil, 2026-10-26): at least one seat is a human.
  * Human vs human is in, like human vs bot.
  * Puzzle attempts are out: they start from an authored position and are a
  * solve, not a game. Fewer than MIN_PLIES moves is out: see the constant.
@@ -113,7 +115,7 @@ export interface StoredGameSummary {
   seats: StoredSeat[];
 }
 
-export type SeatKind = "guest" | "nil" | "official bot";
+export type SeatKind = "guest" | "nil" | "member" | "official bot";
 
 export type SeatVerdict =
   | { ok: true; kind: SeatKind }
@@ -136,9 +138,7 @@ export const classifySeat = (seat: StoredSeat): SeatVerdict => {
   const kind = classifyPastGamePlayer(seat.playerConfigType, seat.userId);
   if (kind === "guest") return { ok: true, kind: "guest" };
   if (kind === "member") {
-    return seat.userId === NIL_USER_ID
-      ? { ok: true, kind: "nil" }
-      : { ok: false, reason: "signed-in member seat" };
+    return { ok: true, kind: seat.userId === NIL_USER_ID ? "nil" : "member" };
   }
   return seat.botIsOfficial === true
     ? { ok: true, kind: "official bot" }
@@ -194,8 +194,7 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
 
 /**
  * gameEligibility with one more term, for the by-hand report of Nil's own
- * games (--nil-seat; Nil, 2026-10-31): a game with no Nil seat is out. Nil
- * against another signed-in member stays out, as gameEligibility says.
+ * games (--nil-seat; Nil, 2026-10-31): a game with no Nil seat is out.
  */
 export const nilGameEligibility = (game: StoredGameSummary): GameVerdict => {
   const verdict = gameEligibility(game);
@@ -204,23 +203,11 @@ export const nilGameEligibility = (game: StoredGameSummary): GameVerdict => {
 };
 
 /**
- * A game that only another member's seat keeps out: with every member seat
- * read as Nil's, it would be eligible. The --members section lists these for
- * a person to look at (strong human games, 2026-10-31); they are never
- * candidates while the 2026-10-25 rule stands.
+ * The name a report gives a member's seat (Nil, 2026-11-01: "no names"): its
+ * colour in the daily look (dailySeatColors), so a video and its facts agree.
  */
-export const excludedOnlyByMembers = (game: StoredGameSummary): boolean => {
-  if (gameEligibility(game).eligible) return false;
-  const asNil = {
-    ...game,
-    seats: game.seats.map((s) =>
-      classifyPastGamePlayer(s.playerConfigType, s.userId) === "member"
-        ? { ...s, userId: NIL_USER_ID }
-        : s,
-    ),
-  };
-  return gameEligibility(asNil).eligible;
-};
+export const memberSeatName = (color: "red" | "blue"): string =>
+  color === "red" ? "Red player" : "Blue player";
 
 /* ------------------------------------------------- engine (debug column) -- */
 

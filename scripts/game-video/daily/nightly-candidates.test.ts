@@ -22,7 +22,6 @@ describe("nightly-candidates.sh options", () => {
   test("--days and --nil-seat are refused without --manual-stamp", () => {
     expect(refuse(["--nil-seat"])).toEqual({ code: 64, created: false });
     expect(refuse(["--days", "30"])).toEqual({ code: 64, created: false });
-    expect(refuse(["--members"])).toEqual({ code: 64, created: false });
   });
 
   test("a bad --days, a bad stamp or an unknown option is refused", () => {

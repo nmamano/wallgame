@@ -374,6 +374,7 @@ const huhOf = (f: PlyFacts): Huh | null => {
       h.after <= THREAT_WALK &&
       h.targetFrom === h.targetTo &&
       e?.bestWalks != null &&
+      // bestWalks and hunts are both in huntsFor order (facts.ts).
       e.bestWalks[i] > THREAT_WALK &&
       e.bestSteps.some((s) => s.pawn === h.target.type),
   );

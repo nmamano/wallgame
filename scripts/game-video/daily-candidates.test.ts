@@ -18,7 +18,7 @@ import {
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
-  excludedOnlyByMembers,
+  memberSeatName,
   MIN_PLIES,
   oneExitLoss,
   type SeatKind,
@@ -102,20 +102,30 @@ describe("seat eligibility", () => {
     });
   });
 
-  test("another signed-in member and a non-official bot are refused", () => {
-    expect(classifySeat(member).ok).toBe(false);
+  test("another signed-in member is in (2026-11-01); a non-official bot is refused", () => {
+    expect(classifySeat(member)).toEqual({ ok: true, kind: "member" });
     expect(classifySeat(customBot).ok).toBe(false);
   });
 
-  test("one member seat takes the whole game out, from either seat", () => {
+  test("a member seat is in, from either seat, against a bot or a human", () => {
     expect(gameEligibility(game(guest, officialBot))).toEqual({
       eligible: true,
       seatKinds: ["guest", "official bot"],
       result: { winner: 1, reason: "capture" },
     });
     expect(gameEligibility(game(officialBot, nil)).eligible).toBe(true);
-    expect(gameEligibility(game(member, officialBot)).eligible).toBe(false);
-    expect(gameEligibility(game(officialBot, member)).eligible).toBe(false);
+    expect(gameEligibility(game(officialBot, member))).toEqual({
+      eligible: true,
+      seatKinds: ["official bot", "member"],
+      result: { winner: 1, reason: "capture" },
+    });
+    expect(gameEligibility(game(nil, member)).eligible).toBe(true);
+    expect(gameEligibility(game(member, customBot)).eligible).toBe(false);
+  });
+
+  test("a member's seat is named by its colour in the daily look", () => {
+    expect(memberSeatName("red")).toBe("Red player");
+    expect(memberSeatName("blue")).toBe("Blue player");
   });
 
   test("human vs human is in; bot vs bot is out", () => {
@@ -131,7 +141,7 @@ describe("seat eligibility", () => {
     });
   });
 
-  test("--nil-seat keeps only games with a Nil seat, never Nil vs a member", () => {
+  test("--nil-seat keeps only games with a Nil seat", () => {
     expect(nilGameEligibility(game(nil, officialBot))).toEqual({
       eligible: true,
       seatKinds: ["nil", "official bot"],
@@ -142,20 +152,11 @@ describe("seat eligibility", () => {
       eligible: false,
       reason: "no Nil seat",
     });
-    expect(nilGameEligibility(game(nil, member))).toEqual({
+    expect(nilGameEligibility(game(nil, member)).eligible).toBe(true);
+    expect(nilGameEligibility(game(guest, member))).toEqual({
       eligible: false,
-      reason: "signed-in member seat",
+      reason: "no Nil seat",
     });
-  });
-
-  test("--members: a game only a member seat keeps out, nothing else", () => {
-    expect(excludedOnlyByMembers(game(member, member))).toBe(true);
-    expect(excludedOnlyByMembers(game(member, officialBot))).toBe(true);
-    expect(excludedOnlyByMembers(game(guest, officialBot))).toBe(false);
-    expect(excludedOnlyByMembers(game(member, customBot))).toBe(false);
-    expect(excludedOnlyByMembers(game(member, member, { movesCount: 4 }))).toBe(
-      false,
-    );
   });
 
   test("a game with no stored winner is out: a one-move-rule draw too", () => {

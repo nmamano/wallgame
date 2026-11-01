@@ -7,11 +7,10 @@
  *
  *   bun scripts/game-video/pick-daily-candidates.ts --container wgvideo-restore \
  *     --until 2026-10-25T10:20:48Z [--days 7] [--top 5] [--game ID ...] [--out F]
- *     [--engine] [--nil-seat] [--members]
+ *     [--engine] [--nil-seat]
  *
- * --members adds `memberGames`: the games that only another member's seat
- * keeps out (excludedOnlyByMembers), with ratings and no member names, for a
- * person to judge; they are not candidates.
+ * A member's seat other than Nil's is named by its colour, never by its
+ * display name (memberSeatName; Nil, 2026-11-01).
  *
  * --nil-seat keeps only games with a Nil seat (nilGameEligibility), for a
  * by-hand report of Nil's own games over a long --days window.
@@ -33,7 +32,6 @@
  * it never touches: engine-eval.ts.
  */
 import { writeFileSync } from "node:fs";
-import { resolveResultFromPlayers } from "../../server/db/replay-match-score";
 import type { ConfigFile } from "../../official-custom-bot-client/src/config-schema";
 import type {
   GameInitialState,
@@ -42,7 +40,6 @@ import type {
   Variant,
 } from "../../shared/domain/game-types";
 import {
-  classifySeat,
   closeCallsOf,
   describeCloseCall,
   describeEscape,
@@ -50,9 +47,9 @@ import {
   escapesOf,
   pickBoard,
   evalBarEngineFor,
-  excludedOnlyByMembers,
   gameEligibility,
   jumpsOf,
+  memberSeatName,
   nilGameEligibility,
   oneExitLoss,
   unknownBotNames,
@@ -68,6 +65,7 @@ import {
   type StoredGameSummary,
   type Swing,
 } from "./daily-candidates";
+import { dailySeatColors } from "./edl.mjs";
 import { siteMove } from "./site-move.mjs";
 import {
   EngineLink,
@@ -90,8 +88,6 @@ interface Args {
   games: string[];
   /** --nil-seat: only games with a Nil seat. */
   nilSeat: boolean;
-  /** --members: list the games only a member seat keeps out. */
-  members: boolean;
   out: string;
 }
 
@@ -122,7 +118,6 @@ const parseArgs = (argv: string[]): Args => {
     top: Number(value("top") ?? 5),
     games,
     nilSeat: argv.includes("--nil-seat"),
-    members: argv.includes("--members"),
     out: value("out") ?? `/tmp/daily-candidates-${stamp}Z.json`,
   };
 };
@@ -256,53 +251,6 @@ interface Candidate {
   engine?: EngineColumn | { error: string };
 }
 
-/**
- * A game only member seats keep out (--members): the facts a person needs to
- * judge its strength, with no member's name.
- */
-interface MemberGame {
-  gameId: string;
-  startedAt: string;
-  variant: string;
-  boardWidth: number;
-  boardHeight: number;
-  movesCount: number;
-  rated: boolean;
-  result: ReturnType<typeof resolveResultFromPlayers>;
-  seats: {
-    playerOrder: number;
-    kind: "member" | SeatKind;
-    rating: number | null;
-    /** Only for a bot. */
-    botName?: string;
-  }[];
-}
-
-const memberGameOf = (game: StoredGame): MemberGame => ({
-  gameId: game.gameId,
-  startedAt: game.startedAt,
-  variant: game.variant,
-  boardWidth: game.boardWidth,
-  boardHeight: game.boardHeight,
-  movesCount: game.movesCount,
-  rated: game.rated,
-  result: resolveResultFromPlayers(game.seats),
-  seats: [...game.seats]
-    .sort((a, b) => a.playerOrder - b.playerOrder)
-    .map((s) => {
-      const v = classifySeat(s);
-      return {
-        playerOrder: s.playerOrder,
-        kind: v.ok ? v.kind : "member",
-        rating: s.ratingAtStart,
-        // A custom bot's name can carry its owner's (review 120 N1).
-        ...(s.botId
-          ? { botName: s.botIsOfficial ? s.displayName : "custom bot" }
-          : {}),
-      };
-    }),
-});
-
 const walk = (n: number | null) => (n === null ? "-" : String(n));
 
 /** The walls the zoom aims at, e.g. "zoom >e4" or "zoom >e4 + ^f5 together". */
@@ -354,7 +302,6 @@ const main = async () => {
   const excluded: { gameId: string; reason: string }[] = [];
   const unscored: { gameId: string; reason: string }[] = [];
   const candidates: Candidate[] = [];
-  const memberGames: MemberGame[] = [];
   const links = new Map<string, EngineLink>();
 
   try {
@@ -364,9 +311,6 @@ const main = async () => {
       );
       if (!verdict.eligible) {
         excluded.push({ gameId: game.gameId, reason: verdict.reason });
-        if (args.members && excludedOnlyByMembers(game)) {
-          memberGames.push(memberGameOf(game));
-        }
         continue;
       }
       try {
@@ -398,10 +342,22 @@ const main = async () => {
           continue;
         }
         const { movers, distances } = replay;
-        const names = {
-          1: game.seats.find((s) => s.playerOrder === 1)?.displayName ?? "P1",
-          2: game.seats.find((s) => s.playerOrder === 2)?.displayName ?? "P2",
-        };
+        const colors = dailySeatColors({
+          1: verdict.seatKinds[0] === "official bot",
+          2: verdict.seatKinds[1] === "official bot",
+        });
+        const seats = [...game.seats]
+          .sort((a, b) => a.playerOrder - b.playerOrder)
+          .map((s, i) => ({
+            playerOrder: s.playerOrder,
+            kind: verdict.seatKinds[i],
+            name:
+              verdict.seatKinds[i] === "member"
+                ? memberSeatName(colors[s.playerOrder as PlayerId])
+                : s.displayName,
+            rating: s.ratingAtStart,
+          }));
+        const names = { 1: seats[0].name, 2: seats[1].name };
         const minJump = minJumpFor(game.variant as Variant);
         const calls = closeCallsOf(replay, moves);
         const candidate: Candidate = {
@@ -415,14 +371,7 @@ const main = async () => {
           initialState,
           result: verdict.result,
           rated: game.rated,
-          seats: [...game.seats]
-            .sort((a, b) => a.playerOrder - b.playerOrder)
-            .map((s, i) => ({
-              playerOrder: s.playerOrder,
-              kind: verdict.seatKinds[i],
-              name: s.displayName,
-              rating: s.ratingAtStart,
-            })),
+          seats,
           distances,
           minJump,
           picks: pickJumps(jumpsOf(distances, moves, movers), minJump).map(
@@ -492,7 +441,6 @@ const main = async () => {
     ranked,
     excluded,
     unscored,
-    ...(args.members ? { memberGames } : {}),
   };
   writeFileSync(args.out, JSON.stringify(report, null, 1));
 
