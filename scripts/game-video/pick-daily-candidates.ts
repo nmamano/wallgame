@@ -67,8 +67,8 @@ import {
   type SeatKind,
   type StoredGameSummary,
   type Swing,
-  siteMove,
 } from "./daily-candidates";
+import { siteMove } from "./site-move.mjs";
 import {
   EngineLink,
   engineConfig,

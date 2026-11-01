@@ -163,6 +163,7 @@ import {
   musicGain,
 } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
+import { siteMove } from "./site-move.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import {
   masterFault,
@@ -4170,7 +4171,7 @@ const writeContactSheet = async (stills, out) => {
   const png = out.replace(/(\.mp4)?$/, "-sheet.png");
   const tiles = stills.map((st) => ({
     src: `data:image/png;base64,${readFileSync(st.file).toString("base64")}`,
-    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${placeName(st.place)}` : ""} - ${st.at.toFixed(1)}s`,
+    label: `ply ${st.ply} (move ${siteMove(st.ply)}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${placeName(st.place)}` : ""} - ${st.at.toFixed(1)}s`,
   }));
   const page = await browser.newPage({
     viewport: { width: 400, height: 400 },

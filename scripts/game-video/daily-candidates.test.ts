@@ -581,7 +581,7 @@ describe("close calls", () => {
     expect(call.size).toBe(4);
     expect(DANGER_WALK).toBe(2);
     expect(describeCloseCall(call, { 1: "Easy Bot", 2: "Guest Quokka" })).toBe(
-      "Easy Bot's cat gets 1 square from Guest Quokka's mouse. Walls make it walk 5 (move 2), and the mouse is safe.",
+      "Easy Bot's cat gets 1 square from Guest Quokka's mouse. Walls make it walk 5 (move 1), and the mouse is safe.",
     );
   });
 

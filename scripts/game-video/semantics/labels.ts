@@ -20,7 +20,7 @@
  */
 import type { PlayerId, Variant } from "../../../shared/domain/game-types";
 import { minJumpFor, type Hunt } from "../race-replay";
-import { siteMove } from "../daily-candidates";
+import { siteMove } from "../site-move.mjs";
 import type { GameFacts, HuntChange, PlyFacts } from "./facts";
 
 export const LABELS = [

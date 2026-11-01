@@ -90,6 +90,7 @@ import {
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { OVERLAYS, needsNilOk, riskLevel } from "../overlays.mjs";
 import { timelineOf } from "./strips.mjs";
+import { siteMove } from "../site-move.mjs";
 import { gridOf } from "./tools.mjs";
 import { lintNotes, lintRecapture, lintStops } from "./lint.mjs";
 import {
@@ -2799,6 +2800,8 @@ export const createDaily = ({
       json(res, 200, counts);
     },
 
+    // `swingSiteMove`: the row's swingMove (ply + 1) as wallgame.io's move
+    // list names it, for the page (site-move.mjs).
     "GET /api/daily/post-log": (req, res, url) =>
       json(
         res,
@@ -2807,7 +2810,12 @@ export const createDaily = ({
           url.searchParams.get("dryRun") === "1"
             ? store.postLog.dryRun
             : store.postLog.live,
-        ),
+        ).map((r) => ({
+          ...r,
+          swingSiteMove: Number.isInteger(r.swingMove)
+            ? siteMove(r.swingMove - 1)
+            : null,
+        })),
       ),
   };
 
@@ -3008,6 +3016,7 @@ export const logRow = (item, platform, result) => ({
   edlSha256: item.render.edlSha256,
   // Since 2026-10-26 the swing is the largest walking-distance jump, in steps.
   swingSize: item.candidate.picks[0].size,
+  // ply + 1, as the candidate stores it; the page shows the site's count.
   swingMove: item.candidate.picks[0].moveNumber,
   approver: item.approval.by,
   // Who fired the slot by hand (crew.mjs slot --now), also on a retry of
@@ -3139,7 +3148,7 @@ const DASHBOARD = `<!doctype html>
     t.append(h);
     for (const r of rows.slice(-30).reverse()) {
       const tr = el("tr");
-      for (const v of [r.utc, r.platform, r.gameId, r.postId, r.swingSize + " steps @ move " + r.swingMove,
+      for (const v of [r.utc, r.platform, r.gameId, r.postId, r.swingSize + " steps @ move " + r.swingSiteMove,
                        (r.effect || "-") + ":" + (r.ending || "-") + "/" + (r.sound || "-"), r.approver]) tr.append(el("td", null, v));
       t.append(tr);
     }

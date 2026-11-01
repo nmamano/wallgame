@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { EngineFacts, GameFacts, HuntChange, PlyFacts } from "./facts";
 import { readFileSync } from "node:fs";
-import { siteMoveNumber } from "../daily-candidates";
+import { siteMoveNumber } from "../site-move.mjs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { countersShow, isMoment, labelGame, raceWords } from "./labels";
 import {

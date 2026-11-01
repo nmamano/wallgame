@@ -166,7 +166,7 @@ const CLOSE_CALL: DescribedCloseCall = {
   },
   size: 18,
   description:
-    "Ruby's cat gets 1 square from Guest Tuatara's mouse. Walls make it walk 19 (move 10), and the mouse is safe.",
+    "Ruby's cat gets 1 square from Guest Tuatara's mouse. Walls make it walk 19 (move 5), and the mouse is safe.",
 };
 
 const ESCAPE: DescribedEscape = {
@@ -183,7 +183,7 @@ const ESCAPE: DescribedEscape = {
   pawns: [],
   size: 3,
   description:
-    "Ruby's cat is 1 square from Guest Tuatara's mouse. The mouse runs to f4 and places a wall, and the cat must walk 4 (move 15).",
+    "Ruby's cat is 1 square from Guest Tuatara's mouse. The mouse runs to f4 and places a wall, and the cat must walk 4 (move 8).",
 };
 
 /** Wall Game Growth's copy block for TESTGAME1 (copy.mjs). */
@@ -323,6 +323,8 @@ interface LogRow {
   caption: string | null;
   styleVersion: string | null;
   copyVersion: string;
+  swingMove: number;
+  swingSiteMove: string | null;
 }
 
 /** postPlatform's result: the platform's reply, or why it did not post. */
@@ -1714,7 +1716,7 @@ describe("Growth's copy block", () => {
     expect(
       (candidateFromReport(REPORT, 1) as { facts: string[] }).facts[0],
     ).toBe(
-      "Move 23: Guest Tuatara's wall makes Ruby walk 6 extra squares (2 to 8).",
+      "Move 12: Guest Tuatara's wall makes Ruby walk 6 extra squares (2 to 8).",
     );
   });
 
@@ -1728,9 +1730,9 @@ describe("Growth's copy block", () => {
       beats: DescribedCloseCall[];
     };
     expect(c.facts[0]).toBe(
-      `Move 10: ${CLOSE_CALL.description} Guest Tuatara wins at move 41.`,
+      `Move 5: ${CLOSE_CALL.description} Guest Tuatara wins at move 21.`,
     );
-    expect(c.facts[1]).toMatch(/^Move 23: /);
+    expect(c.facts[1]).toMatch(/^Move 12: /);
     expect(c.beats[0].danger.preyCell).toBe("g4");
     // The storyboard replays the moves from the start position.
     const start = { pawns: {}, walls: [] };
@@ -1762,11 +1764,11 @@ describe("Growth's copy block", () => {
       facts: string[];
       escapes: DescribedEscape[];
     };
-    expect(c.facts[0]).toMatch(/^Move 10: /);
+    expect(c.facts[0]).toMatch(/^Move 5: /);
     expect(c.facts[1]).toBe(
-      `Move 15: ${ESCAPE.description} Guest Tuatara wins at move 41.`,
+      `Move 8: ${ESCAPE.description} Guest Tuatara wins at move 21.`,
     );
-    expect(c.facts[2]).toMatch(/^Move 23: /);
+    expect(c.facts[2]).toMatch(/^Move 12: /);
     expect(c.escapes[0]).toMatchObject({
       ply: 14,
       preyFrom: "g5",
@@ -1775,7 +1777,7 @@ describe("Growth's copy block", () => {
     });
     // The hunter still wins: the fact counts the moves after the escape.
     expect(candidateFromReport(report({ 1: 3, 2: 0 }), 1).facts[1]).toMatch(
-      /the cat must walk 4 \(move 15\)\. Ruby still wins at move 41, 26 moves after the escape\.$/,
+      /the cat must walk 4 \(move 8\)\. Ruby still wins at move 21, 13 moves after the escape\.$/,
     );
     // A report from before escapes has none.
     expect(candidateFromReport(REPORT, 1).escapes).toEqual([]);
@@ -1833,10 +1835,10 @@ describe("Growth's copy block", () => {
     });
     // Ruby (player 2) hunts; the guest's mouse is the prey.
     expect(candidateFromReport(report({ 1: 3, 2: 0 }), 1).facts[0]).toMatch(
-      /the mouse is safe\. Ruby still wins at move 41, 31 moves after the save\.$/,
+      /the mouse is safe\. Ruby still wins at move 21, 16 moves after the save\.$/,
     );
     expect(candidateFromReport(report({ 1: 0, 2: 4 }), 1).facts[0]).toMatch(
-      /the mouse is safe\. Guest Tuatara wins at move 41\.$/,
+      /the mouse is safe\. Guest Tuatara wins at move 21\.$/,
     );
     // A resign: no walk ends at 0, so nothing is said.
     expect(candidateFromReport(report({ 1: 3, 2: 4 }), 1).facts[0]).toMatch(
@@ -3229,6 +3231,11 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     log.map(() => CAPTION_STYLE_VERSION),
   );
   expect(log.map((r) => r.copyVersion)).toEqual(log.map(() => COPY_VERSION));
+  // The swing's move as the site's move list names it: ply 22 is "12."
+  // (the stored swingMove is ply + 1).
+  expect(log.map((r) => [r.swingMove, r.swingSiteMove])).toEqual(
+    log.map(() => [23, "12."]),
+  );
   expect(log.map((r) => r.caption)).toEqual([
     COPY.x,
     `${COPY.youtubeTitle} #Shorts\n\n${COPY.youtubeDescription}`,
@@ -5035,7 +5042,7 @@ describe("the stored result: a game with no winner makes no video (FkQKb63y, 202
       ],
     };
     expect(candidateFromReport(report, 1).facts[0]).toMatch(
-      /Ruby still wins at move 41/,
+      /Ruby still wins at move 21/,
     );
   });
 

@@ -47,7 +47,7 @@ import {
 } from "./facts";
 import { isMoment, raceWords, type GameLabels, type Link } from "./labels";
 import type { PlySeen } from "./vision";
-import { siteMove, siteMoveNumber } from "../daily-candidates";
+import { siteMove, siteMoveNumber } from "../site-move.mjs";
 
 export const MODEL = "claude-opus-5-5";
 export const MAX_WORDS = 35;

@@ -20,6 +20,7 @@
  * or a mention in a post.
  */
 import { ENDINGS, fastForwardTag } from "../edl.mjs";
+import { siteMoveNumber } from "../site-move.mjs";
 
 /**
  * The on-video caption style that DIRECTOR.md's "On-video caption" section
@@ -447,25 +448,29 @@ export const candidateFromReport = (report, rank = 1) => {
   const name = (player) =>
     base.seats.find((s) => s.playerOrder === player)?.name;
   // A close call's sentence says "the mouse is safe"; the game can still be
-  // lost a few moves later, and the story must follow the end.
-  const outcome = (b, moveNumber, what) =>
+  // lost a few moves later, and the story must follow the end. Moves count
+  // as wallgame.io's move list does (site-move.mjs).
+  const lastMove = siteMoveNumber(base.movesCount - 1);
+  const outcome = (b, ply, what) =>
     winner === b.hunter.player
-      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - moveNumber} moves after the ${what}.`
+      ? ` ${name(winner)} still wins at move ${lastMove}, ${lastMove - siteMoveNumber(ply)} moves after the ${what}.`
       : winner === b.prey.player
-        ? ` ${name(winner)} wins at move ${base.movesCount}.`
+        ? ` ${name(winner)} wins at move ${lastMove}.`
         : "";
   return {
     ...base,
     facts: [
       ...base.beats.map(
         (b) =>
-          `Move ${b.save.moveNumber}: ${b.description}${outcome(b, b.save.moveNumber, "save")}`,
+          `Move ${siteMoveNumber(b.save.ply)}: ${b.description}${outcome(b, b.save.ply, "save")}`,
       ),
       ...base.escapes.map(
         (e) =>
-          `Move ${e.moveNumber}: ${e.description}${outcome(e, e.moveNumber, "escape")}`,
+          `Move ${siteMoveNumber(e.ply)}: ${e.description}${outcome(e, e.ply, "escape")}`,
       ),
-      ...base.picks.map((p) => `Move ${p.moveNumber}: ${p.description}`),
+      ...base.picks.map(
+        (p) => `Move ${siteMoveNumber(p.ply)}: ${p.description}`,
+      ),
     ],
   };
 };

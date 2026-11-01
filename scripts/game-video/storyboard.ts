@@ -49,6 +49,7 @@ import { boardPawns } from "../../shared/domain/pawns";
 import type { SeatKind } from "./daily-candidates";
 import { replayDistances } from "./race-replay";
 import { checkEdlAgainstGame, dailySeatColors, validateEdl } from "./edl.mjs";
+import { siteMove } from "./site-move.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -330,7 +331,7 @@ const tiles = replay.states.map((_, index) => {
   const head =
     ply < 0
       ? "start"
-      : `ply ${ply} · move ${ply + 1} · <b style="color:${WALL_HEX[colorOf(mover!)]}">${word(mover!)}</b> ${esc(game.moves[ply])}`;
+      : `ply ${ply} · move ${siteMove(ply)} · <b style="color:${WALL_HEX[colorOf(mover!)]}">${word(mover!)}</b> ${esc(game.moves[ply])}`;
   const badges = tags
     .map(
       (t) =>

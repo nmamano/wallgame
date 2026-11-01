@@ -31,7 +31,8 @@ import {
   wallToStandardNotation,
 } from "../../../shared/domain/standard-notation";
 import type { SeatKind } from "../daily-candidates";
-import { siteMoveNumber, winChance } from "../daily-candidates";
+import { winChance } from "../daily-candidates";
+import { siteMoveNumber } from "../site-move.mjs";
 import {
   huntsFor,
   huntWalks,

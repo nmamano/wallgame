@@ -45,6 +45,7 @@ import type {
   WallPosition,
 } from "../../shared/domain/game-types";
 import { boardPawns } from "../../shared/domain/pawns";
+import { siteMoveNumber } from "./site-move.mjs";
 import {
   cellFromStandardNotation,
   cellToStandardNotation,
@@ -273,15 +274,6 @@ export const winChance = (evaluationP1: number, side: PlayerId): number => {
   const forSide = side === 1 ? clamped : -clamped;
   return (forSide + 1) / 2;
 };
-
-/**
- * A ply as wallgame.io's move list numbers it: both players' turns share one
- * number, "4." for the first player and "4..." for the second
- * (formattedHistory in frontend/src/hooks/use-game-page-controller.ts).
- */
-export const siteMoveNumber = (ply: number): number => Math.floor(ply / 2) + 1;
-export const siteMove = (ply: number): string =>
-  `${siteMoveNumber(ply)}${ply % 2 === 0 ? "." : "..."}`;
 
 export interface Swing {
   /** 0-based index into the stored move list. */
@@ -721,7 +713,7 @@ export const describeCloseCall = (
   const wall = walls === 1 ? "A wall makes" : "Walls make";
   return (
     `${names[call.hunter.player]}'s ${call.hunter.type} gets ${squaresAway(call.danger.walk)} from ${names[call.prey.player]}'s ${call.prey.type}. ` +
-    `${wall} it walk ${call.save.walk} (move ${call.save.moveNumber}), and the ${call.prey.type} is safe.`
+    `${wall} it walk ${call.save.walk} (move ${siteMoveNumber(call.save.ply)}), and the ${call.prey.type} is safe.`
   );
 };
 
@@ -824,7 +816,7 @@ export const describeEscape = (
     walls === 0 ? "" : walls === 1 ? " and places a wall" : " and places walls";
   return (
     `${names[escape.hunter.player]}'s ${escape.hunter.type} is ${escape.walkBefore} square${escape.walkBefore === 1 ? "" : "s"} from ${names[escape.prey.player]}'s ${escape.prey.type}. ` +
-    `The ${escape.prey.type} runs to ${escape.preyCell}${wall}, and the ${escape.hunter.type} must walk ${escape.walk} (move ${escape.moveNumber}).`
+    `The ${escape.prey.type} runs to ${escape.preyCell}${wall}, and the ${escape.hunter.type} must walk ${escape.walk} (move ${siteMoveNumber(escape.ply)}).`
   );
 };
 
