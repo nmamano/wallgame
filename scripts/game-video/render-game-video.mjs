@@ -167,6 +167,7 @@ import { shownNames } from "./name-mask.mjs";
 import { siteMove } from "./site-move.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import {
+  MASTER_AAC_BITRATE,
   masterFault,
   masterFilters,
   OPENING_SILENCE_SECONDS,
@@ -2909,7 +2910,7 @@ const buildAudio = ({ cues, totalSeconds, music, work }) => {
       "-c:a",
       "aac",
       "-b:a",
-      "160k",
+      MASTER_AAC_BITRATE,
       audioPath,
     ]);
     return measureMaster(FFMPEG, audioPath, gainDb);

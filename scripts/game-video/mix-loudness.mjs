@@ -254,6 +254,15 @@ export const MASTER_MAX_TRUE_PEAK = -1;
 export const MASTER_LIMIT_DBTP = -2;
 export const MASTER_MAKEUP_BELOW = 0.5;
 export const MASTER_ENCODES = 5;
+/*
+  The master's AAC bitrate. At 160k the encode cut the highs that the
+  limiter's peaks are made of, and lifted the true peak by up to 5.6 dB:
+  v-2026-11-01-3 (FTFHyntE, no music, gain 13.6 dB) took five encodes down
+  to a limit of -6.5 dBTP and ended at -16.7 LUFS, so the render stopped.
+  The same list at 256k: -14.5 LUFS, true peak -1.8 dBTP, in one encode
+  (the 4090, 2026-11-01). About 0.7 MB more for a 60 s video.
+*/
+export const MASTER_AAC_BITRATE = "256k";
 const OVERSAMPLE = 4;
 
 /**

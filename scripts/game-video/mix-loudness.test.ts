@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  MASTER_AAC_BITRATE,
   MASTER_LUFS,
   OPENING_SILENCE_SECONDS,
   SILENCE_FILTER,
@@ -418,7 +419,7 @@ describe("the master", () => {
       "-c:a",
       "aac",
       "-b:a",
-      "160k",
+      MASTER_AAC_BITRATE,
       out,
     ]);
     const master = measureMaster("ffmpeg", out, gainDb);
