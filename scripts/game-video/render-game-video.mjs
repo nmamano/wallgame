@@ -3901,7 +3901,10 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
         `${where}: ply ${k} placed ${glowing.join(" ")} at an end of ${term}, and the page's glow on it differs between the two screenshots`,
       );
     }
-    // The page's arrow of each pawn the move moved (page-arrows.mjs).
+    // The page's arrow of each pawn the move moved (page-arrows.mjs). The
+    // corner is picked on the grid after the move, as the board does: a
+    // diagonal 2-step move uses both actions of the turn, so no wall is
+    // placed in that turn and the grids before and after it are the same.
     for (const p of pageArrows(
       REPLAYED.states[k],
       REPLAYED.states[k + 1],
