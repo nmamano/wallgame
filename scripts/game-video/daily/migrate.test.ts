@@ -281,9 +281,12 @@ describe("a version 2 day file gets music cue lists", () => {
     expect(rows).toEqual([{ ...old[0], music: ["tea-for-two"] }, old[1]]);
     expect(readFileSync(join(root, "post-log.v2.jsonl"), "utf8")).toBe(oldText);
     // No dry-run log: nothing is made.
-    expect(readdirSync(root).filter((f) => f.startsWith("post-log"))).toEqual([
-      "post-log.jsonl",
-      "post-log.v2.jsonl",
-    ]);
+    // Sorted: readdirSync's order is the filesystem's (CI's put
+    // post-log.v2.jsonl first, run 41369206414).
+    expect(
+      readdirSync(root)
+        .filter((f) => f.startsWith("post-log"))
+        .sort(),
+    ).toEqual(["post-log.jsonl", "post-log.v2.jsonl"]);
   });
 });
