@@ -138,7 +138,6 @@ import {
 } from "./overlays.mjs";
 import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
 import { Grid } from "../../shared/domain/grid.ts";
-import { moveArrowCorner } from "../../shared/domain/move-arrow.ts";
 import {
   wallFromStandardNotation,
   wallToStandardNotation,
@@ -183,6 +182,7 @@ import {
   silencesOverRules,
 } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
+import { pageArrows, routeNear } from "./page-arrows.mjs";
 import {
   allocateFrameRanges,
   movesUnderOverlay,
@@ -3770,8 +3770,6 @@ const wallsEndingAt = (boardIndex, end, term) =>
           Math.abs(y - end[1]) < GRID.pitchY / 10,
       );
     });
-/** How close a pawn's move arrow on the page may come to an erased wall. */
-const ARROW_CLEAR_CELLS = 0.3;
 /** The distance from point p to the box [x0, y0, x1, y1], in cells. */
 const boxDistance = (p, [x0, y0, x1, y1]) =>
   Math.hypot(
@@ -3903,39 +3901,14 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
         `${where}: ply ${k} placed ${glowing.join(" ")} at an end of ${term}, and the page's glow on it differs between the two screenshots`,
       );
     }
-    const [from, to] = [REPLAYED.states[k].pawns, REPLAYED.states[k + 1].pawns];
-    for (const p of boardPawns(to)) {
-      const was = pawnCell(from, p.playerId, p.type);
-      if (!was || (was[0] === p.cell[0] && was[1] === p.cell[1])) continue;
-      /*
-        The page's arrow: straight from the old cell to the new one, or,
-        for a diagonal 2-step move on a capture made after 2026-11-02
-        00:40 UTC (52705b91), an L through the corner the board picks
-        (shared/domain/move-arrow.ts). A capture keeps the look of its
-        day, so both shapes are checked.
-      */
-      const corner = moveArrowCorner(
-        { from: was, to: p.cell, playerId: p.playerId, pawnType: p.type },
-        to,
-        REPLAYED.states[k + 1].grid,
-        replay.state.config.variant,
-      );
-      const routes = [
-        [was, p.cell],
-        ...(corner ? [[was, corner, p.cell]] : []),
-      ];
-      const segmentNear = (a, b) =>
-        Array.from({ length: 21 }, (_, i) => i / 20).some(
-          (f) =>
-            boxDistance(
-              { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
-              box,
-            ) < ARROW_CLEAR_CELLS,
-        );
-      const near = routes.some((route) =>
-        route
-          .slice(1)
-          .some((cell, i) => segmentNear(cellAt(route[i]), cellAt(cell))),
+    // The page's arrow of each pawn the move moved (page-arrows.mjs).
+    for (const p of pageArrows(
+      REPLAYED.states[k],
+      REPLAYED.states[k + 1],
+      replay.state.config.variant,
+    )) {
+      const near = p.routes.some((route) =>
+        routeNear(route, cellAt, (pt) => boxDistance(pt, box)),
       );
       if (near) {
         faults.cover.push(
