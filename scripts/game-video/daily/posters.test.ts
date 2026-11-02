@@ -1249,3 +1249,173 @@ describe("read-only auth checks", () => {
     expect((await authCheck({}, "tiktok")).status).toBe(409);
   });
 });
+
+describe("GET /api/daily/tiktok-status", () => {
+  const ENV = { TIKTOK_CLIENT_SECRET: "SECRET-CLIENT" };
+  const RECORD = {
+    connectedAt: "2026-10-28T21:23:00.000Z",
+    connectedBy: "Nil",
+    scopes: ["video.upload", "user.info.basic", "user.info.stats"],
+    account: { id: "u1", name: "wallgame.io" },
+    refreshToken: "SECRET-REFRESH",
+    refreshExpiresAt: "2027-10-28T21:23:00.000Z",
+  };
+  const ID = "v_inbox_file~v2.7703619995012335647";
+  const SECRETS = [
+    "SECRET-CLIENT",
+    "SECRET-REFRESH",
+    "SECRET-ACCESS",
+    "SECRET-URL",
+  ];
+  /** TikTok's token reply (a rotated refresh token), then `status`. */
+  const answer =
+    (status: Reply): Answer =>
+    (req) =>
+      req.url.endsWith("/oauth/token/")
+        ? {
+            status: 200,
+            json: {
+              access_token: "SECRET-ACCESS",
+              refresh_token: "SECRET-ROTATED",
+              refresh_expires_in: 86_400,
+            },
+          }
+        : status;
+
+  /** The route on an app with `env` and `record`; reply, requests, store. */
+  const ask = async (
+    query: string,
+    status: Reply,
+    {
+      env = ENV as Record<string, string>,
+      record = RECORD as object | null,
+      posting = false,
+    } = {},
+  ) => {
+    const transport = fakeLive(answer(status));
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env,
+      live: () => transport,
+    });
+    const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
+    if (record)
+      tokens.write("tiktok", record as Parameters<typeof tokens.write>[1]);
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    // A post that runs until the request is answered.
+    let release: () => void = () => undefined;
+    const post = posting
+      ? daily.asThePost(() => new Promise<void>((r) => (release = r)))
+      : null;
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/daily/tiktok-status${query}`,
+      );
+      return {
+        status: res.status,
+        text: await res.text(),
+        sent: transport.sent,
+        refreshToken: tokens.read("tiktok")?.refreshToken,
+      };
+    } finally {
+      release();
+      await post;
+      daily.stop();
+      server.close();
+    }
+  };
+  const inbox: Reply = {
+    status: 200,
+    json: {
+      data: {
+        status: "SEND_TO_USER_INBOX",
+        uploaded_bytes: 3_456_789,
+        // A field the route does not pass on.
+        upload_url: "https://open-upload.tiktokapis.us/SECRET-URL",
+      },
+      error: { code: "ok", message: "", log_id: "L1" },
+    },
+  };
+
+  test("one token refresh, one status fetch: TikTok's status and fields, the rotated token kept, no token in the reply", async () => {
+    const r = await ask(`?publishId=${encodeURIComponent(ID)}`, inbox);
+    expect(r.status).toBe(200);
+    const reply = JSON.parse(r.text) as Record<string, unknown>;
+    expect(reply).toMatchObject({
+      publishId: ID,
+      code: "ok",
+      status: "SEND_TO_USER_INBOX",
+      uploaded_bytes: 3_456_789,
+    });
+    expect(Object.keys(reply).sort()).toEqual(
+      ["at", "code", "publishId", "status", "uploaded_bytes"].sort(),
+    );
+    expect(r.sent.map((q) => `${q.method} ${q.url}`)).toEqual([
+      "POST https://open.tiktokapis.com/v2/oauth/token/",
+      "POST https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+    ]);
+    expect(JSON.parse(r.sent[1].body as string)).toEqual({ publish_id: ID });
+    expect(r.sent[1].headers?.authorization).toBe("Bearer SECRET-ACCESS");
+    // As at a post: the rotated refresh token is the one kept.
+    expect(r.refreshToken).toBe("SECRET-ROTATED");
+    for (const secret of [...SECRETS, "SECRET-ROTATED"]) {
+      expect(r.text).not.toContain(secret);
+    }
+  });
+
+  test("a failed upload: TikTok's fail_reason", async () => {
+    const r = await ask(`?publishId=${encodeURIComponent(ID)}`, {
+      status: 200,
+      json: {
+        data: { status: "FAILED", fail_reason: "file_format_check_failed" },
+        error: { code: "ok" },
+      },
+    });
+    expect(JSON.parse(r.text)).toMatchObject({
+      status: "FAILED",
+      fail_reason: "file_format_check_failed",
+    });
+  });
+
+  test("a refusal by TikTok names the HTTP status and code, never the reply", async () => {
+    const r = await ask(`?publishId=${encodeURIComponent(ID)}`, {
+      status: 401,
+      json: {
+        error: {
+          code: "access_token_invalid",
+          message: "token SECRET-ACCESS is bad",
+        },
+      },
+    });
+    expect(r.status).toBe(500);
+    expect(JSON.parse(r.text)).toEqual({
+      error: "tiktok status: HTTP 401 code access_token_invalid",
+    });
+  });
+
+  test("no request without a valid publishId, without the secret or Connect, or while a post runs", async () => {
+    const bad = await ask("?publishId=a%20b", inbox);
+    expect(bad.status).toBe(409);
+    expect(bad.sent).toHaveLength(0);
+    const none = await ask("", inbox);
+    expect(none.status).toBe(409);
+    const noSecret = await ask(`?publishId=${ID}`, inbox, { env: {} });
+    expect(noSecret.status).toBe(409);
+    expect(noSecret.text).toContain("secrets missing: TIKTOK_CLIENT_SECRET");
+    expect(noSecret.sent).toHaveLength(0);
+    const notConnected = await ask(`?publishId=${ID}`, inbox, { record: null });
+    expect(notConnected.status).toBe(409);
+    expect(notConnected.text).toContain("not connected");
+    expect(notConnected.sent).toHaveLength(0);
+    const posting = await ask(`?publishId=${ID}`, inbox, {
+      posting: true,
+    });
+    expect(posting.status).toBe(409);
+    expect(posting.text).toContain("a post is already running");
+    expect(posting.sent).toHaveLength(0);
+  });
+});

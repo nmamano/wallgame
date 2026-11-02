@@ -168,6 +168,7 @@ import {
 import {
   postToTiktok,
   tiktokDryRunReply,
+  tiktokPostStatus,
   DRY_RUN_TIKTOK,
   TIKTOK_SECRETS,
 } from "./post-tiktok.mjs";
@@ -2891,6 +2892,39 @@ export const createDaily = ({
         }
       }
       json(res, 200, { platform, missing, ...shape, result });
+    },
+
+    /**
+     * READ-ONLY: TikTok's status of one upload now (post-tiktok.mjs
+     * tiktokPostStatus), for a draft that is not in the app. It refreshes
+     * the TikTok token as a post does, so it runs as THE post (asThePost):
+     * no post and no follower read refreshes the token at the same time,
+     * and a rotated token is kept. The reply has no token.
+     */
+    "GET /api/daily/tiktok-status": async (req, res, url) => {
+      const publishId = url.searchParams.get("publishId") ?? "";
+      if (!/^[\w.~-]{1,128}$/.test(publishId)) {
+        throw new StepRefused(
+          "tiktok-status takes publishId=<the publish_id of the post>",
+        );
+      }
+      // The account's reasons: a pause does not stop a read.
+      const why = platformReasons("tiktok", env, connectedNow());
+      if (why.length) throw new StepRefused(`tiktok: ${why.join("; ")}`);
+      const result = await asThePost(() =>
+        tiktokPostStatus({
+          transport: makeLiveTransport(),
+          creds: {
+            TIKTOK_CLIENT_KEY: env.TIKTOK_CLIENT_KEY,
+            TIKTOK_CLIENT_SECRET: env.TIKTOK_CLIENT_SECRET,
+            refreshToken: stored("tiktok", (r) => r.refreshToken),
+          },
+          onRefreshToken: (refreshToken, expiresInSeconds) =>
+            keepRefreshToken("tiktok", refreshToken, expiresInSeconds),
+          publishId,
+        }),
+      );
+      json(res, 200, { at: new Date().toISOString(), ...result });
     },
 
     /**

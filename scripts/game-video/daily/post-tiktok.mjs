@@ -219,3 +219,63 @@ export const postToTiktok = async ({
     `tiktok: ${publishId} was not in the inbox after ${(STATUS_POLLS * STATUS_POLL_MS) / 1000} s; look in the TikTok app before you post again`,
   );
 };
+
+/** What a status read returns of TikTok's data: no token, no URL. */
+const STATUS_FIELDS = [
+  "status",
+  "fail_reason",
+  "uploaded_bytes",
+  "downloaded_bytes",
+  "publicaly_available_post_id",
+];
+
+/**
+ * TikTok's status of the upload `publishId` now (Wall Game PM,
+ * 2026-11-02: a draft that TikTok called SEND_TO_USER_INBOX was not in the
+ * app). One token refresh (`onRefreshToken` keeps a rotated token, as at a
+ * post), then one status fetch. Returns {publishId, code, ...} with
+ * TikTok's error code and only the STATUS_FIELDS that TikTok gives, under
+ * TikTok's names. A refusal throws an Error that names the step, the HTTP
+ * status and TikTok's error code, never the reply.
+ */
+export const tiktokPostStatus = async ({
+  transport,
+  creds,
+  onRefreshToken,
+  publishId,
+}) => {
+  let accessToken;
+  try {
+    accessToken = await tiktokAccessToken({ transport, creds, onRefreshToken });
+  } catch (err) {
+    if (!(err instanceof PostFailed)) throw err;
+    throw new Error(`tiktok token: HTTP ${err.status}`);
+  }
+  const reply = await transport.request({
+    method: "POST",
+    url: TIKTOK_STATUS_URL,
+    headers: {
+      authorization:
+        transport.mode === "dry-run"
+          ? "Bearer <access token from the step above>"
+          : `Bearer ${accessToken}`,
+      "content-type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify({ publish_id: publishId }),
+  });
+  const code = reply.json?.error?.code;
+  const where = typeof code === "string" ? ` code ${code}` : "";
+  if (!ok(reply))
+    throw new Error(`tiktok status: HTTP ${reply.status}${where}`);
+  const data = reply.json?.data ?? {};
+  return {
+    publishId,
+    code: typeof code === "string" ? code : null,
+    ...Object.fromEntries(
+      STATUS_FIELDS.filter((f) => data[f] !== undefined).map((f) => [
+        f,
+        data[f],
+      ]),
+    ),
+  };
+};
