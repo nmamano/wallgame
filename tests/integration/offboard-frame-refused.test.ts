@@ -261,7 +261,12 @@ describe("the crafted off-board frame", () => {
     ).toBeGreaterThan(0);
     expect(errorsIn(accepted)).toHaveLength(0);
 
-    store.resignGame({ id, playerId: 2, timestamp: Date.now() });
+    store.resignGame({
+      id,
+      playerId: 2,
+      timestamp: Date.now(),
+      cause: "player",
+    });
     await persistCompletedGame(store.getSession(id));
 
     const [details] = await db

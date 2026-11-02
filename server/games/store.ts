@@ -193,7 +193,25 @@ export interface GameSession {
    * those contract types rather than serializing a session.
    */
   socketConnects: SocketConnectRecord;
+  /**
+   * Why this game ended in a resignation, set by `resignGame` when it ends a
+   * game that was still playing. Unset for every other ending. Stored as
+   * game_details.resign_cause; server-internal, like `socketConnects`.
+   */
+  resignCause?: ResignCause;
 }
+
+/**
+ * What made the server record a resignation. The result alone says only
+ * "resignation" for all of them.
+ *
+ * - "player": the player pressed Resign.
+ * - "disconnect": the abandonment timer, a seat gone too long.
+ * - "idle": the idle timer, nobody moved for too long.
+ * - "bot-forfeit": the server resigned for a bot whose engine or client
+ *   failed; game_details.bot_resign_cause holds which failure.
+ */
+export type ResignCause = "player" | "disconnect" | "idle" | "bot-forfeit";
 
 export interface GameCreationResult {
   session: GameSession;
@@ -656,6 +674,7 @@ const applyAbandonToSession = (sessionId: string, playerId: PlayerId): void => {
     id: sessionId,
     playerId,
     timestamp: Date.now(),
+    cause: "disconnect",
   });
 
   // The connect history rides along because this is the moment a never-started
@@ -894,6 +913,7 @@ const applyIdleTimeoutToSession = (
     id: sessionId,
     playerId,
     timestamp: Date.now(),
+    cause: "idle",
   });
 
   console.info("[idle-timer] nobody moved - game ended", {
@@ -1910,16 +1930,20 @@ export const resignGame = (args: {
   id: string;
   playerId: PlayerId;
   timestamp: number;
+  cause: ResignCause;
 }): GameState => {
   const session = ensureSession(args.id);
+  // A game already over keeps its first ending, and so its first cause.
   if (session.gameState.status !== "playing") {
     return session.gameState;
   }
-  return applyActionToSession(session, {
+  const next = applyActionToSession(session, {
     kind: "resign",
     playerId: args.playerId,
     timestamp: args.timestamp,
   });
+  session.resignCause = args.cause;
+  return next;
 };
 
 export const giveTime = (args: {

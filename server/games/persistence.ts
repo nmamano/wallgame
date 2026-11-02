@@ -232,6 +232,10 @@ export const persistCompletedGame = async (
       moves: moveNotations,
       clocks,
       botResignCause: botResignCause ?? null,
+      resignCause:
+        state.result?.reason === "resignation"
+          ? (session.resignCause ?? null)
+          : null,
     });
 
     // game_players.bot_id has a foreign key onto built_in_bots, but the row a

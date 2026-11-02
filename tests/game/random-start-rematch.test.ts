@@ -52,7 +52,7 @@ const startedSession = (config: PartialGameConfiguration) => {
 };
 
 const finish = (id: string) =>
-  resignGame({ id, playerId: 1, timestamp: Date.now() });
+  resignGame({ id, playerId: 1, timestamp: Date.now(), cause: "player" });
 
 /** The generated board, as a value that can be compared for equality. */
 const layoutOf = (config: { variantConfig?: unknown }) =>

@@ -220,6 +220,7 @@ async function createCompletedGame(args: {
     id: session.id,
     playerId: 1,
     timestamp: startTimestamp + 2000,
+    cause: "player",
   });
 
   await persistCompletedGame(session);

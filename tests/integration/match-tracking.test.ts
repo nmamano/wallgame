@@ -182,7 +182,12 @@ function playToFinish(sessionId: string, startedAt: number) {
     move: openingMove(2),
     timestamp: startedAt + 1000,
   });
-  resignGame({ id: sessionId, playerId: 1, timestamp: startedAt + 2000 });
+  resignGame({
+    id: sessionId,
+    playerId: 1,
+    timestamp: startedAt + 2000,
+    cause: "player",
+  });
 }
 
 function startGame(startedAt: number) {

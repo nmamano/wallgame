@@ -24,7 +24,12 @@ function game(finished = true) {
   });
   store.joinGameSession({ id: session.id, displayName: "Fixture" });
   if (finished)
-    store.resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    store.resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
   return session;
 }
 

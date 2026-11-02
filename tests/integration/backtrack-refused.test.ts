@@ -232,7 +232,7 @@ describe("a backtrack submitted to a live game", () => {
     playOpening(id);
     expect(() => move(id, 1, BACKTRACK)).toThrow(NO_RETURN);
 
-    resignGame({ id, playerId: 1, timestamp: Date.now() });
+    resignGame({ id, playerId: 1, timestamp: Date.now(), cause: "player" });
     await persistCompletedGame(getSession(id));
 
     const [details] = await db
@@ -272,7 +272,7 @@ describe("a backtrack submitted to a live game", () => {
     playOpening(id);
     move(id, 1, [{ type: "cat", target: [0, 2] }]);
 
-    resignGame({ id, playerId: 2, timestamp: Date.now() });
+    resignGame({ id, playerId: 2, timestamp: Date.now(), cause: "player" });
     await persistCompletedGame(getSession(id));
 
     const [details] = await db

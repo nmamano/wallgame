@@ -43,6 +43,7 @@ let resignGame: typeof import("../../server/games/store").resignGame;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let listLiveGames: typeof import("../../server/games/store").listLiveGames;
 let getSession: typeof import("../../server/games/store").getSession;
+let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 
 beforeAll(async () => {
   const store = await import("../../server/games/store");
@@ -56,6 +57,7 @@ beforeAll(async () => {
   applyPlayerMove = store.applyPlayerMove;
   listLiveGames = store.listLiveGames;
   getSession = store.getSession;
+  acceptDraw = store.acceptDraw;
 });
 
 const UNLIMITED: PartialGameConfiguration = {
@@ -217,7 +219,12 @@ describe("a game whose player walked away", () => {
     const session = startedSession(UNLIMITED);
     setConnected(session, "host", true);
     setConnected(session, "joiner", true);
-    resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
 
     setConnected(session, "host", false);
     expect(findAbandonedSeat(session.id)).toBeNull();
@@ -334,7 +341,12 @@ describe("a game nobody is moving in", () => {
     const session = startedSession(UNLIMITED);
     bothSeatsLookConnected(session);
     playMoves(session.id, 2);
-    resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
 
     expect(findIdleSeat(session.id)).toBeNull();
   });
@@ -618,6 +630,8 @@ describe("a bot game whose human seat left", () => {
         winner: 2,
         reason: "resignation",
       });
+      // The record can tell this from a click on Resign.
+      expect(getSession(session.id).resignCause).toBe("disconnect");
     });
   });
 
@@ -741,6 +755,7 @@ describe("the idle timeout ending a game", () => {
         winner: 2,
         reason: "resignation",
       });
+      expect(getSession(session.id).resignCause).toBe("idle");
     });
   });
 
@@ -1001,5 +1016,50 @@ describe("the idle timeout ending a game", () => {
         reason: "resignation",
       });
     });
+  });
+});
+
+describe("the cause of a resignation", () => {
+  it("is the player's own when the player resigns", () => {
+    const session = startedSession(UNLIMITED);
+    playMoves(session.id, 2);
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
+    expect(getSession(session.id).gameState.result?.reason).toBe("resignation");
+    expect(getSession(session.id).resignCause).toBe("player");
+  });
+
+  it("keeps the first cause when a second resignation arrives late", () => {
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      bothSeatsLookConnected(session);
+      playMoves(session.id, 2);
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
+      expect(getSession(session.id).resignCause).toBe("idle");
+
+      // A Resign click that was already on its way when the timer fired.
+      resignGame({
+        id: session.id,
+        playerId: 2,
+        timestamp: Date.now(),
+        cause: "player",
+      });
+      expect(getSession(session.id).resignCause).toBe("idle");
+      expect(getSession(session.id).gameState.result?.winner).toBe(2);
+    });
+  });
+
+  it("is absent when the game ends any other way", () => {
+    const session = startedSession(UNLIMITED);
+    playMoves(session.id, 2);
+    acceptDraw({ id: session.id, playerId: 1 });
+    expect(getSession(session.id).gameState.result?.reason).toBe(
+      "draw-agreement",
+    );
+    expect(getSession(session.id).resignCause).toBeUndefined();
   });
 });

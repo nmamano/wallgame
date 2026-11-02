@@ -89,7 +89,12 @@ describe("puzzle identity on a game session", () => {
     const session = startedSession(PUZZLE_ID);
     playTurn(session.id, 1, 0);
     playTurn(session.id, 2, 2);
-    resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
 
     const { newSession } = createRematchSession(session.id);
 

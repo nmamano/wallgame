@@ -1,0 +1,1 @@
+ALTER TABLE "game_details" ADD COLUMN "resign_cause" text;

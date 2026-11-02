@@ -26,4 +26,12 @@ export const gameDetailsTable = pgTable("game_details", {
    * were indistinguishable after the fact.
    */
   botResignCause: text("bot_resign_cause"),
+  /**
+   * What made the server record a resignation (ResignCause in
+   * server/games/store.ts): "player" (the Resign button), "disconnect" (the
+   * abandonment timer), "idle" (the idle timer) or "bot-forfeit" (detail in
+   * bot_resign_cause). NULL for every other ending, and for every game stored
+   * before 2026-11-02, when all of these were recorded as one "resignation".
+   */
+  resignCause: text("resign_cause"),
 });

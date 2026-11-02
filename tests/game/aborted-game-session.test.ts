@@ -68,6 +68,7 @@ describe("match score after an aborted game", () => {
       id: session.id,
       playerId: 1,
       timestamp: Date.now(),
+      cause: "player",
     });
 
     expect(state.result?.reason).toBe("aborted");
@@ -86,6 +87,7 @@ describe("match score after an aborted game", () => {
       id: session.id,
       playerId: 1,
       timestamp: Date.now(),
+      cause: "player",
     });
 
     expect(state.result?.reason).toBe("resignation");

@@ -191,6 +191,7 @@ async function createFinishedGame(args: {
       id: session.id,
       playerId: args.ending === "host-resigns" ? 1 : 2,
       timestamp: t + 2000,
+      cause: "player",
     });
   }
 

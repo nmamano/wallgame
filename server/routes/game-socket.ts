@@ -279,6 +279,7 @@ const resignBotOnFailure = async (
     id: session.id,
     playerId: botPlayerId,
     timestamp: Date.now(),
+    cause: "bot-forfeit",
   });
 
   console.info("[ws] bot resigned due to BGS failure", {
@@ -1587,6 +1588,7 @@ const handleResign = async (socket: SessionSocket) => {
     id: socket.sessionId,
     playerId,
     timestamp: Date.now(),
+    cause: "player",
   });
   console.info("[ws] resign processed", {
     sessionId: socket.sessionId,
@@ -2194,6 +2196,7 @@ const handleActionRequest = async (
           id: socket.sessionId,
           playerId,
           timestamp: Date.now(),
+          cause: "player",
         });
         sendActionAck(socket, message);
         console.info("[ws] action-resign processed", {

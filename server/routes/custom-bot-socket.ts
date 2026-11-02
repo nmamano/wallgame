@@ -1637,6 +1637,7 @@ const resignBotGames = async (
           id: session.id,
           playerId: game.playerId,
           timestamp: Date.now(),
+          cause: "bot-forfeit",
         });
 
         console.info("[custom-bot-ws] bot resigned on disconnect", {

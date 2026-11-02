@@ -218,6 +218,13 @@
       "when": 1793488584361,
       "tag": "0030_bot_move_refusals",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793583108493,
+      "tag": "0031_resign_cause",
+      "breakpoints": true
     }
   ]
 }

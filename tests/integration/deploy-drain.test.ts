@@ -180,6 +180,7 @@ describe("a drain refuses new games and leaves the live ones alone", () => {
       id: inFlightId,
       playerId: 1,
       timestamp: Date.now(),
+      cause: "player",
     });
     expect(() => store.createRematchSession(inFlightId)).toThrow(drainError);
   });

@@ -190,7 +190,12 @@ describe("naming a seat", () => {
       session.players.host.displayName,
       session.players.joiner.displayName,
     ];
-    resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
 
     const { newSession } = createRematchSession(session.id);
 
@@ -350,7 +355,12 @@ describe("naming a spectator", () => {
     const session = guestHostSession();
     joinGameSession({ id: session.id });
     assignSpectatorGuestName(session.id, "socket-1");
-    resignGame({ id: session.id, playerId: 1, timestamp: Date.now() });
+    resignGame({
+      id: session.id,
+      playerId: 1,
+      timestamp: Date.now(),
+      cause: "player",
+    });
 
     const { newSession } = createRematchSession(session.id);
 
