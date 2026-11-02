@@ -10,9 +10,8 @@ import type {
   ResignCause,
   Variant,
 } from "../../../shared/domain/game-types";
-import { boardPawns, isMovablePawnType } from "../../../shared/domain/pawns";
-import { animalCycleTeammateCell } from "../../../shared/domain/animal-cycle";
-import { executableRulesFor } from "../../../shared/domain/variant-rules";
+import { boardPawns } from "../../../shared/domain/pawns";
+import { moveArrowCorner } from "../../../shared/domain/move-arrow";
 import { GameState } from "../../../shared/domain/game-state";
 import type { Grid } from "../../../shared/domain/grid";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
@@ -96,40 +95,6 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 
 const pawnKey = (playerId: PlayerId, type: string) => `${playerId}:${type}`;
 
-const cellsEqual = (a: Cell, b: Cell) => a[0] === b[0] && a[1] === b[1];
-
-/**
- * The corner of a diagonal 2-step move, so its arrow can follow a route the
- * pawn could walk instead of a straight line past a wall. The stored record
- * cannot say which corner the pawn took (notation joins both steps into one
- * action), so this is a rule, the same in live play and in replays: the first
- * open corner in the order the rules engine tries them (game-state.ts
- * applyMove), along the row first, then along the column. A corner is open when
- * no wall blocks either step and, as in the engine, it is not `teammate`'s cell
- * (Animal Cycle teammates may not share a cell). `grid` is the grid after the
- * move; a 2-step pawn move uses the whole turn, so no wall was added.
- */
-const diagonalCorner = (
-  from: Cell,
-  to: Cell,
-  grid: Grid,
-  teammate: Cell | undefined,
-): Cell | undefined => {
-  if (Math.abs(from[0] - to[0]) !== 1 || Math.abs(from[1] - to[1]) !== 1) {
-    return undefined;
-  }
-  const corners: Cell[] = [
-    [from[0], to[1]],
-    [to[0], from[1]],
-  ];
-  return corners.find(
-    (corner) =>
-      !(teammate && cellsEqual(corner, teammate)) &&
-      grid.accessibleNeighbors(from).some((cell) => cellsEqual(cell, corner)) &&
-      grid.accessibleNeighbors(corner).some((cell) => cellsEqual(cell, to)),
-  );
-};
-
 /**
  * One arrow per pawn that moved. Driven by `boardPawns`, so each variant
  * contributes exactly the pawns it has - a classic home is compared like
@@ -158,15 +123,12 @@ const diffSnapshots = (
     if (!from) return;
     const to = pawn.cell;
     if (from[0] === to[0] && from[1] === to[1]) return;
-    // The teammate did not move: a 2-step move spends both actions on one
-    // pawn, so its cell after the move is its cell during the move.
-    const teammate =
-      after.kind === "animal-cycle" &&
-      !executableRulesFor(variant).teammatesMayShareCell &&
-      isMovablePawnType(pawn.type)
-        ? animalCycleTeammateCell(after, pawn.playerId, pawn.type)
-        : undefined;
-    const via = diagonalCorner(from, to, grid, teammate);
+    const via = moveArrowCorner(
+      { from, to, playerId: pawn.playerId, pawnType: pawn.type },
+      after,
+      grid,
+      variant,
+    );
     moves.push({
       fromRow: from[0],
       fromCol: from[1],

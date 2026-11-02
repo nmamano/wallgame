@@ -138,6 +138,7 @@ import {
 } from "./overlays.mjs";
 import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
 import { Grid } from "../../shared/domain/grid.ts";
+import { moveArrowCorner } from "../../shared/domain/move-arrow.ts";
 import {
   wallFromStandardNotation,
   wallToStandardNotation,
@@ -3906,13 +3907,35 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
     for (const p of boardPawns(to)) {
       const was = pawnCell(from, p.playerId, p.type);
       if (!was || (was[0] === p.cell[0] && was[1] === p.cell[1])) continue;
-      const [a, b] = [cellAt(was), cellAt(p.cell)];
-      const near = Array.from({ length: 21 }, (_, i) => i / 20).some(
-        (f) =>
-          boxDistance(
-            { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
-            box,
-          ) < ARROW_CLEAR_CELLS,
+      /*
+        The page's arrow: straight from the old cell to the new one, or,
+        for a diagonal 2-step move on a capture made after 2026-11-02
+        00:40 UTC (52705b91), an L through the corner the board picks
+        (shared/domain/move-arrow.ts). A capture keeps the look of its
+        day, so both shapes are checked.
+      */
+      const corner = moveArrowCorner(
+        { from: was, to: p.cell, playerId: p.playerId, pawnType: p.type },
+        to,
+        REPLAYED.states[k + 1].grid,
+        replay.state.config.variant,
+      );
+      const routes = [
+        [was, p.cell],
+        ...(corner ? [[was, corner, p.cell]] : []),
+      ];
+      const segmentNear = (a, b) =>
+        Array.from({ length: 21 }, (_, i) => i / 20).some(
+          (f) =>
+            boxDistance(
+              { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+              box,
+            ) < ARROW_CLEAR_CELLS,
+        );
+      const near = routes.some((route) =>
+        route
+          .slice(1)
+          .some((cell, i) => segmentNear(cellAt(route[i]), cellAt(cell))),
       );
       if (near) {
         faults.cover.push(
