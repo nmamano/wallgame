@@ -56,12 +56,20 @@ const notApplicableTo = (item, video, platforms, slot) =>
   );
 
 /**
+ * The platforms with no reason (modeReasons), so live.
+ * @param {Record<string, string[]>} reasons
+ */
+const liveOf = (reasons) =>
+  Object.keys(reasons).filter((p) => !reasons[p].length);
+
+/**
  * @param {object} deps
  * @param {{ item: (id: string) => any, items: (q?: { states?: string[] }) => any[],
  *   approvedQueue: () => any[],
  *   updateItem: (id: string, expect: string[], mutate: (item: any) => void,
  *   what: string) => any }} deps.store
- * @param {() => string[]} deps.livePlatforms
+ * @param {() => Record<string, string[]>} deps.modeReasons why each platform
+ *   cannot post live now (routes.mjs modeReasons); an empty list means live
  * @param {(path: string) => Buffer} deps.readVideo
  * @param {(platform: string, ctx: { item: any, video: Buffer,
  *   beforeCommit: () => void, confirmedNotPosted: boolean }) => Promise<any>}
@@ -72,7 +80,7 @@ const notApplicableTo = (item, video, platforms, slot) =>
  */
 export const createItemPoster = ({
   store,
-  livePlatforms,
+  modeReasons,
   readVideo,
   postPlatform,
   logPost,
@@ -203,7 +211,7 @@ export const createItemPoster = ({
    *   a slot by hand
    */
   const postNext = async ({ slotAt, firedBy }) => {
-    const platforms = livePlatforms();
+    const platforms = liveOf(modeReasons());
     if (!platforms.length) return { kind: "no-live" };
     const refused = [];
     const passed = [];
@@ -306,11 +314,17 @@ export const createItemPoster = ({
     // the platforms that day tried.
     const platforms = item.posting?.platforms ?? Object.keys(item.posts);
     const todo = platforms.filter((p) => item.posts[p]?.ok !== true);
-    const live = livePlatforms();
+    // Each refused platform with its reasons: a missing Connect and a
+    // pause need different actions (VR1 on 27eac3cc).
+    const reasons = modeReasons();
+    const live = liveOf(reasons);
     const notLive = todo.filter((p) => !live.includes(p));
     if (notLive.length) {
+      const why = notLive
+        .map((p) => `${p} (${(reasons[p] ?? ["unknown platform"]).join("; ")})`)
+        .join(", ");
       throw new StepRefused(
-        `${notLive.join(", ")} ${notLive.length > 1 ? "are" : "is"} not live now: connect ${notLive.length > 1 ? "them" : "it"} (/daily/connect), then retry`,
+        `${why} ${notLive.length > 1 ? "are" : "is"} not live now: retry when ${notLive.length > 1 ? "they are" : "it is"} live (/daily/connect)`,
       );
     }
     for (const p of todo) {

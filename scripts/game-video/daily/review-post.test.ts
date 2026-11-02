@@ -5,7 +5,7 @@
  * uncertain one without a check, and a stop mid-post leaves post-failed.
  */
 import { describe, expect, test } from "bun:test";
-import { StepRefused } from "./store.mjs";
+import { PLATFORMS, StepRefused } from "./store.mjs";
 import { copySha256 } from "./copy.mjs";
 import { sha256 } from "./transport.mjs";
 import { createItemPoster } from "./review-post.mjs";
@@ -94,7 +94,13 @@ const world = (live: string[]) => {
     events: [],
   });
   let video: Buffer = VIDEO;
-  let livePlatforms = live;
+  // Why each platform is not live (routes.mjs modeReasons): every platform
+  // not in `live` is "not connected" unless setReasons says more.
+  const reasonsOf = (live: string[]) =>
+    Object.fromEntries(
+      PLATFORMS.map((p) => [p, live.includes(p) ? [] : ["not connected"]]),
+    );
+  let reasons: Record<string, string[]> = reasonsOf(live);
   const replies: Record<
     string,
     (beforeCommit: () => void) => Post | Promise<Post>
@@ -127,7 +133,7 @@ const world = (live: string[]) => {
   };
   const poster = createItemPoster({
     store,
-    livePlatforms: () => livePlatforms,
+    modeReasons: () => reasons,
     readVideo: () => video,
     postPlatform: (
       platform: string,
@@ -168,7 +174,9 @@ const world = (live: string[]) => {
     logged,
     confirmedSeen,
     setVideo: (b: Buffer) => (video = b),
-    setLive: (p: string[]) => (livePlatforms = p),
+    setLive: (p: string[]) => (reasons = reasonsOf(p)),
+    setReasons: (r: Record<string, string[]>) =>
+      (reasons = { ...reasons, ...r }),
   };
 };
 
@@ -289,7 +297,13 @@ describe("post(itemId)", () => {
     w.setLive(["bluesky"]);
     delete w.replies.x;
     expect(await refusal(w.retry("v-2026-10-28-1"))).toContain(
-      "x is not live now: connect it (/daily/connect), then retry",
+      "x (not connected) is not live now: retry when it is live (/daily/connect)",
+    );
+    // A pause is named as a pause, not as a missing Connect (VR1 on
+    // 27eac3cc).
+    w.setReasons({ x: ["paused until 2099-01-01T00:00:00Z: a test"] });
+    expect(await refusal(w.retry("v-2026-10-28-1"))).toContain(
+      "x (paused until 2099-01-01T00:00:00Z: a test) is not live now: retry when it is live (/daily/connect)",
     );
     expect(w.get().state).toBe("post-failed");
     // A mode change between livePlatforms() and postPlatform: a dry-run

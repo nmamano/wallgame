@@ -5056,7 +5056,7 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     const retry = await call(base, "/api/daily/post", { itemId: id });
     expect(retry.status).toBe(409);
     expect(retry.body.error).toBe(
-      "bluesky is not live now: connect it (/daily/connect), then retry",
+      "bluesky (secrets missing: BLUESKY_APP_PASSWORD) is not live now: retry when it is live (/daily/connect)",
     );
     expect(readPostLog(store.postLog.dryRun)).toEqual([]);
     expect(itemOf(store, id).state).toBe("post-failed");

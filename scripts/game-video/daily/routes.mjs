@@ -1582,7 +1582,7 @@ export const createDaily = ({
   // runs as THE post (asThePost); the timer waits a tick while one runs.
   const itemPoster = createItemPoster({
     store,
-    livePlatforms,
+    modeReasons: reasonsNow,
     readVideo: (path) => readFileSync(path),
     postPlatform,
     logPost,
