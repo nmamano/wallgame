@@ -93,6 +93,7 @@ import {
 import {
   CONNECT_MEMBER_ID,
   modeReasons,
+  PLATFORM_PAUSES,
   postingModes,
   createDaily,
 } from "./routes.mjs";
@@ -2276,6 +2277,67 @@ test("the Instagram Story is live exactly when Instagram is, for the same reason
     instagram: "live",
     "instagram-story": "live",
     facebook: "live",
+  });
+});
+
+describe("a platform pause", () => {
+  const meta = { META_SYSTEM_USER_TOKEN: "t" };
+  const pause = {
+    platform: "facebook",
+    from: "2026-11-03T00:00:00Z",
+    until: "2026-11-17T00:00:00Z",
+    why: "Facebook test: Instagram shares the Reel",
+  };
+  const at = (iso: string) => ({ pauses: [pause], now: Date.parse(iso) });
+  const REASON =
+    "paused until 2026-11-17T00:00:00Z: Facebook test: Instagram shares the Reel";
+
+  test("inside its window the platform is dry-run with the pause's reason; from is in, until is out", () => {
+    for (const t of [
+      "2026-11-03T00:00:00.000Z",
+      "2026-11-10T12:00:00.000Z",
+      "2026-11-16T23:59:59.999Z",
+    ]) {
+      expect(modeReasons(meta, new Set(), at(t)).facebook).toEqual([REASON]);
+      expect(postingModes(meta, new Set(), at(t)).facebook).toBe("dry-run");
+    }
+    for (const t of ["2026-11-02T23:59:59.999Z", "2026-11-17T00:00:00.000Z"]) {
+      expect(modeReasons(meta, new Set(), at(t)).facebook).toEqual([]);
+      expect(postingModes(meta, new Set(), at(t)).facebook).toBe("live");
+    }
+  });
+
+  test("it adds to the other reasons and touches no other platform", () => {
+    const inside = at("2026-11-10T00:00:00Z");
+    expect(modeReasons({}, new Set(), inside).facebook).toEqual([
+      "secrets missing: META_SYSTEM_USER_TOKEN",
+      REASON,
+    ]);
+    const without = modeReasons(meta);
+    const reasons = modeReasons(meta, new Set(), inside);
+    expect({ ...reasons, facebook: [] }).toEqual({
+      ...without,
+      facebook: [],
+    });
+  });
+
+  test("a pause of an account pauses the platform that posts to it", () => {
+    const ig = { ...pause, platform: "instagram" };
+    const reasons = modeReasons(meta, new Set(), {
+      pauses: [ig],
+      now: Date.parse("2026-11-10T00:00:00Z"),
+    });
+    expect(reasons.instagram).toContain(REASON);
+    expect(reasons["instagram-story"]).toContain(REASON);
+    expect(reasons.facebook).toEqual([]);
+  });
+
+  test("each shipped pause names a platform and a window that parses", () => {
+    for (const p of PLATFORM_PAUSES) {
+      expect(PLATFORMS).toContain(p.platform);
+      expect(Date.parse(p.from)).toBeLessThan(Date.parse(p.until));
+      expect(p.why.length).toBeGreaterThan(0);
+    }
   });
 });
 

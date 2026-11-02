@@ -11,7 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTokenStore } from "./token-store.mjs";
 import { connectPage } from "./connect-page.mjs";
-import { CONNECT_MEMBER_ID, createDaily } from "./routes.mjs";
+import {
+  CONNECT_MEMBER_ID,
+  createDaily,
+  type PlatformPause,
+} from "./routes.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
   connectStates,
@@ -1093,11 +1097,16 @@ describe("/daily/connect shows what the Meta token finds", () => {
     name,
     access_token: "SECRET-PAGE-TOKEN",
   });
-  const show = async (env: Record<string, string>, pages: unknown[]) => {
+  const show = async (
+    env: Record<string, string>,
+    pages: unknown[],
+    pauses: PlatformPause[] = [],
+  ) => {
     const transport = fakeLive(metaReplies(pages));
     const daily = createDaily({
       dataDir: tempDir(),
       env,
+      pauses,
       live: () => transport,
     });
     const server: Server = createServer((req, res) => {
@@ -1109,8 +1118,20 @@ describe("/daily/connect shows what the Meta token finds", () => {
       const text = await (
         await fetch(`http://127.0.0.1:${port}/daily/connect`)
       ).text();
-      return { text, sent: transport.sent };
+      const state = (await (
+        await fetch(`http://127.0.0.1:${port}/api/daily/state`)
+      ).json()) as {
+        modes: Record<string, string>;
+        modeReasons: Record<string, string[]>;
+      };
+      return {
+        text,
+        state,
+        live: daily.livePlatforms(),
+        sent: transport.sent,
+      };
     } finally {
+      daily.stop();
       server.close();
     }
   };
@@ -1136,5 +1157,54 @@ describe("/daily/connect shows what the Meta token finds", () => {
       "Posts are dry runs: secrets missing: META_SYSTEM_USER_TOKEN",
     );
     expect(none.sent).toHaveLength(0);
+  });
+
+  test("a Facebook pause makes Facebook dry-run, with its reason, and leaves the Meta account and Instagram alone", async () => {
+    const r2 = {
+      R2_ACCOUNT_ID: "a",
+      R2_ACCESS_KEY_ID: "k",
+      R2_SECRET_ACCESS_KEY: "s",
+    };
+    const now = Date.now();
+    const paused = await show(
+      { ...TOKEN, ...r2 },
+      [page("Wall Game")],
+      [
+        {
+          platform: "facebook",
+          from: new Date(now - 60_000).toISOString(),
+          until: "2099-01-01T00:00:00Z",
+          why: "Facebook test",
+        },
+      ],
+    );
+    // The slot, a retry and the post read livePlatforms: no Facebook.
+    expect(paused.live).toContain("instagram");
+    expect(paused.live).toContain("instagram-story");
+    expect(paused.live).not.toContain("facebook");
+    expect(paused.state.modes.facebook).toBe("dry-run");
+    expect(paused.state.modeReasons.facebook).toEqual([
+      "paused until 2099-01-01T00:00:00Z: Facebook test",
+    ]);
+    expect(paused.state.modeReasons).not.toHaveProperty("instagram");
+    // The Meta account is still read and shown as found.
+    expect(paused.text).toContain(
+      "Meta: Page Wall Game, Instagram @wallgameio",
+    );
+    // A pause that has ended has no effect.
+    const ended = await show(
+      { ...TOKEN, ...r2 },
+      [page("Wall Game")],
+      [
+        {
+          platform: "facebook",
+          from: "2026-01-01T00:00:00Z",
+          until: new Date(now - 60_000).toISOString(),
+          why: "Facebook test",
+        },
+      ],
+    );
+    expect(ended.live).toContain("facebook");
+    expect(ended.state.modeReasons).not.toHaveProperty("facebook");
   });
 });

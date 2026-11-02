@@ -642,6 +642,10 @@ const summary = (s) => {
     `modes ${Object.entries(s.modes)
       .map(([p, m]) => `${p}=${m}`)
       .join(" ")}`,
+    // Why each dry-run platform is not live (a missing key, a pause).
+    ...Object.entries(s.modeReasons ?? {}).map(
+      ([p, why]) => `  ${p} dry-run: ${why.join("; ")}`,
+    ),
     `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview} (target ${s.reviewTarget}), waiting for copy ${c.waitingCopy}, approved ${c.approved}${c.held ? ` (held ${c.held}: they do not post)` : ""}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
     ...s.items.filter(isHeld).map((k) => `${k.id}: ${holdLine(k)}`),
     `default ending ${s.suggestedEnding}${s.suggestedEnding === "ko" ? " (it takes no ending bar: with a bar, use gg or replay)" : ""}; last posted music ${s.lastMusic?.length ? s.lastMusic.join(", ") : "none"}`,

@@ -291,15 +291,59 @@ export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
 );
 
 /**
+ * A platform that must not post live from `from` (included) to `until` (not
+ * included), with all its keys: inside the window it is dry-run with `why`
+ * as its reason; outside it, the pause has no effect, so it ends by itself.
+ * A pause of an account also pauses the platforms that post to it
+ * (ACCOUNT_OF).
+ * @typedef {{ platform: string, from: string, until: string, why: string }} PlatformPause
+ * @type {PlatformPause[]}
+ */
+export const PLATFORM_PAUSES = [
+  // Wall Game Growth's 14-day Facebook test (Growth Lead GO, 2026-11-02):
+  // Instagram shares each Reel to the Page, so the poster must not post it
+  // there too.
+  {
+    platform: "facebook",
+    from: "2026-11-03T00:00:00Z",
+    until: "2026-11-17T00:00:00Z",
+    why: "Facebook test: Instagram shares the Reel",
+  },
+];
+
+/** The reasons of the pauses of platform `p` at time `now` (ms). */
+const pauseReasons = (p, pauses, now) =>
+  pauses
+    .filter(
+      ({ platform, from, until }) =>
+        (platform === p || platform === accountOf(p)) &&
+        Date.parse(from) <= now &&
+        now < Date.parse(until),
+    )
+    .map(({ until, why }) => `paused until ${until}: ${why}`);
+
+/**
  * Why each platform cannot post live; an empty list means live. A reason
  * names what is missing (secret NAMES, an id not set in code, no Connect),
- * never a value. `env` has the public ids over it (withPublicIds).
+ * never a value, or a pause that holds at `now`. `env` has the public ids
+ * over it (withPublicIds).
  * @param {Set<string>} connected
+ * @param {{ pauses?: PlatformPause[], now?: number }} [at]
  * @returns {Record<string, string[]>}
  */
-export const modeReasons = (env, connected = new Set()) =>
+export const modeReasons = (
+  env,
+  connected = new Set(),
+  { pauses = /** @type {PlatformPause[]} */ ([]), now = Date.now() } = {},
+) =>
   Object.fromEntries(
-    PLATFORMS.map((p) => [p, platformReasons(accountOf(p), env, connected)]),
+    PLATFORMS.map((p) => [
+      p,
+      [
+        ...platformReasons(accountOf(p), env, connected),
+        ...pauseReasons(p, pauses, now),
+      ],
+    ]),
   );
 
 /** Why one platform with its own account cannot post live (modeReasons). */
@@ -323,9 +367,12 @@ const modesOf = (reasons) =>
     ]),
   );
 
-/** @param {Set<string>} connected */
-export const postingModes = (env, connected = new Set()) =>
-  modesOf(modeReasons(env, connected));
+/**
+ * @param {Set<string>} connected
+ * @param {{ pauses?: PlatformPause[], now?: number }} [at]
+ */
+export const postingModes = (env, connected = new Set(), at = {}) =>
+  modesOf(modeReasons(env, connected, at));
 
 /** The canned replies of each platform's dry run. */
 const DRY_RUN_REPLIES = {
@@ -389,6 +436,9 @@ export const createDaily = ({
     BACKUP_WINDOW
   ),
   env: rawEnv = process.env,
+  // The platform pauses (PLATFORM_PAUSES); a test gives its own, so that
+  // it does not depend on the day it runs.
+  pauses = PLATFORM_PAUSES,
   // The public ids (public-ids.mjs); a test gives its own.
   ids = PUBLIC_IDS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -430,7 +480,8 @@ export const createDaily = ({
   const tokens = openTokenStore(join(dirs.root, "tokens"));
   const connectedNow = () =>
     new Set(CONNECT_PLATFORMS.filter((p) => tokens.connected(p)));
-  const reasonsNow = () => modeReasons(env, connectedNow());
+  const reasonsNow = () =>
+    modeReasons(env, connectedNow(), { pauses, now: Date.now() });
   const modesNow = () => modesOf(reasonsNow());
   const states = connectStates();
 
@@ -440,8 +491,9 @@ export const createDaily = ({
    * Meta), or why they are not found. Never the Page token.
    */
   const metaStatus = async () => {
-    // Facebook and Instagram have the same reasons (one Meta secret).
-    const why = reasonsNow().facebook;
+    // Facebook and Instagram have the same account reasons (one Meta
+    // secret). A pause of Facebook says nothing of the account: not here.
+    const why = platformReasons("facebook", env, connectedNow());
     if (why.length) {
       return { ok: false, lines: [`Posts are dry runs: ${why.join("; ")}`] };
     }
