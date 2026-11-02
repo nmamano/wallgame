@@ -61,6 +61,41 @@ describe("the page's move arrows for the callback lint (2026-11-02, the L arrow)
     expect(arrow.routes.some((r) => routeNear(r, toPoint, away))).toBe(false);
   });
 
+  test("in Animal Cycle the L never turns on the teammate's cell (the variant reaches the corner rule)", () => {
+    // 5x5. P1's cat a5 [0,0] moves diagonally to b4 [1,1]; its elephant
+    // stands on b5 [0,1], the row corner, so the L turns at a4 [1,0].
+    const { states: s } = replayDistances({
+      variant: "animal-cycle",
+      boardWidth: 5,
+      boardHeight: 5,
+      initialState: {
+        pawns: {
+          p1: { cat: [0, 0], elephant: [0, 1] },
+          p2: { mouse: [0, 4], dog: [4, 0] },
+        },
+        walls: [],
+      },
+      moves: ["Cb4"],
+    });
+    expect(pageArrows(s[0], s[1], "animal-cycle")).toEqual([
+      {
+        type: "cat",
+        playerId: 1,
+        routes: [
+          [
+            [0, 0],
+            [1, 1],
+          ],
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+          ],
+        ],
+      },
+    ]);
+  });
+
   test("a straight move has one route, and a pawn that did not move has none", () => {
     const { states: s } = replayDistances({
       variant: "standard",
