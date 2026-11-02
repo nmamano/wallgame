@@ -15,15 +15,17 @@ import {
 } from "drizzle-orm";
 import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
-import type {
-  GameConfiguration,
-  GameSnapshot,
-  GameInitialState,
-  PlayerId,
-  SerializedGameState,
-  TimeControlConfig,
-  TimeControlPreset,
-  Variant,
+import {
+  RESIGN_CAUSES,
+  type GameConfiguration,
+  type GameResult,
+  type GameSnapshot,
+  type GameInitialState,
+  type PlayerId,
+  type SerializedGameState,
+  type TimeControlConfig,
+  type TimeControlPreset,
+  type Variant,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
@@ -151,6 +153,7 @@ const fetchReplayDetails = (gameIds: string[]) =>
       configParameters: gameDetailsTable.configParameters,
       moves: gameDetailsTable.moves,
       clocks: gameDetailsTable.clocks,
+      resignCause: gameDetailsTable.resignCause,
     })
     .from(gameDetailsTable)
     .where(inArray(gameDetailsTable.gameId, gameIds));
@@ -197,6 +200,21 @@ type ReplayDetailsRow = Awaited<ReturnType<typeof fetchReplayDetails>>[number];
 export type ReplayPlayerRow = Awaited<
   ReturnType<typeof fetchReplayPlayers>
 >[number];
+
+/**
+ * The stored resign cause on a resignation result. A game stored before
+ * 2026-11-02 has none (NULL), and so does any other ending; a value this
+ * build does not know is dropped rather than shown.
+ */
+const withStoredResignCause = (
+  result: GameResult,
+  stored: string | null | undefined,
+): GameResult => {
+  const cause = RESIGN_CAUSES.find((known) => known === stored);
+  return result.reason === "resignation" && cause
+    ? { ...result, resignCause: cause }
+    : result;
+};
 
 /**
  * game_details.clocks, or null when this game has none: every game stored
@@ -292,7 +310,7 @@ const assembleReplayGame = (
 
   if (result) {
     replayState.status = "finished";
-    replayState.result = result;
+    replayState.result = withStoredResignCause(result, details?.resignCause);
   }
 
   const clocks = resolveStoredClocks(

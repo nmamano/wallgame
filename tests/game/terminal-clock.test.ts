@@ -45,7 +45,7 @@ describe("the clock when a game ends without a move", () => {
   // turn must pay for the time it used, whoever ended the game.
   const endings: GameAction[] = [
     { kind: "timeout", playerId: 1, timestamp: 75_000 },
-    { kind: "resign", playerId: 2, timestamp: 25_000 },
+    { kind: "resign", playerId: 2, timestamp: 25_000, cause: "player" },
     { kind: "draw", timestamp: 25_000 },
   ];
 
@@ -60,6 +60,7 @@ describe("the clock when a game ends without a move", () => {
     const ended = new GameState(CONFIG, 0).applyGameAction({
       kind: "resign",
       playerId: 1,
+      cause: "player",
       timestamp: 99_000,
     });
     expect(ended.timeLeft).toEqual({ 1: 60, 2: 60 });

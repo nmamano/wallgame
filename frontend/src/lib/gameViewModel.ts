@@ -7,6 +7,7 @@ import type {
   Action,
   GameConfiguration,
   GamePawns,
+  ResignCause,
   Variant,
 } from "../../../shared/domain/game-types";
 import { boardPawns, isMovablePawnType } from "../../../shared/domain/pawns";
@@ -410,6 +411,26 @@ export function buildDoubleStepPaths(
     { type: pawnType, target: to },
   ]);
   return paths;
+}
+
+/**
+ * The words that replace "resignation" when the server recorded why a game
+ * was resigned (Nil, 2026-11-02, ask df14c6b1). A click on Resign and a bot
+ * forfeit keep "resignation", and so does every game stored before the cause
+ * was recorded. The only place these words live.
+ */
+const RESIGN_CAUSE_WORDS: Record<ResignCause, string | null> = {
+  player: null,
+  disconnect: "opponent left",
+  idle: "opponent stopped moving",
+  "bot-forfeit": null,
+};
+
+/** The words for why this resignation happened, or null for plain "resignation". */
+export function resignCauseWords(result?: GameResult): string | null {
+  return result?.reason === "resignation" && result.resignCause
+    ? RESIGN_CAUSE_WORDS[result.resignCause]
+    : null;
 }
 
 export function formatWinReason(reason?: GameResult["reason"]): string {

@@ -97,6 +97,7 @@ import {
   computeLastWalls,
   buildPlayerName,
   formatWinReason,
+  resignCauseWords,
   sanitizePlayerList,
 } from "@/lib/gameViewModel";
 import { SpectatorSession } from "@/lib/spectator-controller";
@@ -3251,10 +3252,13 @@ export function useGamePageController(gameId: string) {
     } else if (result.winner) {
       const player =
         seatViewsRef.current.find((p) => p.playerId === result.winner) ?? null;
+      const causeWords = resignCauseWords(result);
       addSystemMessage(
-        player
-          ? `${player.name} won by ${formatWinReason(result.reason)}.`
-          : `Game finished by ${formatWinReason(result.reason)}.`,
+        causeWords
+          ? `${player ? `${player.name} won` : "Game finished"}: ${causeWords}.`
+          : player
+            ? `${player.name} won by ${formatWinReason(result.reason)}.`
+            : `Game finished by ${formatWinReason(result.reason)}.`,
       );
     } else {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
@@ -3485,7 +3489,8 @@ export function useGamePageController(gameId: string) {
     gameResult?.winner != null
       ? (players.find((p) => p.playerId === gameResult.winner) ?? null)
       : null;
-  const winReason = formatWinReason(gameResult?.reason);
+  const winReason =
+    resignCauseWords(gameResult) ?? formatWinReason(gameResult?.reason);
   // An aborted game has no winner, but it is not a draw either - it never
   // became a game. Formatted here so the panels stay presentation-only.
   const gameIsAborted = gameResult?.reason === "aborted";

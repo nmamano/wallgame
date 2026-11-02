@@ -250,6 +250,7 @@ function createMetaActionExecutor({
             kind: "resign",
             playerId: seatId,
             timestamp: Date.now(),
+            cause: "player",
           });
           return controllerOk(undefined);
         }

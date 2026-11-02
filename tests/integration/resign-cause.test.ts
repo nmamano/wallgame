@@ -27,10 +27,9 @@ import { setupBlankEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Move } from "../../shared/domain/game-types";
-import type {
-  PartialGameConfiguration,
-  ResignCause,
-} from "../../server/games/store";
+import { buildStandardInitialState } from "../../shared/domain/standard-setup";
+import type { PartialGameConfiguration } from "../../server/games/store";
+import type { ResignCause } from "../../shared/domain/game-types";
 
 interface MigrationJournal {
   entries: { tag: string }[];
@@ -48,6 +47,7 @@ let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
+let getReplayGameReadonly: typeof import("../../server/db/game-queries").getReplayGameReadonly;
 
 /** The repo's migrations, cut off before this slice's (see the anonymous-id file for why cut, not filtered). */
 function migrationsFolderWithoutThisSlice(): string {
@@ -141,8 +141,21 @@ beforeAll(async () => {
                        board_width, board_height, started_at, moves_count)
     VALUES (${LEGACY_GAME_ID}, 'standard', 'blitz', false, 'friend', 8, 8, NOW(), 2)`;
   await migrationClient`
-    INSERT INTO game_details (game_id, moves)
-    VALUES (${LEGACY_GAME_ID}, '["Cb8.Ma2", "Cg8.Mh2"]'::jsonb)`;
+    INSERT INTO game_details (game_id, config_parameters, moves)
+    VALUES (${LEGACY_GAME_ID},
+            ${JSON.stringify({ initialState: buildStandardInitialState(8, 8) })}::jsonb,
+            '["Cb8.Ma2", "Cg8.Mh2"]'::jsonb)`;
+  for (const [order, role, rank] of [
+    [1, "host", 1],
+    [2, "joiner", 2],
+  ] as const) {
+    await migrationClient`
+      INSERT INTO game_players (game_id, player_order, player_role,
+                                player_config_type, display_name, outcome_rank,
+                                outcome_reason)
+      VALUES (${LEGACY_GAME_ID}, ${order}, ${role}, 'friend', ${role}, ${rank},
+              'resignation')`;
+  }
 
   await migrate(drizzle(migrationClient), { migrationsFolder: "drizzle" });
   await migrationClient.end();
@@ -158,6 +171,8 @@ beforeAll(async () => {
   resignGame = store.resignGame;
   acceptDraw = store.acceptDraw;
   persistCompletedGame = persistence.persistCompletedGame;
+  getReplayGameReadonly = (await import("../../server/db/game-queries"))
+    .getReplayGameReadonly;
 }, 180_000);
 
 afterAll(async () => {
@@ -169,6 +184,11 @@ describe("the migration", () => {
   it("leaves an old game's cause unknown (NULL)", async () => {
     expect(await resignCauseOf(LEGACY_GAME_ID)).toBeNull();
   });
+
+  it("replays an old resignation with no cause, so it still reads Resignation", async () => {
+    const replay = await getReplayGameReadonly(LEGACY_GAME_ID);
+    expect(replay?.state.result).toEqual({ winner: 1, reason: "resignation" });
+  });
 });
 
 describe("a finished game", () => {
@@ -178,6 +198,13 @@ describe("a finished game", () => {
       resignGame({ id: session.id, playerId: 1, timestamp: Date.now(), cause });
       await persistCompletedGame(session);
       expect(await resignCauseOf(session.id)).toBe(cause);
+      // The replay of the stored game carries the cause back to the page.
+      const replay = await getReplayGameReadonly(session.id);
+      expect(replay?.state.result).toEqual({
+        winner: 2,
+        reason: "resignation",
+        resignCause: cause,
+      });
     });
   }
 

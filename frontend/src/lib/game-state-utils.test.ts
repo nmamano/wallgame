@@ -36,6 +36,7 @@ const finished = live.applyGameAction({
   kind: "resign",
   playerId: 1,
   timestamp: 20_000,
+  cause: "player",
 });
 const pastOf = (state: GameState) =>
   buildHistoryState({

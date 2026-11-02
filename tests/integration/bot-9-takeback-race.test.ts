@@ -805,6 +805,7 @@ describe("takeback replay race", () => {
       expect(finished[0].state.result).toEqual({
         winner: 1,
         reason: "resignation",
+        resignCause: "bot-forfeit",
       });
     } finally {
       humanSocket?.close();
@@ -886,6 +887,7 @@ describe("takeback replay race", () => {
       expect(finished[0].state.result).toEqual({
         winner: 1,
         reason: "resignation",
+        resignCause: "bot-forfeit",
       });
 
       if (!dbUrl) {

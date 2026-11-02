@@ -629,9 +629,12 @@ describe("a bot game whose human seat left", () => {
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 2,
         reason: "resignation",
+        resignCause: "disconnect",
       });
       // The record can tell this from a click on Resign.
-      expect(getSession(session.id).resignCause).toBe("disconnect");
+      expect(getSession(session.id).gameState.result?.resignCause).toBe(
+        "disconnect",
+      );
     });
   });
 
@@ -754,8 +757,9 @@ describe("the idle timeout ending a game", () => {
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 2,
         reason: "resignation",
+        resignCause: "idle",
       });
-      expect(getSession(session.id).resignCause).toBe("idle");
+      expect(getSession(session.id).gameState.result?.resignCause).toBe("idle");
     });
   });
 
@@ -961,6 +965,7 @@ describe("the idle timeout ending a game", () => {
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 1,
         reason: "resignation",
+        resignCause: "idle",
       });
     });
   });
@@ -988,6 +993,7 @@ describe("the idle timeout ending a game", () => {
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 1,
         reason: "resignation",
+        resignCause: "disconnect",
       });
     });
   });
@@ -1014,6 +1020,7 @@ describe("the idle timeout ending a game", () => {
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 2,
         reason: "resignation",
+        resignCause: "idle",
       });
     });
   });
@@ -1030,7 +1037,7 @@ describe("the cause of a resignation", () => {
       cause: "player",
     });
     expect(getSession(session.id).gameState.result?.reason).toBe("resignation");
-    expect(getSession(session.id).resignCause).toBe("player");
+    expect(getSession(session.id).gameState.result?.resignCause).toBe("player");
   });
 
   it("keeps the first cause when a second resignation arrives late", () => {
@@ -1039,7 +1046,7 @@ describe("the cause of a resignation", () => {
       bothSeatsLookConnected(session);
       playMoves(session.id, 2);
       timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
-      expect(getSession(session.id).resignCause).toBe("idle");
+      expect(getSession(session.id).gameState.result?.resignCause).toBe("idle");
 
       // A Resign click that was already on its way when the timer fired.
       resignGame({
@@ -1048,7 +1055,7 @@ describe("the cause of a resignation", () => {
         timestamp: Date.now(),
         cause: "player",
       });
-      expect(getSession(session.id).resignCause).toBe("idle");
+      expect(getSession(session.id).gameState.result?.resignCause).toBe("idle");
       expect(getSession(session.id).gameState.result?.winner).toBe(2);
     });
   });
@@ -1060,6 +1067,8 @@ describe("the cause of a resignation", () => {
     expect(getSession(session.id).gameState.result?.reason).toBe(
       "draw-agreement",
     );
-    expect(getSession(session.id).resignCause).toBeUndefined();
+    expect(
+      getSession(session.id).gameState.result?.resignCause,
+    ).toBeUndefined();
   });
 });

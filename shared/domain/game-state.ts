@@ -349,6 +349,7 @@ export class GameState {
           : {
               winner: action.playerId === 1 ? 2 : 1,
               reason: "resignation",
+              resignCause: action.cause,
             };
         break;
       case "timeout":

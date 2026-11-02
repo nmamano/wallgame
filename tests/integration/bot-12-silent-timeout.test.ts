@@ -566,6 +566,7 @@ describe("a bot request that times out on a silent connection", () => {
     expect(finished.state.result).toEqual({
       winner: 1,
       reason: "resignation",
+      resignCause: "bot-forfeit",
     });
     const detail = await waitForGameDetail(human.gameId);
     expect(detail.botResignCause).toBe("client-disconnect");
@@ -593,6 +594,7 @@ describe("a bot request that times out on a silent connection", () => {
     expect(finished.state.result).toEqual({
       winner: 1,
       reason: "resignation",
+      resignCause: "bot-forfeit",
     });
     const detail = await waitForGameDetail(human.gameId);
     expect(detail.botResignCause).toBe("bgs-initial-eval-failed:reattach");
@@ -629,6 +631,7 @@ describe("a bot request that times out on a silent connection", () => {
     expect(finishedA.state.result).toEqual({
       winner: 1,
       reason: "resignation",
+      resignCause: "bot-forfeit",
     });
     const detailA = await waitForGameDetail(humanA.gameId);
     expect(detailA.botResignCause).toBe("bgs-initial-eval-failed:reattach");
@@ -669,6 +672,7 @@ describe("a bot request that times out on a silent connection", () => {
     expect(finished.state.result).toEqual({
       winner: 1,
       reason: "resignation",
+      resignCause: "bot-forfeit",
     });
     const detail = await waitForGameDetail(human.gameId);
     expect(detail.botResignCause).toBe("bgs-update-failed-after-human-move");

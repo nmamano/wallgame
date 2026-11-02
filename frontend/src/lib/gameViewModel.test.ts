@@ -6,6 +6,8 @@ import {
   computeLastMoveDiffs,
   computeLastMoves,
   computeLastWallDiffs,
+  formatWinReason,
+  resignCauseWords,
 } from "./gameViewModel";
 import type { PlayerColor } from "./player-colors";
 import { GameState } from "../../../shared/domain/game-state";
@@ -239,5 +241,39 @@ describe("the corner of a diagonal 2-step move", () => {
       },
     };
     expect(catMove(config, [1, 1]).via).toEqual([1, 0]);
+  });
+});
+
+describe("the words for why a resignation happened", () => {
+  it("names a disconnect and an idle timeout", () => {
+    expect(
+      resignCauseWords({
+        winner: 2,
+        reason: "resignation",
+        resignCause: "disconnect",
+      }),
+    ).toBe("opponent left");
+    expect(
+      resignCauseWords({
+        winner: 2,
+        reason: "resignation",
+        resignCause: "idle",
+      }),
+    ).toBe("opponent stopped moving");
+  });
+
+  it("keeps plain resignation for a click, a bot forfeit and an old game", () => {
+    for (const resignCause of ["player", "bot-forfeit"] as const) {
+      expect(
+        resignCauseWords({ winner: 1, reason: "resignation", resignCause }),
+      ).toBeNull();
+    }
+    expect(resignCauseWords({ winner: 1, reason: "resignation" })).toBeNull();
+    expect(formatWinReason("resignation")).toBe("resignation");
+  });
+
+  it("says nothing for any other ending", () => {
+    expect(resignCauseWords({ winner: 1, reason: "timeout" })).toBeNull();
+    expect(resignCauseWords(undefined)).toBeNull();
   });
 });

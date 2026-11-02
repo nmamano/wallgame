@@ -256,9 +256,32 @@ export type WinReason =
   | "survival" // Player 2 survived the required turns
   | "aborted"; // Ended before both players had a turn; counts for nothing
 
+/**
+ * What made a game end in a resignation. The reason alone says only
+ * "resignation" for all of them.
+ *
+ * - "player": the player pressed Resign.
+ * - "disconnect": the server's abandonment timer, a seat gone too long.
+ * - "idle": the server's idle timer, nobody moved for too long.
+ * - "bot-forfeit": the server resigned for a bot whose engine or client
+ *   failed (game_details.bot_resign_cause says which failure).
+ */
+export const RESIGN_CAUSES = [
+  "player",
+  "disconnect",
+  "idle",
+  "bot-forfeit",
+] as const;
+export type ResignCause = (typeof RESIGN_CAUSES)[number];
+
 export interface GameResult {
   winner?: PlayerId;
   reason: WinReason;
+  /**
+   * Why a resignation happened. Only on a "resignation" result, and absent
+   * there for every game stored before 2026-11-02 (the cause is unknown).
+   */
+  resignCause?: ResignCause;
 }
 
 /**
@@ -347,7 +370,12 @@ export type PawnFamily = GamePawns["kind"];
 
 export type GameAction =
   | { kind: "move"; move: Move; playerId: PlayerId; timestamp: number }
-  | { kind: "resign"; playerId: PlayerId; timestamp: number }
+  | {
+      kind: "resign";
+      playerId: PlayerId;
+      timestamp: number;
+      cause: ResignCause;
+    }
   | { kind: "timeout"; playerId: PlayerId; timestamp: number }
   | { kind: "draw"; playerId?: PlayerId; timestamp: number }
   | { kind: "takeback"; playerId: PlayerId; timestamp: number }

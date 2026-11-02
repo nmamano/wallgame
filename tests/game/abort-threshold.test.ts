@@ -64,7 +64,12 @@ const playTurns = (count: number): GameState => {
 };
 
 const resign = (state: GameState, playerId: PlayerId) =>
-  state.applyGameAction({ kind: "resign", playerId, timestamp: Date.now() });
+  state.applyGameAction({
+    kind: "resign",
+    playerId,
+    timestamp: Date.now(),
+    cause: "player",
+  });
 
 describe("endedBeforeBothPlayersMoved", () => {
   it("is true below the threshold and false at or above it", () => {

@@ -6,7 +6,7 @@ import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
 } from "../../shared/domain/survival-setup";
-import type { GameAction } from "../../shared/domain/game-types";
+import type { GameAction, ResignCause } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import {
   isUnlimitedTimeControl,
@@ -193,25 +193,7 @@ export interface GameSession {
    * those contract types rather than serializing a session.
    */
   socketConnects: SocketConnectRecord;
-  /**
-   * Why this game ended in a resignation, set by `resignGame` when it ends a
-   * game that was still playing. Unset for every other ending. Stored as
-   * game_details.resign_cause; server-internal, like `socketConnects`.
-   */
-  resignCause?: ResignCause;
 }
-
-/**
- * What made the server record a resignation. The result alone says only
- * "resignation" for all of them.
- *
- * - "player": the player pressed Resign.
- * - "disconnect": the abandonment timer, a seat gone too long.
- * - "idle": the idle timer, nobody moved for too long.
- * - "bot-forfeit": the server resigned for a bot whose engine or client
- *   failed; game_details.bot_resign_cause holds which failure.
- */
-export type ResignCause = "player" | "disconnect" | "idle" | "bot-forfeit";
 
 export interface GameCreationResult {
   session: GameSession;
@@ -1937,13 +1919,12 @@ export const resignGame = (args: {
   if (session.gameState.status !== "playing") {
     return session.gameState;
   }
-  const next = applyActionToSession(session, {
+  return applyActionToSession(session, {
     kind: "resign",
     playerId: args.playerId,
     timestamp: args.timestamp,
+    cause: args.cause,
   });
-  session.resignCause = args.cause;
-  return next;
 };
 
 export const giveTime = (args: {
