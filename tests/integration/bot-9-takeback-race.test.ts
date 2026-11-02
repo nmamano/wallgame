@@ -738,6 +738,148 @@ describe("takeback replay race", () => {
     }
   }, 60_000);
 
+  /**
+   * Production game BHM7vc6I (2026-11-02, task 3edf01d5): takeback, human
+   * move A, takeback (removes A), human move B - all inside one rebuild. The
+   * rebuild owner keeps ONE reset promise across the folded-in requests, so
+   * the move handlers of A and B both wait on it and wake together. The stale
+   * handler A sent its taken-back move; handler B saw that request in flight
+   * and forfeited the bot as "bgs-unavailable-after-wait".
+   */
+  it("does not resign the bot when a takeback removes a move that waits on the rebuild", async () => {
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    // The first state after index `from` that matches.
+    const stateAfter = async (
+      states: Extract<ServerMessage, { type: "state" }>[],
+      from: number,
+      predicate: (
+        state: Extract<ServerMessage, { type: "state" }>["state"],
+      ) => boolean,
+    ) => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const match = states.slice(from).find((s) => predicate(s.state));
+        if (match) return match.state;
+        await sleep(25);
+      }
+      throw new Error(
+        `Timeout waiting for state. Seen: ${states
+          .map((s) => `${s.state.status}/${s.state.history.length}`)
+          .join(", ")}`,
+      );
+    };
+
+    try {
+      const game = await startBotGame(
+        "host-user-stale-move",
+        "test-client-stale-move",
+        "stale-move-bot",
+      );
+      botSocket = game.botSocket;
+      humanSocket = game.humanSocket;
+      await playRounds(humanSocket, botSocket, game.bgsId, 4);
+      const states = recordStates(humanSocket);
+      const { moveFromStandardNotation } =
+        await import("../../shared/domain/standard-notation");
+      const pass = JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("---", 3),
+      });
+
+      // Takeback #1 (human's turn: 8 plies -> 6). Serve the rebuild up to its
+      // first replayed move, and HOLD that request.
+      humanSocket.ws.send(JSON.stringify({ type: "takeback-offer" }));
+      await botSocket.waitForMessage("end_game_session");
+      botSocket.ws.send(
+        JSON.stringify({
+          type: "game_session_ended",
+          bgsId: game.bgsId,
+          success: true,
+          error: "",
+        }),
+      );
+      const restart = await botSocket.waitForMessage("start_game_session");
+      botSocket.sendGameSessionStarted(restart.bgsId, true);
+      const replayEval = await botSocket.waitForMessage("evaluate_position");
+      expect(replayEval.expectedPly).toBe(0);
+      botSocket.sendEvaluateResponse(restart.bgsId, 0, "---", 0);
+      const held = await botSocket.waitForMessage("apply_move");
+      expect(held.expectedPly).toBe(0);
+
+      // Human move A: its handler waits on the rebuild.
+      let mark = states.length;
+      humanSocket.ws.send(pass);
+      await stateAfter(states, mark, (state) => state.history.length === 7);
+
+      // Takeback #2 (bot's turn: removes A, 7 -> 6) folds into the rebuild.
+      mark = states.length;
+      humanSocket.ws.send(JSON.stringify({ type: "takeback-offer" }));
+      await stateAfter(states, mark, (state) => state.history.length === 6);
+
+      // The bot answers the request it was handed; the owner's next pass
+      // starts from the 6-ply history.
+      await sleep(200);
+      botSocket.sendMoveApplied(restart.bgsId, 1);
+      await botSocket.waitForMessage("end_game_session");
+      botSocket.ws.send(
+        JSON.stringify({
+          type: "game_session_ended",
+          bgsId: game.bgsId,
+          success: true,
+          error: "",
+        }),
+      );
+      const second = await botSocket.waitForMessage("start_game_session");
+
+      // Human move B, during that pass and after its snapshot: a second
+      // handler waits on the same rebuild.
+      mark = states.length;
+      humanSocket.ws.send(pass);
+      await stateAfter(states, mark, (state) => state.history.length === 7);
+
+      botSocket.sendGameSessionStarted(second.bgsId, true);
+      const initialEval = await botSocket.waitForMessage("evaluate_position");
+      expect(initialEval.expectedPly).toBe(0);
+      botSocket.sendEvaluateResponse(second.bgsId, 0, "---", 0);
+      for (let i = 0; i < 6; i++) {
+        const apply = await botSocket.waitForMessage("apply_move");
+        expect(apply.expectedPly).toBe(i);
+        botSocket.sendMoveApplied(second.bgsId, i + 1);
+        const evaluate = await botSocket.waitForMessage("evaluate_position");
+        expect(evaluate.expectedPly).toBe(i + 1);
+        botSocket.sendEvaluateResponse(second.bgsId, i + 1, "---", 0);
+      }
+
+      // Only B's handler goes on: B's move, then the bot's reply.
+      const applyB = await botSocket.waitForMessage("apply_move");
+      expect(applyB.expectedPly).toBe(6);
+      botSocket.sendMoveApplied(second.bgsId, 7);
+      const evalBot = await botSocket.waitForMessage("evaluate_position");
+      expect(evalBot.expectedPly).toBe(7);
+      botSocket.sendEvaluateResponse(second.bgsId, 7, "---", 0);
+      const applyBot = await botSocket.waitForMessage("apply_move");
+      expect(applyBot.expectedPly).toBe(7);
+      botSocket.sendMoveApplied(second.bgsId, 8);
+      const evalHuman = await botSocket.waitForMessage("evaluate_position");
+      expect(evalHuman.expectedPly).toBe(8);
+      botSocket.sendEvaluateResponse(second.bgsId, 8, "---", 0);
+
+      const last = await waitForState(
+        states,
+        (state) => state.history.length === 8,
+      );
+      expect(last.status).toBe("playing");
+      const finished = states.filter((s) => s.state.status === "finished");
+      expect(finished.map((s) => s.state.result)).toEqual([]);
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+      await sleep(100);
+    }
+  }, 60_000);
+
   it("releases the engine session when a real replay failure resigns the bot", async () => {
     let botSocket: BotSocket | null = null;
     let humanSocket: HumanSocket | null = null;

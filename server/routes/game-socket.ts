@@ -1438,6 +1438,10 @@ const handleMove = async (
       // The target ply after this move is applied to the BGS. Used below
       // to detect if the takeback replay already handled this move.
       const targetHistoryLength = updatedSession.gameState.history.length;
+      // This move's own history entry. A takeback can remove it while this
+      // handler waits below; see the check after the wait.
+      const ownEntry =
+        updatedSession.gameState.history[targetHistoryLength - 1];
 
       // Wait for BGS to be available if it's resetting (takeback replay),
       // still initializing (game just started), or has an in-flight request
@@ -1490,6 +1494,24 @@ const handleMove = async (
           }
         }
         bgs = getBgs(bgsId);
+
+        // A takeback while we waited removed this move, so it is not ours to
+        // send. The rebuild owner keeps ONE reset promise across every request
+        // folded into it, so a takeback between two human moves leaves two
+        // handlers waiting; both wake when it ends. Production game BHM7vc6I
+        // (2026-11-02): the stale handler sent its taken-back move, and the
+        // current one read that request in flight as "BGS unavailable" and
+        // forfeited the bot. Only the handler whose move is still in the game
+        // goes on; the bot cannot move during a rebuild, so there is one.
+        const historyNow = getSession(socket.sessionId).gameState.history;
+        if (historyNow[targetHistoryLength - 1] !== ownEntry) {
+          console.info("[ws] move taken back while waiting for the BGS", {
+            sessionId: socket.sessionId,
+            targetHistoryLength,
+            historyLength: historyNow.length,
+          });
+          return;
+        }
       }
 
       if (
