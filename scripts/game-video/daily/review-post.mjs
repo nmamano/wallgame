@@ -10,10 +10,11 @@
  *   and that set is fixed on the item (posting.platforms). A platform that
  *   goes live later never gets an old item (Wall Game PM, 2026-10-28).
  * - A platform that does not apply to the video (an Instagram Story of a
- *   video over 60 s) or does not post at this slot (TikTok outside 09:00
- *   PT, slots.mjs PLATFORM_SLOTS) leaves the set at slot time, with its
- *   reason in posting.notApplicable: no failure and no retry (Wall Game
- *   Director and Wall Game Growth, 2026-10-29 and 2026-10-31).
+ *   video over 60 s), does not post at this slot (slots.mjs
+ *   PLATFORM_SLOTS), or is TikTok while a draft waits in Nil's inbox
+ *   (tiktok-drafts.mjs) leaves the set at slot time, with its reason in
+ *   posting.notApplicable: no failure and no retry (Wall Game Director and
+ *   Wall Game Growth, 2026-10-29, 2026-10-31 and 2026-11-03).
  * - A retry is by hand (Growth): it posts only the platforms of the set that
  *   did not post. A platform whose last attempt may have made the post
  *   (pending: the app stopped during its final request; uncertain: no clear
@@ -45,13 +46,17 @@ const NOT_APPLICABLE = {
 };
 
 /**
- * {platform: reason} of the platforms that do not apply to the video or do
- * not post at this slot (slots.mjs PLATFORM_SLOTS).
+ * {platform: reason} of the platforms that do not apply to the video, do
+ * not post at this slot (slots.mjs PLATFORM_SLOTS), or wait (`waits`, the
+ * slot's {platform: reason}: TikTok while a draft waits).
  */
-const notApplicableTo = (item, video, platforms, slot) =>
+const notApplicableTo = (item, video, platforms, slot, waits) =>
   Object.fromEntries(
     platforms
-      .map((p) => [p, NOT_APPLICABLE[p]?.(item, video) ?? notInSlot(p, slot)])
+      .map((p) => [
+        p,
+        NOT_APPLICABLE[p]?.(item, video) ?? waits[p] ?? notInSlot(p, slot),
+      ])
       .filter(([, why]) => why),
   );
 
@@ -76,6 +81,9 @@ const liveOf = (reasons) =>
  *   deps.postPlatform
  * @param {(item: any, platform: string, result: any) => void} deps.logPost
  *   appends the post-log row of a platform that posted
+ * @param {() => Promise<string | null>} deps.tiktokWaiting why a slot sends
+ *   no TikTok draft now (tiktok-drafts.mjs waiting), or null; read once per
+ *   slot, inside the post lock
  * @param {() => number} [deps.now]
  */
 export const createItemPoster = ({
@@ -84,6 +92,7 @@ export const createItemPoster = ({
   readVideo,
   postPlatform,
   logPost,
+  tiktokWaiting,
   now = () => Date.now(),
 }) => {
   const iso = () => new Date(now()).toISOString();
@@ -203,7 +212,7 @@ export const createItemPoster = ({
    * passed over. An item that fails its checks goes to post-failed and the
    * next one is taken (Nil wants a post at least once per 24 h); `refused`
    * lists those, {itemId, error}. An item that no live platform applies to
-   * at this slot (TikTok alone at another slot than 09:00 PT) is never taken:
+   * at this slot (TikTok alone while a draft waits) is never taken:
    * it stays approved for a later slot (VR1, review 107); `passed` lists
    * those, {itemId, notApplicable}, and when no item is taken the kind is
    * "none-applies".
@@ -215,7 +224,12 @@ export const createItemPoster = ({
     if (!platforms.length) return { kind: "no-live" };
     const refused = [];
     const passed = [];
+    // TikTok's read of the latest draft, once, when an item may be taken.
+    let waits = null;
     for (const queued of store.approvedQueue()) {
+      waits ??= {
+        tiktok: platforms.includes("tiktok") ? await tiktokWaiting() : null,
+      };
       let video = null;
       try {
         video = readVideo(queued.render.video.path);
@@ -224,7 +238,7 @@ export const createItemPoster = ({
       }
       // A slot that would post the item nowhere: it stays approved.
       const none = video
-        ? notApplicableTo(queued, video, platforms, { slotAt, firedBy })
+        ? notApplicableTo(queued, video, platforms, { slotAt, firedBy }, waits)
         : {};
       if (platforms.every((p) => p in none)) {
         passed.push({ itemId: queued.id, notApplicable: none });
@@ -242,7 +256,13 @@ export const createItemPoster = ({
               : "the approved video file cannot be read";
             const skipped = problem
               ? {}
-              : notApplicableTo(i, video, platforms, { slotAt, firedBy });
+              : notApplicableTo(
+                  i,
+                  video,
+                  platforms,
+                  { slotAt, firedBy },
+                  waits,
+                );
             i.posts ??= {};
             i.posting = {
               slotAt,

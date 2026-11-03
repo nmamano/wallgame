@@ -230,6 +230,28 @@ const STATUS_FIELDS = [
 ];
 
 /**
+ * The reply's JSON with the post ids as strings: TikTok sends
+ * publicaly_available_post_id as numbers of 19 digits, over 2^53, so
+ * JSON.parse would change their last digits (the route gave
+ * 7703997645387271000 for a post of 2026-11-03). The raw text is parsed
+ * with each such number quoted first. A reply without text keeps its JSON.
+ */
+const ID_FIELD = /("publicaly_available_post_id"\s*:\s*)(\[[^\]]*\]|-?\d+)/g;
+export const idsAsText = (reply) => {
+  if (typeof reply.text !== "string" || !reply.text) return reply.json;
+  try {
+    return JSON.parse(
+      reply.text.replace(
+        ID_FIELD,
+        (_, key, value) => key + value.replace(/-?\d+/g, (n) => `"${n}"`),
+      ),
+    );
+  } catch {
+    return reply.json;
+  }
+};
+
+/**
  * TikTok's status of the upload `publishId` now (Wall Game PM,
  * 2026-11-02: a draft that TikTok called SEND_TO_USER_INBOX was not in the
  * app). One token refresh (`onRefreshToken` keeps a rotated token, as at a
@@ -267,7 +289,7 @@ export const tiktokPostStatus = async ({
   const where = typeof code === "string" ? ` code ${code}` : "";
   if (!ok(reply))
     throw new Error(`tiktok status: HTTP ${reply.status}${where}`);
-  const data = reply.json?.data ?? {};
+  const data = idsAsText(reply)?.data ?? {};
   return {
     publishId,
     code: typeof code === "string" ? code : null,

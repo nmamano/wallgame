@@ -172,6 +172,7 @@ import {
   DRY_RUN_TIKTOK,
   TIKTOK_SECRETS,
 } from "./post-tiktok.mjs";
+import { createTiktokDrafts } from "./tiktok-drafts.mjs";
 import {
   postToX,
   xAppCheck,
@@ -1572,6 +1573,50 @@ export const createDaily = ({
       JSON.stringify(logRow(item, platform, result)) + "\n",
     );
 
+  /**
+   * TikTok's status of one upload now (post-tiktok.mjs tiktokPostStatus).
+   * It refreshes the TikTok token as a post does, so the caller holds the
+   * post lock (asThePost): no post or follower read refreshes it at the same
+   * time, and a rotated token is kept.
+   */
+  const tiktokStatusNow = (publishId) =>
+    tiktokPostStatus({
+      transport: makeLiveTransport(),
+      creds: {
+        TIKTOK_CLIENT_KEY: env.TIKTOK_CLIENT_KEY,
+        TIKTOK_CLIENT_SECRET: env.TIKTOK_CLIENT_SECRET,
+        refreshToken: stored("tiktok", (r) => r.refreshToken),
+      },
+      onRefreshToken: (refreshToken, expiresInSeconds) =>
+        keepRefreshToken("tiktok", refreshToken, expiresInSeconds),
+      publishId,
+    });
+
+  // Nil's TikTok inbox holds one draft (tiktok-drafts.mjs): the latest
+  // draft is the newest tiktok row of the live post log.
+  const tiktokDrafts = createTiktokDrafts({
+    path: join(dirs.root, "tiktok-drafts.json"),
+    latest: () => {
+      const row = readPostLog(store.postLog.live)
+        .filter((r) => r.platform === "tiktok" && r.postId)
+        .at(-1);
+      return row ? { publishId: row.postId, sentAt: row.utc } : null;
+    },
+    readStatus: tiktokStatusNow,
+  });
+  /**
+   * The hourly read of a draft that may wait, so that lastPostedAt is
+   * within an hour of Nil's post. Only while TikTok's account works, and
+   * as THE post (asThePost): a running post skips this hour.
+   */
+  const checkTiktokDraft = async () => {
+    if (platformReasons("tiktok", env, connectedNow()).length) return;
+    if (posting || !tiktokDrafts.mayWait()) return;
+    await asThePost(() => tiktokDrafts.waiting()).catch((err) =>
+      console.warn(`tiktok draft: not read: ${err?.message ?? err}`),
+    );
+  };
+
   // The slot post and Growth's retry (review-post.mjs), and the slot timer
   // (scheduler.mjs), whose state is <data>/daily/schedule.json. Every post
   // runs as THE post (asThePost); the timer waits a tick while one runs.
@@ -1581,6 +1626,7 @@ export const createDaily = ({
     readVideo: (path) => readFileSync(path),
     postPlatform,
     logPost,
+    tiktokWaiting: tiktokDrafts.waiting,
   });
   const scheduler = createScheduler({
     statePath: join(dirs.root, "schedule.json"),
@@ -1599,6 +1645,7 @@ export const createDaily = ({
   const recordStats = () => {
     void recordFollowers();
     void recordPostStats();
+    void checkTiktokDraft();
   };
   const followerTimer = followerRecordMs
     ? setInterval(recordStats, followerRecordMs)
@@ -1999,7 +2046,21 @@ export const createDaily = ({
       json(res, 200, itemOf(url.searchParams.get("id"))),
 
     /** Counts, the next slot and the last one (scheduler.mjs status). */
-    "GET /api/review/status": (req, res) => json(res, 200, scheduler.status()),
+    "GET /api/review/status": (req, res) =>
+      json(res, 200, { ...scheduler.status(), tiktok: tiktokDrafts.status() }),
+
+    /**
+     * {by}: the latest TikTok draft is lost (Nil says it is not in his
+     * inbox), so the next slot sends one (crew.mjs tiktok --lost).
+     */
+    /** READ-ONLY: the tiktok block of /api/review/status, for crew.mjs. */
+    "GET /api/daily/tiktok": (req, res) =>
+      json(res, 200, tiktokDrafts.status()),
+
+    "POST /api/daily/tiktok/lost": async (req, res) => {
+      const body = await readJson(req);
+      json(res, 200, tiktokDrafts.markLost({ by: body.by }));
+    },
 
     /**
      * {itemId, confirmNotPosted?: [platform]}: Growth's retry of a
@@ -2905,19 +2966,7 @@ export const createDaily = ({
       // The account's reasons: a pause does not stop a read.
       const why = platformReasons("tiktok", env, connectedNow());
       if (why.length) throw new StepRefused(`tiktok: ${why.join("; ")}`);
-      const result = await asThePost(() =>
-        tiktokPostStatus({
-          transport: makeLiveTransport(),
-          creds: {
-            TIKTOK_CLIENT_KEY: env.TIKTOK_CLIENT_KEY,
-            TIKTOK_CLIENT_SECRET: env.TIKTOK_CLIENT_SECRET,
-            refreshToken: stored("tiktok", (r) => r.refreshToken),
-          },
-          onRefreshToken: (refreshToken, expiresInSeconds) =>
-            keepRefreshToken("tiktok", refreshToken, expiresInSeconds),
-          publishId,
-        }),
-      );
+      const result = await asThePost(() => tiktokStatusNow(publishId));
       json(res, 200, { at: new Date().toISOString(), ...result });
     },
 

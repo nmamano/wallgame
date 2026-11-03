@@ -261,6 +261,13 @@
  *                                  within 6 h of the last post. --by is
  *                                  recorded in the slot message and the
  *                                  post log
+ *   tiktok                         Nil's TikTok inbox: the draft that
+ *                                  waits and since when, the last time he
+ *                                  posted one, and the last status read
+ *   tiktok --lost --by "<who>"     (Growth) the latest draft is lost: Nil
+ *                                  says it is not in his inbox. The next
+ *                                  slot sends one. Refused when no draft
+ *                                  waits
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
@@ -1184,6 +1191,30 @@ const commands = {
     for (const [p, why] of Object.entries(r.notApplicable ?? {})) {
       console.log(`  ${p}: not applicable (${why})`);
     }
+  },
+
+  async tiktok() {
+    if (has("lost")) {
+      const by = flag("by") ?? die('tiktok --lost needs --by "<who>"');
+      const r = await app("POST", "/api/daily/tiktok/lost", { by });
+      console.log(
+        `tiktok: ${r.publishId} marked lost by ${by}; the next slot sends a draft`,
+      );
+      return;
+    }
+    const t = await app("GET", "/api/daily/tiktok");
+    const r = t.lastRead;
+    console.log(
+      [
+        t.waitingPublishId
+          ? `tiktok: a draft waits since ${t.waitingSince} (${t.waitingPublishId})`
+          : "tiktok: no draft waits; the next slot sends one",
+        `  last posted by Nil: ${t.lastPostedAt ?? "not seen yet"}`,
+        r
+          ? `  last read ${r.at}: ${r.error ?? r.status ?? "no status"}${r.failingSince ? ` (reads fail since ${r.failingSince})` : ""}`
+          : "  no status read yet",
+      ].join("\n"),
+    );
   },
 
   async slot() {

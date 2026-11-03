@@ -397,7 +397,6 @@ describe("nextSlot", () => {
 });
 
 describe("platforms that post at some slots only", () => {
-  const why = "not in this slot; TikTok posts at 09:00 PT only";
   const slotAt = (day: string, hhmm: string) =>
     new Date(zonedInstant(day, hhmm)).toISOString();
   // PDT, the day clocks go back, PST, and the day clocks go forward.
@@ -420,23 +419,18 @@ describe("platforms that post at some slots only", () => {
     expect(slotAt("2027-03-14", "09:00")).toBe("2027-03-14T16:00:00.000Z");
   });
 
-  test("TikTok posts at 09:00 PT only, on every day incl. the DST days", () => {
+  test("TikTok is at every slot and at a slot by hand (Nil, 2026-11-03: its inbox draft decides, tiktok-drafts.mjs)", () => {
     for (const day of DAYS) {
       for (const t of SLOTS) {
-        expect(notInSlot("tiktok", { slotAt: slotAt(day, t) })).toBe(
-          t === "09:00" ? null : why,
-        );
+        expect(notInSlot("tiktok", { slotAt: slotAt(day, t) })).toBe(null);
       }
     }
-  });
-
-  test("TikTok leaves a slot fired by hand, even at 09:00", () => {
     expect(
       notInSlot("tiktok", {
         slotAt: slotAt("2026-10-31", "09:00"),
         firedBy: "Nil",
       }),
-    ).toBe(why);
+    ).toBe(null);
   });
 
   test("other platforms post at every slot", () => {

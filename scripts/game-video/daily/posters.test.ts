@@ -7,7 +7,7 @@
  * failure is "not posted" only when the platform says so, else uncertain.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dryRunTransport, NotPosted, sha256 } from "./transport.mjs";
@@ -1417,5 +1417,93 @@ describe("GET /api/daily/tiktok-status", () => {
     expect(posting.status).toBe(409);
     expect(posting.text).toContain("a post is already running");
     expect(posting.sent).toHaveLength(0);
+  });
+});
+
+describe("Nil's TikTok inbox on the app (tiktok-drafts.mjs)", () => {
+  const ENV = { TIKTOK_CLIENT_SECRET: "SECRET-CLIENT" };
+  const RECORD = {
+    connectedAt: "2026-10-28T21:23:00.000Z",
+    connectedBy: "Nil",
+    scopes: ["video.upload"],
+    account: { id: "u1", name: "wallgame.io" },
+    refreshToken: "SECRET-REFRESH",
+  };
+  const ID = "v_inbox_file~v2.7703991087983691807";
+
+  test("the status block, crew.mjs's route and tiktok --lost read the latest draft of the live post log", async () => {
+    const transport = fakeLive((req) =>
+      req.url.endsWith("/oauth/token/")
+        ? { status: 200, json: { access_token: "SECRET-ACCESS" } }
+        : {
+            status: 200,
+            json: {
+              data: { status: "SEND_TO_USER_INBOX" },
+              error: { code: "ok" },
+            },
+          },
+    );
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env: ENV,
+      live: () => transport,
+    });
+    openTokenStore(join(daily.store.dirs.root, "tokens")).write(
+      "tiktok",
+      RECORD as Parameters<ReturnType<typeof openTokenStore>["write"]>[1],
+    );
+    writeFileSync(
+      daily.store.postLog.live,
+      [
+        { utc: "2026-11-02T17:00:19.879Z", platform: "tiktok", postId: "old" },
+        { utc: "2026-11-03T17:00:12.611Z", platform: "tiktok", postId: ID },
+        { utc: "2026-11-03T17:00:20.000Z", platform: "x", postId: "1" },
+      ]
+        .map((r) => JSON.stringify(r) + "\n")
+        .join(""),
+    );
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    const call = async (method: string, path: string, body?: object) => {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return {
+        status: res.status,
+        json: (await res.json()) as Record<string, unknown>,
+      };
+    };
+    try {
+      // No read yet: the latest draft may wait.
+      const before = await call("GET", "/api/review/status");
+      expect(before.json.tiktok).toEqual({
+        waitingPublishId: ID,
+        waitingSince: "2026-11-03T17:00:12.611Z",
+        lastPostedAt: null,
+        lastRead: null,
+      });
+      expect(transport.sent).toHaveLength(0);
+      expect((await call("GET", "/api/daily/tiktok")).json).toEqual(
+        before.json.tiktok as Record<string, unknown>,
+      );
+      expect((await call("POST", "/api/daily/tiktok/lost", {})).status).toBe(
+        409,
+      );
+      const lost = await call("POST", "/api/daily/tiktok/lost", {
+        by: "Wall Game Growth",
+      });
+      expect(lost.json).toEqual({ publishId: ID });
+      expect((await call("GET", "/api/daily/tiktok")).json).toMatchObject({
+        waitingPublishId: null,
+      });
+      expect(JSON.stringify(transport.sent)).not.toContain("old");
+    } finally {
+      daily.stop();
+      server.close();
+    }
   });
 });

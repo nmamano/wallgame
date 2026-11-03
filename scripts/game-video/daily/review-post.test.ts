@@ -108,6 +108,9 @@ const world = (live: string[]) => {
   let staleQueue: Item[] | null = null;
   const logged: string[] = [];
   const confirmedSeen: [string, boolean][] = [];
+  // tiktok-drafts.mjs waiting: why no TikTok draft goes out now, or null.
+  let tiktokWhy: string | null = null;
+  let tiktokReads = 0;
   const store = {
     item: (id: string) => structuredClone(items.get(id)) ?? null,
     items: ({ states }: { states?: string[] } = {}) =>
@@ -158,6 +161,10 @@ const world = (live: string[]) => {
       }
     },
     logPost: (_item, platform) => logged.push(platform),
+    tiktokWaiting: () => {
+      tiktokReads++;
+      return Promise.resolve(tiktokWhy);
+    },
   });
   const post = async (slot: { slotAt: string; firedBy?: string }) =>
     (await poster.postNext(slot)) as Outcome;
@@ -174,6 +181,8 @@ const world = (live: string[]) => {
     logged,
     confirmedSeen,
     setVideo: (b: Buffer) => (video = b),
+    setTiktok: (why: string | null) => (tiktokWhy = why),
+    tiktokReads: () => tiktokReads,
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
       (reasons = { ...reasons, ...r }),
@@ -366,18 +375,26 @@ describe("post(itemId)", () => {
     expect(w2.logged).toEqual(["instagram-story"]);
   });
 
-  test("TikTok posts at the 09:00 PT slot only: at another slot or slot --now it is not applicable, never retried", async () => {
-    const why = "not in this slot; TikTok posts at 09:00 PT only";
-    const w = world(["x", "tiktok"]);
-    const r = await w.post(SLOT); // 09:00 PDT
-    expect(r).toMatchObject({ kind: "posted", platforms: ["x", "tiktok"] });
-    expect(w.logged).toEqual(["x", "tiktok"]);
-
+  test("TikTok posts at any slot when no draft waits; while one waits it is not applicable, never retried", async () => {
+    const why = "a draft is waiting";
     for (const slot of [
+      SLOT, // 09:00 PDT
       { slotAt: "2026-10-29T22:00:00.000Z" }, // 15:00 PDT
-      { ...SLOT, firedBy: "Nil" }, // slot --now: no slot time
+      { ...SLOT, firedBy: "Nil" }, // slot --now
     ]) {
+      const w = world(["x", "tiktok"]);
+      expect(await w.post(slot)).toMatchObject({
+        kind: "posted",
+        platforms: ["x", "tiktok"],
+      });
+      expect(w.logged).toEqual(["x", "tiktok"]);
+      // One read of the latest draft per slot.
+      expect(w.tiktokReads()).toBe(1);
+    }
+
+    for (const slot of [SLOT, { slotAt: "2026-10-29T22:00:00.000Z" }]) {
       const w2 = world(["x", "tiktok"]);
+      w2.setTiktok(why);
       w2.replies.x = () => ({
         ok: false,
         uncertain: false,
@@ -391,31 +408,43 @@ describe("post(itemId)", () => {
         notApplicable: { tiktok: why },
       });
       expect(w2.get().posts).not.toHaveProperty("tiktok");
-      // A retry of another failure never tries TikTok.
+      // A retry of another failure never tries TikTok, even when no draft
+      // waits any more.
+      w2.setTiktok(null);
       delete w2.replies.x;
       expect((await w2.retry("v-2026-10-28-1")).kind).toBe("posted");
       expect(w2.logged).toEqual(["x"]);
     }
   });
 
+  test("TikTok is not read when it is not live, or when no item is approved", async () => {
+    const w = world(["x"]);
+    await w.post(SLOT);
+    expect(w.tiktokReads()).toBe(0);
+    const w2 = world(["x", "tiktok"]);
+    await w2.post(SLOT);
+    expect(await w2.post(SLOT)).toMatchObject({ kind: "empty" });
+    expect(w2.tiktokReads()).toBe(1);
+  });
+
   test("a slot at which no live platform applies never takes the item: it stays approved and posts at a later slot", async () => {
     const w = world(["tiktok"]);
+    w.setTiktok("a draft is waiting");
     const r = await w.post({ slotAt: "2026-10-29T22:00:00.000Z" }); // 15:00 PDT
     expect(r).toMatchObject({
       kind: "none-applies",
       passed: [
         {
           itemId: "v-2026-10-28-1",
-          notApplicable: {
-            tiktok: "not in this slot; TikTok posts at 09:00 PT only",
-          },
+          notApplicable: { tiktok: "a draft is waiting" },
         },
       ],
     });
     expect(w.get().state).toBe("approved");
     expect(w.get()).not.toHaveProperty("posting");
     expect(w.logged).toEqual([]);
-    // The 09:00 slot takes it.
+    // Nil posts the draft: the next slot takes it.
+    w.setTiktok(null);
     expect(await w.post(SLOT)).toMatchObject({
       kind: "posted",
       platforms: ["tiktok"],

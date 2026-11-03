@@ -43,17 +43,16 @@ export const slotTimeOf = (slotAt) => {
 };
 
 /**
- * The platforms that post at some SLOTS entries only (Nil through Growth,
- * ask 90e25f57, 2026-10-31: "TikTok once a day (09:00 PT slot only)"). At
- * the other slots, and at a slot fired by hand (slot --now), they leave the
- * slot's platform set as not applicable: no failure and no retry. When the
- * 09:00 slot is skipped, TikTok gets nothing that day. Each time must be a
- * SLOTS entry: a change of SLOTS that drops it fails here at load, never
- * silently stops the platform.
+ * The platforms that post at some SLOTS entries only, as {platform: {name,
+ * times}}. At the other slots, and at a slot fired by hand (slot --now),
+ * they leave the slot's platform set as not applicable: no failure and no
+ * retry. Each time must be a SLOTS entry: a change of SLOTS that drops it
+ * fails here at load, never silently stops the platform. TikTok was here
+ * (09:00 PT only, 2026-10-31) until Nil's rule of 2026-11-03 "always leave
+ * one video in my TikTok inbox" (tiktok-drafts.mjs).
+ * @type {Record<string, { name: string, times: string[] }>}
  */
-export const PLATFORM_SLOTS = {
-  tiktok: { name: "TikTok", times: ["09:00"] },
-};
+export const PLATFORM_SLOTS = {};
 for (const [platform, { times }] of Object.entries(PLATFORM_SLOTS)) {
   const stray = times.filter((t) => !SLOTS.includes(t));
   if (stray.length) {
