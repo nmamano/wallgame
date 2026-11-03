@@ -101,6 +101,15 @@
  *            and its ply holds until it closes, so the pawn stays under
  *            the tail. `pieces` limits the pawn's type where the meme names
  *            one (the scream mouse).
+ *   around   a cage round the pawn, not a place beside it (gs-jail-bars;
+ *            Director Rewriter, 2026-11-03: an empty cage beside the
+ *            mouse "reads as a frame, not as that mouse is locked up"):
+ *            `window` is the clear middle of its frames (shares of the
+ *            frame), and it goes with that window's centre on the pawn's,
+ *            `cells` cells wide (placeAround). Its one place takes no
+ *            `place`. Its bars are measured as a cover's are (coverOver):
+ *            on a pawn, its own one too, or on a thing in play, the render
+ *            stops. The board cuts what passes its edge.
  *   tail     false: a picture tied to a pawn has no tail; it takes the
  *            place nearest the pawn all the same, and its ring says who
  *            emotes it (Nil, 2026-11-01, CASES C45: "the arrows/triangles
@@ -338,6 +347,7 @@ const SCREAM_OUTLINE = [
  *   seat?: true,
  *   pawn?: true,
  *   pieces?: string[],
+ *   around?: { window: { x0: number, y0: number, x1: number, y1: number }, cells: number },
  *   places?: ("board" | "margin" | "caption")[],
  *   tint?: "grey",
  *   nilOk?: string | null,
@@ -991,24 +1001,32 @@ export const OVERLAYS = {
     form: "clip",
     draw: "sequence",
     text: "none",
-    // The bars drop in over the first 0.6 s, then hold: a cell window.
-    seconds: 2.5,
+    // The bars stand still round the mouse: their drop-in (0-0.85 s of
+    // the source) swept over the window, so it hid the mouse and its walls.
+    seconds: 2.533,
     pawn: true,
     tail: false,
     pieces: ["mouse"],
-    // 540x540: one cell of the grid and the bars round it.
+    // 540x540: one cell of the grid and the bars round it. It goes round
+    // the mouse: its clear window (x 100-438, y 115-453 of 540, measured
+    // on its last frame) 1.25 cells wide, so the walls on the mouse's
+    // cell edges show inside it.
+    around: {
+      window: { x0: 100 / 540, y0: 115 / 540, x1: 439 / 540, y1: 454 / 540 },
+      cells: 1.25,
+    },
     size: { w: 0.25, h: 0.25 },
     small: { w: 0.2, h: 0.2 },
     places: ["board"],
     sequence: {
       dir: "gs-jail-bars",
       fps: 30,
-      frames: 75,
+      frames: 76,
       sha256:
-        "441ff81fb3b3c2ab56d55cf8c744f6702d8705ab641f63328eb1de278b1c1380",
+        "d1fbbe1f4f959aef9ee575477bd1acdc4008d554b5ba117e9ced98e5a74c6195",
     },
     source:
-      "Pixabay 93536, Jail prison calaboose cell (miukia_aki, 2021-10-31; https://pixabay.com/videos/jail-prison-calaboose-cell-qued-93536/), 0-2.5 s, a square of the grid (crop 1080:1080:225:0), keyed at 0x00FF00; its track is silent and not kept",
+      "Pixabay 93536, Jail prison calaboose cell (miukia_aki, 2021-10-31; https://pixabay.com/videos/jail-prison-calaboose-cell-qued-93536/), 0.85-3.35 s (the bars at rest), a square of the grid (crop 1080:1080:225:0), keyed at 0x00FF00; its track is silent and not kept",
     claim: "LOW: Pixabay Content License",
     likeness: "None",
     rating: null,
@@ -1965,6 +1983,38 @@ export const placeNear = (
     }
   }
   return null;
+};
+
+/**
+ * The place of a cage round a pawn (`around`): its window's centre on the
+ * pawn's centre, the window `cells` cells wide and high. No tail and no
+ * wall under a tail; what its bars hide is measured from its pixels
+ * (render-game-video.mjs placeOverlays), not here.
+ * @param {{ around: { window: { x0: number, y0: number, x1: number, y1: number }, cells: number } }} asset
+ * @param {{ x: number, y: number }} pawn its centre in the board as shown
+ * @param {{ x: number, y: number }} pitch a cell's size in the board
+ */
+export const placeAround = (
+  { around: { window: win, cells } },
+  pawn,
+  pitch,
+) => {
+  const w = (cells * pitch.x) / (win.x1 - win.x0);
+  const h = (cells * pitch.y) / (win.y1 - win.y0);
+  const x = pawn.x - ((win.x0 + win.x1) / 2) * w;
+  const y = pawn.y - ((win.y0 + win.y1) / 2) * h;
+  return {
+    where: "around",
+    x,
+    y,
+    w,
+    h,
+    scale: 1,
+    full: { x, y, w, h },
+    tail: null,
+    over: [],
+    onWall: false,
+  };
 };
 
 /**

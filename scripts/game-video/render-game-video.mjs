@@ -125,6 +125,7 @@ import {
   placeName,
   placeOverlay,
   placeNear,
+  placeAround,
   parsePawn,
   DEATH_CARDS,
   nearFaults,
@@ -149,6 +150,7 @@ import {
 import { MEME_SOUNDS, isVoice, levelGain, memeGain } from "./meme-sounds.mjs";
 import {
   boardToCover,
+  boardToPlace,
   clipCoverage,
   clipFrameIndex,
   clipSoundName,
@@ -4044,8 +4046,9 @@ for (const ev of [
         frames: clip.files.map(fileUrl),
         // Its own sound, when the EDL plays it (edl.mjs `audio`).
         audio: ev.audio === "own" ? clip.audio : null,
-        // A cover clip's pixels, for what it hides (placeOverlays).
-        ...(asset.form === "cover"
+        // A cover clip's pixels, or a cage's (`around`), for what it
+        // hides (placeOverlays).
+        ...(asset.form === "cover" || asset.around
           ? {
               coverage: clipCoverage(clip.files, clip.width, clip.height),
               aspect: clip.width / clip.height,
@@ -5345,19 +5348,28 @@ const renderStyle = async (styleName) => {
   /** A cell's size in the board, for a tail (overlays.mjs placeNear). */
   const PITCH = { x: GRID.pitchX, y: GRID.pitchY };
   /**
-   * What a cover clip hides (overlays.mjs, form "cover"): on each frame it
-   * covered, the share of each pawn's box and of each thing in play under
-   * its pixels (overlay-clips.mjs coverOver), the clip drawn as the stage
-   * draws it, filling the board. The worst over COVER_HIDE_SHARE, or null.
+   * What a cover clip hides (overlays.mjs, form "cover"), or a cage round a
+   * pawn (`around`): on each frame it covered, the share of each pawn's box
+   * and of each thing in play under its pixels (overlay-clips.mjs
+   * coverOver), the clip drawn as the stage draws it: filling the board, or
+   * in the cage's box `full`. The worst over COVER_HIDE_SHARE, or null.
    * An opening's frames under the VS banners are free: no move is shown
    * there, and the banners cover the board anyway.
+   * @param {any} w
+   * @param {{ x: number, y: number, w: number, h: number }} [full]
    */
-  const coverHides = async (w) => {
+  /** What a cover or a cage hides, in words: "the pawn on c4", "a new wall". */
+  const hidWords = (/** @type {string} */ what) =>
+    /^(the|an?) /.test(what) ? what : `the ${what}`;
+  const coverHides = async (w, full) => {
     const r = await stage.evaluate(() => {
       const b = document.getElementById("boardWrap").getBoundingClientRect();
       return b.width / b.height;
     });
     const facts = OVERLAY_FACTS.get(w.ev);
+    /** @param {{ x0: number, y0: number, x1: number, y1: number }} b */
+    const inClip = (b) =>
+      full ? boardToPlace(b, full) : boardToCover(b, r, facts.aspect);
     const { cols, rows, grids } = facts.coverage;
     let worst = null;
     for (const f of w.frames) {
@@ -5365,12 +5377,7 @@ const renderStyle = async (styleName) => {
       const grid =
         grids[clipFrameIndex(f.at - w.start, facts.fps, grids.length)];
       for (const b of [...inPlay(f.state), ...pawnBoxes(f.state)]) {
-        const share = coverOver(
-          grid,
-          cols,
-          rows,
-          boardToCover(b, r, facts.aspect),
-        );
+        const share = coverOver(grid, cols, rows, inClip(b));
         if (share > COVER_HIDE_SHARE && (!worst || share > worst.share)) {
           worst = { share, what: b.what, at: f.at };
         }
@@ -5461,7 +5468,7 @@ const renderStyle = async (styleName) => {
           fault(
             "overlay-place",
             w.ev.ply,
-            `${where} hides the ${hid.what} at ${hid.at.toFixed(2)} s: its pixels cover ${Math.round(hid.share * 100)}% of it (at most ${Math.round(COVER_HIDE_SHARE * 100)}%); put it on a ply where nothing in play is under its art, or cut it shorter`,
+            `${where} hides ${hidWords(hid.what)} at ${hid.at.toFixed(2)} s: its pixels cover ${Math.round(hid.share * 100)}% of it (at most ${Math.round(COVER_HIDE_SHARE * 100)}%); put it on a ply where nothing in play is under its art, or cut it shorter`,
             hid.at,
           );
           continue;
@@ -5507,18 +5514,20 @@ const renderStyle = async (styleName) => {
       const place =
         w.asset.form === "cover"
           ? COVER_PLACE
-          : pawnAt
-            ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
-                place: w.ev.place,
-                // Every wall it shows, old and new: it keeps off them first.
-                walls: w.frames.flatMap((f) =>
-                  wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
-                    const box = boxOnScreen(b, f.state.zoom);
-                    return box ? [box] : [];
-                  }),
-                ),
-              })
-            : placeOverlay(w.asset, busy, reach, offRoom);
+          : pawnAt && w.asset.around
+            ? placeAround(w.asset, pawnAt, PITCH)
+            : pawnAt
+              ? placeNear(w.asset, busy, reach, pawnAt, others, PITCH, {
+                  place: w.ev.place,
+                  // Every wall it shows, old and new: it keeps off them first.
+                  walls: w.frames.flatMap((f) =>
+                    wallBoxes(boardIndexOf.get(f.state.board)).flatMap((b) => {
+                      const box = boxOnScreen(b, f.state.zoom);
+                      return box ? [box] : [];
+                    }),
+                  ),
+                })
+              : placeOverlay(w.asset, busy, reach, offRoom);
       if (!place) {
         // What is under each place, each thing once, and what stops each
         // place off the board: the director moves the overlay to a ply
@@ -5543,6 +5552,24 @@ const renderStyle = async (styleName) => {
         );
         continue;
       }
+      /*
+        A cage round its pawn has one place: what its bars hide there is
+        measured from its pixels, as a cover's is (Director Rewriter,
+        2026-11-03: "the bars on no other pawn and no new wall"; C9, its
+        own mouse stays in full view in the window).
+      */
+      if (w.asset.around && place.full) {
+        const hid = await coverHides(w, place.full);
+        if (hid) {
+          fault(
+            "overlay-place",
+            w.ev.ply,
+            `${where} goes round the ${w.ev.pawn} and its bars hide ${hidWords(hid.what)} at ${hid.at.toFixed(2)} s: they cover ${Math.round(hid.share * 100)}% of it (at most ${Math.round(COVER_HIDE_SHARE * 100)}%); put it on a ply where nothing in play is next to the ${w.ev.pawn}`,
+            hid.at,
+          );
+          continue;
+        }
+      }
       Object.assign(w.place, place);
       // How far it goes into the capture picture, where endingTouch let it
       // (none from the caption's place, off the board).
@@ -5560,7 +5587,7 @@ const renderStyle = async (styleName) => {
         ? ""
         : (place.tail
             ? `, its tail to the ${w.ev.pawn}${place.over.length > 0 ? `, under ${place.over.length} wall(s) of the move (no place had a clear tail)` : ""}`
-            : `, beside the ${w.ev.pawn}`) +
+            : `, ${place.where === "around" ? "round" : "beside"} the ${w.ev.pawn}`) +
           (place.onWall
             ? ", over a wall (every free place covers one, or the list named it)"
             : "");

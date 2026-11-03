@@ -950,7 +950,11 @@ export const validateEdl = (raw) => {
           `${where}: ${ev.asset} is drawn for a ${asset.pieces.join(" or ")}, not a ${pawn.piece}`,
         );
       }
-      if (ev.place !== undefined && !PAWN_PLACES.includes(ev.place)) {
+      if (ev.place !== undefined && asset.around) {
+        fail(
+          `${where}: ${ev.asset} goes round the ${ev.pawn}; it has one place and takes no place`,
+        );
+      } else if (ev.place !== undefined && !PAWN_PLACES.includes(ev.place)) {
         fail(
           `${where}: place must be one of ${PAWN_PLACES.join(", ")}, got ${JSON.stringify(ev.place)}`,
         );

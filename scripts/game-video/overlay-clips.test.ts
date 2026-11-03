@@ -14,6 +14,7 @@ import {
   CLIP_AUDIO_FILE,
   OVERLAY_CLIP_DIR,
   boardToCover,
+  boardToPlace,
   clipCoverage,
   clipFrameIndex,
   clipManifestText,
@@ -281,6 +282,24 @@ describe("overlay clips", () => {
     edge[(0 * 4 + 3) * 4 + 3] = 255;
     expect(visibleBox(edge, 1, 4, 4)).toEqual({ x: 2, y: 0, w: 2, h: 2 });
     expect(visibleBox(new Uint8Array(64), 1, 4, 4)).toBe(null);
+  });
+
+  test("a cage's pixels map to the board as its box draws them", () => {
+    const full = { x: 0.2, y: 0.4, w: 0.5, h: 0.25 };
+    // Its box is the whole clip; a box half out of it maps past 0..1.
+    const whole = boardToPlace({ x0: 0.2, y0: 0.4, x1: 0.7, y1: 0.65 }, full);
+    for (const [got, want] of [
+      [whole.x0, 0],
+      [whole.y0, 0],
+      [whole.x1, 1],
+      [whole.y1, 1],
+    ])
+      expect(got).toBeCloseTo(want, 9);
+    const half = boardToPlace({ x0: 0.1, y0: 0.4, x1: 0.3, y1: 0.5 }, full);
+    expect(half.x0).toBeCloseTo(-0.2, 9);
+    expect(half.x1).toBeCloseTo(0.2, 9);
+    expect(half.y0).toBeCloseTo(0, 9);
+    expect(half.y1).toBeCloseTo(0.4, 9);
   });
 
   test("a cover clip's pixels map to the board as object-fit: cover draws it", () => {

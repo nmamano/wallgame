@@ -1299,6 +1299,19 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
     ).toEqual([
       'events[0]: place must be one of bottom-right, bottom-left, top-right, top-left, bottom-middle, top-middle, right-middle, left-middle, got "middle"',
     ]);
+    // A cage round its pawn has one place (overlays.mjs `around`).
+    expect(
+      validateEdl(
+        ev({
+          asset: "gs-jail-bars",
+          pawn: "red mouse",
+          sound: "slam-1",
+          place: "top-left",
+        }),
+      ).errors,
+    ).toEqual([
+      "events[0]: gs-jail-bars goes round the red mouse; it has one place and takes no place",
+    ]);
     expect(
       validateEdl(ev({ asset: "chat-toast", text: "hi", place: "top-left" }))
         .errors,

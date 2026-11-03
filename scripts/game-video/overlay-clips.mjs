@@ -254,6 +254,20 @@ export const coverOver = (grid, cols, rows, box) => {
 };
 
 /**
+ * A box in the board (0..1) as a share of a clip drawn in the box `full`
+ * (a cage round a pawn, overlays.mjs placeAround: the box has the clip's
+ * shape, so the clip fills it).
+ * @param {{ x0: number, y0: number, x1: number, y1: number }} box
+ * @param {{ x: number, y: number, w: number, h: number }} full
+ */
+export const boardToPlace = (box, full) => ({
+  x0: (box.x0 - full.x) / full.w,
+  y0: (box.y0 - full.y) / full.h,
+  x1: (box.x1 - full.x) / full.w,
+  y1: (box.y1 - full.y) / full.h,
+});
+
+/**
  * A box in the board (0..1) as a share of a clip drawn over the whole board
  * with object-fit: cover (stage.html, #overlay.sequence.cover): the clip is
  * scaled to fill the board and centred, so its overflow is cut equally on

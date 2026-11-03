@@ -24,6 +24,7 @@ import {
   parsePawn,
   nearFaults,
   placeNear,
+  placeAround,
   PAWN_PLACES,
   tailHits,
   tailLength,
@@ -382,6 +383,45 @@ describe("the pawn a reactor shows (Nil, 2026-10-29: cats are pursuers)", () => 
 });
 
 describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
+  test("a cage goes round its pawn: its window on the pawn's cell (around)", () => {
+    const cages = Object.entries(OVERLAYS).filter(([, a]) => a.around);
+    expect(cages.map(([k]) => k)).toEqual(["gs-jail-bars"]);
+    for (const [, a] of cages) {
+      // A clip a pawn emotes, drawn from its frames, with no tail.
+      expect(a).toMatchObject({
+        form: "clip",
+        draw: "sequence",
+        pawn: true,
+        tail: false,
+      });
+      const { window: win, cells } = a.around!;
+      expect(0 <= win.x0 && win.x0 < win.x1 && win.x1 <= 1).toBe(true);
+      expect(0 <= win.y0 && win.y0 < win.y1 && win.y1 <= 1).toBe(true);
+      // Wider than a cell, so the walls on the pawn's cell edges show.
+      expect(cells).toBeGreaterThan(1);
+    }
+    const cage = { around: OVERLAYS["gs-jail-bars"].around! };
+    const { window: win, cells } = cage.around;
+    const pitch = { x: 1 / 8, y: 1 / 8 };
+    const p = placeAround(cage, { x: 0.5625, y: 0.3125 }, pitch);
+    expect(p).toMatchObject({
+      where: "around",
+      scale: 1,
+      tail: null,
+      over: [],
+    });
+    expect(p.full).toEqual({ x: p.x, y: p.y, w: p.w, h: p.h });
+    // Its window is centred on the pawn, `cells` cells wide and high.
+    expect(p.x + ((win.x0 + win.x1) / 2) * p.w).toBeCloseTo(0.5625, 9);
+    expect(p.y + ((win.y0 + win.y1) / 2) * p.h).toBeCloseTo(0.3125, 9);
+    expect((win.x1 - win.x0) * p.w).toBeCloseTo(cells / 8, 9);
+    expect((win.y1 - win.y0) * p.h).toBeCloseTo(cells / 8, 9);
+    // A pawn in a corner: the cage passes the board's edge, which cuts it.
+    const corner = placeAround(cage, { x: 1 / 16, y: 15 / 16 }, pitch);
+    expect(corner.x).toBeLessThan(0);
+    expect(corner.y + corner.h).toBeGreaterThan(1);
+  });
+
   const PITCH = { x: 0.125, y: 0.125 };
   // The-scream's shape, with the tail a picture has unless it says
   // `tail: false` (the-scream itself has none since C45).
