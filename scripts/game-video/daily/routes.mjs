@@ -301,15 +301,9 @@ export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
  * @type {PlatformPause[]}
  */
 export const PLATFORM_PAUSES = [
-  // Wall Game Growth's 14-day Facebook test (Growth Lead GO, 2026-11-02):
-  // Instagram shares each Reel to the Page, so the poster must not post it
-  // there too.
-  {
-    platform: "facebook",
-    from: "2026-11-03T00:00:00Z",
-    until: "2026-11-17T00:00:00Z",
-    why: "Facebook test: Instagram shares the Reel",
-  },
+  // The Facebook test (2026-11-03 to 11-17) is lifted (Wall Game PM,
+  // 2026-11-03): the Instagram->Facebook share needs a personal profile in
+  // the Accounts Center, so there is no test and no pause.
 ];
 
 /** The reasons of the pauses of platform `p` at time `now` (ms). */
