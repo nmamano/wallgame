@@ -1036,18 +1036,20 @@ export const OVERLAYS = {
     draw: "sequence",
     text: "none",
     // It rolls in at the left and out at the right along the board's
-    // bottom row (the lowest 20% of the board). A cover hides nothing: a
-    // pawn on that row, or a thing in play there, stops the render.
-    seconds: 2.533,
+    // bottom row (the lowest 27% of the board; about 1.5 cells tall on an
+    // 8x8 board, Wall Game Director, 2026-11-03: one cell "reads as a
+    // brown spot at phone size"). A cover hides nothing: a pawn on that
+    // row, or a thing in play there, stops the render.
+    seconds: 3.167,
     sequence: {
       dir: "gs-tumbleweed",
       fps: 30,
-      frames: 76,
+      frames: 95,
       sha256:
-        "b6fc39c98abe7463846d80ffa2ff9e24105c0ffd23ae45902b46961700b800da",
+        "916a066f171abe2ab1b1af15c791f6ce49144668366899cb2158adc1646764a6",
     },
     source:
-      "Pixabay 244299, Tumbleweed greenscreen (u_7x9jx9u7vt, 2024-12-01; https://pixabay.com/videos/tumbleweed-tumble-weed-greenscreen-244299/), the whole 10.2 s at 4x, the frame put at the bottom of a square of its own green (pad 1920:1920:0:840), keyed at 0x01BE21, similarity 0.08 (0.15 ate its strands); no sound",
+      "Pixabay 244299, Tumbleweed greenscreen (u_7x9jx9u7vt, 2024-12-01; https://pixabay.com/videos/tumbleweed-tumble-weed-greenscreen-244299/), the whole 10.2 s at 3.2x, the frame scaled 1.26x and cut to its middle 1920 px (it rolls in and out past the sides), put at the bottom of a square of its own green (pad 1920:1920:0:558), keyed at 0x01BE21, similarity 0.08 (0.15 ate its strands); no sound",
     claim: "LOW: Pixabay Content License",
     likeness: "None",
     rating: null,
