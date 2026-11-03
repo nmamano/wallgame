@@ -1009,11 +1009,15 @@ export const OVERLAYS = {
     pieces: ["mouse"],
     // 540x540: one cell of the grid and the bars round it. It goes round
     // the mouse: its clear window (x 100-438, y 115-453 of 540, measured
-    // on its last frame) 1.25 cells wide, so the walls on the mouse's
-    // cell edges show inside it.
+    // on its last frame) 1.35 cells wide, so the walls on the mouse's
+    // cell edges show inside it, clear of the bars (Wall Game Director,
+    // 2026-11-03: on a box-in they are the cause of the joke; at 1.25 the
+    // bars lay on them). Its bars then hide 41% of a pawn in a next cell
+    // and 30% of one in a diagonal cell, so such a pawn stops the render;
+    // only a cage under 1.19 cells clears them, and it lies on the walls.
     around: {
       window: { x0: 100 / 540, y0: 115 / 540, x1: 439 / 540, y1: 454 / 540 },
-      cells: 1.25,
+      cells: 1.35,
     },
     size: { w: 0.25, h: 0.25 },
     small: { w: 0.2, h: 0.2 },
