@@ -7,6 +7,7 @@
  * array. The frame limit is checked on a real server.
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import type { z } from "zod";
 import { clientMessageSchema } from "../shared/contracts/websocket-messages";
 import {
   BOARD_SIDE_MAX,
@@ -52,43 +53,60 @@ describe("the actions of a submitted move", () => {
   });
 });
 
-describe("the walls of a game to create", () => {
-  const body = (walls: unknown[]) => ({
-    config: {
-      timeControl: { initialSeconds: 0, incrementSeconds: 0 },
-      variant: "standard",
-      randomStart: false,
-      rated: false,
-      boardWidth: BOARD_SIDE_MAX,
-      boardHeight: BOARD_SIDE_MAX,
-      initialState: {
-        ...buildStandardInitialState(BOARD_SIDE_MAX, BOARD_SIDE_MAX),
-        walls,
-        turn: { playerId: 1, actionsTaken: [] },
-      },
+/** A game to create on the largest board, with the largest time control. */
+const gameToCreate = (walls: unknown[]) => ({
+  config: {
+    timeControl: { initialSeconds: 3_600, incrementSeconds: 60 },
+    variant: "standard",
+    randomStart: false,
+    rated: false,
+    boardWidth: BOARD_SIDE_MAX,
+    boardHeight: BOARD_SIDE_MAX,
+    initialState: {
+      ...buildStandardInitialState(BOARD_SIDE_MAX, BOARD_SIDE_MAX),
+      walls,
+      turn: { playerId: 1, actionsTaken: [] },
     },
-    matchType: "friend",
-  });
+  },
+  matchType: "friend",
+});
 
+/**
+ * Every issue of a failed parse, with the issues of each union branch
+ * listed too, as their paths start below the union.
+ */
+const allIssues = (issues: readonly z.core.$ZodIssue[]): z.core.$ZodIssue[] =>
+  issues.flatMap((issue) =>
+    issue.code === "invalid_union"
+      ? [issue, ...issue.errors.flatMap((branch) => allIssues(branch))]
+      : [issue],
+  );
+
+describe("the walls of a game to create", () => {
   it("accepts a legal custom setup, so the body above is a real one", () => {
     const wall = { cell: [0, 0], orientation: "vertical" };
-    expect(createGameSchema.safeParse(body([wall])).success).toBe(true);
+    expect(createGameSchema.safeParse(gameToCreate([wall])).success).toBe(true);
   });
 
   it("caps them at every wall slot of the largest board", () => {
     expect(MAX_WALLS_ON_A_BOARD).toBe(760);
   });
 
-  it("refuses more walls than the largest board has slots, with one issue", () => {
+  it("refuses more walls than the largest board has slots, before it reads any wall", () => {
     const result = createGameSchema.safeParse(
-      body(Array.from({ length: 100_000 }, () => 0)),
+      gameToCreate(Array.from({ length: 100_000 }, () => 0)),
     );
     expect(result.success).toBe(false);
-    const wallIssues = result.error?.issues.filter((issue) =>
+    // One length issue for each setup shape the union tries, and none for
+    // an element: an element issue would have the wall's index in its path.
+    const wallIssues = allIssues(result.error?.issues ?? []).filter((issue) =>
       issue.path.includes("walls"),
     );
-    expect(wallIssues).toHaveLength(1);
-    expect(wallIssues?.[0]?.code).toBe("too_big");
+    expect(wallIssues.length).toBeGreaterThan(0);
+    for (const issue of wallIssues) {
+      expect(issue.code).toBe("too_big");
+      expect(issue.path.at(-1)).toBe("walls");
+    }
   });
 });
 

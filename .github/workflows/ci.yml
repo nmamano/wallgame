@@ -57,6 +57,20 @@ jobs:
         working-directory: frontend
         run: bun install --frozen-lockfile
 
+      # Known high and critical advisories in each lockfile. REPORT ONLY for
+      # now (board task 34ef46cc): it prints the advisories and their count and
+      # never fails the build, because the lockfiles still carry dev-only ones
+      # that a later lock refresh removes. bun audit reads the lockfile, so the
+      # bot client needs no install. GitHub's dependency graph cannot read
+      # bun.lock, so this step is what sees these advisories.
+      - name: Audit dependencies (report only)
+        run: |
+          for dir in . frontend official-custom-bot-client; do
+            echo "::group::bun audit --audit-level=high ($dir)"
+            (cd "$dir" && bun audit --audit-level=high) || true
+            echo "::endgroup::"
+          done
+
       # Cheap checks first so an obvious failure does not wait on the suite.
       - name: Check formatting
         run: bun run format:check

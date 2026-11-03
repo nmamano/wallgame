@@ -874,6 +874,8 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
     "/ws/eval/:gameId",
     upgradeWebSocket((c) => {
       const gameId = c.req.param("gameId");
+      // The route pattern always sets it; hono's types do not know that here.
+      if (!gameId) throw new Error("eval socket route without a game id");
 
       return {
         onOpen(_event: Event, ws: WSContext) {
