@@ -1604,17 +1604,27 @@ export const createDaily = ({
     },
     readStatus: tiktokStatusNow,
   });
+  /** The tiktok block of the status; a damaged file is its error only. */
+  const tiktokStatusBlock = () => {
+    try {
+      return tiktokDrafts.status();
+    } catch (err) {
+      return { error: String(err?.message ?? err) };
+    }
+  };
   /**
    * The hourly read of a draft that may wait, so that lastPostedAt is
    * within an hour of Nil's post. Only while TikTok's account works, and
    * as THE post (asThePost): a running post skips this hour.
    */
   const checkTiktokDraft = async () => {
-    if (platformReasons("tiktok", env, connectedNow()).length) return;
-    if (posting || !tiktokDrafts.mayWait()) return;
-    await asThePost(() => tiktokDrafts.waiting()).catch((err) =>
-      console.warn(`tiktok draft: not read: ${err?.message ?? err}`),
-    );
+    try {
+      if (platformReasons("tiktok", env, connectedNow()).length) return;
+      if (posting || !tiktokDrafts.mayWait()) return;
+      await asThePost(() => tiktokDrafts.waiting());
+    } catch (err) {
+      console.warn(`tiktok draft: not read: ${err?.message ?? err}`);
+    }
   };
 
   // The slot post and Growth's retry (review-post.mjs), and the slot timer
@@ -2047,15 +2057,14 @@ export const createDaily = ({
 
     /** Counts, the next slot and the last one (scheduler.mjs status). */
     "GET /api/review/status": (req, res) =>
-      json(res, 200, { ...scheduler.status(), tiktok: tiktokDrafts.status() }),
+      json(res, 200, { ...scheduler.status(), tiktok: tiktokStatusBlock() }),
 
     /**
      * {by}: the latest TikTok draft is lost (Nil says it is not in his
      * inbox), so the next slot sends one (crew.mjs tiktok --lost).
      */
     /** READ-ONLY: the tiktok block of /api/review/status, for crew.mjs. */
-    "GET /api/daily/tiktok": (req, res) =>
-      json(res, 200, tiktokDrafts.status()),
+    "GET /api/daily/tiktok": (req, res) => json(res, 200, tiktokStatusBlock()),
 
     "POST /api/daily/tiktok/lost": async (req, res) => {
       const body = await readJson(req);

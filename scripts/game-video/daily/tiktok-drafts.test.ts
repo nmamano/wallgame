@@ -3,7 +3,7 @@
  * the latest one does not wait; the TikTok post ids stay strings.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTiktokDrafts } from "./tiktok-drafts.mjs";
@@ -164,6 +164,22 @@ describe("a TikTok draft waits", () => {
     w.send(NEW, "2026-11-03T17:00:12.611Z");
     expect(await w.drafts.waiting()).toBe("a draft is waiting");
   });
+});
+
+test("a damaged file throws without quoting it, and is kept", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tiktok-drafts-"));
+  const path = join(dir, "d.json");
+  writeFileSync(path, '{"drafts": {"secret-looking text');
+  const drafts = createTiktokDrafts({
+    path,
+    latest: () => ({ publishId: NEW, sentAt: "2026-11-03T17:00:12.611Z" }),
+    readStatus: () => Promise.resolve({ status: "SEND_TO_USER_INBOX" }),
+  });
+  const err = await drafts.waiting().catch((e: unknown) => e);
+  expect(String(err)).toContain("tiktok-drafts.json cannot be read");
+  expect(String(err)).not.toContain("secret-looking");
+  expect(() => drafts.status()).toThrow("cannot be read");
+  expect(readFileSync(path, "utf8")).toBe('{"drafts": {"secret-looking text');
 });
 
 describe("TikTok post ids stay strings", () => {

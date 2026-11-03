@@ -97,6 +97,17 @@ export const createItemPoster = ({
 }) => {
   const iso = () => new Date(now()).toISOString();
 
+  /**
+   * Why no TikTok draft may go out now, or null. Any fault of the read (a
+   * damaged tiktok-drafts.json) is "unknown" for TikTok alone: it never
+   * fails the other platforms of a slot or a retry (Wall Game PM,
+   * 2026-11-03).
+   */
+  const tiktokHeld = () =>
+    tiktokWaiting().catch(
+      (err) => `draft status unknown: ${String(err?.message ?? err)}`,
+    );
+
   /** Why the item may not post as approved, or null. */
   const contentProblem = (item, video) => {
     const a = item.approval;
@@ -228,7 +239,7 @@ export const createItemPoster = ({
     let waits = null;
     for (const queued of store.approvedQueue()) {
       waits ??= {
-        tiktok: platforms.includes("tiktok") ? await tiktokWaiting() : null,
+        tiktok: platforms.includes("tiktok") ? await tiktokHeld() : null,
       };
       let video = null;
       try {
@@ -355,6 +366,17 @@ export const createItemPoster = ({
         );
       }
     }
+    // TikTok is gated as at a slot: a draft that waits now (another item's,
+    // sent since this item's slot) or a status that is unknown sends none.
+    // The other platforms go on; the item stays post-failed for TikTok
+    // (VR1 and Wall Game PM, 2026-11-03).
+    const held = todo.includes("tiktok") ? await tiktokHeld() : null;
+    const send = held ? todo.filter((p) => p !== "tiktok") : todo;
+    if (!send.length) {
+      throw new StepRefused(
+        `tiktok: ${held}; retry when Nil has posted it or it is marked lost (crew.mjs tiktok)`,
+      );
+    }
     store.updateItem(
       id,
       ["post-failed"],
@@ -363,9 +385,10 @@ export const createItemPoster = ({
         i.posting = { ...i.posting, platforms };
         delete i.posting.error;
       },
-      `retry of ${todo.join(", ")}`,
+      `retry of ${send.join(", ")}`,
     );
-    return run(id, video, todo, confirmNotPosted);
+    const result = await run(id, video, send, confirmNotPosted);
+    return held ? { ...result, held: { tiktok: held } } : result;
   };
 
   /**

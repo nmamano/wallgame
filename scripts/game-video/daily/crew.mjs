@@ -1191,6 +1191,9 @@ const commands = {
     for (const [p, why] of Object.entries(r.notApplicable ?? {})) {
       console.log(`  ${p}: not applicable (${why})`);
     }
+    for (const [p, why] of Object.entries(r.held ?? {})) {
+      console.log(`  ${p}: not retried (${why})`);
+    }
   },
 
   async tiktok() {
@@ -1203,6 +1206,7 @@ const commands = {
       return;
     }
     const t = await app("GET", "/api/daily/tiktok");
+    if (t.error) die(`tiktok: ${t.error}`);
     const r = t.lastRead;
     console.log(
       [

@@ -1501,6 +1501,15 @@ describe("Nil's TikTok inbox on the app (tiktok-drafts.mjs)", () => {
         waitingPublishId: null,
       });
       expect(JSON.stringify(transport.sent)).not.toContain("old");
+      // A damaged file: the status still answers, with the error for TikTok.
+      writeFileSync(join(daily.store.dirs.root, "tiktok-drafts.json"), "{");
+      const damaged = await call("GET", "/api/review/status");
+      expect(damaged.status).toBe(200);
+      expect(damaged.json.tiktok).toEqual({
+        error:
+          "tiktok-drafts.json cannot be read: move it aside, then the next read starts again",
+      });
+      expect(damaged.json).toHaveProperty("counts");
     } finally {
       daily.stop();
       server.close();

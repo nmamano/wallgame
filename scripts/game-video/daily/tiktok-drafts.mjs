@@ -50,11 +50,21 @@ export const createTiktokDrafts = ({
   readStatus,
   now = () => Date.now(),
 }) => {
-  /** @returns {DraftsState} */
-  const read = () =>
-    existsSync(path)
-      ? { ...EMPTY, ...JSON.parse(readFileSync(path, "utf8")) }
-      : structuredClone(EMPTY);
+  /**
+   * The state. A damaged file throws (never quoting it) and stays for a
+   * person to read: the poster takes that as "unknown" for TikTok only.
+   * @returns {DraftsState}
+   */
+  const read = () => {
+    if (!existsSync(path)) return structuredClone(EMPTY);
+    try {
+      return { ...EMPTY, ...JSON.parse(readFileSync(path, "utf8")) };
+    } catch {
+      throw new Error(
+        "tiktok-drafts.json cannot be read: move it aside, then the next read starts again",
+      );
+    }
+  };
   const write = (state) =>
     writeAtomic(path, JSON.stringify(state, null, 2) + "\n");
   const iso = () => new Date(now()).toISOString();

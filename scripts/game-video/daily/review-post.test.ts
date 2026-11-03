@@ -108,8 +108,9 @@ const world = (live: string[]) => {
   let staleQueue: Item[] | null = null;
   const logged: string[] = [];
   const confirmedSeen: [string, boolean][] = [];
-  // tiktok-drafts.mjs waiting: why no TikTok draft goes out now, or null.
-  let tiktokWhy: string | null = null;
+  // tiktok-drafts.mjs waiting: why no TikTok draft goes out now, or null;
+  // an Error is a read that throws (a damaged file).
+  let tiktokWhy: string | Error | null = null;
   let tiktokReads = 0;
   const store = {
     item: (id: string) => structuredClone(items.get(id)) ?? null,
@@ -163,7 +164,9 @@ const world = (live: string[]) => {
     logPost: (_item, platform) => logged.push(platform),
     tiktokWaiting: () => {
       tiktokReads++;
-      return Promise.resolve(tiktokWhy);
+      return tiktokWhy instanceof Error
+        ? Promise.reject(tiktokWhy)
+        : Promise.resolve(tiktokWhy);
     },
   });
   const post = async (slot: { slotAt: string; firedBy?: string }) =>
@@ -181,7 +184,7 @@ const world = (live: string[]) => {
     logged,
     confirmedSeen,
     setVideo: (b: Buffer) => (video = b),
-    setTiktok: (why: string | null) => (tiktokWhy = why),
+    setTiktok: (why: string | Error | null) => (tiktokWhy = why),
     tiktokReads: () => tiktokReads,
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
@@ -415,6 +418,58 @@ describe("post(itemId)", () => {
       expect((await w2.retry("v-2026-10-28-1")).kind).toBe("posted");
       expect(w2.logged).toEqual(["x"]);
     }
+  });
+
+  test("a TikTok retry is gated as a slot: a draft that waits now, or an unknown status, holds TikTok; the other platforms go on", async () => {
+    const failed = (error: string) => () => ({
+      ok: false,
+      uncertain: false,
+      mode: "live",
+      at: "t",
+      error,
+    });
+    for (const why of [
+      "a draft is waiting",
+      "draft status unknown: tiktok status: HTTP 503",
+    ]) {
+      // Slot A: TikTok and X fail. Since then, slot B sent another draft.
+      const w = world(["x", "tiktok"]);
+      w.replies.x = failed("x: HTTP 503");
+      w.replies.tiktok = failed("tiktok init: HTTP 500");
+      expect((await w.post(SLOT)).kind).toBe("post-failed");
+      delete w.replies.x;
+      delete w.replies.tiktok;
+      w.setTiktok(why);
+      const r = (await w.retry("v-2026-10-28-1")) as Outcome & {
+        held?: Record<string, string>;
+      };
+      expect(r.kind).toBe("post-failed");
+      expect(r.held).toEqual({ tiktok: why });
+      expect(w.logged).toEqual(["x"]);
+      expect(w.get().posts.tiktok.ok).toBe(false);
+      // TikTok alone: the retry is refused, and nothing changes.
+      expect(await refusal(w.retry("v-2026-10-28-1"))).toBe(
+        `tiktok: ${why}; retry when Nil has posted it or it is marked lost (crew.mjs tiktok)`,
+      );
+      expect(w.get().state).toBe("post-failed");
+      // Nil posts the waiting draft: the retry sends TikTok's.
+      w.setTiktok(null);
+      expect((await w.retry("v-2026-10-28-1")).kind).toBe("posted");
+      expect(w.logged).toEqual(["x", "tiktok"]);
+    }
+  });
+
+  test("a TikTok read that throws (a damaged file) holds TikTok alone at a slot (a retry reads through the same guard)", async () => {
+    const w = world(["x", "tiktok"]);
+    w.setTiktok(new Error("tiktok-drafts.json cannot be read"));
+    expect(await w.post(SLOT)).toMatchObject({
+      kind: "posted",
+      platforms: ["x"],
+      notApplicable: {
+        tiktok: "draft status unknown: tiktok-drafts.json cannot be read",
+      },
+    });
+    expect(w.logged).toEqual(["x"]);
   });
 
   test("TikTok is not read when it is not live, or when no item is approved", async () => {
