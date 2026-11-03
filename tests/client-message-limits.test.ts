@@ -157,3 +157,51 @@ describe("one websocket frame", () => {
     expect(await sendFrame(maxFrameBytes)).toEqual({ closed: false });
   });
 });
+
+describe("one request body", () => {
+  let app: Awaited<
+    ReturnType<(typeof import("../server/app"))["createApp"]>
+  >["app"];
+  let maxBodyBytes: number;
+
+  beforeAll(async () => {
+    const appModule = await import("../server/app");
+    maxBodyBytes = appModule.MAX_REQUEST_BODY_BYTES;
+    app = appModule.createApp().app;
+  });
+
+  const post = (body: string) =>
+    app.request("/api/no-such-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+
+  it("is 64 KiB at most", () => {
+    expect(maxBodyBytes).toBe(64 * 1024);
+  });
+
+  it("holds the largest real body: a game with every wall slot filled", () => {
+    const walls = [];
+    for (let row = 0; row < BOARD_SIDE_MAX; row++) {
+      for (let col = 0; col < BOARD_SIDE_MAX - 1; col++) {
+        walls.push({ cell: [row, col], orientation: "vertical" });
+        walls.push({ cell: [col, row], orientation: "horizontal" });
+      }
+    }
+    expect(walls).toHaveLength(MAX_WALLS_ON_A_BOARD);
+    const body = gameToCreate(walls);
+    expect(createGameSchema.safeParse(body).success).toBe(true);
+    expect(JSON.stringify(body).length).toBeLessThan(maxBodyBytes);
+  });
+
+  it("refuses a longer body with 413, before any route reads it", async () => {
+    const response = await post("x".repeat(maxBodyBytes + 1));
+    expect(response.status).toBe(413);
+  });
+
+  it("passes a body of the largest size on to the routes", async () => {
+    const response = await post("x".repeat(maxBodyBytes));
+    expect(response.status).toBe(404);
+  });
+});

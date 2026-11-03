@@ -11,6 +11,7 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
+import { bodyLimit } from "hono/body-limit";
 import { puzzlesRoute } from "./routes/puzzles";
 import { authRoute } from "./routes/auth";
 import { settingsRoute } from "./routes/settings";
@@ -27,6 +28,9 @@ import { registerCanonicalHostRedirect } from "./routes/canonical-host";
 /** The largest websocket frame the server reads; a longer one closes the socket. */
 export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
 
+/** The largest request body the server reads; a longer one gets a 413. */
+export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+
 /**
  * `htmlShell` is absent in tests and in vite-backed development, where this
  * process never serves HTML. File I/O to obtain it stays in the caller.
@@ -34,6 +38,11 @@ export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
 export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   const app = new Hono();
   app.use(logger());
+
+  // Every body is a small JSON object. The largest real one is a game to
+  // create with all 760 wall slots of a 20x20 board filled, about 32 KB
+  // (2026-11-03), so a longer body is refused before it is parsed.
+  app.use(bodyLimit({ maxSize: MAX_REQUEST_BODY_BYTES }));
 
   // Ahead of every route below, so www.wallgame.io never reaches one. After
   // the logger, which claims nothing, so a 301 is still logged like any other
