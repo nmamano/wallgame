@@ -431,6 +431,8 @@ describe("a picture a pawn emotes (Nil, 2026-10-30, C20)", () => {
       "surprised-mouse",
       "this-is-fine-mouse",
       "scream-mouse",
+      "gs-siren",
+      "gs-jail-bars",
       "stupid-stamp",
       "gs-jjj-laugh",
       "gs-laugh-cry",

@@ -957,6 +957,83 @@ export const OVERLAYS = {
       'Nil, for this clip: "this meme with a zoom in on the cat can be before a good move (by human, not bot), save it for a different video" (Nil to the Wall Game Director, 2026-11-01)',
     rating: null,
   },
+  // Three free Pixabay clips for the commonest labels with no gs clip
+  // (meme-list.md "Green-screen coverage", step 2 cycle 3, C55; source
+  // checks in meme-pack.md batch 4, Director Rewriter, 2026-11-03). Each
+  // is silent: its move's line names the sound.
+  "gs-siren": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    // The light turns red and blue and its rays pulse: 2 flashes a second.
+    seconds: 2,
+    pawn: true,
+    tail: false,
+    pieces: ["mouse"],
+    // 570x504: the light and its rays (trimmed to their box).
+    size: { w: 0.24, h: 0.212 },
+    small: { w: 0.19, h: 0.168 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-siren",
+      fps: 30,
+      frames: 60,
+      sha256:
+        "5c32fe51bfc144b0d331e056b6d5eb8d9365f5c59a80dab33b475184f41dc5d6",
+    },
+    source:
+      "Pixabay 283687, Police siren alarm green screen (fspik_now, 2025-06-04; https://pixabay.com/videos/police-siren-alarm-green-screen-283687/), 0.5-2.5 s, the light cut out (crop 1200:1000:360:60, trimmed), keyed at 0x08BE08; no audio track",
+    claim: "LOW: Pixabay Content License",
+    likeness: "None",
+    rating: null,
+  },
+  "gs-jail-bars": {
+    form: "clip",
+    draw: "sequence",
+    text: "none",
+    // The bars drop in over the first 0.6 s, then hold: a cell window.
+    seconds: 2.5,
+    pawn: true,
+    tail: false,
+    pieces: ["mouse"],
+    // 540x540: one cell of the grid and the bars round it.
+    size: { w: 0.25, h: 0.25 },
+    small: { w: 0.2, h: 0.2 },
+    places: ["board"],
+    sequence: {
+      dir: "gs-jail-bars",
+      fps: 30,
+      frames: 75,
+      sha256:
+        "441ff81fb3b3c2ab56d55cf8c744f6702d8705ab641f63328eb1de278b1c1380",
+    },
+    source:
+      "Pixabay 93536, Jail prison calaboose cell (miukia_aki, 2021-10-31; https://pixabay.com/videos/jail-prison-calaboose-cell-qued-93536/), 0-2.5 s, a square of the grid (crop 1080:1080:225:0), keyed at 0x00FF00; its track is silent and not kept",
+    claim: "LOW: Pixabay Content License",
+    likeness: "None",
+    rating: null,
+  },
+  "gs-tumbleweed": {
+    form: "cover",
+    draw: "sequence",
+    text: "none",
+    // It rolls in at the left and out at the right along the board's
+    // bottom row (the lowest 20% of the board). A cover hides nothing: a
+    // pawn on that row, or a thing in play there, stops the render.
+    seconds: 2.533,
+    sequence: {
+      dir: "gs-tumbleweed",
+      fps: 30,
+      frames: 76,
+      sha256:
+        "b6fc39c98abe7463846d80ffa2ff9e24105c0ffd23ae45902b46961700b800da",
+    },
+    source:
+      "Pixabay 244299, Tumbleweed greenscreen (u_7x9jx9u7vt, 2024-12-01; https://pixabay.com/videos/tumbleweed-tumble-weed-greenscreen-244299/), the whole 10.2 s at 4x, the frame put at the bottom of a square of its own green (pad 1920:1920:0:840), keyed at 0x01BE21, similarity 0.08 (0.15 ate its strands); no sound",
+    claim: "LOW: Pixabay Content License",
+    likeness: "None",
+    rating: null,
+  },
   confetti: {
     form: "cover",
     draw: "sequence",
