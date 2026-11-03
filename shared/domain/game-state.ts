@@ -22,7 +22,11 @@ import type {
   GamePawns,
 } from "./game-types";
 import { Grid } from "./grid";
-import { cellEq, endedBeforeBothPlayersMoved } from "./game-utils";
+import {
+  ACTIONS_PER_TURN,
+  cellEq,
+  endedBeforeBothPlayersMoved,
+} from "./game-utils";
 import {
   boardPawns,
   clonePawns,
@@ -222,7 +226,7 @@ export class GameState {
     const setupTurn = "turn" in variantConfig ? variantConfig.turn : null;
     const [spentAction] = setupTurn?.actionsTaken ?? [];
     this.turn = setupTurn?.playerId ?? 1;
-    this.actionsRemaining = spentAction ? 1 : 2;
+    this.actionsRemaining = spentAction ? 1 : ACTIONS_PER_TURN;
     this.previousPawnPosition =
       spentAction && spentAction.type !== "wall"
         ? { type: spentAction.type, cell: spentAction.source }
@@ -747,7 +751,7 @@ export class GameState {
     }
 
     this.turn = opponent;
-    this.actionsRemaining = 2;
+    this.actionsRemaining = ACTIONS_PER_TURN;
     this.previousPawnPosition = undefined;
   }
 
@@ -796,7 +800,7 @@ export class GameState {
         2: last.timeLeftSeconds[1],
       };
       this.moveCount = last.index;
-      this.actionsRemaining = 2;
+      this.actionsRemaining = ACTIONS_PER_TURN;
       this.previousPawnPosition = undefined;
     } else {
       prevGrid = this.initialGrid.clone();

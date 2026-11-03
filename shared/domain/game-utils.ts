@@ -21,6 +21,9 @@ import type {
  */
 export const MIN_MOVES_FOR_A_COUNTED_GAME = 2;
 
+/** The actions a player has in one turn: two steps, two walls, or one of each. */
+export const ACTIONS_PER_TURN = 2;
+
 /** Whether a game ended before both players had a turn. */
 export function endedBeforeBothPlayersMoved(moveCount: number): boolean {
   return moveCount < MIN_MOVES_FOR_A_COUNTED_GAME;

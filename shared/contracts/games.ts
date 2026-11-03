@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { boundedArray } from "./bounded-array";
 import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
 import { isValidTimeZone } from "../domain/past-games";
 import type { PastGamesActivityDay } from "../domain/past-games";
@@ -51,12 +52,22 @@ const setupTurnSchema = z.object({
   actionsTaken: z.union([z.tuple([]), z.tuple([setupActionSchema])]),
 });
 
+/** Board side bounds of every game (see minimumBoardSideFor for the variant rule). */
+export const BOARD_SIDE_MIN = 3;
+export const BOARD_SIDE_MAX = 20;
+
+/**
+ * The most walls one board can hold: every wall slot of the largest board,
+ * (side - 1) vertical slots in each row and as many horizontal in each column.
+ */
+export const MAX_WALLS_ON_A_BOARD = 2 * BOARD_SIDE_MAX * (BOARD_SIDE_MAX - 1);
+
 const standardInitialStateSchema = z.object({
   pawns: z.object({
     p1: z.object({ cat: cellSchema, mouse: cellSchema }),
     p2: z.object({ cat: cellSchema, mouse: cellSchema }),
   }),
-  walls: z.array(neutralWallSchema),
+  walls: boundedArray(neutralWallSchema, MAX_WALLS_ON_A_BOARD),
   turn: setupTurnSchema,
 });
 
@@ -65,7 +76,7 @@ const classicInitialStateSchema = z.object({
     p1: z.object({ cat: cellSchema, home: cellSchema }),
     p2: z.object({ cat: cellSchema, home: cellSchema }),
   }),
-  walls: z.array(neutralWallSchema),
+  walls: boundedArray(neutralWallSchema, MAX_WALLS_ON_A_BOARD),
   turn: setupTurnSchema,
 });
 
@@ -74,7 +85,7 @@ const animalCycleInitialStateSchema = z.object({
     p1: z.object({ cat: cellSchema, elephant: cellSchema }),
     p2: z.object({ mouse: cellSchema, dog: cellSchema }),
   }),
-  walls: z.array(neutralWallSchema),
+  walls: boundedArray(neutralWallSchema, MAX_WALLS_ON_A_BOARD),
   turn: setupTurnSchema.optional(),
 });
 
@@ -282,8 +293,6 @@ export type PlayerConfigType = (typeof playerConfigTypeValues)[number];
  * - with a 400 the player could not read. Both the settings write path and the
  * client-side clamp now ask this function rather than restating it.
  */
-export const BOARD_SIDE_MIN = 3;
-export const BOARD_SIDE_MAX = 20;
 export const ANIMAL_CYCLE_RANDOM_START_MIN_SIDE = 4;
 
 export const minimumBoardSideFor = (config: {

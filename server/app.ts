@@ -24,6 +24,9 @@ import { registerSeoRoutes } from "./routes/seo";
 import { registerHtmlShell, type HtmlShell } from "./routes/html-shell";
 import { registerCanonicalHostRedirect } from "./routes/canonical-host";
 
+/** The largest websocket frame the server reads; a longer one closes the socket. */
+export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
+
 /**
  * `htmlShell` is absent in tests and in vite-backed development, where this
  * process never serves HTML. File I/O to obtain it stays in the caller.
@@ -59,7 +62,13 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
     .route("/campaign", campaignRoute)
     .route("/", authRoute); // /api/login, /api/register, etc.
 
-  const websocket = registerGameSocketRoute(app);
+  // One handler serves every socket route (game, custom bot, eval), so this
+  // frame limit covers all of them. The largest frame a real client sends is
+  // a bot client's attach, about 2.4 KB for the official bots (2026-11-03).
+  const websocket = {
+    ...registerGameSocketRoute(app),
+    maxPayloadLength: MAX_WEBSOCKET_FRAME_BYTES,
+  };
   registerCustomBotSocketRoute(app);
   registerEvalSocketRoute(app);
 

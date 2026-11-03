@@ -8,6 +8,8 @@
  */
 
 import { z } from "zod";
+import { ACTIONS_PER_TURN } from "../domain/game-utils";
+import { boundedArray } from "./bounded-array";
 import type {
   Move,
   SerializedGameState,
@@ -114,7 +116,9 @@ const gameActionSchema = z.discriminatedUnion("type", [
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("submit-move"),
-    move: z.object({ actions: z.array(gameActionSchema) }),
+    move: z.object({
+      actions: boundedArray(gameActionSchema, ACTIONS_PER_TURN),
+    }),
   }),
   z.object({ type: z.literal("resign") }),
   z.object({ type: z.literal("ping") }),
