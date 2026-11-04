@@ -449,6 +449,8 @@ describe("the totals as of each day, for the Growth app", () => {
         // X2 is first read on 11-02; X1 is not read on 11-02.
         row("2026-11-02", "x X2", 5, 2, 1),
         row("2026-11-03", "x X1", 30, 3, 2),
+        // X2's views fail to read on 11-03: it keeps its 5 views.
+        row("2026-11-03", "x X2", null, 2, 1),
         // Bluesky gives no views.
         row("2026-11-02", "bluesky at://b", null, 4),
       ],
@@ -485,7 +487,7 @@ describe("the totals as of each day, for the Growth app", () => {
     // A platform with no reading has no row; no history, no rows.
     expect(v.daily.some((r) => r.platform === "tiktok")).toBe(false);
     expect(view([], "2026-11-04T08:00:00Z").daily).toEqual([]);
-    expect(v.dailyNote).toContain("last reading on or before that day");
+    expect(v.dailyNote).toContain("last number of each metric");
   });
 });
 

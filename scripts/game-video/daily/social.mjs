@@ -595,8 +595,10 @@ export const postStatsView = ({
       days.push(dayOf(d));
     }
   }
-  // One pass per post: its last row on or before each day, added to that
-  // day's sums (a number only where the row has one).
+  // One pass per post: its last number of each metric on or before each
+  // day, added to that day's sums. Per metric, not per row: a later row
+  // with a number missing (a failed field read) keeps the earlier number,
+  // so a total never falls for a read that failed (VR1, review 148 N1).
   const DAILY = /** @type {const} */ (["views", "likes", "comments"]);
   // By day, each day in the platforms' order (a stable sort).
   const daily = platforms
@@ -608,14 +610,21 @@ export const postStatsView = ({
       for (const [key, rows] of byKey) {
         if (key.split(" ")[0] !== platform) continue;
         let k = -1;
+        /** @type {Record<string, number>} */
+        const last = {};
         days.forEach((day, i) => {
-          while (k + 1 < rows.length && rows[k + 1].day <= day) k += 1;
+          while (k + 1 < rows.length && rows[k + 1].day <= day) {
+            k += 1;
+            for (const m of DAILY) {
+              const v = rows[k][m];
+              if (typeof v === "number") last[m] = v;
+            }
+          }
           if (k < 0) return;
           const t = /** @type {Record<string, any>} */ (sums[i]);
           t.n += 1;
           for (const m of DAILY) {
-            const v = rows[k][m];
-            if (typeof v === "number") t[m] = (t[m] ?? 0) + v;
+            if (m in last) t[m] = (t[m] ?? 0) + last[m];
           }
         });
       }
@@ -657,7 +666,7 @@ export const postStatsView = ({
     videos,
     daily,
     dailyNote:
-      "Each platform's totals over its posts as of the end of each UTC day: each post's last reading on or before that day (a reading is the first of its day; a post keeps its last reading after its reads stop). A number read later is not in an earlier day. null: no post gives that number.",
+      "Each platform's totals over its posts as of each UTC day: each post's last number of each metric read on or before that day (a reading is the first of its day; a post keeps its last numbers after its reads stop, or when one number fails to read). A number read later is not in an earlier day. null: no post gives that number.",
     note: `${note} History: one row a day (UTC) per post${first ? ` since ${first}` : ""}. "-": the platform gives no such number.`,
   };
 };
