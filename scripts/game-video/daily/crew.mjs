@@ -290,6 +290,7 @@
  * read from the director's docs repo (~/nil/wallgame-director) as its main
  * has them committed, or from --docs DIR.
  */
+import { isMain } from "../is-main.mjs";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -1713,7 +1714,7 @@ const commands = {
   },
 };
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   if (!commands[command]) die(`commands: ${Object.keys(commands).join(", ")}`);
   await commands[command]();
 }

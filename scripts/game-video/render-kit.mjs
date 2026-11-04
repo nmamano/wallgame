@@ -10,6 +10,7 @@
  *
  *   bun scripts/game-video/render-kit.mjs   prints them, one per line
  */
+import { isMain } from "./is-main.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +61,6 @@ export const renderKitFiles = (entries = KIT_ENTRIES, repo = REPO) => {
   return [...seen].map((f) => relative(repo, f)).sort();
 };
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   console.log(renderKitFiles().join("\n"));
 }

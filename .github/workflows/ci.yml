@@ -33,6 +33,15 @@ jobs:
         with:
           bun-version: 1.4.4
 
+      # The scripts/game-video tests run their scripts with `node`. Pinned to
+      # the floor those scripts need (import.meta.main, Node 22.18), so CI
+      # proves the floor and not whatever Node the runner image ships. CI was
+      # green while Node 18.19 (the desktop's) failed 10 of those tests
+      # (2026-11-04). The floor and its reason: scripts/game-video/README.md.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+
       # tests/integration/bot-5-minimax-engine.test.ts compiles
       # minimax_bgs_engine, and minimax-engine/CMakeLists.txt requires the
       # system nlohmann_json package. cmake and g++ already ship on the runner.

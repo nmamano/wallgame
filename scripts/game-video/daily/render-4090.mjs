@@ -112,6 +112,7 @@
  * Prints, as its own last line, RESULT {"mp4": <local path>, "sheet": {"png":
  * <local path>, ...}, ...} for the app.
  */
+import { isMain } from "../is-main.mjs";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -630,6 +631,6 @@ const main = async () => {
   );
 };
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
   await main();
 }

@@ -19,6 +19,7 @@
  * true peak, measured with 400 ms of silence after the clip, so a clip
  * shorter than the window is measured whole (meme-sounds.mjs).
  */
+import { isMain } from "./is-main.mjs";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -286,4 +287,4 @@ const main = () => {
   makeReel(keys, values.out);
 };
 
-if (import.meta.main) main();
+if (isMain(import.meta)) main();

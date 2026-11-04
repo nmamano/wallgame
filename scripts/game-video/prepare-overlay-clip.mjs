@@ -40,6 +40,7 @@
  * Look at the frames before you register a clip: the key leaves a fringe
  * when the screen is uneven, and --similarity and --blend fix most of it.
  */
+import { isMain } from "./is-main.mjs";
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -588,4 +589,4 @@ const main = () => {
   }
 };
 
-if (import.meta.main) main();
+if (isMain(import.meta)) main();
