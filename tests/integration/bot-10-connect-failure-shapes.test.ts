@@ -234,7 +234,15 @@ async function createIncidentShapeGame(
     }),
   });
   expect(res.status).toBe(201);
-  return (await res.json()) as PlayVsBotResponse;
+  const play = (await res.json()) as PlayVsBotResponse;
+  // createdAt and updatedAt are milliseconds. On a fast machine the create
+  // and a connect can fall in the same millisecond, and then a connect that
+  // did move updatedAt reads as one that did not. V6 failed so in a full run
+  // on the 4090 desktop (2026-11-04); on auntie-2 the gap was 3 to 13 ms.
+  // Let the clock move first, so every variant's createdAt === updatedAt
+  // says only whether something wrote to the session.
+  await sleep(5);
+  return play;
 }
 
 async function isListedLive(gameId: string): Promise<boolean> {
