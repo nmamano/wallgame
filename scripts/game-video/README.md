@@ -21,7 +21,7 @@ The scripts here make the Wall Game videos: the renderer, the daily app
 
 `bun test --parallel=4 scripts/game-video` runs them all, about 70 s on
 auntie-2 (2026-11-04; `daily/daily.test.ts` alone takes most of it).
-`.husky/pre-push` runs them when a push changes this folder, `shared/` or
-`server/db/`; CI runs them on every push to main. A test here must not read a
+`.husky/pre-push` runs them when a push changes this folder or the code it
+imports from outside it (the list is in the hook); CI runs them on every push to main. A test here must not read a
 file that git does not track: use a tracked fixture (`daily/fixtures/`,
 `semantics/fixtures/`) or a temp dir.

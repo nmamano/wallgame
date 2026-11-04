@@ -26,7 +26,7 @@ If that prints nothing, run `bun install`.
 | Hook | Checks | Not checked |
 | --- | --- | --- |
 | `pre-commit` | Prettier and ESLint, **staged files only** | build, tests |
-| `pre-push` | Prettier, ESLint, typecheck, the build and the Docker-free unit tests (tests/game), **whole repo**; the scripts/game-video tests only when the push changes `scripts/game-video/`, `shared/` or `server/db/` | integration tests |
+| `pre-push` | Prettier, ESLint, typecheck, the build and the Docker-free unit tests (tests/game), **whole repo**; the scripts/game-video tests only when the push changes `scripts/game-video/` or the code it imports (`shared/`, `server/db/` and two more files) | integration tests |
 
 **Neither hook runs the integration suite.** Since 2026-08-21 (986321bf) pre-push runs the Docker-free tests/game files (about 4 s); a green hook is a subset of CI, not a substitute for it.
 Since 2026-11-04 it also runs the scripts/game-video tests (no Docker, but about 70 s on

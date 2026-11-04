@@ -85,13 +85,15 @@ bun test tests/game/
 # them before a push. They need no Docker, but they take about 70 s on
 # auntie-2 even 4 at a time (daily/daily.test.ts alone takes most of it), so
 # they run only when the pushed commits change scripts/game-video/ or the
-# folders its code imports (shared/, server/db/). A push of other work skips
+# code it imports from outside it (shared/, server/db/, and two files:
+# frontend/src/lib/player-colors, official-custom-bot-client/src/config-schema).
+# Add a path here when that code imports a new one. A push of other work skips
 # them. Not `bun test --changed`: many of these tests run their script as a
 # child process (node crew.mjs ...), which an import graph does not see.
 # A machine that cannot run them (no ffmpeg, or a Node older than 22.18, as
 # on the 4090 desktop) skips them with the reason, and CI runs them; see
 # scripts/game-video/README.md.
-if ! printf '%s\n' "$changed" | grep -qE '^(scripts/game-video|shared|server/db)/'; then
+if ! printf '%s\n' "$changed" | grep -qE '^((scripts/game-video|shared|server/db)/|frontend/src/lib/player-colors|official-custom-bot-client/src/config-schema)'; then
   echo "🎬🎬 Skipping the scripts/game-video tests: the push does not change that code."
 elif ! command -v ffmpeg >/dev/null 2>&1; then
   echo "⚠️⚠️ Skipping the scripts/game-video tests: no ffmpeg on PATH. CI runs them."
