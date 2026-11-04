@@ -197,6 +197,7 @@ function GamePageContent() {
     lastMoves: Array.isArray(board.lastMove) ? board.lastMove : undefined,
     lastWalls: board.lastWalls,
     walks: board.boardWalks,
+    walksHidden: board.boardWalksHidden,
     draggingPawnId: board.draggingPawnId,
     selectedPawnId: board.selectedPawnId,
     disableMousePawnInteraction: board.disableMousePawnInteraction,

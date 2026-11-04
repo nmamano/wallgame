@@ -31,6 +31,8 @@ interface WalkLayerProps {
   cellCenter: (row: number, col: number) => { x: number; y: number };
   /** A player's colour. */
   colorOf: (playerId: PlayerId) => string;
+  /** Not shown now; the clock goes on, so they do not play again. */
+  hidden: boolean;
 }
 
 /**
@@ -55,6 +57,7 @@ export function WalkLayer({
   cellHeight,
   cellCenter,
   colorOf,
+  hidden,
 }: WalkLayerProps) {
   // The clock starts when these walks first show.
   const walksKey = walks
@@ -104,7 +107,7 @@ export function WalkLayer({
       {children}
     </svg>
   );
-  if (t === null) return layer(null);
+  if (t === null || hidden) return layer(null);
 
   const unit = width / WALK_BOARD_UNITS;
   const px = (q: { x: number; y: number }) => ({

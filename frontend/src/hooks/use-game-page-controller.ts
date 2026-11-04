@@ -2226,24 +2226,23 @@ export function useGamePageController(gameId: string) {
   // Each player's shortest walk, played at the start position only
   // (Nil, 2026-10-30: "the dots that show the shortest path from each cat
   // at the beginning of the game"; picks 2026-10-31), live or in the
-  // history. A staged or premoved action already leaves the start position
-  // on the board, so the dots go with it.
+  // history.
   const boardWalks = useMemo<PlayerWalk[]>(() => {
     const walkSource = historyState ?? gameState;
     if (walkSource?.moveCount !== 0) return [];
-    if (
-      !viewingHistory &&
-      (stagedActions.length > 0 || premovedActions.length > 0)
-    ) {
-      return [];
-    }
     // The first mover's walk plays first, as in the videos' opening.
     return playerWalks(walkSource).sort(
       (a, b) =>
         Number(b.playerId === walkSource.turn) -
         Number(a.playerId === walkSource.turn),
     );
-  }, [gameState, historyState, viewingHistory, stagedActions, premovedActions]);
+  }, [gameState, historyState]);
+  // A staged or premoved action already leaves the start position on the
+  // board, so the walks hide while one is there. They stay the board's
+  // walks, so a clear does not play the opening again (Wall Game PM,
+  // 2026-11-04): it goes on from where its clock is.
+  const boardWalksHidden =
+    !viewingHistory && (stagedActions.length > 0 || premovedActions.length > 0);
 
   const boardPawns = useMemo((): BoardPawn[] => {
     const boardState = historyState ?? gameState;
@@ -3948,6 +3947,7 @@ export function useGamePageController(gameId: string) {
     boardPawns,
     boardWalls,
     boardWalks,
+    boardWalksHidden,
     stagedArrows: boardArrows,
     playerColorsForBoard,
     interactionLocked,

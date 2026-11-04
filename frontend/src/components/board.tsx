@@ -97,6 +97,11 @@ export interface BoardProps {
    * (walk-animation.ts) when they first show.
    */
   walks?: PlayerWalk[];
+  /**
+   * The walks are the board's but not shown (an action is staged): their
+   * clock goes on, so they do not play again when they show again.
+   */
+  walksHidden?: boolean;
   maxWidth?: string;
   playerColors?: Record<PlayerId, PlayerColor>;
   onCellClick?: (row: number, col: number) => void;
@@ -278,6 +283,7 @@ export function Board({
   lastMoves,
   lastWalls = [],
   walks = [],
+  walksHidden = false,
   maxWidth = "max-w-4xl",
   playerColors = { 1: "red", 2: "blue" },
   onCellClick,
@@ -1649,6 +1655,7 @@ export function Board({
               cellHeight={cellHeightPx}
               cellCenter={getCellCenterPosition}
               colorOf={walkColor}
+              hidden={walksHidden}
             />
 
             {/* Render walls */}
