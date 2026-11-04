@@ -537,6 +537,15 @@ function GamePageContent() {
             )}
           </div>
 
+          {/* The connection line. The desktop shows it under the board; the
+              phone layout had no place for it, so an outage (or a game the
+              server no longer holds) left a frozen board with no word. */}
+          {board.isReconnecting && board.actionStatusText && (
+            <div className="shrink-0 border-t border-border bg-card/90 px-3 py-1.5 text-center text-xs text-muted-foreground">
+              {board.actionStatusText}
+            </div>
+          )}
+
           {/* Horizontal move bar */}
           <div className="shrink-0 border-t border-border">
             <MobileMoveBar

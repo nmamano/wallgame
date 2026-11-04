@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { GameClient, type TransportState } from "./game-client";
+import { GAME_SOCKET_GONE_CLOSE_CODE } from "../../../shared/contracts/websocket-messages";
 
 /**
  * Lifecycle tests for board 97f9d99c.
@@ -17,7 +18,7 @@ import { GameClient, type TransportState } from "./game-client";
 
 interface Listeners {
   open: (() => void)[];
-  close: (() => void)[];
+  close: ((event: { code: number }) => void)[];
   error: ((event: unknown) => void)[];
   message: ((event: { data: string }) => void)[];
 }
@@ -57,10 +58,10 @@ class FakeSocket {
     this.listeners.open.forEach((fn) => fn());
   }
 
-  /** The connection ending, for any reason. */
-  emitClose(): void {
+  /** The connection ending, for any reason (1006: no close frame). */
+  emitClose(code = 1006): void {
     this.readyState = 3;
-    this.listeners.close.forEach((fn) => fn());
+    this.listeners.close.forEach((fn) => fn({ code }));
   }
 
   emitMessage(data: string): void {
@@ -231,5 +232,32 @@ describe("GameClient reconnection", () => {
     client.connect({});
     client.connect({});
     expect(FakeSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("GameClient and a game the server no longer holds", () => {
+  it("stops reconnecting and reports gone on the gone close code", () => {
+    const { states } = newClient();
+    FakeSocket.instances[0].emitOpen();
+    FakeSocket.instances[0].emitClose(GAME_SOCKET_GONE_CLOSE_CODE);
+
+    expect(states).toEqual(["connecting", "open", "gone"]);
+    expect(pendingTimeouts).toHaveLength(0);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it("stops at a reconnect that finds the game gone", () => {
+    // A tab open across a server restart: the drop is an ordinary close, the
+    // reconnect is answered with the gone code.
+    const { states } = newClient();
+    FakeSocket.instances[0].emitOpen();
+    FakeSocket.instances[0].emitClose();
+    runNextTimeout();
+    FakeSocket.instances[1].emitOpen();
+    FakeSocket.instances[1].emitClose(GAME_SOCKET_GONE_CLOSE_CODE);
+
+    expect(states.at(-1)).toBe("gone");
+    expect(pendingTimeouts).toHaveLength(0);
+    expect(FakeSocket.instances).toHaveLength(2);
   });
 });

@@ -434,11 +434,7 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
  * An id with no session is logged and not stored. An attempt can name a game
  * that never existed, or one the server has already forgotten, and that is
  * itself worth seeing - `knownGame` in the line says which.
- *
- * NOT covered: a player-token connect to an unknown id, where
- * `resolveSessionForSocketToken` throws out of the middleware before anything
- * here runs. Recording it would mean turning that 500 into a handled response,
- * which is a behaviour change rather than instrumentation.
+
  */
 export const recordSocketConnect = (
   sessionId: string,
@@ -1474,19 +1470,27 @@ export const resolveGameAccess = (args: {
   return { kind: "spectator", session };
 };
 
+/**
+ * The seat a player socket token names. "game-not-found" is an expected answer,
+ * not an error: open tabs reconnect to games a server restart dropped.
+ */
 export const resolveSessionForSocketToken = (args: {
   id: string;
   socketToken: string;
-}): { session: GameSession; player: SessionPlayer } | null => {
-  const session = ensureSession(args.id);
+}):
+  | { kind: "player"; session: GameSession; player: SessionPlayer }
+  | { kind: "game-not-found" }
+  | { kind: "rejected-token" } => {
+  const session = sessions.get(args.id);
+  if (!session) return { kind: "game-not-found" };
   const player =
     session.players.host.socketToken === args.socketToken
       ? session.players.host
       : session.players.joiner.socketToken === args.socketToken
         ? session.players.joiner
         : null;
-  if (!player) return null;
-  return { session, player };
+  if (!player) return { kind: "rejected-token" };
+  return { kind: "player", session, player };
 };
 
 export type SeatAccountReconciliation =

@@ -283,3 +283,11 @@ export type LiveGamesServerMessage =
   | { type: "upsert"; game: LiveGameSummary }
   | { type: "remove"; gameId: string }
   | { type: "pong"; timestamp: number };
+
+/**
+ * The close code of a game socket whose game the server no longer holds (a tab
+ * that outlived a server restart, or a game swept as abandoned). The client
+ * stops reconnecting on it. In the 4000-4999 range that RFC 6455 leaves to
+ * applications.
+ */
+export const GAME_SOCKET_GONE_CLOSE_CODE = 4404;

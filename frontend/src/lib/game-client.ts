@@ -12,6 +12,7 @@ import type {
   ChatChannel,
   ChatErrorCode,
 } from "../../../shared/contracts/websocket-messages";
+import { GAME_SOCKET_GONE_CLOSE_CODE } from "../../../shared/contracts/websocket-messages";
 import type {
   ControllerActionKind,
   ActionRequestPayload,
@@ -24,8 +25,11 @@ import type {
  * "reconnecting" is the state that did not exist before board 97f9d99c: a
  * closed game socket was permanent and silent, so the page went on rendering a
  * live game it could no longer send to or hear from.
+ *
+ * "gone" is final: the server no longer holds this game (it closed the socket
+ * with GAME_SOCKET_GONE_CLOSE_CODE), so no reconnect can bring it back.
  */
-export type TransportState = "connecting" | "open" | "reconnecting";
+export type TransportState = "connecting" | "open" | "reconnecting" | "gone";
 
 export interface GameClientHandlers {
   onTransportState?: (state: TransportState) => void;
@@ -230,15 +234,22 @@ export class GameClient {
         console.error("Failed to parse websocket message", error);
       }
     });
-    this.socket.addEventListener("close", () => {
+    this.socket.addEventListener("close", (event) => {
       if (generation !== this.generation) return;
       console.debug("[game-client] websocket closed", {
         gameId: this.params.gameId,
         generation,
+        code: event.code,
       });
       this.clearPingInterval();
       this.resolveAllInflightAsTransportError("Connection to server closed.");
       if (this.closedByClient) {
+        return;
+      }
+      if (event.code === GAME_SOCKET_GONE_CLOSE_CODE) {
+        // The game is gone from the server (for example, a restart dropped
+        // it). Retrying would only repeat this refusal forever.
+        this.handlers.onTransportState?.("gone");
         return;
       }
       this.scheduleReconnect();

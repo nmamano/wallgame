@@ -53,7 +53,10 @@ import type {
   ChatChannel,
   ChatErrorCode,
 } from "../../shared/contracts/websocket-messages";
-import { clientMessageSchema } from "../../shared/contracts/websocket-messages";
+import {
+  clientMessageSchema,
+  GAME_SOCKET_GONE_CLOSE_CODE,
+} from "../../shared/contracts/websocket-messages";
 import type {
   ActionNackCode,
   RematchDecision,
@@ -2596,6 +2599,8 @@ interface GameSocketMeta {
 interface GameSocketEnv {
   Variables: KindeEnv["Variables"] & {
     gameSocketMeta?: GameSocketMeta;
+    /** Set instead of the meta when a player socket names a game that is gone. */
+    gameSocketGone?: { sessionId: string };
   };
 }
 
@@ -2748,7 +2753,14 @@ const gameSocketAuth: MiddlewareHandler<GameSocketEnv> = async (c, next) => {
     socketToken,
   });
 
-  if (!resolved) {
+  if (resolved.kind === "game-not-found") {
+    recordSocketConnect(sessionId, { role, outcome: "game-not-found" });
+    c.set("gameSocketGone", { sessionId });
+    await next();
+    return;
+  }
+
+  if (resolved.kind === "rejected-token") {
     recordSocketConnect(sessionId, { role, outcome: "rejected-token" });
     console.warn("[ws] rejected connection with invalid token", {
       sessionId,
@@ -2813,6 +2825,16 @@ export const registerGameSocketRoute = (app: Hono) => {
     gameOptionalAuth,
     gameSocketAuth,
     upgradeWebSocket((c) => {
+      const gone = c.get("gameSocketGone") as { sessionId: string } | undefined;
+      if (gone) {
+        return {
+          onOpen(_event: Event, ws: WSContext) {
+            // A browser cannot read the HTTP status of a refused upgrade,
+            // only a close code, so the socket opens just to be closed.
+            ws.close(GAME_SOCKET_GONE_CLOSE_CODE, "Game not found");
+          },
+        };
+      }
       const meta = c.get("gameSocketMeta") as GameSocketMeta | undefined;
       if (!meta) {
         throw new Error("Game socket metadata missing");
