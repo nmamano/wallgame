@@ -1,7 +1,7 @@
 /**
  * Nil's review queue (Nil, via Wall Game Growth, 2026-10-28): the page at
  * /review (until 2026-10-31 also the app's "/"; Nil now reviews in his
- * Isomux inbox, and "/" is the stats tracker, stats-page.mjs). Nil, 2026-10-28: "I literally
+ * Isomux inbox). Nil, 2026-10-28: "I literally
  * only need to see the videos and captions. Everything else is context i
  * don't need." So it shows every item in review (store.mjs reviewState),
  * oldest first, each with ONLY its video, its caption (the post's text, one
@@ -21,7 +21,7 @@
  *
  * Right after an Approve, the card offers Undo (withdraw: in review again),
  * so a mis-tap on a phone is undone without a confirm dialog. The page has
- * two tabs with their counts (its Social tab moved to "/" on 2026-10-31):
+ * two tabs with their counts (its Social tab left on 2026-10-31):
  * "In review" (the queue) and "Approved" (Nil, 2026-10-30; "#approved" opens it), where each approved item that
  * no slot took yet shows when it posts, its video, its caption and one
  * button, "Undo approval" (the same withdraw), so Nil can take back an
@@ -422,8 +422,8 @@ export const REVIEW_PAGE = `<!doctype html>
 
   // Two tabs (Nil, 2026-10-30: "make tabs for the pending queue vs
   // approved queue so i can find"), with their counts. "#approved" in the
-  // address opens that tab, so a link can point at it. The Social tab moved
-  // to the app's "/" (stats-page.mjs, Nil, 2026-10-31).
+  // address opens that tab, so a link can point at it. The Social tab left
+  // on 2026-10-31 (the stats are in the Growth app).
   const TABS = [["review", "In review"], ["approved", "Approved"]];
   let tab = location.hash === "#approved" ? "approved" : "review";
 

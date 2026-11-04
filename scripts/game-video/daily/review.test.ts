@@ -1115,8 +1115,8 @@ describe("the review routes", () => {
     ).toBe("Approved: no slot posts it yet (no platform is live).");
     // The page: the list under the queue, one button, Nil only.
     // Two tabs with their counts (Nil, 2026-10-30); "#approved" opens
-    // its tab. The Social tab moved to the app's "/" (stats-page.mjs, Nil,
-    // 2026-10-31).
+    // its tab. The Social tab left on 2026-10-31 (the stats are in the
+    // Growth app).
     expect(REVIEW_PAGE).toContain(
       'const TABS = [["review", "In review"], ["approved", "Approved"]];',
     );

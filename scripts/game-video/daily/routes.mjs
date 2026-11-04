@@ -133,7 +133,6 @@ import {
   postsDue,
   refreshDue,
 } from "./post-stats.mjs";
-import { STATS_PAGE } from "./stats-page.mjs";
 
 import {
   loudnessVerdict,
@@ -1979,12 +1978,10 @@ export const createDaily = ({
     // (review-asks.mjs), for crew.mjs status.
     "GET /api/daily/asks": (req, res) => json(res, 200, askRecords.all()),
 
-    // Nil's review queue (review.mjs): the page the app opens on (Nil,
-    // 2026-10-28), and its first address, which links already carry.
-    // The stats tracker (Nil, 2026-10-31: "i see videos for review here -
-    // no need, I'll use inbox only. this app can be restructured into
-    // social media stats tracker"). The review page stays at /review.
-    "GET /": (req, res) => html(res, 200, STATS_PAGE),
+    // The app's own address: one line to the social stats, which moved to
+    // the Growth app (Nil, 2026-11-04: "Seen it: remove the old page").
+    // Nil reviews in his Isomux inbox; the review page stays at /review.
+    "GET /": (req, res) => html(res, 200, HOME_PAGE),
     "GET /review": (req, res) => html(res, 200, REVIEW_PAGE),
 
     /** Every item in review (what the page shows), and who may act. */
@@ -3220,6 +3217,25 @@ export const logRow = (item, platform, result) => ({
   tiktokStatus: platform === "tiktok" ? result.tiktokStatus : null,
 });
 
+/**
+ * Where the social stats are: the Growth app's page, which reads GET
+ * /api/review/social from this app. Its office short link, as Nil gets
+ * links (Wall Game Director, 2026-10-30).
+ */
+const GROWTH_SOCIAL_URL = "https://office.nilmamano.com/growth/wallgame/social";
+
+/** The app's "/": the app's short link opens it, so it answers. */
+const HOME_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wall Game videos</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0b0f1c; color: #e2e8f0;
+         margin: 0; padding: 40px 16px; text-align: center; font-size: 16px; }
+  a { color: #ff8c42; }
+</style></head>
+<body><p>The social stats are in the Growth app: <a href="${GROWTH_SOCIAL_URL}">Wall Game social</a>.</p></body></html>`;
+
 const DASHBOARD = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -3247,7 +3263,7 @@ const DASHBOARD = `<!doctype html>
 <body><main>
   <h1>Wall Game daily video</h1>
   <p class="sub">Videos to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes each video as an item, Wall Game Growth writes its post text, Nil reviews it in his Isomux Inbox, and an approved video posts at the next slot. This page shows where each item is.
-    <a href="/">Social stats</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
+    <a href="${GROWTH_SOCIAL_URL}">Social stats</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
   <h2>Items</h2><div id="items"></div>
   <h2>Posted or discarded</h2><div id="over" class="box"></div>

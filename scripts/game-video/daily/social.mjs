@@ -146,7 +146,7 @@ const followersBox = (counts, history, names, nowMs) => {
     typeof c.followers === "number" ? ago(p, 7) : undefined,
   );
   return {
-    // All accounts together, for the stats tracker's headline: now, and
+    // All accounts together, for the stats' headline: now, and
     // the change in 7 days over the accounts that have a count both times.
     total: {
       now: sumOf(Object.values(counts).map((c) => c.followers)),
@@ -406,7 +406,7 @@ export const videoName = (caption) => {
 };
 
 /**
- * The stats tracker's per-post view (Nil, 2026-10-31): each posted video,
+ * The stats' per-post view (Nil, 2026-10-31): each posted video,
  * most recent first, with one row per platform (its link and numbers) and
  * its total; each platform's totals and their change over 1 and 7 days,
  * from the history.

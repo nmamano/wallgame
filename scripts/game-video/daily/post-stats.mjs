@@ -1,7 +1,8 @@
 /**
- * The numbers of each posted video on each platform, for the stats tracker
- * on the app's "/" (Nil, 2026-10-31: "this app can be restructured into
- * social media stats tracker"; Wall Game PM's task). READ-ONLY: nothing
+ * The numbers of each posted video on each platform, for GET
+ * /api/review/social, which the Growth app's social page draws (Nil,
+ * 2026-10-31: "this app can be restructured into social media stats
+ * tracker"; Wall Game PM's task; the page here went on 2026-11-04). READ-ONLY: nothing
  * here posts or reconnects. Each post gets up to seven numbers, null where
  * the platform does not give one: views, likes, comments, shares, saves,
  * reach, quotes (Wall Game Growth asked for the last three). A reason

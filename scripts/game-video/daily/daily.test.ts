@@ -4999,12 +4999,8 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(rows.map((r) => [r.platform, r.followers])).toEqual([
       ["bluesky", 9],
     ]);
-    // "/" is the stats tracker: it draws this route; the review page has
-    // no Social tab any more (Nil, 2026-10-31).
-    const page = await (await fetch(base + "/")).text();
-    expect(page).toContain("<title>Wall Game social stats</title>");
-    expect(page).toContain('fetch("/api/review/social")');
-    expect(page).not.toContain("innerHTML =");
+    // The review page has no Social tab any more (Nil, 2026-10-31): the
+    // Growth app draws this route.
     const review = await (await fetch(base + "/review")).text();
     expect(review).not.toContain('["social", "Social"]');
     // A broken platforms.json: a 500 that names the file and the reason.
@@ -5014,7 +5010,6 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(broken.body.error).toStartWith(
       "Wall Game Growth's platforms.json cannot be read: ",
     );
-    expect(page).toContain('"The stats cannot load. " + s.error');
   });
 
   test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {

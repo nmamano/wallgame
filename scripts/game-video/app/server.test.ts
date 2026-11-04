@@ -69,13 +69,15 @@ const startApp = async () => {
 };
 
 describe("the app", () => {
-  test("opens on the stats tracker at /; the review page is at /review", async () => {
+  test("/ points to the Growth app's social stats; the review page is at /review", async () => {
     const base = await startApp();
-    const stats = await fetch(`${base}/`);
-    expect(stats.status).toBe(200);
-    const statsPage = await stats.text();
-    expect(statsPage).toContain("<title>Wall Game social stats</title>");
-    expect(statsPage).toContain('fetch("/api/review/social")');
+    const home = await fetch(`${base}/`);
+    expect(home.status).toBe(200);
+    const homePage = await home.text();
+    expect(homePage).toContain(
+      'href="https://office.nilmamano.com/growth/wallgame/social"',
+    );
+    expect(homePage).not.toContain("<script");
     const review = await fetch(`${base}/review`);
     expect(review.status).toBe(200);
     const reviewPage = await review.text();
