@@ -129,6 +129,11 @@ describe("socialView", () => {
       value: "1 / 2",
       label: "platforms posting live",
     });
+    // The whole follower history, by the platforms' names (Growth app).
+    expect(v.followers?.history).toEqual([
+      { day: "2026-10-23", platform: "Bluesky", followers: 1 },
+      { day: "2026-10-29", platform: "Bluesky", followers: 5 },
+    ]);
     const [bluesky, x] = v.cards;
     expect(bluesky.status.label).toBe("Live");
     expect(x.status.label).toBe("Setup in progress");
@@ -412,6 +417,75 @@ describe("the per-post stats", () => {
     expect(v.note).toBe(
       'Read every 6 h. History: one row a day (UTC) per post since 2026-10-24. "-": the platform gives no such number.',
     );
+  });
+});
+
+describe("the totals as of each day, for the Growth app", () => {
+  const MORE = { shares: null, saves: null, reach: null, quotes: null };
+  const row = (
+    day: string,
+    key: string,
+    views: number | null,
+    likes: number,
+    comments: number | null = null,
+  ) => ({ day, key, views, likes, comments, ...MORE, at: `${day}T10:00:00Z` });
+  const view = (history: ReturnType<typeof row>[], now: string) =>
+    postStatsView({
+      posts: [],
+      numbers: {},
+      reads: {},
+      history,
+      checkpoints: [],
+      names: { x: "X", bluesky: "Bluesky" },
+      nowMs: Date.parse(now),
+      platforms: ["x", "bluesky", "tiktok"],
+      note: "",
+    });
+
+  test("each post's last reading on or before the day, summed; none invented", () => {
+    const v = view(
+      [
+        row("2026-11-01", "x X1", 10, 1, 0),
+        // X2 is first read on 11-02; X1 is not read on 11-02.
+        row("2026-11-02", "x X2", 5, 2, 1),
+        row("2026-11-03", "x X1", 30, 3, 2),
+        // Bluesky gives no views.
+        row("2026-11-02", "bluesky at://b", null, 4),
+      ],
+      "2026-11-04T08:00:00Z",
+    );
+    expect(v.daily).toEqual([
+      { day: "2026-11-01", platform: "X", views: 10, likes: 1, comments: 0 },
+      { day: "2026-11-02", platform: "X", views: 15, likes: 3, comments: 1 },
+      {
+        day: "2026-11-02",
+        platform: "Bluesky",
+        views: null,
+        likes: 4,
+        comments: null,
+      },
+      { day: "2026-11-03", platform: "X", views: 35, likes: 5, comments: 3 },
+      {
+        day: "2026-11-03",
+        platform: "Bluesky",
+        views: null,
+        likes: 4,
+        comments: null,
+      },
+      // No reading today: each post keeps its last one.
+      { day: "2026-11-04", platform: "X", views: 35, likes: 5, comments: 3 },
+      {
+        day: "2026-11-04",
+        platform: "Bluesky",
+        views: null,
+        likes: 4,
+        comments: null,
+      },
+    ]);
+    // A platform with no reading has no row; no history, no rows.
+    expect(v.daily.some((r) => r.platform === "tiktok")).toBe(false);
+    expect(view([], "2026-11-04T08:00:00Z").daily).toEqual([]);
+    expect(v.dailyNote).toContain("last reading on or before that day");
   });
 });
 

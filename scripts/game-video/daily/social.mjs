@@ -166,6 +166,13 @@ const followersBox = (counts, history, names, nowMs) => {
       note: c.error ?? "",
     })),
     note: `Counts cached 1 h (X: 24 h). History: one count a day${first ? ` since ${first}` : ""}.`,
+    // The whole history, for the Growth app (Wall Game PM, 2026-11-04):
+    // one row per platform per UTC day, the first count read that day.
+    history: history.map((r) => ({
+      day: r.day,
+      platform: names[r.platform] ?? r.platform,
+      followers: r.followers,
+    })),
   };
 };
 
@@ -566,6 +573,68 @@ export const postStatsView = ({
     };
   });
   const first = history[0]?.day;
+  /*
+    Each platform's totals as of each UTC day, for the Growth app (Wall
+    Game PM, 2026-11-04): over its posts, each post's last history row on
+    or before that day. A row is the first reading of its day, and a post
+    that is not read on a day keeps its last reading, so a total is the
+    sum of the numbers read by that day (a floor, never a guess). A day
+    with no reading of a platform's posts has no row for it.
+  */
+  const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+  /** @type {Map<string, PostStatsRow[]>} each post's rows, oldest first */
+  const byKey = new Map();
+  for (const r of history) {
+    const rows = byKey.get(r.key);
+    if (rows) rows.push(r);
+    else byKey.set(r.key, [r]);
+  }
+  const days = [];
+  if (first) {
+    for (let d = Date.parse(first); dayOf(d) <= dayOf(nowMs); d += 864e5) {
+      days.push(dayOf(d));
+    }
+  }
+  // One pass per post: its last row on or before each day, added to that
+  // day's sums (a number only where the row has one).
+  const DAILY = /** @type {const} */ (["views", "likes", "comments"]);
+  // By day, each day in the platforms' order (a stable sort).
+  const daily = platforms
+    .flatMap((platform) => {
+      const sums = days.map(() => ({
+        n: 0,
+        ...Object.fromEntries(DAILY.map((m) => [m, null])),
+      }));
+      for (const [key, rows] of byKey) {
+        if (key.split(" ")[0] !== platform) continue;
+        let k = -1;
+        days.forEach((day, i) => {
+          while (k + 1 < rows.length && rows[k + 1].day <= day) k += 1;
+          if (k < 0) return;
+          const t = /** @type {Record<string, any>} */ (sums[i]);
+          t.n += 1;
+          for (const m of DAILY) {
+            const v = rows[k][m];
+            if (typeof v === "number") t[m] = (t[m] ?? 0) + v;
+          }
+        });
+      }
+      return days.flatMap((day, i) => {
+        const t = /** @type {Record<string, any>} */ (sums[i]);
+        return t.n
+          ? [
+              {
+                day,
+                platform: names[platform] ?? platform,
+                views: t.views,
+                likes: t.likes,
+                comments: t.comments,
+              },
+            ]
+          : [];
+      });
+    })
+    .sort((a, b) => a.day.localeCompare(b.day));
   const readAt =
     Object.values(reads)
       .map((r) => r?.at)
@@ -586,6 +655,9 @@ export const postStatsView = ({
     platforms: platformRows,
     total: totals(platformRows),
     videos,
+    daily,
+    dailyNote:
+      "Each platform's totals over its posts as of the end of each UTC day: each post's last reading on or before that day (a reading is the first of its day; a post keeps its last reading after its reads stop). A number read later is not in an earlier day. null: no post gives that number.",
     note: `${note} History: one row a day (UTC) per post${first ? ` since ${first}` : ""}. "-": the platform gives no such number.`,
   };
 };
