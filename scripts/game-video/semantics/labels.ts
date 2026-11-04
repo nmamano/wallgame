@@ -89,6 +89,12 @@ export type Tag =
  * `walk` is the closest such walk (for mouse-into-reach, after the move).
  * Walls that change no counter are no huh (C45, X-TQBFZA ply 11: Nil "didn't
  * make sense"): the board shows nothing odd.
+ * `shown`: the board itself shows the odd thing (C47, 2026-11-01: "a cat
+ * beside a mouse that it does not take"; a text that names it is not
+ * enough): the walk is SHOWN_WALK (the two pawns on next-door cells with no
+ * wall between), or the cat stands on its own mouse. A catch at walk 2
+ * needs the viewer to know a cat moves 2 steps a turn (FTFHyntE ply 31):
+ * not shown. gs-confused-travolta goes only on a shown huh.
  */
 export interface Huh {
   kind:
@@ -97,7 +103,18 @@ export interface Huh {
     | "mouse-into-reach"
     | "cat-on-own-mouse";
   walk: number;
+  shown: boolean;
 }
+
+/** Pawns this close stand on next-door cells with no wall between. */
+export const SHOWN_WALK = 1;
+
+/**
+ * A move that destroys the other side (C49, Nil 2026-11-01: "when you get
+ * destroyed by a move"): its walls add DESTROY_WALK or more to one of the
+ * other side's walks, or it closes a trap.
+ */
+export const DESTROY_WALK = 10;
 
 /** A cat this close reaches its prey on its next turn (two steps). */
 export const THREAT_WALK = 2;
@@ -209,6 +226,15 @@ export interface PlyLabel {
   ownWall?: { wall: string; ply: number };
   /** With the huh tag: why the move makes no sense. */
   huh?: Huh;
+  /**
+   * With the missed-punish tag: the board shows the gift (C45, C47:
+   * gs-terio-ooh only when the viewer SEES it): before the move the mover's
+   * cat stood SHOWN_WALK from an animal it could take. A gift only the
+   * engine's strip shows (X-TQBFZA ply 13) is false.
+   */
+  missedPunishShown?: boolean;
+  /** C49: walls that add DESTROY_WALK or more to the other side's walk, or a closed trap. */
+  destroys: boolean;
 }
 
 /** The race before move `ply` (or after the last when ply = length). */
@@ -388,7 +414,11 @@ const huhOf = (f: PlyFacts): Huh | null => {
   const reach = own(f).filter(
     (h) => isAnimal(h) && h.before > 0 && h.before <= THREAT_WALK,
   );
-  if (reach.length > 0) return { kind: "missed-capture", walk: closest(reach) };
+  const shownAt = (walk: number) => walk <= SHOWN_WALK;
+  if (reach.length > 0) {
+    const walk = closest(reach);
+    return { kind: "missed-capture", walk, shown: shownAt(walk) };
+  }
   const e = f.engine;
   const ignored = f.hunts.filter(
     (h, i) =>
@@ -403,7 +433,11 @@ const huhOf = (f: PlyFacts): Huh | null => {
       e.bestSteps.some((s) => s.pawn === h.target.type),
   );
   if (ignored.length > 0)
-    return { kind: "ignored-threat", walk: closest(ignored) };
+    return {
+      kind: "ignored-threat",
+      walk: closest(ignored),
+      shown: shownAt(closest(ignored)),
+    };
   const into = theirs(f).filter(
     (h) =>
       isAnimal(h) &&
@@ -415,6 +449,7 @@ const huhOf = (f: PlyFacts): Huh | null => {
     return {
       kind: "mouse-into-reach",
       walk: Math.min(...into.map((h) => h.after)),
+      shown: shownAt(Math.min(...into.map((h) => h.after))),
     };
   // The mover's own cat (a hunter) and own mouse (a target) on one cell.
   const cat = own(f).find((h) => h.hunter.type === "cat");
@@ -425,7 +460,7 @@ const huhOf = (f: PlyFacts): Huh | null => {
     cat.hunterTo === mouse.targetTo &&
     cat.hunterFrom !== mouse.targetFrom
   )
-    return { kind: "cat-on-own-mouse", walk: mouse.after };
+    return { kind: "cat-on-own-mouse", walk: mouse.after, shown: true };
   return null;
 };
 
@@ -789,6 +824,11 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     ]);
     const ownWall = ownWalls.get(ply);
     const huh = huhs.get(ply);
+    const missed = all.has("missed-punish");
+    const giftShown = own(f).some(
+      (h) => isAnimal(h) && h.before > 0 && h.before <= SHOWN_WALK,
+    );
+    const theirRise = Math.max(0, ...theirs(f).map(rise));
     return {
       ply,
       moveNumber: f.moveNumber,
@@ -802,6 +842,10 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       raceGain: gains[ply],
       ...(ownWall ? { ownWall } : {}),
       ...(huh ? { huh } : {}),
+      ...(missed ? { missedPunishShown: giftShown } : {}),
+      destroys:
+        top.label === "trap-closes" ||
+        (f.walls.length > 0 && theirRise >= DESTROY_WALK),
     };
   });
   return {

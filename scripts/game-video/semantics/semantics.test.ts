@@ -290,7 +290,11 @@ describe("huh (C43)", () => {
   test("a cat 1 or 2 from the mouse that does not take it", () => {
     const l = labels([{ w1: [2, 1], w2: [8, 8], wc: [0.99, 0.99] }]);
     expect(l.plies[0].tags).toContain("huh");
-    expect(l.plies[0].huh).toEqual({ kind: "missed-capture", walk: 2 });
+    expect(l.plies[0].huh).toEqual({
+      kind: "missed-capture",
+      walk: 2,
+      shown: false,
+    });
     expect(isMoment(l.plies[0])).toBe(true);
     const took = labels([{ w1: [2, 0], w2: [8, 8], end: true }], 1);
     expect(took.plies[0].tags).not.toContain("huh");
@@ -308,7 +312,11 @@ describe("huh (C43)", () => {
         bestWalks: [8, 4],
       },
     ]);
-    expect(l.plies[0].huh).toEqual({ kind: "ignored-threat", walk: 2 });
+    expect(l.plies[0].huh).toEqual({
+      kind: "ignored-threat",
+      walk: 2,
+      shown: false,
+    });
     // bestWalks is in hunts order (VR1, review 133 N1): the step that saves
     // P1's mouse must raise hunts[1] (P2's cat), not hunts[0].
     const other = labels([
@@ -350,7 +358,11 @@ describe("huh (C43)", () => {
   test("a mouse that steps into the cat's reach", () => {
     // P1 moves; hunt 2 is P2's cat on P1's mouse, which runs 4 -> 2.
     const l = labels([{ w1: [8, 8], w2: [4, 2], mouseRan: true }]);
-    expect(l.plies[0].huh).toEqual({ kind: "mouse-into-reach", walk: 2 });
+    expect(l.plies[0].huh).toEqual({
+      kind: "mouse-into-reach",
+      walk: 2,
+      shown: false,
+    });
   });
 });
 
@@ -1164,5 +1176,63 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(l.plies[24].tags).toContain("own-wall");
     expect(l.plies[24].tags).not.toContain("capture");
     expect(l.plies[24].tags).not.toContain("blunder");
+  });
+});
+
+describe("CASES from C46 on: what a move means (2026-11-04)", () => {
+  test("C46 z5S6UPIi: plies 0-14 hold only engine verdicts (blunders), no board moment", () => {
+    const l = fixtureLabels("z5S6UPIi");
+    const early = l.plies.filter((p) => p.ply <= 14 && p.label !== "quiet");
+    expect(early.length).toBeGreaterThan(0);
+    for (const p of early) expect(["blunder", "turn"]).toContain(p.label);
+  });
+
+  test("C47 FTFHyntE 31: a catch at walk 2 is a huh the board does not show", () => {
+    const l = fixtureLabels("FTFHyntE");
+    expect(l.plies[31].huh).toEqual({
+      kind: "missed-capture",
+      walk: 2,
+      shown: false,
+    });
+  });
+
+  test("C47 qKtSFAbX 76-80: a cat beside the mouse that does not take it is shown", () => {
+    const l = fixtureLabels("qKtSFAbX");
+    expect(l.plies[74].huh?.shown).toBe(false);
+    for (const ply of [76, 78, 80]) {
+      expect(l.plies[ply].huh).toEqual({
+        kind: "missed-capture",
+        walk: 1,
+        shown: true,
+      });
+    }
+  });
+
+  test("C28/C47 NxKhTj4H 3: a cat on its own mouse is shown", () => {
+    expect(fixtureLabels("NxKhTj4H").plies[3].huh?.shown).toBe(true);
+  });
+
+  test("C45 X-TQBFZA 13: a gift only the strip shows is no shown missed punish", () => {
+    const l = fixtureLabels("X-TQBFZA");
+    expect(l.plies[13].tags).toContain("missed-punish");
+    expect(l.plies[13].missedPunishShown).toBe(false);
+  });
+
+  test("a missed punish with the mover's cat beside an animal is shown", () => {
+    const l = labels([
+      { w1: [8, 8], w2: [4, 1], wc: [0.7, 0.2] },
+      // P2 moves: its cat (hunt 2) stands 1 from P1's mouse, and it blunders.
+      { w1: [8, 8], w2: [1, 1], wc: [0.8, 0.3] },
+    ]);
+    expect(l.plies[1].tags).toContain("missed-punish");
+    expect(l.plies[1].missedPunishShown).toBe(true);
+  });
+
+  test("C49 Sz58lFo0 20: the bot's walls take bro's walk 13 -> 35: destroys", () => {
+    const l = fixtureLabels("Sz58lFo0");
+    expect(l.plies[20].destroys).toBe(true);
+    expect(l.plies.filter((p) => p.destroys).map((p) => p.ply)).toEqual([20]);
+    // A closed trap destroys too.
+    expect(fixtureLabels("JbpdRM9D").plies[20].destroys).toBe(true);
   });
 });

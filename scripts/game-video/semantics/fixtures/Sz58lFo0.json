@@ -1,0 +1,88 @@
+{
+  "note": "Stored game Sz58lFo0 with its engine scores (dw-transformer, 2026-11-01); a regression fixture by game id and ply only.",
+  "game": {
+    "gameId": "Sz58lFo0",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": { "cat": [2, 1], "mouse": [3, 0] },
+        "p2": { "cat": [2, 6], "mouse": [3, 7] }
+      },
+      "walls": [
+        { "cell": [0, 3], "orientation": "vertical" },
+        { "cell": [1, 0], "orientation": "vertical" },
+        { "cell": [1, 6], "orientation": "vertical" },
+        { "cell": [4, 0], "orientation": "vertical" },
+        { "cell": [4, 6], "orientation": "vertical" }
+      ]
+    },
+    "moves": [
+      "Cd6",
+      "Ce6",
+      "Ce6.>d6",
+      "Cd5",
+      "Cg6",
+      ">g6.^g5",
+      "Cf5",
+      ">f5.^f4",
+      "Ce4",
+      ">e4.^e3",
+      "Cd3",
+      ">d3.^d2",
+      ">c5.^d4",
+      "Cc6",
+      ">b6.^c5",
+      ">d7.^d5",
+      "^b6.^c6",
+      "Cd7",
+      ">a5.^a5",
+      "^a2.^c2",
+      ">b3.^b3"
+    ],
+    "seats": [
+      { "playerOrder": 1, "kind": "official bot", "name": "Normal Bot" },
+      { "playerOrder": 2, "kind": "guest", "name": "Guest Gibbon" }
+    ],
+    "result": { "winner": 1, "reason": "resignation" }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.4680323302745819, 0.49665525555610657, 0.4677979052066803,
+      0.548923134803772, 0.5331689715385437, -0.5140825510025024,
+      0.37445327639579773, -0.24294713139533997, -0.30150049924850464,
+      -0.5145533084869385, -0.480063796043396, -0.5026915669441223,
+      -0.503176212310791, -0.5954812169075012, -0.4588187038898468,
+      -0.5958744287490845, -0.5936163663864136, -0.670862078666687,
+      0.015368861146271229, 0.00011923170677619055, 0.4714716076850891,
+      0.5424702167510986
+    ],
+    "bestMoves": [
+      "Cd6",
+      ">g5.^h5",
+      "Ce6.>d6",
+      "Cd5",
+      ">c5.^d5",
+      "^g5.^h5",
+      ">c5.^d5",
+      ">f5.^f4",
+      ">c5.^d5",
+      ">e4.^e3",
+      ">c5.Cd4",
+      ">g5.^h3",
+      ">c5.^d5",
+      ">c3.>g8",
+      ">b6.^c5",
+      ">c3.>g8",
+      ">a5.^a5",
+      "^a4.^e4",
+      ">a5.^a5",
+      ">c3.^e4",
+      ">b3.^b3",
+      "^d3.Cd6"
+    ],
+    "finalFromResult": false
+  }
+}
