@@ -41,6 +41,9 @@ function collectTestFiles(): string[] {
     "--exclude-standard",
     "*.test.ts",
     "*.test.tsx",
+    // Three scripts/game-video tests are plain .mjs. Until 2026-11-04 this
+    // list had only the two TypeScript forms, so those never ran here or in CI.
+    "*.test.mjs",
   ]);
 
   if (!listed.success) {

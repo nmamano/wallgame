@@ -14,6 +14,7 @@ export PATH="$HOME/.bun/bin:$PATH"
 #
 # POSIX sh: husky runs this file with `sh -e`, whatever the line on top says.
 zero=0000000000000000000000000000000000000000
+changed="" # every path the pushed commits change, for the game-video gate below
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue # a branch deletion pushes no commit
   # A new branch, or a remote tip this clone does not have: check all that
@@ -26,6 +27,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     echo "❌❌ Push refused: cannot list the commits of $local_ref ($base..$local_sha)."
     exit 1
   fi
+  # A diff that fails (no common base) counts as a game-video change.
+  changed="$changed
+$(git diff --name-only "$base...$local_sha" || echo scripts/game-video/)"
   for commit in $commits; do
     ignored=$(git ls-tree -r --name-only "$commit" | git check-ignore --no-index --stdin || true)
     if [ -n "$ignored" ]; then
@@ -56,6 +60,9 @@ echo "✅✅ No pushed commit holds an ignored path."
 # pushed green here, and main stayed red until 2026-08-21. Four seconds would
 # have caught it.
 #
+# The scripts/game-video tests are the same kind, but slower; see the gate
+# below the tests/game run.
+#
 # This is a SUBSET, not a substitute. A green hook still does not mean green CI -
 # the integration suite has not run yet at this point.
 
@@ -73,6 +80,27 @@ bun run typecheck
 
 echo "🧪🧪 Running the Docker-free unit tests (tests/game)..."
 bun test tests/game/
+
+# scripts/game-video tests: CI runs them, and until 2026-11-04 nothing ran
+# them before a push. They need no Docker, but they take about 70 s on
+# auntie-2 even 4 at a time (daily/daily.test.ts alone takes most of it), so
+# they run only when the pushed commits change scripts/game-video/ or the
+# folders its code imports (shared/, server/db/). A push of other work skips
+# them. Not `bun test --changed`: many of these tests run their script as a
+# child process (node crew.mjs ...), which an import graph does not see.
+# A machine that cannot run them (no ffmpeg, or a Node older than 22.18, as
+# on the 4090 desktop) skips them with the reason, and CI runs them; see
+# scripts/game-video/README.md.
+if ! printf '%s\n' "$changed" | grep -qE '^(scripts/game-video|shared|server/db)/'; then
+  echo "🎬🎬 Skipping the scripts/game-video tests: the push does not change that code."
+elif ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "⚠️⚠️ Skipping the scripts/game-video tests: no ffmpeg on PATH. CI runs them."
+elif ! node --input-type=module -e 'process.exit(import.meta.main ? 0 : 1)' >/dev/null 2>&1; then
+  echo "⚠️⚠️ Skipping the scripts/game-video tests: they need Node 22.18 or later. CI runs them."
+else
+  echo "🎬🎬 Running the scripts/game-video tests (the push changes that code)..."
+  bun test --parallel=4 scripts/game-video
+fi
 
 echo "🔍🔍 Checking build..."
 bun run build
