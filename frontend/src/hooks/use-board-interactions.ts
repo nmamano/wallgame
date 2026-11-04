@@ -8,7 +8,6 @@ import {
 } from "react";
 import type {
   Action,
-  GamePawnType,
   PawnType,
   PlayerId,
   WallOrientation,
@@ -17,7 +16,6 @@ import type {
 import type { GameState } from "../../../shared/domain/game-state";
 import {
   isMovablePawnType,
-  pawnCell,
   requirePawnCell,
 } from "../../../shared/domain/pawns";
 import type { BoardPawn, Arrow } from "@/components/board";
@@ -30,6 +28,7 @@ import {
   MAX_LOCAL_ACTIONS,
 } from "@/game/local-actions";
 import { sounds, play } from "@/lib/sounds";
+import { pawnMoveArrows } from "@/lib/move-arrows";
 import {
   useAnnotations,
   type Annotation,
@@ -189,9 +188,7 @@ export interface BoardInteractionsResult {
 
 type QueueMode = "staged" | "premove" | null;
 
-/**
- * Builds arrows to visualize pawn moves in a queue.
- */
+/** The arrows of a staged or premoved queue (move-arrows.ts). */
 function buildArrowsForQueue(
   gameState: GameState | null,
   queue: Action[],
@@ -199,44 +196,7 @@ function buildArrowsForQueue(
   arrowType: Arrow["type"],
 ): Arrow[] {
   if (!gameState || queue.length === 0 || !ownerId) return [];
-  const workingPositions: Partial<Record<GamePawnType, Cell>> = {};
-  for (const type of ["dog", "cat", "mouse", "elephant"] as const) {
-    const cell = pawnCell(gameState.pawns, ownerId, type);
-    if (cell) workingPositions[type] = [cell[0], cell[1]];
-  }
-
-  const moveActions = queue.filter((action) => isMovablePawnType(action.type));
-
-  // Special case: two moves of the same pawn type -> single long arrow
-  if (
-    queue.length === 2 &&
-    moveActions.length === 2 &&
-    moveActions.every((action) => action.type === moveActions[0].type)
-  ) {
-    const pawnType = moveActions[0].type as GamePawnType;
-    const fromCell = workingPositions[pawnType];
-    if (!fromCell) return [];
-    const toCell = moveActions[1].target;
-    const from: Cell = [fromCell[0], fromCell[1]];
-    const to: Cell = [toCell[0], toCell[1]];
-    return [{ from, to, type: arrowType }];
-  }
-
-  // Normal case: one arrow per pawn move
-  const arrows: Arrow[] = [];
-  queue.forEach((action) => {
-    if (!isMovablePawnType(action.type)) {
-      return;
-    }
-    const fromCell = workingPositions[action.type];
-    if (!fromCell) return;
-    const toCell = action.target;
-    const from: Cell = [fromCell[0], fromCell[1]];
-    const to: Cell = [toCell[0], toCell[1]];
-    arrows.push({ from, to, type: arrowType });
-    workingPositions[action.type] = [toCell[0], toCell[1]];
-  });
-  return arrows;
+  return pawnMoveArrows(gameState, queue, ownerId, arrowType);
 }
 
 export function useBoardInteractions(

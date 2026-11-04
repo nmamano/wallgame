@@ -59,6 +59,8 @@ export type BoardPawn = Pawn & {
 export interface Arrow {
   from: Cell;
   to: Cell;
+  /** The corner of a diagonal 2-step move (moveArrowCorner): it turns there. */
+  via?: Cell;
   type: ArrowType;
 }
 
@@ -658,6 +660,37 @@ export function Board({
     );
   };
 
+  // The SVG path of a pawn move's arrow, the same for every arrow: straight,
+  // or, with a corner (moveArrowCorner), the L the pawn walks, turning at
+  // the corner cell's centre. Each end of an L is cut back as much as on a
+  // straight 2-step arrow, whose cut is measured over 2 cells: so twice the
+  // segment's share here.
+  const moveArrowPath = (from: Cell, to: Cell, via?: Cell): string => {
+    const fromCenter = getCellCenterPosition(from[0], from[1]);
+    const toCenter = getCellCenterPosition(to[0], to[1]);
+    if (via) {
+      const corner = getCellCenterPosition(via[0], via[1]);
+      const cut = (1 - getArrowScale(0, 0, 0, 2)) / 2;
+      const startCut = (2 * cut) / 3;
+      const endCut = 2 * cut;
+      const start = {
+        x: fromCenter.x + (corner.x - fromCenter.x) * startCut,
+        y: fromCenter.y + (corner.y - fromCenter.y) * startCut,
+      };
+      const end = {
+        x: toCenter.x - (toCenter.x - corner.x) * endCut,
+        y: toCenter.y - (toCenter.y - corner.y) * endCut,
+      };
+      return `M ${start.x} ${start.y} L ${corner.x} ${corner.y} L ${end.x} ${end.y}`;
+    }
+    const { start, end } = shortenLineBetweenCenters(
+      { x: fromCenter.x, y: fromCenter.y },
+      { x: toCenter.x, y: toCenter.y },
+      getArrowScale(from[0], from[1], to[0], to[1]),
+    );
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  };
+
   // Render last move arrows (subtle)
   const renderLastMoveArrows = () => {
     const moves = lastMove ? [lastMove] : (lastMoves ?? []);
@@ -671,34 +704,11 @@ export function Board({
 
     return moves.map((move: LastMove, index: number) => {
       const { strokeWidth, markerSize, markerRef } = arrowVisuals;
-      const fromCenter = getCellCenterPosition(move.fromRow, move.fromCol);
-      const toCenter = getCellCenterPosition(move.toRow, move.toCol);
-      let pathData: string;
-      if (move.via) {
-        // The L the pawn walked, turning at the corner cell's centre. Each
-        // end is cut back as much as on a straight 2-step arrow, whose cut
-        // is measured over 2 cells: so twice the segment's share here.
-        const corner = getCellCenterPosition(move.via[0], move.via[1]);
-        const cut = (1 - getArrowScale(0, 0, 0, 2)) / 2;
-        const startCut = (2 * cut) / 3;
-        const endCut = 2 * cut;
-        const start = {
-          x: fromCenter.x + (corner.x - fromCenter.x) * startCut,
-          y: fromCenter.y + (corner.y - fromCenter.y) * startCut,
-        };
-        const end = {
-          x: toCenter.x - (toCenter.x - corner.x) * endCut,
-          y: toCenter.y - (toCenter.y - corner.y) * endCut,
-        };
-        pathData = `M ${start.x} ${start.y} L ${corner.x} ${corner.y} L ${end.x} ${end.y}`;
-      } else {
-        const { start, end } = shortenLineBetweenCenters(
-          { x: fromCenter.x, y: fromCenter.y },
-          { x: toCenter.x, y: toCenter.y },
-          getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol),
-        );
-        pathData = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-      }
+      const pathData = moveArrowPath(
+        [move.fromRow, move.fromCol],
+        [move.toRow, move.toCol],
+        move.via,
+      );
 
       const arrowColor = move.playerColor
         ? colorHexMap[move.playerColor] || "#94a3b8"
@@ -773,13 +783,7 @@ export function Board({
       return null;
     }
 
-    const fromCenter = getCellCenterPosition(arrow.from[0], arrow.from[1]);
-    const toCenter = getCellCenterPosition(arrow.to[0], arrow.to[1]);
-    const { start, end } = shortenLineBetweenCenters(
-      { x: fromCenter.x, y: fromCenter.y },
-      { x: toCenter.x, y: toCenter.y },
-      getArrowScale(arrow.from[0], arrow.from[1], arrow.to[0], arrow.to[1]),
-    );
+    const pathData = moveArrowPath(arrow.from, arrow.to, arrow.via);
 
     const arrowColor = getArrowColor(arrow);
     const { strokeWidth, markerSize, markerRef } = arrowVisuals;
@@ -824,11 +828,9 @@ export function Board({
             />
           </marker>
         </defs>
-        <line
-          x1={start.x}
-          y1={start.y}
-          x2={end.x}
-          y2={end.y}
+        <path
+          d={pathData}
+          fill="none"
           stroke={arrowColor}
           strokeWidth={strokeWidth}
           strokeDasharray={dashArray}

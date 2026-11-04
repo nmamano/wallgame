@@ -1,8 +1,8 @@
 import type { Arrow } from "@/components/board";
 import type { WallPosition } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
-import { isMovablePawnType, pawnCell } from "../../../shared/domain/pawns";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
+import { pawnMoveArrows } from "@/lib/move-arrows";
 
 type WallState =
   | "placed"
@@ -37,17 +37,16 @@ export function parseBestMoveOverlay(
       displayState.config.boardHeight,
     );
 
-    const arrows: Arrow[] = [];
-    const walls: WallPositionWithState[] = [];
     const currentPlayer = displayState.turn;
-
+    const arrows = pawnMoveArrows(
+      displayState,
+      move.actions,
+      currentPlayer,
+      "best-move",
+    );
+    const walls: WallPositionWithState[] = [];
     for (const action of move.actions) {
-      if (isMovablePawnType(action.type)) {
-        const from = pawnCell(displayState.pawns, currentPlayer, action.type);
-        if (from) {
-          arrows.push({ from, to: action.target, type: "best-move" });
-        }
-      } else if (action.type === "wall") {
+      if (action.type === "wall") {
         walls.push({
           cell: action.target,
           orientation: action.wallOrientation!,
