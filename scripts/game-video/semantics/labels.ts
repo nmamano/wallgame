@@ -445,12 +445,10 @@ const huhOf = (f: PlyFacts): Huh | null => {
       h.before > THREAT_WALK &&
       h.after <= THREAT_WALK,
   );
-  if (into.length > 0)
-    return {
-      kind: "mouse-into-reach",
-      walk: Math.min(...into.map((h) => h.after)),
-      shown: shownAt(Math.min(...into.map((h) => h.after))),
-    };
+  if (into.length > 0) {
+    const walk = Math.min(...into.map((h) => h.after));
+    return { kind: "mouse-into-reach", walk, shown: shownAt(walk) };
+  }
   // The mover's own cat (a hunter) and own mouse (a target) on one cell.
   const cat = own(f).find((h) => h.hunter.type === "cat");
   const mouse = theirs(f).find((h) => h.target.type === "mouse");

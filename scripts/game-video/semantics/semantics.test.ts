@@ -1228,7 +1228,7 @@ describe("CASES from C46 on: what a move means (2026-11-04)", () => {
     expect(l.plies[1].missedPunishShown).toBe(true);
   });
 
-  test("C49 Sz58lFo0 20: the bot's walls take bro's walk 13 -> 35: destroys", () => {
+  test("C49 Sz58lFo0 20: the bot's walls take the guest's walk 13 -> 35: destroys", () => {
     const l = fixtureLabels("Sz58lFo0");
     expect(l.plies[20].destroys).toBe(true);
     expect(l.plies.filter((p) => p.destroys).map((p) => p.ply)).toEqual([20]);
