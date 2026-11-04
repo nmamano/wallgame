@@ -5,7 +5,7 @@ import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import { buildAnimalCycleInitialState } from "../../shared/domain/animal-cycle-setup";
 import { pawnCell } from "../../shared/domain/pawns";
-import { playerWalks, walkDots } from "../../shared/domain/walks";
+import { playerWalks } from "../../shared/domain/walks";
 import type {
   Cell,
   GameConfiguration,
@@ -180,62 +180,5 @@ describe("playerWalks", () => {
       throw new Error("the walls do not box in (7,7)");
     }
     expect(playerWalks(state).map((w) => w.playerId)).toEqual([2]);
-  });
-});
-
-describe("walkDots", () => {
-  it("puts a dot between each two cells and on each inner cell", () => {
-    const cells: Cell[] = [
-      [0, 0],
-      [0, 1],
-      [0, 2],
-      [0, 3],
-    ];
-    const dots = walkDots([{ playerId: 1, cells }], []);
-    // 3 between cells + 2 inner cells; none on the two ends.
-    expect(dots).toHaveLength(5);
-    expect(dots.map((d) => [d.halfRow, d.halfCol])).toEqual([
-      [0, 1],
-      [0, 2],
-      [0, 3],
-      [0, 4],
-      [0, 5],
-    ]);
-  });
-
-  it("puts no dot on a pawn's cell", () => {
-    const cells: Cell[] = [
-      [0, 0],
-      [0, 1],
-      [0, 2],
-    ];
-    const dots = walkDots([{ playerId: 1, cells }], [[0, 1]]);
-    expect(dots.map((d) => [d.halfRow, d.halfCol])).toEqual([
-      [0, 1],
-      [0, 3],
-    ]);
-  });
-
-  it("makes one dot of both players where two walks meet", () => {
-    const across: Cell[] = [
-      [1, 0],
-      [1, 1],
-      [1, 2],
-    ];
-    const down: Cell[] = [
-      [0, 1],
-      [1, 1],
-      [2, 1],
-    ];
-    const dots = walkDots(
-      [
-        { playerId: 1, cells: across },
-        { playerId: 2, cells: down },
-      ],
-      [],
-    );
-    const shared = dots.filter((d) => d.playerIds.length === 2);
-    expect(shared).toEqual([{ halfRow: 2, halfCol: 2, playerIds: [1, 2] }]);
-    expect(dots).toHaveLength(5);
   });
 });

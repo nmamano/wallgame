@@ -2223,7 +2223,7 @@ export function useGamePageController(gameId: string) {
     viewingHistory,
   ]);
 
-  // Each player's shortest walk, drawn as dots at the start position only
+  // Each player's shortest walk, played at the start position only
   // (Nil, 2026-10-30: "the dots that show the shortest path from each cat
   // at the beginning of the game"; picks 2026-10-31), live or in the
   // history. A staged or premoved action already leaves the start position
@@ -2237,7 +2237,12 @@ export function useGamePageController(gameId: string) {
     ) {
       return [];
     }
-    return playerWalks(walkSource);
+    // The first mover's walk plays first, as in the videos' opening.
+    return playerWalks(walkSource).sort(
+      (a, b) =>
+        Number(b.playerId === walkSource.turn) -
+        Number(a.playerId === walkSource.turn),
+    );
   }, [gameState, historyState, viewingHistory, stagedActions, premovedActions]);
 
   const boardPawns = useMemo((): BoardPawn[] => {
