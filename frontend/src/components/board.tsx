@@ -34,20 +34,7 @@ import {
 } from "@/hooks/use-annotations";
 import type { Pawn } from "../../../shared/domain/game-types";
 import type { PlayerWalk } from "../../../shared/domain/walks";
-import {
-  introWalkPlan,
-  introWalkSeconds,
-  walkAlphaAt,
-  walkDisc,
-  walkDots,
-  walkDrawnAt,
-  WALK_BOARD_UNITS,
-  WALK_DISC_RING,
-  WALK_DOT_RADIUS,
-  WALK_DOT_RIM_RADIUS,
-  WALK_RIM_COLOR,
-} from "../../../shared/domain/walk-animation";
-import { useWalkIntro } from "@/hooks/use-walk-intro";
+import { WalkLayer } from "@/components/walk-layer";
 import { isMovablePawnType } from "../../../shared/domain/pawns";
 import { pawnId } from "../../../shared/domain/game-utils";
 
@@ -606,121 +593,6 @@ export function Board({
     };
   };
 
-  // The opening walks, drawn and timed as in the videos (walk-animation.ts):
-  // each draws from its hunter as dots in its player's colour on a dark
-  // rim, shows its steps in a disc beside its target, then fades. With
-  // reduced motion both show whole, with no draw and no fade.
-  const renderWalks = () => {
-    const t = walkIntro.t;
-    const width = gridMetrics.width;
-    const height = gridMetrics.height;
-    if (walks.length === 0 || width === 0 || height === 0) {
-      return null;
-    }
-    // The layer stays on the start position once the walks have faded,
-    // empty: the game videos find it there by data-walk-layer and hide it
-    // (render-game-video.mjs SITE_WALK_DOTS), as they draw their own.
-    const layer = (children: ReactNode) => (
-      <svg
-        data-walk-layer=""
-        className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: 6 }}
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-      >
-        {children}
-      </svg>
-    );
-    if (t === null) return layer(null);
-    const at = (cell: Cell) => {
-      const c = getCellCenterPosition(cell[0], cell[1]);
-      return { x: c.x / width, y: c.y / height };
-    };
-    // A cell's size as a fraction of the board: the pitch across.
-    const cellFraction =
-      cols > 1
-        ? at([0, 1]).x - at([0, 0]).x
-        : (cellWidthPx + gridMetrics.gapX) / width;
-    const pawnBoxes = pawns.map((p) => ({
-      ...at(p.cell),
-      w: cellWidthPx / width,
-      h: cellHeightPx / height,
-    }));
-    const unit = width / WALK_BOARD_UNITS;
-    const px = (q: { x: number; y: number }) => ({
-      x: q.x * width,
-      y: q.y * height,
-    });
-    return layer(
-      <>
-        {walks.map((walk, k) => {
-          const timing = walkPlan[k];
-          const drawn = walkIntro.reduced ? 1 : walkDrawnAt(timing, t);
-          const alpha = walkIntro.reduced ? 1 : walkAlphaAt(timing, t);
-          if (drawn <= 0 || alpha <= 0) return null;
-          const points = walk.cells.map(at);
-          const holes = walk.cells
-            .slice(1, -1)
-            .filter((c) =>
-              pawns.some((p) => p.cell[0] === c[0] && p.cell[1] === c[1]),
-            )
-            .map(at);
-          const line = { points, holes, drawn };
-          const dots = walkDots(line, cellFraction).map(px);
-          const disc = walkDisc(line, cellFraction, pawnBoxes);
-          const hex = colorHexMap[playerColors[walk.playerId]] ?? "#94a3b8";
-          const discAt = disc ? px(disc.at) : null;
-          const discRadius = disc ? disc.radius * unit : 0;
-          return (
-            <g key={walk.playerId} opacity={alpha}>
-              {dots.map((d, i) => (
-                <circle
-                  key={`rim-${i}`}
-                  cx={d.x}
-                  cy={d.y}
-                  r={WALK_DOT_RIM_RADIUS * unit}
-                  fill={WALK_RIM_COLOR}
-                />
-              ))}
-              {dots.map((d, i) => (
-                <circle
-                  key={`dot-${i}`}
-                  cx={d.x}
-                  cy={d.y}
-                  r={WALK_DOT_RADIUS * unit}
-                  fill={hex}
-                />
-              ))}
-              {discAt && (
-                <>
-                  <circle
-                    cx={discAt.x}
-                    cy={discAt.y}
-                    r={discRadius}
-                    fill={hex}
-                    stroke={WALK_RIM_COLOR}
-                    strokeWidth={WALK_DISC_RING * unit}
-                  />
-                  <text
-                    x={discAt.x}
-                    y={discAt.y}
-                    dy="0.35em"
-                    textAnchor="middle"
-                    fontWeight={900}
-                    fontSize={discRadius * 1.1}
-                    fill="#fff"
-                  >
-                    {walk.cells.length - 1}
-                  </text>
-                </>
-              )}
-            </g>
-          );
-        })}
-      </>,
-    );
-  };
-
   // The SVG path of a pawn move's arrow, the same for every arrow: straight,
   // or, with a corner (moveArrowCorner), the L the pawn walks, turning at
   // the corner cell's centre. Each end of an L is cut back as much as on a
@@ -1141,17 +1013,11 @@ export function Board({
     [getCellRect, gridMetrics.width, gridMetrics.height],
   );
 
-  // The opening walks' clock: it starts when these walks first show.
-  const walksKey = walks
-    .map((w) => `${w.playerId}:${w.cells.map((c) => c.join(",")).join(" ")}`)
-    .join("|");
-  const walkPlan = useMemo(
-    () => introWalkPlan(walks.map((w) => ({ points: w.cells }))),
-    // walksKey names the walks; the plan reads only their lengths.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [walksKey],
+  const pawnCells = useMemo(() => pawns.map((p) => p.cell), [pawns]);
+  const walkColor = useCallback(
+    (playerId: PlayerId) => colorHexMap[playerColors[playerId]] ?? "#94a3b8",
+    [playerColors],
   );
-  const walkIntro = useWalkIntro(walksKey, introWalkSeconds(walkPlan));
 
   // Calculate which cell a point is over (for touch drag)
   const getCellFromPoint = useCallback(
@@ -1774,7 +1640,16 @@ export function Board({
             {/* Render move targets */}
             {renderMoveHighlights()}
             {/* Render each player's shortest walk */}
-            {renderWalks()}
+            <WalkLayer
+              walks={walks}
+              pawnCells={pawnCells}
+              width={gridMetrics.width}
+              height={gridMetrics.height}
+              cellWidth={cellWidthPx}
+              cellHeight={cellHeightPx}
+              cellCenter={getCellCenterPosition}
+              colorOf={walkColor}
+            />
 
             {/* Render walls */}
             {walls.map((pWall, index) => {
