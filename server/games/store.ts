@@ -434,7 +434,6 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
  * An id with no session is logged and not stored. An attempt can name a game
  * that never existed, or one the server has already forgotten, and that is
  * itself worth seeing - `knownGame` in the line says which.
-
  */
 export const recordSocketConnect = (
   sessionId: string,
