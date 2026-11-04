@@ -138,6 +138,19 @@ import {
   readingSeconds,
 } from "./overlays.mjs";
 import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
+import {
+  introWalkPlan,
+  introWalkSeconds,
+  walkDisc,
+  walkDots,
+  walkDrawSeconds,
+  walkDrawnPolyline,
+  WALK_DISC_RING,
+  WALK_DOT_RADIUS,
+  WALK_DOT_RIM_RADIUS,
+  WALK_FADE_SECONDS,
+  WALK_RIM_COLOR,
+} from "../../shared/domain/walk-animation.ts";
 import { Grid } from "../../shared/domain/grid.ts";
 import {
   wallFromStandardNotation,
@@ -932,31 +945,21 @@ const FX_SECONDS = {
 const TRAP_SECONDS = 1.6;
 /**
  * A path event (edl.mjs "path"): each walk draws itself from the hunter in
- * drawSeconds, PATH_STEP_SECONDS a step (at least PATH_DRAW_MIN_SECONDS,
- * at most PATH_DRAW_MAX_SECONDS), with a tick a step, so the steps can be
- * counted by ear (Wall Game Director, 2026-10-29); with `compare` the walk
- * before the move then holds for PATH_BEFORE_SECONDS and fades as the walk
- * after it draws; the last walk holds for the event's holdSeconds and
- * fades in PATH_FADE_SECONDS.
+ * walkDrawSeconds (shared/domain/walk-animation.ts, which the game board
+ * reads too), with a tick a step, so the steps can be counted by ear (Wall
+ * Game Director, 2026-10-29); with `compare` the walk before the move then
+ * holds for PATH_BEFORE_SECONDS and fades as the walk after it draws; the
+ * last walk holds for the event's holdSeconds and fades in
+ * WALK_FADE_SECONDS.
  */
-const PATH_STEP_SECONDS = 0.06;
-const PATH_DRAW_MIN_SECONDS = 0.45;
-const PATH_DRAW_MAX_SECONDS = 0.9;
 const PATH_BEFORE_SECONDS = 0.45;
-const PATH_FADE_SECONDS = 0.3;
-/** How long a walk (its cells, the hunter's first) takes to draw. */
-const drawSeconds = (points) =>
-  Math.min(
-    PATH_DRAW_MAX_SECONDS,
-    Math.max(PATH_DRAW_MIN_SECONDS, (points.length - 1) * PATH_STEP_SECONDS),
-  );
 /**
  * An explain (edl.mjs "explain"), in seconds: the old walk draws
- * (drawSeconds) and rests EXPLAIN_BEFORE_REST_SECONDS before the move; the
+ * (walkDrawSeconds) and rests EXPLAIN_BEFORE_REST_SECONDS before the move; the
  * move lands and its walls and pawns glow for EXPLAIN_LAND_SECONDS; the new
  * walk draws over the old one, a ghost at EXPLAIN_GHOST alpha, and holds
  * EXPLAIN_AFTER_HOLD_SECONDS (or until an overlay at "walk" closes, if
- * later), the last PATH_FADE_SECONDS of it a fade.
+ * later), the last WALK_FADE_SECONDS of it a fade.
  * A change of steps under EXPLAIN_MIN_CHANGE has little to show
  * (explain-flat).
  */
@@ -1006,23 +1009,15 @@ const EVAL_FLASH_SECONDS = 0.6;
 const CALLBACK_FADE_SECONDS = 0.3;
 const CALLBACK_GONE_SECONDS = 1.0;
 /**
- * The opening walks (edl.mjs introPaths): each draws as a path event's
- * walk does and shows its steps INTRO_PATH_HOLD_SECONDS. The hold was 0.6
- * s, too short to take the number in (Wall Game Director, 2026-10-29). The
+ * The opening walks (edl.mjs introPaths) play as introWalkPlan times them
+ * (shared/domain/walk-animation.ts, the game board's opening too). The
  * last one fades over the end of its hold, not after it: with the fade
  * after it, 0.65 s of silence came before the first move (vets of
  * 2026-10-29). The settle click sounds SETTLE_AT seconds into that hold,
  * which leaves about 0.35 s of silence on each side of it (the Director's
  * target: no gap over 0.4 s from the VS hit to the first move).
  */
-const INTRO_PATH_HOLD_SECONDS = 1;
 const SETTLE_AT = 0.45;
-/**
- * The next opening walk starts this long after the one before has drawn its
- * last step, while that one holds its number (Wall Game Director,
- * 2026-10-29: a 0.9 s silent hold between the walks).
- */
-const INTRO_WALK_GAP_SECONDS = 0.5;
 /**
  * An overlay (edl.mjs "overlay") fades out over its last
  * TEXT_TIMING.overlayFade (overlays.mjs); the capture loading bar shows
@@ -2151,12 +2146,16 @@ const countStartWallPaint = () =>
   );
 /*
   Since a63de775 (on wallgame.io 2026-10-31) the site draws each player's
-  shortest walk as dots on the start position (board.tsx renderWalks). The
-  video draws its own (edl.mjs introPaths), so the capture hides the site's
-  in every style, as the captures before it had none. Their svg is the only
-  one on the board whose circles have the dark rim #0b0f1c.
+  shortest walk on the start position (board.tsx renderWalks). The video
+  draws its own (edl.mjs introPaths), so the capture hides the site's in
+  every style, as the captures before it had none. The site's walk layer
+  is the svg marked data-walk-layer (task eb909720: the site plays the
+  video's opening walks, from shared/domain/walk-animation.ts, and keeps
+  the empty layer on the start position once they have faded); before
+  that, the only svg on the board whose circles had the dark rim #0b0f1c.
 */
-const SITE_WALK_DOTS = 'svg:has(> g > circle[stroke="#0b0f1c"])';
+const SITE_WALK_DOTS =
+  'svg[data-walk-layer], svg:has(> g > circle[stroke="#0b0f1c"])';
 if (!cached) {
   await game.addStyleTag({
     content: `${SITE_WALK_DOTS} { display: none !important; }`,
@@ -3528,6 +3527,40 @@ const RACE_DISTANCES =
  * huntPath walks as grid.distance does, so the steps drawn are the counter's.
  */
 /**
+ * A frame's walks as the page paints them (stage.html paintPath): each
+ * line drawn so far, as its dots and its number's disc, placed by
+ * shared/domain/walk-animation.ts. playState adds it to every path, so
+ * every state the page gets (a shot, a worker's screenshot, a probe)
+ * carries it. `crowded`: the whole walks whose number found no clear side
+ * (the lint's walk-number-crowded), as { steps, hex }.
+ */
+const walkPaint = (path) => {
+  const crowded = [];
+  const lines = path.lines
+    .filter((l) => l.alpha > 0 && l.drawn > 0)
+    .map((l) => {
+      const disc = walkDisc(l, path.cell, path.pawns);
+      if (disc && !disc.clear) crowded.push({ steps: l.steps, hex: l.hex });
+      return {
+        hex: l.hex,
+        alpha: l.alpha,
+        steps: l.steps,
+        dots: walkDots(l, path.cell),
+        disc: disc && { at: disc.at, radius: disc.radius },
+      };
+    });
+  return {
+    paint: {
+      lines,
+      dotRadius: WALK_DOT_RADIUS,
+      rimRadius: WALK_DOT_RIM_RADIUS,
+      rimColor: WALK_RIM_COLOR,
+      discRing: WALK_DISC_RING,
+    },
+    crowded,
+  };
+};
+/**
  * A walk (huntPath) as the page draws it: its cells' centres on the board
  * image, and `holes`, the centres of the cells on it where another pawn
  * stands: the walk draws no dot there (Wall Game Director, 2026-10-29: a
@@ -3591,26 +3624,10 @@ const INTRO_WALKS =
         });
       })()
     : [];
-/**
- * When each opening walk plays, in seconds from the first one's start: it
- * draws in drawSeconds; the next starts INTRO_WALK_GAP_SECONDS after it,
- * and it fades as the next one has drawn, so its number shows the whole
- * time; the last shows INTRO_PATH_HOLD_SECONDS, its fade included.
- */
+/** When each opening walk plays (introWalkPlan), with the walk. */
 const INTRO_PLAN = (() => {
-  let at = 0;
-  const plan = INTRO_WALKS.map((w) => {
-    const p = { ...w, start: at, draw: drawSeconds(w.points), fadeAt: 0 };
-    at = p.start + p.draw + INTRO_WALK_GAP_SECONDS;
-    return p;
-  });
-  plan.forEach((p, k) => {
-    const next = plan[k + 1];
-    p.fadeAt = next
-      ? next.start + next.draw
-      : p.start + p.draw + INTRO_PATH_HOLD_SECONDS - PATH_FADE_SECONDS;
-  });
-  return plan;
+  const plan = introWalkPlan(INTRO_WALKS);
+  return INTRO_WALKS.map((w, k) => ({ ...w, ...plan[k] }));
 })();
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
@@ -3657,13 +3674,13 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
 /** When a path event's last walk starts to draw: after the compared one. */
 const lastWalkFrom = (ev) =>
   ev.compare
-    ? drawSeconds(PATHS.get(ev).walks[0].points) + PATH_BEFORE_SECONDS
+    ? walkDrawSeconds(PATHS.get(ev).walks[0].points) + PATH_BEFORE_SECONDS
     : 0;
 const pathSeconds = (ev) =>
   lastWalkFrom(ev) +
-  drawSeconds(PATHS.get(ev).walks.at(-1).points) +
+  walkDrawSeconds(PATHS.get(ev).walks.at(-1).points) +
   ev.holdSeconds +
-  PATH_FADE_SECONDS;
+  WALK_FADE_SECONDS;
 /**
  * Each explain event's facts (edl.mjs "explain"), from the game record as
  * the race counter has them: the hunter (the EDL's, or the side whose steps
@@ -4745,10 +4762,10 @@ const renderStyle = async (styleName) => {
     }
     firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
-    const crowded = await stage.evaluate((s) => {
-      window.__stage(s);
-      return window.__crowdedWalks;
-    }, state);
+    await stage.evaluate((s) => window.__stage(s), state);
+    // The page paints a walk only in play (stage.html), so only a play
+    // frame reports one (Video Reviewer 1, review 88).
+    const crowded = state.segment === "play" ? (state.path?.crowded ?? []) : [];
     for (const w of crowded) {
       const key = `${meta.ply ?? ""}|${w.hex}|${w.steps}`;
       if (!crowdedWalks.has(key)) {
@@ -5674,10 +5691,9 @@ const renderStyle = async (styleName) => {
   const wallHits = new Set();
   const PATH_SAMPLES_A_CELL = 8;
   const drawnCells = (l) => {
-    const seg = l.points
-      .slice(1)
-      .map((q, i) => Math.hypot(q.x - l.points[i].x, q.y - l.points[i].y));
-    let left = seg.reduce((a, b) => a + b, 0) * Math.min(1, l.drawn);
+    // The drawn part as the page draws it (walkDrawnPolyline): its i-th
+    // segment lies on the walk's i-th step, sampled as that whole step is.
+    const drawn = walkDrawnPolyline(l.points, l.drawn);
     const cells = [];
     const add = ({ x, y }) => {
       const cell = [
@@ -5689,19 +5705,21 @@ const renderStyle = async (styleName) => {
         cells.push(cell);
       }
     };
-    add(l.points[0]);
-    for (let i = 0; i < seg.length && left > 0; i += 1) {
-      const [a, b] = [l.points[i], l.points[i + 1]];
-      const f = Math.min(1, left / seg[i]);
+    add(drawn[0]);
+    for (let i = 0; i + 1 < drawn.length; i += 1) {
+      const [a, b] = [drawn[i], drawn[i + 1]];
+      const step = Math.hypot(
+        l.points[i + 1].x - l.points[i].x,
+        l.points[i + 1].y - l.points[i].y,
+      );
       const n = Math.max(
         1,
-        Math.ceil((seg[i] / GRID.pitchX) * PATH_SAMPLES_A_CELL),
+        Math.ceil((step / GRID.pitchX) * PATH_SAMPLES_A_CELL),
       );
       for (let j = 1; j <= n; j += 1) {
-        const u = (f * j) / n;
+        const u = j / n;
         add({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
       }
-      left -= seg[i];
     }
     return cells;
   };
@@ -6013,6 +6031,24 @@ const renderStyle = async (styleName) => {
     });
     return { a: seat(redSeat), b: seat(blueSeat), t };
   };
+  /**
+   * A frame's walks on board `boardIndex`, as every state carries them: the
+   * lines cut where this board's walls stop them (onBoard), the pawns as
+   * the page drew them, and what the page paints (walkPaint).
+   */
+  const pathOnBoard = (path, boardIndex, erase) => {
+    const onThisBoard = {
+      ...path,
+      lines: path.lines.map((l) => onBoard(l, gridShown(boardIndex, erase))),
+      pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y, w, h }) => ({
+        x,
+        y,
+        w,
+        h,
+      })),
+    };
+    return { ...onThisBoard, ...walkPaint(onThisBoard) };
+  };
   const playState = (boardIndex, extra = {}) => ({
     segment: "play",
     look: style.look,
@@ -6052,18 +6088,7 @@ const renderStyle = async (styleName) => {
       Director, 2026-10-31: -8's ghost ran through >b5).
     */
     ...(extra.path && {
-      path: {
-        ...extra.path,
-        lines: extra.path.lines.map((l) =>
-          onBoard(l, gridShown(boardIndex, extra.erase)),
-        ),
-        pawns: (pawnSpots.get(boardIndex) ?? []).map(({ x, y, w, h }) => ({
-          x,
-          y,
-          w,
-          h,
-        })),
-      },
+      path: pathOnBoard(extra.path, boardIndex, extra.erase),
     }),
   });
 
@@ -6108,7 +6133,7 @@ const renderStyle = async (styleName) => {
           gain: SITE_VOLUMES.pawn * MOVE_GAIN,
         },
         "tick",
-        { at: from + (k / steps) * drawSeconds(points) },
+        { at: from + (k / steps) * walkDrawSeconds(points) },
       );
     }
   };
@@ -6794,7 +6819,7 @@ const renderStyle = async (styleName) => {
           lines: walks.map(({ cells, points, holes, cut }, k) => {
             const last = k === walks.length - 1;
             const from = last ? lastFrom : 0;
-            const fadeAt = last ? seconds - PATH_FADE_SECONDS : lastFrom;
+            const fadeAt = last ? seconds - WALK_FADE_SECONDS : lastFrom;
             return {
               hex: side(player).hex,
               cells,
@@ -6802,8 +6827,8 @@ const renderStyle = async (styleName) => {
               holes,
               cut,
               steps: points.length - 1,
-              drawn: span01((t - from) / drawSeconds(points)),
-              alpha: 1 - span01((t - fadeAt) / PATH_FADE_SECONDS),
+              drawn: span01((t - from) / walkDrawSeconds(points)),
+              alpha: 1 - span01((t - fadeAt) / WALK_FADE_SECONDS),
             };
           }),
         },
@@ -6983,7 +7008,7 @@ const renderStyle = async (styleName) => {
     const glow = (t) => ({ t, ...lit });
     const oldWalk = was > 1;
     // 1. The old walk, on the position before the move.
-    const drawBefore = drawSeconds(f.before.points);
+    const drawBefore = walkDrawSeconds(f.before.points);
     if (oldWalk) cueWalkTicks(f.before.points, start, { fromStart: true });
     const beforeFrames = oldWalk
       ? Math.round((drawBefore + EXPLAIN_BEFORE_REST_SECONDS) * FPS)
@@ -7091,7 +7116,7 @@ const renderStyle = async (styleName) => {
       );
     }
     // 3. The new walk draws over the ghost of the old one, and holds.
-    const drawAfter = drawSeconds(f.after.points);
+    const drawAfter = walkDrawSeconds(f.after.points);
     cueWalkTicks(f.after.points, elapsed, { fromStart: true });
     // The explain's sound is the reaction to the new number: it plays as
     // the new walk is fully drawn and the counter shows its steps.
@@ -7126,7 +7151,7 @@ const renderStyle = async (styleName) => {
       }
       const fade =
         1 -
-        span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
+        span01((t - (afterSeconds - WALK_FADE_SECONDS)) / WALK_FADE_SECONDS);
       await emit(
         playState(ply, {
           // The counter ticks as the new walk is drawn and shows its own
@@ -7276,7 +7301,7 @@ const renderStyle = async (styleName) => {
     const [walkNo, walkYes] = f.walks;
     const gone = elapsed;
     const drawn = was > 1;
-    const drawNo = drawSeconds(walkNo.points);
+    const drawNo = walkDrawSeconds(walkNo.points);
     if (drawn) cueWalkTicks(walkNo.points, elapsed, { fromStart: true });
     const goneFrames = frames(
       drawn ? drawNo + EXPLAIN_BEFORE_REST_SECONDS : CALLBACK_GONE_SECONDS,
@@ -7317,7 +7342,7 @@ const renderStyle = async (styleName) => {
       );
     }
     // 5. The real walk draws over the ghost, and holds.
-    const drawYes = drawSeconds(walkYes.points);
+    const drawYes = walkDrawSeconds(walkYes.points);
     cueWalkTicks(walkYes.points, elapsed, { fromStart: true });
     if (ev.sound) cueEvent(meme(ev.sound), ev, elapsed + drawYes);
     const afterSeconds = drawYes + EXPLAIN_AFTER_HOLD_SECONDS;
@@ -7333,7 +7358,7 @@ const renderStyle = async (styleName) => {
       }
       const fade =
         1 -
-        span01((t - (afterSeconds - PATH_FADE_SECONDS)) / PATH_FADE_SECONDS);
+        span01((t - (afterSeconds - WALK_FADE_SECONDS)) / WALK_FADE_SECONDS);
       await emit(
         playState(ply, {
           race: backHud(elapsed - back),
@@ -7774,8 +7799,7 @@ const renderStyle = async (styleName) => {
     follows the VS hit (Wall Game Director, 2026-10-29); a move still waits
     for the banners to be gone, and the walks outlast their exit.
   */
-  const introSeconds =
-    INTRO_PLAN.length > 0 ? INTRO_PLAN.at(-1).fadeAt + PATH_FADE_SECONDS : 0;
+  const introSeconds = introWalkSeconds(INTRO_PLAN);
   const walksAt = overlay
     ? overlayStart +
       Math.max(
@@ -7845,7 +7869,7 @@ const renderStyle = async (styleName) => {
             holes: w.holes,
             steps: w.points.length - 1,
             drawn: span01((t - w.start) / w.draw),
-            alpha: 1 - span01((t - w.fadeAt) / PATH_FADE_SECONDS),
+            alpha: 1 - span01((t - w.fadeAt) / WALK_FADE_SECONDS),
           })),
         },
       }),
