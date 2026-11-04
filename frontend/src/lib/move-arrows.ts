@@ -16,8 +16,9 @@ import { moveArrowCorner } from "../../../shared/domain/move-arrow";
  * the corner that moveArrowCorner picks, the rule of the last-move arrow
  * too, so a move looks the same before and after it is played (Nil,
  * 2026-11-04: "the premove arrow doesnt do the same L turn around a wall
- * as the actual move"). The walls are the board's and the walls in
- * `actions`.
+ * as the actual move"). Only a diagonal 2-step gets a corner, and it uses
+ * the whole turn, so no wall of the same turn can stand in its way: the
+ * board's walls are the walls it meets.
  */
 export function pawnMoveArrows(
   state: GameState,
@@ -25,23 +26,13 @@ export function pawnMoveArrows(
   playerId: PlayerId,
   type: Arrow["type"],
 ): Arrow[] {
-  const grid = state.grid.clone();
-  for (const action of actions) {
-    if (action.type === "wall" && action.wallOrientation) {
-      grid.addWall({
-        cell: action.target,
-        orientation: action.wallOrientation,
-        playerId,
-      });
-    }
-  }
   const arrow = (pawnType: GamePawnType, from: Cell, to: Cell): Arrow => {
     // The teammate does not move in a 2-step move, so its cell now is its
     // cell after the move: the current pawns serve as `after`.
     const via = moveArrowCorner(
       { from, to, playerId, pawnType },
       state.pawns,
-      grid,
+      state.grid,
       state.config.variant,
     );
     return { from, to, type, ...(via ? { via } : {}) };

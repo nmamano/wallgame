@@ -67,20 +67,6 @@ describe("pawnMoveArrows", () => {
     expect(arrow.via).toEqual(playedCorner(config, [1, 1]));
   });
 
-  it("counts a wall in the same queue", () => {
-    const state = new GameState(standard(), 0);
-    const [arrow] = pawnMoveArrows(
-      state,
-      [
-        { type: "wall", target: [0, 0], wallOrientation: "vertical" },
-        { type: "cat", target: [1, 0] },
-      ],
-      1,
-      "premoved",
-    );
-    expect(arrow).toEqual({ from: [0, 0], to: [1, 0], type: "premoved" });
-  });
-
   it("gives a straight move no corner", () => {
     const [arrow] = pawnMoveArrows(
       new GameState(standard(), 0),
