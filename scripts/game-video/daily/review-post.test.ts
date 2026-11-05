@@ -594,8 +594,13 @@ describe("post(itemId)", () => {
   describe("a YouTube retry after an uncertain upload", () => {
     // v-2026-11-01-6, 2026-11-05: the PUT ended "fetch failed", the upload
     // was on YouTube in "processing", and a retry uploaded it again.
-    const uncertainYoutube = async () => {
+    const uncertainYoutube = async (youtubeTitle = COPY.youtubeTitle) => {
       const w = world(["youtube"]);
+      // Nil approved this copy block (its hash gates the retry).
+      const block = { ...COPY, youtubeTitle };
+      const item = w.get();
+      item.copy = { block, sha256: copySha256(block) };
+      item.approval!.copySha256 = copySha256(block);
       w.replies.youtube = (commit) => {
         commit();
         return {
@@ -653,6 +658,22 @@ describe("post(itemId)", () => {
         ["youtube", false],
         ["youtube", true],
       ]);
+    });
+
+    test("a title YouTube stored without < and > still matches", async () => {
+      const w = await uncertainYoutube("<3 the <wall>");
+      w.setYoutube([
+        {
+          id: "ARss61GrZXk",
+          title: "3 the wall #Shorts",
+          uploadStatus: "uploaded",
+          processingStatus: "processing",
+        },
+      ]);
+      expect(await refusal(w.retry("v-2026-10-28-1", confirmed))).toContain(
+        'ARss61GrZXk has the title "<3 the <wall> #Shorts"',
+      );
+      expect(w.confirmedSeen).toEqual([["youtube", false]]);
     });
 
     test("a read that fails refuses: no blind retry", async () => {

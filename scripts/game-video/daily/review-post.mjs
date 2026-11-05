@@ -145,8 +145,13 @@ export const createItemPoster = ({
    * Why a YouTube retry of `item` may not upload, or null: an upload of
    * the channel has the title the post gives (postTexts), in any upload or
    * processing state, or the uploads cannot be read. No blind retry.
+   * Titles are compared without "<" and ">", which YouTube drops from a
+   * title it stores. Only the channel's last 5 uploads are read: an upload
+   * with 5 or more uploads after it is not seen (at one video a day, the
+   * first attempt is always among them) (Video Reviewer 1, 2026-11-05).
    */
   const youtubeTwin = async (item) => {
+    const key = (t) => t.replace(/[<>]/g, "").trim();
     const title = postTexts(item.copy.block).youtubeTitle.trim();
     let videos;
     try {
@@ -154,7 +159,9 @@ export const createItemPoster = ({
     } catch (err) {
       return `the channel's last uploads cannot be read (${String(err?.message ?? err)}), so the app cannot check for this upload; retry when the read works (GET /api/daily/youtube-recent)`;
     }
-    const twin = videos.find((v) => v.title?.trim() === title);
+    const twin = videos.find(
+      (v) => v.title !== null && key(v.title) === key(title),
+    );
     if (!twin) return null;
     const state = [twin.uploadStatus, twin.processingStatus]
       .filter(Boolean)
