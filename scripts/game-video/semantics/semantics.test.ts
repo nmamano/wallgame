@@ -355,6 +355,22 @@ describe("huh (C43)", () => {
     expect(fixtureLabels("X-TQBFZA").plies[11].tags).not.toContain("huh");
   });
 
+  test("a forced move after a trap is no huh (Director, 2026-11-05)", () => {
+    // P2 moves at ply 1; its mouse runs into the cat's reach (4 -> 1).
+    const run = {
+      w1: [4, 1] as [number, number],
+      w2: [8, 8] as [number, number],
+      mouseRan: true,
+    };
+    const free = labels([{ w1: [5, 4], w2: [8, 8] }, run]);
+    expect(free.plies[1].huh?.kind).toBe("mouse-into-reach");
+    const trapped = labels([
+      { w1: [5, 4], w2: [8, 8], defence: "no-answer" },
+      run,
+    ]);
+    expect(trapped.plies[1].tags).not.toContain("huh");
+  });
+
   test("a mouse that steps into the cat's reach", () => {
     // P1 moves; hunt 2 is P2's cat on P1's mouse, which runs 4 -> 2.
     const l = labels([{ w1: [8, 8], w2: [4, 2], mouseRan: true }]);

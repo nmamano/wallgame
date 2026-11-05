@@ -89,6 +89,9 @@ export type Tag =
  * `walk` is the closest such walk (for mouse-into-reach, after the move).
  * Walls that change no counter are no huh (C45, X-TQBFZA ply 11: Nil "didn't
  * make sense"): the board shows nothing odd.
+ * A forced move is no huh (Director, 2026-11-05): after the other side's
+ * move before it, no reply kept the mover's animals out of reach (defence
+ * "no-answer", a trap), so every move loses and none is odd (Kw8fr9S6 27).
  * `shown`: the board itself shows the odd thing (C47, 2026-11-01: "a cat
  * beside a mouse that it does not take"; a text that names it is not
  * enough): the walk is SHOWN_WALK (the two pawns on next-door cells with no
@@ -742,8 +745,10 @@ export const labelGame = (facts: GameFacts): GameLabels => {
       }
     }
 
-    // C43: a move a viewer cannot explain.
-    const huh = f.end ? null : huhOf(f);
+    // C43: a move a viewer cannot explain. Not the end, and not a move
+    // after a trap on the mover (every move loses).
+    const forced = plies[ply - 1]?.defence === "no-answer";
+    const huh = f.end || forced ? null : huhOf(f);
     if (huh) {
       tags[ply].push("huh");
       huhs.set(ply, huh);
