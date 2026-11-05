@@ -302,6 +302,47 @@ export const MEME_SOURCE_NOTES = {
     'low claim risk, unheard: a "Morricone-inspired" tune, so a claim if it quotes a film theme; a 3.5 s cut of a 42 s whistle, not used until Nil hears it',
 };
 
+/**
+ * Our own cuts of a longer upload (meme-sounds.md, "Made from"), with how
+ * the upload sounds just past each cut's end (ffmpeg volumedetect, measured
+ * 2026-11-05 on the uploads; uhoh-1 and fightbell-1 on the cuts, as their
+ * uploads are not on the box). A cut that stops inside a word cuts it off:
+ *
+ *   silence   the upload is quiet just past the cut's end
+ *   file-end  the cut ends where the upload ends
+ *   fade      the upload goes on loud; the cut fades out over it, and only
+ *             a sound in KNOWN_FADE_OUTS may (Wall Game Director)
+ */
+export const OUR_CUTS = {
+  "nono-1": {
+    end: "silence",
+    measured: "the dip between words: -36 dB for 50 ms past 7.13 s",
+  },
+  "scream-1": { end: "silence", measured: "-48 dB past 2.22 s" },
+  "scream-2": {
+    end: "fade",
+    measured: "one long scream to 6.3 s: -10 dB past 1.70 s, a 0.3 s fade",
+  },
+  "gasp-2": { end: "file-end", measured: "the upload ends at 1.02 s" },
+  "crowdlaugh-2": { end: "silence", measured: "-43 dB past 10.75 s" },
+  "uhoh-1": { end: "silence", measured: "the cut is at -46 dB by 2.4 s" },
+  "fightbell-1": {
+    end: "silence",
+    measured: "the ring is at -39 dB as the fade starts, 21 dB under the hit",
+  },
+  "pointing-2": {
+    end: "fade",
+    measured: "sung music: -14 dB past 2.8 s, a 0.25 s fade",
+  },
+};
+
+/**
+ * The cuts that may end in a fade over sound: scream-2 (Wall Game
+ * Director, 2026-11-05: "a scream that fades is no cut word"); pointing-2
+ * (not used until Nil hears it, meme-sounds.md).
+ */
+export const KNOWN_FADE_OUTS = ["scream-2", "pointing-2"];
+
 /** "boom-2" -> "boom". @type {(key: string) => string} */
 export const memeFamily = (key) => key.replace(/-\d+$/, "");
 

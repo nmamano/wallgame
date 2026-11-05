@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  KNOWN_FADE_OUTS,
   MEME_FAMILIES,
   MEME_SOUNDS,
+  OUR_CUTS,
   VOICE_FAMILIES,
   VOICE_KEYS,
   isVoice,
@@ -21,5 +23,21 @@ describe("meme sounds", () => {
     expect(isVoice("scared-2")).toBe(false); // a scream
     expect(isVoice("ooh-1")).toBe(false); // a crowd off screen
     expect(isVoice("ambulance-1")).toBe(true);
+  });
+
+  test("each of our cuts ends in silence or at its upload's end, or is a known fade-out", () => {
+    const cuts = Object.entries(OUR_CUTS);
+    expect(cuts.filter(([key]) => !(key in MEME_SOUNDS))).toEqual([]);
+    expect(
+      cuts
+        .filter(([, cut]) => cut.end === "fade")
+        .map(([key]) => key)
+        .sort(),
+    ).toEqual([...KNOWN_FADE_OUTS].sort());
+    expect(
+      cuts.filter(
+        ([, cut]) => !["silence", "file-end", "fade"].includes(cut.end),
+      ),
+    ).toEqual([]);
   });
 });
