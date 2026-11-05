@@ -27,7 +27,7 @@
  */
 import { StepRefused, blockedMusic } from "./store.mjs";
 import { copySha256 } from "./copy.mjs";
-import { sha256 } from "./transport.mjs";
+import { errorText, sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
 import { notInSlot } from "./slots.mjs";
 
@@ -175,7 +175,7 @@ export const createItemPoster = ({
         uncertain: committing,
         mode: "live",
         at: iso(),
-        error: String(err?.message ?? err),
+        error: errorText(err),
       }));
       // postPlatform posts in the platform's mode at the call. A platform
       // that left live since (a revoked token) ran as a dry run: nothing

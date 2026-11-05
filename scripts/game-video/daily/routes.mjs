@@ -158,6 +158,7 @@ import {
   sha256,
   NotPosted,
   PostFailed,
+  errorText,
 } from "./transport.mjs";
 import {
   postToInstagram,
@@ -188,6 +189,7 @@ import {
   youtubeDryRunReply,
   DRY_RUN_CREDS,
   YOUTUBE_SECRETS,
+  youtubeRecentUploads,
 } from "./post-youtube.mjs";
 import { postToFacebook, facebookDryRunReply } from "./post-facebook.mjs";
 import {
@@ -227,6 +229,7 @@ import {
   exchangeCode,
   xRequestToken,
   missingClientSecrets,
+  YOUTUBE_READ_SCOPE,
 } from "./connect.mjs";
 import {
   connectPage,
@@ -1551,7 +1554,7 @@ export const createDaily = ({
         uncertain: committing && !refused,
         mode: modes[platform],
         at,
-        error: String(err?.message ?? err),
+        error: errorText(err),
       };
     }
     // One file per attempt, so a retry never overwrites the evidence that
@@ -2959,6 +2962,35 @@ export const createDaily = ({
      * no post and no follower read refreshes the token at the same time,
      * and a rotated token is kept. The reply has no token.
      */
+    /**
+     * READ-ONLY: the channel's last 5 uploads in every state (post-youtube.mjs
+     * youtubeRecentUploads), for a person who checks an UNCERTAIN upload
+     * before a retry. It refreshes the YouTube token as a post does, so it
+     * runs as THE post (asThePost). The reply has no token.
+     */
+    "GET /api/daily/youtube-recent": async (req, res) => {
+      const why = platformReasons("youtube", env, connectedNow());
+      if (why.length) throw new StepRefused(`youtube: ${why.join("; ")}`);
+      const videos = await asThePost(() => {
+        const record = tokens.read("youtube");
+        if (!record?.scopes?.includes(YOUTUBE_READ_SCOPE)) {
+          throw new StepRefused(
+            "youtube: the Connect has no youtube.readonly scope: connect again (/daily/connect)",
+          );
+        }
+        return youtubeRecentUploads({
+          transport: makeLiveTransport(),
+          creds: {
+            YOUTUBE_CLIENT_ID: env.YOUTUBE_CLIENT_ID,
+            YOUTUBE_CLIENT_SECRET: env.YOUTUBE_CLIENT_SECRET,
+            refreshToken: record.refreshToken,
+          },
+          onRefreshToken: (token) => keepRefreshToken("youtube", token),
+        });
+      });
+      json(res, 200, { at: new Date().toISOString(), videos });
+    },
+
     "GET /api/daily/tiktok-status": async (req, res, url) => {
       const publishId = url.searchParams.get("publishId") ?? "";
       if (!/^[\w.~-]{1,128}$/.test(publishId)) {

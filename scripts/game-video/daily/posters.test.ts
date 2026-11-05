@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dryRunTransport, NotPosted, sha256 } from "./transport.mjs";
+import { dryRunTransport, errorText, NotPosted, sha256 } from "./transport.mjs";
 import {
   blueskyLength,
   findUrls,
@@ -1514,5 +1514,218 @@ describe("Nil's TikTok inbox on the app (tiktok-drafts.mjs)", () => {
       daily.stop();
       server.close();
     }
+  });
+});
+
+describe("GET /api/daily/youtube-recent", () => {
+  const ENV = { YOUTUBE_CLIENT_SECRET: "SECRET-CLIENT" };
+  const RECORD = {
+    connectedAt: "2026-10-29T05:38:00.000Z",
+    connectedBy: "Nil",
+    scopes: [
+      "https://www.googleapis.com/auth/youtube.readonly",
+      "https://www.googleapis.com/auth/youtube.upload",
+    ],
+    account: null,
+    refreshToken: "SECRET-REFRESH",
+  };
+  const API = "https://www.googleapis.com/youtube/v3";
+  /** Google's replies: a token, the channel, the playlist, the videos. */
+  const google =
+    (videos: Reply): Answer =>
+    (req) =>
+      req.url === "https://oauth2.googleapis.com/token"
+        ? {
+            status: 200,
+            json: {
+              access_token: "SECRET-ACCESS",
+              refresh_token: "SECRET-ROTATED",
+            },
+          }
+        : req.url.startsWith(`${API}/channels`)
+          ? {
+              status: 200,
+              json: {
+                items: [
+                  {
+                    contentDetails: { relatedPlaylists: { uploads: "UU1" } },
+                  },
+                ],
+              },
+            }
+          : req.url.startsWith(`${API}/playlistItems`)
+            ? {
+                status: 200,
+                json: {
+                  items: [
+                    { contentDetails: { videoId: "NEW1" } },
+                    { contentDetails: { videoId: "OLD2" } },
+                  ],
+                },
+              }
+            : videos;
+
+  const ask = async (
+    answer: Answer,
+    { record = RECORD as object | null } = {},
+  ) => {
+    const transport = fakeLive(answer);
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env: ENV as Record<string, string>,
+      live: () => transport,
+    });
+    const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
+    if (record) {
+      tokens.write("youtube", record as Parameters<typeof tokens.write>[1]);
+    }
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/daily/youtube-recent`,
+      );
+      return {
+        status: res.status,
+        text: await res.text(),
+        sent: transport.sent,
+        refreshToken: tokens.read("youtube")?.refreshToken,
+      };
+    } finally {
+      daily.stop();
+      server.close();
+    }
+  };
+
+  test("the last uploads in every state, only the allowed fields, newest first; the rotated token kept; no secret in the reply", async () => {
+    const r = await ask(
+      google({
+        status: 200,
+        json: {
+          items: [
+            {
+              id: "OLD2",
+              snippet: {
+                title: "the 15:00 post",
+                publishedAt: "2026-11-04T23:00:30Z",
+                description: "SECRET-NOT-PASSED",
+              },
+              status: { privacyStatus: "public", uploadStatus: "processed" },
+              processingDetails: { processingStatus: "succeeded" },
+            },
+            {
+              id: "NEW1",
+              snippet: {
+                title: "bro was ahead, then he stepped in",
+                publishedAt: "2026-11-05T05:00:41Z",
+              },
+              status: {
+                privacyStatus: "public",
+                uploadStatus: "failed",
+                failureReason: "uploadAborted",
+              },
+              processingDetails: { processingStatus: "failed" },
+            },
+          ],
+        },
+      }),
+    );
+    expect(r.status).toBe(200);
+    const reply = JSON.parse(r.text) as { at: string; videos: unknown[] };
+    expect(reply.videos).toEqual([
+      {
+        id: "NEW1",
+        title: "bro was ahead, then he stepped in",
+        publishedAt: "2026-11-05T05:00:41Z",
+        privacyStatus: "public",
+        uploadStatus: "failed",
+        processingStatus: "failed",
+        failureReason: "uploadAborted",
+        rejectionReason: null,
+      },
+      {
+        id: "OLD2",
+        title: "the 15:00 post",
+        publishedAt: "2026-11-04T23:00:30Z",
+        privacyStatus: "public",
+        uploadStatus: "processed",
+        processingStatus: "succeeded",
+        failureReason: null,
+        rejectionReason: null,
+      },
+    ]);
+    expect(r.sent.map((q) => `${q.method} ${q.url}`)).toEqual([
+      "POST https://oauth2.googleapis.com/token",
+      `GET ${API}/channels?part=contentDetails&mine=true`,
+      `GET ${API}/playlistItems?part=contentDetails&maxResults=5&playlistId=UU1`,
+      `GET ${API}/videos?part=snippet,status,processingDetails&id=NEW1,OLD2`,
+    ]);
+    expect(r.sent[1].headers?.authorization).toBe("Bearer SECRET-ACCESS");
+    expect(r.refreshToken).toBe("SECRET-ROTATED");
+    for (const secret of [
+      "SECRET-CLIENT",
+      "SECRET-REFRESH",
+      "SECRET-ROTATED",
+      "SECRET-ACCESS",
+      "SECRET-NOT-PASSED",
+    ]) {
+      expect(r.text).not.toContain(secret);
+    }
+  });
+
+  test("a refusal names the step, the HTTP status and Google's reason, never the reply", async () => {
+    const r = await ask(
+      google({
+        status: 403,
+        json: {
+          error: {
+            code: 403,
+            message: "token SECRET-ACCESS has no quota",
+            errors: [{ reason: "quotaExceeded" }],
+          },
+        },
+      }),
+    );
+    expect(r.status).toBe(500);
+    expect(JSON.parse(r.text)).toEqual({
+      error: "youtube videos: HTTP 403 quotaExceeded",
+    });
+  });
+
+  test("no request without the secret, the Connect or the read scope", async () => {
+    const answer = google({ status: 200, json: { items: [] } });
+    const none = await ask(answer, { record: null });
+    expect(none.status).toBe(409);
+    expect(none.text).toContain("not connected");
+    expect(none.sent).toHaveLength(0);
+    const noScope = await ask(answer, {
+      record: { ...RECORD, scopes: [RECORD.scopes[1]] },
+    });
+    expect(noScope.status).toBe(409);
+    expect(noScope.text).toContain("no youtube.readonly scope");
+    expect(noScope.sent).toHaveLength(0);
+  });
+});
+
+describe("errorText keeps a network fault's cause", () => {
+  test("fetch failed names its cause's code and message; a plain error is its message", () => {
+    const err = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("read ECONNRESET"), {
+        code: "ECONNRESET",
+      }),
+    });
+    expect(errorText(err)).toBe(
+      "fetch failed (cause: ECONNRESET read ECONNRESET)",
+    );
+    expect(errorText(new Error("youtube upload: HTTP 500"))).toBe(
+      "youtube upload: HTTP 500",
+    );
+    expect(errorText("text")).toBe("text");
+    expect(
+      errorText(new Error("x", { cause: new Error("y".repeat(300)) })),
+    ).toBe(`x (cause: ${"y".repeat(200)})`);
   });
 });

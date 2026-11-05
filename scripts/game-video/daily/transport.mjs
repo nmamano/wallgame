@@ -130,6 +130,22 @@ export class NotPosted extends Error {
 export const ok = (reply) => reply.status >= 200 && reply.status < 300;
 
 /**
+ * The stored text of a failed post: the message and, when the error has
+ * one, its cause's code and message. Node's fetch says only "fetch failed"
+ * for any network fault; the cause names it (ECONNRESET, a time-out, a
+ * closed socket). Cut to 200 characters (Wall Game PM, 2026-11-05).
+ */
+export const errorText = (err) => {
+  const text = String(err?.message ?? err);
+  const cause = err?.cause;
+  if (!cause) return text;
+  const what = [cause.code, cause.message ?? String(cause)]
+    .filter((x) => typeof x === "string" && x)
+    .join(" ");
+  return what ? `${text} (cause: ${what.slice(0, 200)})` : text;
+};
+
+/**
  * After a commit request failed, read the post's status for a while before
  * deciding. A platform that accepted the request may show the old state for
  * a moment, so one read cannot prove "not posted". `classify(state)` gives

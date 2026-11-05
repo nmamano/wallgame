@@ -184,3 +184,97 @@ export const postToYoutube = async ({
     uploadStatus: put.json.status?.uploadStatus ?? null,
   };
 };
+
+const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
+
+/**
+ * Google's short reason of a refused read (e.g. "quotaExceeded",
+ * "insufficientPermissions"), or "": never its message, which can quote
+ * the request.
+ */
+const googleReason = (reply) => {
+  const e = reply.json?.error;
+  const reason = e?.errors?.[0]?.reason ?? e?.status;
+  return typeof reason === "string" && /^[\w.-]{1,64}$/.test(reason)
+    ? ` ${reason}`
+    : "";
+};
+
+/**
+ * The channel's last `count` uploads in every state, for a person who checks
+ * an UNCERTAIN upload (Wall Game PM, 2026-11-05: a "fetch failed" on the PUT
+ * of v-2026-11-01-6). With the owner's token (scope youtube.readonly): the
+ * uploads playlist of channels.list mine=true, its newest items (the owner
+ * sees private and processing videos there), then videos.list of those ids
+ * with snippet, status and processingDetails. 1 quota unit each, 3 in all.
+ * Returns [{id, title, publishedAt, privacyStatus, uploadStatus,
+ * processingStatus, failureReason, rejectionReason}], newest first: only
+ * those fields, null where YouTube gives none. A refusal throws an Error
+ * with the step, the HTTP status and Google's reason, never the reply.
+ */
+export const youtubeRecentUploads = async ({
+  transport,
+  creds,
+  onRefreshToken,
+  count = 5,
+}) => {
+  let accessToken;
+  try {
+    accessToken = await youtubeAccessToken({
+      transport,
+      creds,
+      onRefreshToken,
+    });
+  } catch (err) {
+    if (!(err instanceof PostFailed)) throw err;
+    throw new Error(`youtube token: HTTP ${err.status}`);
+  }
+  const get = async (step, url) => {
+    const reply = await transport.request({
+      method: "GET",
+      url,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!ok(reply)) {
+      throw new Error(
+        `youtube ${step}: HTTP ${reply.status}${googleReason(reply)}`,
+      );
+    }
+    return reply.json ?? {};
+  };
+  const channel = await get(
+    "channels",
+    `${YOUTUBE_API}/channels?part=contentDetails&mine=true`,
+  );
+  const uploads = channel.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (typeof uploads !== "string") {
+    throw new Error("youtube channels: no uploads playlist for this account");
+  }
+  const items = await get(
+    "playlistItems",
+    `${YOUTUBE_API}/playlistItems?part=contentDetails&maxResults=${count}&playlistId=${encodeURIComponent(uploads)}`,
+  );
+  const ids = (items.items ?? [])
+    .map((i) => i.contentDetails?.videoId)
+    .filter((id) => typeof id === "string");
+  if (!ids.length) return [];
+  const videos = await get(
+    "videos",
+    `${YOUTUBE_API}/videos?part=snippet,status,processingDetails&id=${ids.map(encodeURIComponent).join(",")}`,
+  );
+  const byId = new Map((videos.items ?? []).map((v) => [v.id, v]));
+  const text = (v) => (typeof v === "string" ? v : null);
+  return ids.map((id) => {
+    const v = byId.get(id);
+    return {
+      id,
+      title: text(v?.snippet?.title),
+      publishedAt: text(v?.snippet?.publishedAt),
+      privacyStatus: text(v?.status?.privacyStatus),
+      uploadStatus: text(v?.status?.uploadStatus),
+      processingStatus: text(v?.processingDetails?.processingStatus),
+      failureReason: text(v?.status?.failureReason),
+      rejectionReason: text(v?.status?.rejectionReason),
+    };
+  });
+};

@@ -1564,6 +1564,20 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
       // A 4xx before the upload: nothing was made, so a retry is safe.
       expect(result.uncertain).toBe(false);
     });
+
+    test('a network fault keeps its cause in the stored error (a bare "fetch failed" named none, 2026-11-05)', async () => {
+      const { result } = await postWithTiktokLive(() => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("other side closed"), {
+            code: "UND_ERR_SOCKET",
+          }),
+        });
+      });
+      if (result.ok) throw new Error("the network fault posted");
+      expect(result.error).toBe(
+        "fetch failed (cause: UND_ERR_SOCKET other side closed)",
+      );
+    });
   });
 });
 
