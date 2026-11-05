@@ -121,10 +121,14 @@ const reportFirstLoad = () => {
     return;
   }
   const html = readFileSync(indexHtml, "utf8");
-  const scripts = [
-    ...html.matchAll(/<script\b[^>]*\bsrc="([^"]+\.js)"/g),
-    ...html.matchAll(/<link\b[^>]*rel="modulepreload"[^>]*href="([^"]+\.js)"/g),
-  ].map((match) => match[1]);
+  const scripts = new Set(
+    [
+      ...html.matchAll(/<script\b[^>]*\bsrc="([^"]+\.js)"/g),
+      ...html.matchAll(
+        /<link\b[^>]*rel="modulepreload"[^>]*href="([^"]+\.js)"/g,
+      ),
+    ].map((match) => match[1]),
+  );
   const configured = /chunkSizeWarningLimit:\s*(\d+)/.exec(
     readFileSync(VITE_CONFIG, "utf8"),
   )?.[1];
@@ -134,7 +138,7 @@ const reportFirstLoad = () => {
 
   let rawTotal = 0;
   let gzipTotal = 0;
-  for (const src of [...new Set(scripts)]) {
+  for (const src of scripts) {
     const code = readFileSync(join(DIST, src));
     const gzip = Bun.gzipSync(code).length;
     rawTotal += code.length;
@@ -148,7 +152,7 @@ const reportFirstLoad = () => {
     );
   }
   console.log(
-    `first-load JS total: ${scripts.length} file(s), ${(rawTotal / 1000).toFixed(0)} kB raw, ${(gzipTotal / 1000).toFixed(0)} kB gzip`,
+    `first-load JS total: ${scripts.size} file(s), ${(rawTotal / 1000).toFixed(0)} kB raw, ${(gzipTotal / 1000).toFixed(0)} kB gzip`,
   );
 };
 
@@ -177,8 +181,17 @@ const reportLongFiles = () => {
   console.log(
     `source files over ${MAX_FILE_LINES} lines: ${over} of ${files.length} tracked source files`,
   );
+  // One warning for all of them: GitHub shows at most 10 annotations per
+  // step in the run summary, so one per file would drop some without a sign.
+  if (long.length > 0) {
+    warn(
+      `${long.length} source file(s) at 80% or more of ${MAX_FILE_LINES} lines (listed below)`,
+    );
+  }
   for (const { file, lines } of long) {
-    check(`file ${file}`, lines, MAX_FILE_LINES, `${lines} lines`);
+    console.log(
+      `  ${file}: ${lines} lines (${percent(lines, MAX_FILE_LINES)} of the limit)`,
+    );
   }
 };
 
