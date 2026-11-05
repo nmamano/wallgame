@@ -1,7 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { glob, readFile, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { glob } from "glob";
 import { parse, stringify, type INode } from "svgson";
 import pathBounds from "svg-path-bounds";
 
@@ -27,7 +26,10 @@ const PAWNS_DIR = fileURLToPath(new URL("../public/pawns", import.meta.url));
 const DRY_RUN = process.argv.includes("--dry-run");
 
 async function main() {
-  const files = await glob("**/*.svg", { cwd: PAWNS_DIR, absolute: true });
+  const files: string[] = [];
+  for await (const file of glob("**/*.svg", { cwd: PAWNS_DIR })) {
+    files.push(join(PAWNS_DIR, file));
+  }
 
   // Silence here would mean the anchors are wrong, not that the work is done.
   if (files.length === 0) {
