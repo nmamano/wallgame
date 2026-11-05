@@ -1171,6 +1171,15 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     ]);
   });
 
+  test("C56 BInRtf1_: the engine's seal at ply 28 changes a walk by 2, so it is no trap-closes", () => {
+    const l = fixtureLabels("BInRtf1_");
+    expect(l.plies[28].label).not.toBe("trap-closes");
+    expect(l.plies[28].destroys).toBe(false);
+    expect(l.links.filter((k) => k.kind === "sealed-capture")).toEqual([]);
+    // A seal whose wall changes a walk by 10 stays (PnGQWON1 ply 20).
+    expect(fixtureLabels("PnGQWON1").plies[20].label).toBe("trap-closes");
+  });
+
   test("qbh10ebA: a cat that passes its own mouse on the engine's best move is no huh", () => {
     const p = fixtureLabels("qbh10ebA").plies[21];
     expect(p.huh).toBeUndefined();

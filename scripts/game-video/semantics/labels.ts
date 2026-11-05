@@ -134,6 +134,13 @@ export const KEEP_DROP = 0.05;
 export const CLEAR_CHANCE = 0.65;
 /** From this win chance on, the winner stays ahead to the end. */
 export const SEALED_CHANCE = 0.9;
+/**
+ * The engine's seal is a trap-closes only when its move changes a walk by
+ * this much or more: a plain cat step changes one by 2 at most. Under it the
+ * board shows no trap (C56, BInRtf1_ ply 28, Nil 2026-11-05: "it's just a
+ * little go around around a single wall", the walk 9 -> 11).
+ */
+export const SEAL_SHOWN_WALK = 3;
 /** A save or a self-trap raises a walk by this much at least. */
 export const RISE_WALK = 3;
 /** An escape ends at least this far from the cat. */
@@ -800,11 +807,16 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     // crossing 90% by a few points seals nothing a viewer could see.
     const swings =
       f !== undefined && (f.engine!.delta >= MOMENT_CHANCE || raceFlip(from));
+    // C56: and the board must show it.
+    const shown = f?.hunts.some(
+      (h) => isAnimal(h) && Math.abs(h.after - h.before) >= SEAL_SHOWN_WALK,
+    );
     if (
       f?.mover === winner &&
       f.engine!.before < SEALED_CHANCE &&
       !f.end &&
-      swings
+      swings &&
+      shown
     ) {
       const h = largest(own(f), (x) => -x.after) ?? f.hunts[0];
       fit(from, "trap-closes", 0.5 + (f.engine!.after - f.engine!.before), h);
