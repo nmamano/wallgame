@@ -2121,6 +2121,14 @@ log(
   109 N1: it passed on any one grey part).
 */
 const START_WALL = "#64748b";
+/** START_WALL as the stage's lit walls take a colour (paintTrap's lighter). */
+const START_WALL_RGB = "rgb(100,116,139)";
+/** The setup's walls, as notation terms (">b3", "^g4"). */
+const START_WALL_TERMS = new Set(
+  replay.state.initialState.walls.map((w) =>
+    wallToStandardNotation(w, replay.state.config.boardHeight),
+  ),
+);
 /** On the board, count the parts painted START_WALL. */
 const countStartWallPaint = () =>
   game.evaluate(
@@ -3238,6 +3246,9 @@ const wallOwnerRgb = (term) => {
       .split(".")
       .includes(term),
   );
+  // A start wall has no owner: it keeps its grey (Kw8fr9S6's ply-26 trap
+  // lights the start wall ^g4 with the two walls the players placed).
+  if (i < 0 && START_WALL_TERMS.has(term)) return START_WALL_RGB;
   if (i < 0) throw new Error(`no move of the game placed the wall ${term}`);
   if (!REPLAYED) throw new Error(`the wall ${term} is lit with no EDL`);
   return `rgb(${accents[REPLAYED.movers[i]].join(",")})`;

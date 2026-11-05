@@ -394,6 +394,37 @@ describe("checkEdlAgainstGame", () => {
     ).toHaveLength(1);
   });
 
+  test("a start wall of the setup is on the board from ply 0 (Kw8fr9S6's ^g4)", () => {
+    // Kw8fr9S6's setup: ^g4 is the horizontal wall on g4's top ([4, 6] on
+    // 8 rows), >b3 the vertical one on b3's right ([5, 1]).
+    const setup = {
+      ...START_8,
+      walls: [
+        { cell: [4, 6], orientation: "horizontal" },
+        { cell: [5, 1], orientation: "vertical" },
+      ],
+    };
+    const trap = accept({
+      ...base,
+      events: [{ ply: 0, kind: "trap", walls: ["^g4", ">b3"] }],
+    });
+    const game = { notations, cols: 8, rows: 8 };
+    expect(checkEdlAgainstGame(trap, { ...game, initialState: setup })).toEqual(
+      [],
+    );
+    // The same walls on a setup without them, and the other orientation.
+    expect(
+      checkEdlAgainstGame(trap, { ...game, initialState: START_8 }),
+    ).toHaveLength(2);
+    const turned = accept({
+      ...base,
+      events: [{ ply: 0, kind: "trap", walls: [">g4", "^b3"] }],
+    });
+    expect(
+      checkEdlAgainstGame(turned, { ...game, initialState: setup }),
+    ).toHaveLength(2);
+  });
+
   test("a plant lights its own move's wall, a callback an earlier move's, and the strip has one value a position", () => {
     const check = (raw: object) =>
       checkEdlAgainstGame(accept({ ...base, ...raw }), {

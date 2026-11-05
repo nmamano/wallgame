@@ -1522,7 +1522,9 @@ const insideFrame = (cell, frame) => {
  * Check a valid EDL against its game: every ply exists (music cues too),
  * every cell is on the
  * board, every wall a zoom frames or a trap lights is on the board by that
- * ply, and a lead zoom's frame holds both cells of every pawn its move moves.
+ * ply (a start wall of the setup is there from ply 0: Kw8fr9S6's ^g4, one
+ * of its ply-26 trap's three walls), and a lead zoom's frame holds both
+ * cells of every pawn its move moves.
  *
  * `notations` is the game's move list (one notation per ply, e.g.
  * "^a4.^h4"); `cols` and `rows` are the board size; `initialState` is the
@@ -1534,6 +1536,14 @@ export const checkEdlAgainstGame = (
   { notations, cols, rows, initialState },
 ) => {
   const errors = [];
+  // The setup's walls ({ cell: [row, col], orientation }, row 0 the top
+  // rank), in the notation's terms: ">" the cell's right side, "^" its top.
+  const startWalls = new Set(
+    (initialState?.walls ?? []).map(
+      ({ cell: [row, col], orientation }) =>
+        `${orientation === "vertical" ? ">" : "^"}${String.fromCharCode(97 + col)}${rows - row}`,
+    ),
+  );
   const onBoard = (term) => {
     const m = term.match(/([a-z])(\d+)$/);
     const col = m[1].charCodeAt(0) - "a".charCodeAt(0);
@@ -1577,9 +1587,11 @@ export const checkEdlAgainstGame = (
         errors.push(`events[${i}]: ${term} is off the ${cols}x${rows} board`);
       }
       if (WALL.test(term) && ev.ply < notations.length) {
-        const placed = notations
-          .slice(0, ev.ply + 1)
-          .some((n) => String(n).split(".").includes(term));
+        const placed =
+          startWalls.has(term) ||
+          notations
+            .slice(0, ev.ply + 1)
+            .some((n) => String(n).split(".").includes(term));
         if (!placed) {
           errors.push(
             `events[${i}]: wall ${term} is not on the board by ply ${ev.ply}`,
