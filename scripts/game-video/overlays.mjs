@@ -30,8 +30,9 @@
  * the walls the last move placed, the effects on screen, and the hunter and
  * target of the closest hunt. The ending's bar avoids the ending's own
  * boxes instead (and, on a replay ending, what the replay shows). Places lie
- * inside the board, and the board inside SAFE_AREA, so an overlay never
- * covers the head row, the strip or an app's buttons.
+ * inside the board, so an overlay never covers the head row or the strip,
+ * and the renderer keeps them off the apps' buttons, which the edge-to-edge
+ * board reaches under (edl.mjs BUTTONS_ZONE; Nil, 2026-11-05, C58).
  *
  * Off the board, two places hide nothing at all (Nil, 2026-10-30: visual
  * memes "can be carve outs outside the board or on parts of the board that

@@ -106,7 +106,7 @@ import {
   silenceVerdict,
   MAX_MEME_LUFS,
 } from "./quality.mjs";
-import { FRAME, STRIP_AREA, validateEdl } from "../edl.mjs";
+import { FRAME, validateEdl } from "../edl.mjs";
 import { batchLines, scriptChecklist, scriptDraft } from "./script.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
@@ -1221,23 +1221,48 @@ describe("the app's measures of a render", () => {
     });
   });
 
-  test("every measured box must lie inside the safe area", () => {
-    const board = { x: 81, y: 380, w: 918, h: 852 };
-    const caption = { x: 81, y: 285, w: 918, h: 60 };
-    const layout = { frame: { w: 1080, h: 1920 }, boxes: { board, caption } };
+  test("every measured box must lie in its area (C58)", () => {
+    // The look of Csp ply 24 on the 4090 test kit, 2026-11-05.
+    const board = { x: 24, y: 272, w: 1032, h: 1032 };
+    const caption = { x: 65, y: 96, w: 950, h: 65 };
+    const strip = { x: 227, y: 1324, w: 626, h: 112 };
+    const layout = {
+      frame: { w: 1080, h: 1920 },
+      boxes: { board, caption, strip },
+    };
     expect(safeAreaVerdict(layout, FRAME)).toEqual({
       ok: true,
-      note: "board, caption inside the safe area",
+      note: "board inside the board area; caption inside the text area; strip inside the strip area",
     });
-    // The board of the audited renders (y 436-1483) ends under the buttons.
+    // A board into the apps' caption zone (the floor, y 1436).
     const low = {
       ...layout,
-      boxes: { board: { x: 16, y: 436, w: 1048, h: 1048 } },
+      boxes: { board: { x: 24, y: 436, w: 1032, h: 1032 } },
     };
-    const v = safeAreaVerdict(low, FRAME);
-    expect(v.ok).toBe(false);
-    expect(v.note).toBe(
-      "board (x 16-1064, y 436-1484) is outside the safe area (x 65-1015, y 269-1248)",
+    expect(safeAreaVerdict(low, FRAME)).toEqual({
+      ok: false,
+      note: "board (x 24-1056, y 436-1468) is outside the board area (x 0-1080, y 96-1436)",
+    });
+    // Text as wide as the board reaches under the buttons.
+    expect(
+      safeAreaVerdict(
+        {
+          ...layout,
+          boxes: { board, caption: { ...caption, x: 24, w: 1032 } },
+        },
+        FRAME,
+      ).note,
+    ).toBe(
+      "caption (x 24-1056, y 96-161) is outside the text area (x 65-1015, y 96-1436)",
+    );
+    // The strip holds to its band.
+    expect(
+      safeAreaVerdict(
+        { ...layout, boxes: { board, strip: { ...strip, y: 1100 } } },
+        FRAME,
+      ).note,
+    ).toBe(
+      "strip (x 227-853, y 1100-1212) is outside the strip area (x 140-940, y 1248-1436)",
     );
     expect(safeAreaVerdict(undefined, FRAME).note).toBe(
       "the render reported no layout",
@@ -1245,43 +1270,6 @@ describe("the app's measures of a render", () => {
     expect(
       safeAreaVerdict({ ...layout, frame: { w: 1080, h: 1080 } }, FRAME).note,
     ).toBe("the frame is 1080x1080, not 1080x1920");
-  });
-
-  test("the players strip lies in the strip area under the safe area; no other box may", () => {
-    const board = { x: 81, y: 380, w: 918, h: 852 };
-    // The strip of ec1109cb's renders, about y 1248-1351.
-    const strip = { x: 140, y: 1248, w: 800, h: 103 };
-    interface Box {
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-    }
-    const layout = (boxes: Record<string, Box>) => ({
-      frame: { w: 1080, h: 1920 },
-      boxes,
-    });
-    expect(safeAreaVerdict(layout({ board, strip }), FRAME)).toEqual({
-      ok: true,
-      note: "board inside the safe area; strip inside the strip area",
-    });
-    // A strip up in the safe area's band is out of its own area.
-    expect(
-      safeAreaVerdict(layout({ board, strip: { ...strip, y: 1100 } }), FRAME),
-    ).toEqual({
-      ok: false,
-      note: "strip (x 140-940, y 1100-1203) is outside the strip area (x 140-940, y 1248-1436)",
-    });
-    // Any other box in the strip's band is below the safe area.
-    expect(
-      safeAreaVerdict(
-        layout({ board, caption: { ...strip, y: STRIP_AREA.y + 10 } }),
-        FRAME,
-      ),
-    ).toEqual({
-      ok: false,
-      note: "caption (x 140-940, y 1258-1361) is outside the safe area (x 65-1015, y 269-1248)",
-    });
   });
 
   test("each caption beat must be one line inside its box", () => {

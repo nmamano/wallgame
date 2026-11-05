@@ -13,9 +13,14 @@ import {
   FRAME,
   parsePlyWindow,
   pawnMovesOf,
+  BOARD_AREA,
+  BUTTONS_ZONE,
+  LOOK,
   SAFE_AREA,
   STRIP_AREA,
+  TEXT_AREA,
   areaOf,
+  underButtons,
   validateEdl,
   eventSoundKeys,
 } from "./edl.mjs";
@@ -990,10 +995,28 @@ describe("STRIP_AREA", () => {
     expect(STRIP_AREA.x + STRIP_AREA.w).toBe(FRAME.w - 140);
   });
 
-  test("holds the strip box, and every other box to SAFE_AREA", () => {
+  test("holds the strip to STRIP_AREA, the board to BOARD_AREA, text to TEXT_AREA", () => {
     expect(areaOf("strip")).toBe(STRIP_AREA);
-    expect(areaOf("board")).toBe(SAFE_AREA);
-    expect(areaOf("credit")).toBe(SAFE_AREA);
+    expect(areaOf("board")).toBe(BOARD_AREA);
+    expect(areaOf("credit")).toBe(TEXT_AREA);
+    expect(areaOf("caption")).toBe(TEXT_AREA);
+  });
+});
+
+describe("LOOK (Nil, 2026-11-05, C58)", () => {
+  test("a board as wide as the frame fits from the top bar to the floor", () => {
+    expect(LOOK).toEqual({ top: 96, side: 20, floor: 1436 });
+    expect(BOARD_AREA).toEqual({ x: 0, y: 96, w: 1080, h: 1340 });
+    expect(BOARD_AREA.h).toBeGreaterThan(FRAME.w - 2 * LOOK.side);
+    // Text keeps SAFE_AREA's sides, and keeps off the buttons below 826.
+    expect(TEXT_AREA).toEqual({ x: 65, y: 96, w: 950, h: 1340 });
+    expect(BUTTONS_ZONE).toEqual({ x: 940, y: 826, w: 140, h: 610 });
+    const caption = { x: 65, y: 96, w: 950, h: 65 };
+    expect(underButtons("caption", caption)).toBe(false);
+    expect(underButtons("credit", { ...caption, y: 1200 })).toBe(true);
+    expect(underButtons("board", { x: 24, y: 272, w: 1032, h: 1032 })).toBe(
+      false,
+    );
   });
 });
 

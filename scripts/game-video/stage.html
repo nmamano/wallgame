@@ -481,38 +481,26 @@
       #root.wallz #hud.on {
         display: grid;
         place-items: center;
-        width: 100%;
+        width: min(100%, var(--text-w));
+        align-self: center;
       }
       #hud > * {
         grid-area: 1 / 1;
       }
       /*
         The evaluation strip (edl.mjs evalStrip): the site's evaluation bar
-        (info/evaluation_bar.md), thin, under the players' names below the
-        board and as wide as their row: red's share under the red name on
-        the left, blue's under the blue name, so the names say whose part
-        is whose (Wall Game Director, 2026-10-31: under the steps counter it
-        read as part of the counter). It is out of the flow, so the strip
-        keeps its size; with it, the strip gets the class "eval", and the
-        call to action moves down to make the room for it. Nil, 2026-10-31,
-        the revise of v-2026-10-31-11: "EVal bar is too close to the names
-        and to the CTA. that whole part is too crowded": a clear gap on both
-        sides (more under it, where the badge's glow takes some), and it
-        spans the names, not the pawns. A thin line marks the even split.
+        (info/evaluation_bar.md), thin, over the call to action under the
+        board and as wide as its badge: red's share on the left, blue's on
+        the right, in their colours (Nil, 2026-11-05, C58: the players'
+        names under the board went). A clear gap on both sides (Nil,
+        2026-10-31, the revise of v-2026-10-31-11: "that whole part is too
+        crowded"); a thin line marks the even split.
       */
-      #strip .row {
-        position: relative;
-      }
-      #strip.eval .site {
-        margin-top: calc(1.3em + 12px);
-        line-height: 1.1;
-      }
       #evalStrip {
-        position: absolute;
-        left: 1.85em;
-        right: 1.85em;
-        top: calc(100% + 0.55em);
+        position: relative;
+        width: 100%;
         height: 12px;
+        margin-bottom: 0.7em;
         border-radius: 6px;
         overflow: hidden;
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
@@ -596,6 +584,10 @@
         letter-spacing: 0.02em;
         white-space: nowrap;
       }
+      /* Nil, 2026-11-05, C58: "the small vs can go". */
+      #root.wallz #raceTag {
+        display: none;
+      }
       /* The same size as the side words, so it reads at phone size. */
       #race .vs small {
         display: block;
@@ -622,17 +614,18 @@
       }
       /*
         The credit (music-tracks.mjs creditLines): over the ending and its
-        hold, a small muted line in the bottom-right corner of the end
-        card, about the size of the board's letters (Nil, 2026-10-31, the
-        revise of v-2026-10-31-6: "JDSherbert credits are too prominent.
-        they should be in the corner"): in the GG card's bottom padding, or,
-        in an ending with no card, the board's corner (__fitWallz puts it
-        there). One line per track, broken only where the lines end. The
+        hold, a small muted line in a corner of the end card, about the
+        size of the board's letters (Nil, 2026-10-31, the revise of
+        v-2026-10-31-6: "JDSherbert credits are too prominent. they should
+        be in the corner"): in the GG card's bottom-right padding, or, in an
+        ending with no card, the board's bottom-left corner (__fitWallz puts
+        it there), as the edge-to-edge board's right edge is under the apps'
+        buttons (C58). One line per track, broken only where the lines end. The
         board's filters do not reach it: it is not the board image.
       */
       #credit {
         position: absolute;
-        right: calc(var(--board) * 0.025);
+        left: calc(var(--board) * 0.025);
         bottom: calc(var(--board) * 0.012);
         max-width: calc(var(--board) * 0.7);
         z-index: 5;
@@ -642,12 +635,14 @@
         font-size: calc(var(--board) * 0.026);
         line-height: 1.2;
         color: #94a3b8;
-        text-align: right;
+        text-align: left;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
         visibility: hidden;
       }
       #ggCard #credit {
+        left: auto;
         right: 5%;
+        text-align: right;
         max-width: 80%;
       }
       #ggCard.credited {
@@ -1169,18 +1164,17 @@
           linear-gradient(#141c33, #0b0f1c);
       }
       /*
-        Everything that matters sits inside the Reels safe area (SAFE_AREA in
-        edl.mjs, which the renderer passes in as these insets), plus room for
-        the shakes: caption, then the head row, then the board, top down. The
-        renderer sizes the board to what is left (window.__fitWallz).
+        The look of Nil, 2026-11-05 (C58: "the edge to edge board is
+        gorgeous"): caption, then the head row, then the board as wide as
+        the frame less --look-side on each side (room for the shakes), stacked
+        up from the strip on the floor (--look-bottom, from __fitWallz), and
+        never above --look-top. The renderer sizes the board to what is left
+        (window.__fitWallz). LOOK in edl.mjs holds the numbers.
       */
       #root.wallz #play {
-        justify-content: flex-start;
+        justify-content: flex-end;
         gap: var(--head-gap);
-        padding: calc(var(--safe-top) + var(--shake-room))
-          calc(var(--safe-right) + var(--shake-room))
-          calc(var(--safe-bottom) + var(--shake-room))
-          calc(var(--safe-left) + var(--shake-room));
+        padding: var(--look-top) var(--look-side) var(--look-bottom, 0px);
       }
       #root.wallz #ggCard {
         top: var(--board-mid);
@@ -1203,7 +1197,9 @@
         justify-content: flex-end;
         min-height: var(--caption-h, 0px);
         flex-shrink: 0;
-        width: 100%;
+        /* Text keeps clear of the buttons on the right (TEXT_AREA). */
+        width: min(100%, var(--text-w));
+        align-self: center;
         text-align: center;
         font-family:
           "TikTok Sans", "Noto Color Emoji", "DejaVu Sans", sans-serif;
@@ -1218,13 +1214,10 @@
         box-shadow: none;
       }
       /*
-        The players strip (Wall Game Director, 2026-10-28): under the board,
-        in STRIP_AREA (edl.mjs, passed in as --strip-w and --strip-area-top),
-        each side's pawn and
-        name in its colour, and the site under them. It is out of the
-        column's flow, so the board keeps its size; __fitWallz puts its top
-        one column gap under the board's measured bottom (--strip-top) and
-        fits its size to one line (--strip-size).
+        The strip under the board (Nil, 2026-11-05, C58): the evaluation bar
+        and the call to action. It is out of the column's flow, so the board
+        keeps its size; __fitWallz stands it on the floor (--strip-top) and
+        fits its size to STRIP_AREA's width (--strip-size).
       */
       #strip {
         display: none;
@@ -1243,35 +1236,14 @@
       #root.wallz #strip.on {
         display: flex;
       }
-      #strip .row {
-        display: flex;
-        align-items: center;
-        gap: 0.35em;
-        white-space: nowrap;
-        font-weight: 800;
-      }
-      #strip .row img {
-        width: 1.5em;
-        height: 1.5em;
-        object-fit: contain;
-      }
-      #strip .row .vs {
-        margin: 0 0.4em;
-        font-size: 0.75em;
-        font-weight: 900;
-        letter-spacing: 0.08em;
-        color: #94a3b8;
-      }
       /*
         The call to action as a badge, so a phone reads it at a glance for
         the whole video (Nil, 2026-10-30: "url needs to be more visible").
-        Nil, 2026-10-31: "the CTA is a bit too close to the text above. and
-        can be bigger i think or more interesting colors": more room under
-        the players' row, a bigger badge, the site's orange with a glow.
-        __fitWallz holds the strip, badge included, to STRIP_AREA.
+        Nil, 2026-10-31: "can be bigger i think or more interesting colors":
+        a bigger badge, the site's orange with a glow. __fitWallz holds the
+        strip, badge included, to STRIP_AREA's width.
       */
       #strip .site {
-        margin-top: 0.8em;
         padding: 0.18em 0.85em;
         border-radius: 999px;
         background: var(--cta-fill);
@@ -1514,15 +1486,10 @@
           </div>
         </div>
         <div id="strip">
-          <div class="row">
-            <img id="stripImgA" /><span id="stripNameA"></span
-            ><span class="vs">VS</span><span id="stripNameB"></span
-            ><img id="stripImgB" />
-            <div id="evalStrip" class="hidden">
-              <div id="evalLeft"></div>
-              <div id="evalSwing"></div>
-              <div id="evalMid"></div>
-            </div>
+          <div id="evalStrip" class="hidden">
+            <div id="evalLeft"></div>
+            <div id="evalSwing"></div>
+            <div id="evalMid"></div>
           </div>
           <div class="site" id="stripSite">wallgame.io</div>
         </div>
@@ -2947,7 +2914,7 @@
           /*
             The board bar's size, centred on the caption's last line (its
             text sits at the bottom of its box), MEASURED in #play, which
-            the shake moves with it; kept in the safe area's top and over
+            the shake moves with it; kept under the look's top and over
             the head row, or room says why not and the renderer stops: a
             look that shows no caption (only wallz does) has no line for
             it (Video Reviewer 1, review 93 N1). The wallz caption's
@@ -2956,15 +2923,26 @@
           const board = $("boardWrap");
           const cap = $("caption");
           const w = p.w * board.offsetWidth;
-          const h = p.h * board.offsetHeight;
           const line = parseFloat(getComputedStyle(cap).lineHeight);
           const ceiling = parseFloat(
             getComputedStyle(document.documentElement).getPropertyValue(
-              "--safe-top",
+              "--look-top",
             ),
           );
           const hud = $("hud");
           const floor = hud.offsetHeight > 0 ? hud.offsetTop : board.offsetTop;
+          /*
+            Its height and its text shrink to the room over the head row:
+            the bar is sized in the board's units, and the edge-to-edge
+            board (C58) made it taller than the caption's room (the ending
+            bar of qbh, test render on the 4090, 2026-11-05).
+          */
+          const fit = Math.min(
+            1,
+            (floor - ceiling) / (p.h * board.offsetHeight),
+          );
+          const h = p.h * board.offsetHeight * fit;
+          scale *= fit;
           const mid = cap.offsetTop + cap.offsetHeight - line / 2;
           const top = Math.max(ceiling, Math.min(mid - h / 2, floor - h));
           room =
@@ -3642,7 +3620,47 @@
         const card = ending === "gg" && !!credit;
         (card ? $("ggCard") : $("boardWrap")).append($("credit"));
         $("ggCard").classList.toggle("credited", card);
+        /*
+          The strip under the board (Nil, 2026-11-05, C58): the call to
+          action, with the evaluation bar over it in a video that has one.
+          The players' names are no longer in it: the opening names the
+          sides over their cats. It stands on the floor (--look-floor, the
+          top of the apps' caption zone), and it shrinks from three
+          quarters of the caption size until its lines fit STRIP_AREA's
+          width; at its floor, `stripFits` says whether it did.
+        */
+        const root2 = document.documentElement.style;
+        const floor = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--look-floor",
+          ),
+        );
+        $("strip").classList.toggle("on", !!strip);
+        $("strip").classList.toggle("eval", !!evalStrip);
+        // Measured with the bar on, as every frame of such a video shows it.
+        show($("evalStrip"), !!evalStrip);
+        let stripH = 0;
+        if (strip) {
+          let stripSize = captionSize * 0.75;
+          const stripFloor = captionSize * 0.36;
+          root2.setProperty("--strip-size", stripSize + "px");
+          const tooWide = () =>
+            $("stripSite").scrollWidth > $("strip").clientWidth;
+          while (tooWide() && stripSize > stripFloor) {
+            stripSize = Math.max(stripFloor, stripSize - 1);
+            root2.setProperty("--strip-size", stripSize + "px");
+          }
+          stripFits = !tooWide();
+          stripH = $("strip").getBoundingClientRect().height;
+          root2.setProperty("--strip-top", floor - stripH + "px");
+        }
         const play = $("play");
+        const gap = parseFloat(getComputedStyle(play).rowGap);
+        // The column ends one gap over the strip, or on the floor.
+        root2.setProperty(
+          "--look-bottom",
+          window.innerHeight - floor + (strip ? stripH + gap : 0) + "px",
+        );
         const cs = getComputedStyle(play);
         const width =
           play.clientWidth -
@@ -3652,7 +3670,6 @@
           play.clientHeight -
           parseFloat(cs.paddingTop) -
           parseFloat(cs.paddingBottom);
-        const gap = parseFloat(cs.rowGap);
         const used = [$("caption"), $("hud")]
           .filter((el) => el.offsetHeight > 0)
           .reduce((sum, el) => sum + el.offsetHeight + gap, 0);
@@ -3666,52 +3683,6 @@
         creditFits = cardAtRest(
           () => !credit || $("credit").scrollWidth <= $("credit").clientWidth,
         );
-        /*
-          The players strip: one gap under the board, as the head row is one
-          gap over it, and not above STRIP_AREA (--strip-area-top). It
-          shrinks from three quarters of the caption size until its lines
-          fit STRIP_AREA's width and its bottom STRIP_AREA's
-          (--strip-area-bottom), measured; at its floor, `stripFits` says
-          whether it did.
-        */
-        $("strip").classList.toggle("on", !!strip);
-        $("strip").classList.toggle("eval", !!evalStrip);
-        if (strip) {
-          for (const [k, p] of [
-            ["A", strip.a],
-            ["B", strip.b],
-          ]) {
-            $("stripImg" + k).src = p.portrait;
-            $("stripName" + k).textContent = p.name;
-            $("stripName" + k).style.color = p.hex;
-          }
-          await Promise.all(
-            [$("stripImgA"), $("stripImgB")].map((img) => img.decode()),
-          );
-          const areaPx = (name) =>
-            parseFloat(
-              getComputedStyle(document.documentElement).getPropertyValue(name),
-            );
-          const areaTop = areaPx("--strip-area-top");
-          const areaBottom = areaPx("--strip-area-bottom");
-          root.setProperty(
-            "--strip-top",
-            Math.max(r.bottom + gap, areaTop) + "px",
-          );
-          let stripSize = captionSize * 0.75;
-          const stripFloor = captionSize * 0.36;
-          root.setProperty("--strip-size", stripSize + "px");
-          // The players' row and the call to action's badge.
-          const lines = [$("strip").querySelector(".row"), $("stripSite")];
-          const tooBig = () =>
-            lines.some((el) => el.scrollWidth > $("strip").clientWidth) ||
-            $("strip").getBoundingClientRect().bottom > areaBottom;
-          while (tooBig() && stripSize > stripFloor) {
-            stripSize = Math.max(stripFloor, stripSize - 1);
-            root.setProperty("--strip-size", stripSize + "px");
-          }
-          stripFits = !tooBig();
-        }
         return board;
       };
 

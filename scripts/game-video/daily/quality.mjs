@@ -8,11 +8,12 @@
  *              far it stands over the music and clicks under it, as the
  *              renderer measured them (mix-loudness.mjs; Nil, 2026-10-26:
  *              "the baby cry and the initial shotgun, are a bit too loud").
- *   safeArea   each box the renderer measured in the page (board, caption,
- *              race counter, goal line) lies inside SAFE_AREA (edl.mjs),
- *              where the apps paint no buttons or captions (audit item 3);
- *              the players strip lies inside STRIP_AREA, the band under it
- *              (edl.mjs areaOf).
+ *   safeArea   each box the renderer measured in the page lies in its area
+ *              (edl.mjs areaOf; Nil, 2026-11-05, C58): the board in
+ *              BOARD_AREA (the frame's width, under the apps' top bar and
+ *              over their caption zone), every text in TEXT_AREA and off
+ *              the buttons on the right (BUTTONS_ZONE), the strip in
+ *              STRIP_AREA.
  *   captionLines
  *              each caption beat (the caption and the payoff) is one line as
  *              the page wraps it (stage.html __captionText): a two-line beat
@@ -25,7 +26,14 @@
  *              director and the vet, never a failed check (Wall Game PM,
  *              2026-10-29): a gap can be the script's beat.
  */
-import { SAFE_AREA, STRIP_AREA, areaOf } from "../edl.mjs";
+import {
+  BOARD_AREA,
+  BUTTONS_ZONE,
+  STRIP_AREA,
+  TEXT_AREA,
+  areaOf,
+  underButtons,
+} from "../edl.mjs";
 
 /**
  * The loudness rule (Wall Game Director, 2026-10-26, rule A1). A meme
@@ -92,7 +100,8 @@ export const loudnessVerdict = (report) => {
 
 /** How a note names each area a box can be held to. */
 const AREA_NAMES = new Map([
-  [SAFE_AREA, "the safe area"],
+  [BOARD_AREA, "the board area"],
+  [TEXT_AREA, "the text area"],
   [STRIP_AREA, "the strip area"],
 ]);
 
@@ -109,8 +118,7 @@ const span = (b) => `x ${b.x}-${b.x + b.w}, y ${b.y}-${b.y + b.h}`;
  * `{frame: {w, h}, boxes: {name: {x, y, w, h}}}`, measured in the page at
  * rest. Every daily render reports one, with the board in it; a render
  * without one fails, so a renderer that stops measuring cannot pass. Each
- * box is held to its own area (areaOf): the players strip to STRIP_AREA,
- * every other box to SAFE_AREA.
+ * box is held to its own area (areaOf).
  * @param {{ frame?: { w: number, h: number },
  *           boxes?: Record<string, { x: number, y: number, w: number, h: number }> } | undefined} layout
  * @param {{ w: number, h: number }} frame
@@ -125,14 +133,19 @@ export const safeAreaVerdict = (layout, frame) => {
   }
   const boxes = Object.entries(layout.boxes);
   const outside = boxes.filter(([name, box]) => !inside(box, areaOf(name)));
-  if (outside.length) {
+  const under = boxes.filter(([name, box]) => underButtons(name, box));
+  if (outside.length || under.length) {
     return fail(
-      outside
-        .map(([name, box]) => {
+      [
+        ...outside.map(([name, box]) => {
           const area = areaOf(name);
           return `${name} (${span(box)}) is outside ${AREA_NAMES.get(area)} (${span(area)})`;
-        })
-        .join("; "),
+        }),
+        ...under.map(
+          ([name, box]) =>
+            `${name} (${span(box)}) is under the apps' buttons (${span(BUTTONS_ZONE)})`,
+        ),
+      ].join("; "),
     );
   }
   // One clause per area, in the order its first box was measured.

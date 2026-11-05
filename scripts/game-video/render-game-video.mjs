@@ -94,8 +94,11 @@ import {
   MAX_VIDEO_SECONDS,
   FRAME as DAILY_FRAME,
   REACTIONS,
-  SAFE_AREA,
+  BUTTONS_ZONE,
+  LOOK,
   STRIP_AREA,
+  TEXT_AREA,
+  underButtons,
   parsePlyWindow,
 } from "./edl.mjs";
 import {
@@ -422,8 +425,8 @@ const ORIGIN = "https://wallgame.io";
  *   current  the look shipped since 2026-08: VS screen, name plates, a shake
  *            on the winning capture, a winner card.
  *   daily    the daily Short (Nil, 2026-10-25 and 2026-10-26): a 9:16
- *            frame with every key element inside the Reels safe area
- *            (SAFE_AREA in edl.mjs), one meme caption, the race counter, the
+ *            frame with the board edge to edge and every text clear of the
+ *            apps' bars and buttons (LOOK in edl.mjs), one meme caption, the race counter, the
  *            punch-ins, mouse beats, stamps and meme sounds the director's
  *            EDL places, each side's name ("Bot", "Human") in its colour over
  *            its cat as its opening walk draws (Nil, 2026-11-05, C56: the
@@ -981,7 +984,7 @@ const FLASHBACK_PAST_BEFORE_SECONDS = 0.3;
 const FLASHBACK_PAST_SECONDS = 1.4;
 const FLASHBACK_FORWARD_SECONDS = 0.7;
 /**
- * The evaluation strip (edl.mjs evalStrip), under the players' names: it
+ * The evaluation strip (edl.mjs evalStrip), over the call to action: it
  * moves to a move's value over
  * EVAL_MOVE_SECONDS from its landing (Wall Game Director, 2026-10-31: a
  * swing reads as motion), and a marked move's swing flashes for
@@ -4210,31 +4213,32 @@ if (
 const RACE_LABEL = CAPTURE_KIND ? RACE_LABELS[CAPTURE_KIND] : "STEPS";
 
 /**
- * The 9:16 frame of the wallz look. The caption, the head row and the board
- * stack inside SAFE_AREA (edl.mjs), SHAKE_ROOM in from its edges so the
- * shakes stay inside too; the stage then sizes the board to what is left
- * (window.__fitWallz), so --board here is only a first guess. A --head-gap
- * of 37 px gives 40 px between the drawn boxes (the boxes add 3 px of inner
- * space) from the caption to the head row and from the head row to the
- * board (Director, 2026-10-29): the board gives up the room.
+ * The 9:16 frame of the wallz look (LOOK in edl.mjs; Nil, 2026-11-05, C58).
+ * The caption, the head row and the board stack up from the strip on the
+ * floor; the stage then sizes the board to what is left (window.__fitWallz),
+ * so --board here is only a first guess. LOOK.side keeps SHAKE_ROOM for the
+ * shakes. A --head-gap of 21 px gives 24 px between the drawn boxes (the
+ * boxes add 3 px of inner space); it was 37 px (40 px, Director,
+ * 2026-10-29) when the board had room to give.
  */
 const SHAKE_ROOM = 16;
+if (LOOK.side < SHAKE_ROOM) {
+  throw new Error(`LOOK.side ${LOOK.side} px leaves no room for the shakes`);
+}
 const WALLZ_LAYOUT = {
   width: DAILY_FRAME.w,
   height: DAILY_FRAME.h,
   vars: {
-    ...frameVars(DAILY_FRAME.h, SAFE_AREA.w - 2 * SHAKE_ROOM, 0),
+    ...frameVars(DAILY_FRAME.h, DAILY_FRAME.w - 2 * LOOK.side, 0),
     "--caption-size": "56px",
     "--caption-gap": "36px",
-    "--head-gap": "37px",
+    "--head-gap": "21px",
     "--shake-room": `${SHAKE_ROOM}px`,
-    "--safe-top": `${SAFE_AREA.y}px`,
-    "--safe-left": `${SAFE_AREA.x}px`,
-    "--safe-right": `${DAILY_FRAME.w - SAFE_AREA.x - SAFE_AREA.w}px`,
-    "--safe-bottom": `${DAILY_FRAME.h - SAFE_AREA.y - SAFE_AREA.h}px`,
+    "--look-top": `${LOOK.top}px`,
+    "--look-side": `${LOOK.side}px`,
+    "--look-floor": `${LOOK.floor}px`,
+    "--text-w": `${TEXT_AREA.w}px`,
     "--strip-w": `${STRIP_AREA.w}px`,
-    "--strip-area-top": `${STRIP_AREA.y}px`,
-    "--strip-area-bottom": `${STRIP_AREA.y + STRIP_AREA.h}px`,
   },
 };
 
@@ -4397,18 +4401,8 @@ const renderStyle = async (styleName) => {
    */
   const filmedSide = (id) =>
     wallz ? { ...side(id), name: dailyName(id) } : side(id);
-  /**
-   * The players strip under the daily board (stage.html #strip): each side's
-   * portrait and its daily name in its colour.
-   */
-  const stripSide = (id) => ({
-    name: dailyName(id),
-    portrait: side(id).portrait,
-    hex: side(id).hex,
-  });
-  const strip = wallz
-    ? { a: stripSide(redSeat), b: stripSide(blueSeat) }
-    : null;
+  /** The strip under the daily board (stage.html #strip). */
+  const strip = wallz;
   const openStage = async (owner) => {
     const page = await owner.newPage({
       viewport: { width: layout.width, height: layout.height },
@@ -4818,12 +4812,12 @@ const renderStyle = async (styleName) => {
   /** An overlay's line, with the seats' names put in (dailySeatNames). */
   const overlayText = (ev) =>
     (ev.text ?? OVERLAYS[ev.asset].line ?? "")
-      .replace("{red}", stripSide(redSeat).name)
-      .replace("{blue}", stripSide(blueSeat).name)
+      .replace("{red}", dailyName(redSeat))
+      .replace("{blue}", dailyName(blueSeat))
       // The side that lost (the resign card's "{loser} resigns").
       .replace(
         "{loser}",
-        outcome?.winnerId ? stripSide(outcome.winnerId === 1 ? 2 : 1).name : "",
+        outcome?.winnerId ? dailyName(outcome.winnerId === 1 ? 2 : 1) : "",
       );
   /**
    * Open the overlay `ev` as its move lands. It closes after its seconds;
@@ -5428,9 +5422,27 @@ const renderStyle = async (styleName) => {
       */
       const inside = (p, a) =>
         p.x0 >= a.x0 && p.y0 >= a.y0 && p.x1 <= a.x1 && p.y1 <= a.y1;
+      /*
+        The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest: the
+        edge-to-edge board reaches under them (Nil, 2026-11-05, C58), and
+        no overlay goes there.
+      */
+      const board = layoutBoxes?.board;
+      const buttons = board
+        ? [
+            {
+              x0: (BUTTONS_ZONE.x - board.x) / board.w,
+              y0: (BUTTONS_ZONE.y - board.y) / board.h,
+              x1: (BUTTONS_ZONE.x + BUTTONS_ZONE.w - board.x) / board.w,
+              y1: (BUTTONS_ZONE.y + BUTTONS_ZONE.h - board.y) / board.h,
+              what: "the apps' buttons",
+            },
+          ]
+        : [];
       const busy =
         w.asset.form === "bar"
           ? [
+              ...buttons,
               ...w.avoid.map((b) => ({ ...b, what: "the ending" })),
               ...w.frames.flatMap((f) => [
                 ...(style.ending === "replay" ? inPlay(f.state) : []),
@@ -5439,16 +5451,19 @@ const renderStyle = async (styleName) => {
                   .map((p) => (p.capture ? endingTouch(p, f.state) : p)),
               ]),
             ]
-          : w.frames.flatMap((f) => [
-              ...inPlay(f.state),
-              ...pawnBoxes(f.state),
-              // The resign card's own flags (RESIGN_FLAGS): its words keep
-              // off them.
-              ...(f.o.flags?.boxes ?? []).flatMap((b) => {
-                const box = boxOnScreen(b, f.state.zoom);
-                return box ? [{ ...box, what: b.what }] : [];
-              }),
-            ]);
+          : [
+              ...buttons,
+              ...w.frames.flatMap((f) => [
+                ...inPlay(f.state),
+                ...pawnBoxes(f.state),
+                // The resign card's own flags (RESIGN_FLAGS): its words keep
+                // off them.
+                ...(f.o.flags?.boxes ?? []).flatMap((b) => {
+                  const box = boxOnScreen(b, f.state.zoom);
+                  return box ? [{ ...box, what: b.what }] : [];
+                }),
+              ]),
+            ];
       const reach = await reachOf(w);
       const offRoom = await offBoardRoom(w);
       /*
@@ -6218,7 +6233,8 @@ const renderStyle = async (styleName) => {
   /**
    * The boxes a viewer must see, measured at rest (stage.html
    * __layoutBoxes), for the RESULT line and crew.mjs check. The renderer
-   * holds them to SAFE_AREA itself too: a layout that breaks it stops here,
+   * holds them to their areas itself too (edl.mjs areaOf): a layout that
+   * breaks one stops here,
    * before any frame is spent.
    */
   const layoutBoxes = wallz
@@ -6279,6 +6295,11 @@ const renderStyle = async (styleName) => {
         `the ${name} box ${JSON.stringify(b)} is outside its area ${JSON.stringify(area)}`,
       );
     }
+    if (underButtons(name, b)) {
+      throw new Error(
+        `the ${name} box ${JSON.stringify(b)} is under the apps' buttons ${JSON.stringify(BUTTONS_ZONE)}`,
+      );
+    }
   }
   if (GOAL_LINE) {
     const fit = await stage.evaluate(() => window.__goalFit());
@@ -6297,11 +6318,11 @@ const renderStyle = async (styleName) => {
       fault(
         "text-fit",
         null,
-        `the players strip (or its call to action) does not fit STRIP_AREA on one line at its smallest size: ${strip.a.name} vs ${strip.b.name}, ${EDL?.cta ?? DEFAULT_CTA}`,
+        `the call to action does not fit STRIP_AREA on one line at its smallest size: ${EDL?.cta ?? DEFAULT_CTA}`,
       );
     }
     log(
-      `players strip: ${strip.a.name} vs ${strip.b.name}, ${fit.size}px, box ${JSON.stringify(layoutBoxes.strip)}`,
+      `strip: ${EDL?.cta ?? DEFAULT_CTA}, ${fit.size}px, box ${JSON.stringify(layoutBoxes.strip)}`,
     );
   }
 

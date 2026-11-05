@@ -399,9 +399,72 @@ export const STRIP_AREA = {
   h: FRAME.h - 484 - (SAFE_AREA.y + SAFE_AREA.h),
 };
 
-/** The area a measured layout box must lie in: the strip's, or SAFE_AREA. */
+/**
+ * The look of Nil, 2026-11-05 (C58, his answer to the look still: "The
+ * edge to edge board is gorgeous ... The small 'vs' can go"). The board
+ * is as wide as the frame less `side` px on each side (room for the
+ * shakes), and the column (caption, head row, board) stacks up from the
+ * strip, which stands on `floor`: the top of the apps' caption zone on
+ * organic posts (STRIP_AREA's bottom). Nothing goes above `top`, the
+ * apps' top bar (an estimate, 5% of the frame, not checked on a phone).
+ * Meta's SAFE_AREA is too small for such a board: its 979 px of height
+ * hold no 1040 px board.
+ */
+export const LOOK = {
+  top: Math.round(FRAME.h * 0.05),
+  side: 20,
+  floor: STRIP_AREA.y + STRIP_AREA.h,
+};
+/**
+ * Where the apps paint their buttons on the right: the right 140 px (the
+ * organic presets of STRIP_AREA) from 43% of the frame's height down (an
+ * estimate of TikTok's column, the highest one, not checked on a phone).
+ * The edge-to-edge board reaches under it (C58: the Director takes the
+ * cells it covers to Nil); text never does.
+ */
+export const BUTTONS_ZONE = {
+  x: FRAME.w - 140,
+  y: Math.round(FRAME.h * 0.43),
+  w: 140,
+  h: LOOK.floor - Math.round(FRAME.h * 0.43),
+};
+/** Where the board may lie: the frame's width, from LOOK.top to the floor. */
+export const BOARD_AREA = {
+  x: 0,
+  y: LOOK.top,
+  w: FRAME.w,
+  h: LOOK.floor - LOOK.top,
+};
+/**
+ * Where a text box may lie: SAFE_AREA's sides (clear of the buttons on
+ * the right), from LOOK.top to the floor.
+ */
+export const TEXT_AREA = {
+  x: SAFE_AREA.x,
+  y: LOOK.top,
+  w: SAFE_AREA.w,
+  h: LOOK.floor - LOOK.top,
+};
+
+/**
+ * Whether a measured box other than the board reaches under the apps'
+ * buttons (BUTTONS_ZONE): text may be as wide as TEXT_AREA only above them.
+ * @param {string} boxName
+ * @param {{ x: number, y: number, w: number, h: number }} box
+ */
+export const underButtons = (boxName, box) =>
+  boxName !== "board" &&
+  box.x + box.w > BUTTONS_ZONE.x &&
+  box.y + box.h > BUTTONS_ZONE.y &&
+  box.y < BUTTONS_ZONE.y + BUTTONS_ZONE.h;
+
+/** The area a measured layout box must lie in. */
 export const areaOf = (boxName) =>
-  boxName === "strip" ? STRIP_AREA : SAFE_AREA;
+  boxName === "strip"
+    ? STRIP_AREA
+    : boxName === "board"
+      ? BOARD_AREA
+      : TEXT_AREA;
 
 /**
  * The sounds of the VS slot (the opening's first name) and the finish where
