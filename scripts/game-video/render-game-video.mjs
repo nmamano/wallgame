@@ -4904,12 +4904,11 @@ const renderStyle = async (styleName) => {
     const landing = landingEventsAt(plyIndex);
     const trap = landing.findLast((e) => e.kind === "trap");
     if (trap) return trap;
-    const plant = landing.findLast((e) => e.kind === "plant");
-    if (plant) return plant;
     const deathCard = plyOverlays(plyIndex).some((e) =>
       DEATH_CARDS.includes(OVERLAYS[e.asset].card),
     );
-    return deathCard ? (landing.at(-1) ?? null) : null;
+    if (deathCard) return landing.at(-1) ?? null;
+    return landing.findLast((e) => e.kind === "plant") ?? null;
   };
   /**
    * Hold the ply until the live overlay closes, when a pawn emotes it
