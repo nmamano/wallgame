@@ -4895,12 +4895,17 @@ const renderStyle = async (styleName) => {
    * a death card (overlays.mjs DEATH_CARDS) opens them after its last
    * mark, so the mark reads first and the card closes the beat (Wall Game
    * Director, 2026-11-01, v-2026-11-01-2 ply 63: the skull and YOU DIED
-   * opened together).
+   * opened together). A ply with a plant opens them after its last plant,
+   * so the placed walls glow before a face covers the board (Nil,
+   * 2026-11-05, C59: "missing a highlight of the placed walls, so it was
+   * hard to know what was the move").
    */
   const overlaysOpenAfter = (plyIndex) => {
     const landing = landingEventsAt(plyIndex);
     const trap = landing.findLast((e) => e.kind === "trap");
     if (trap) return trap;
+    const plant = landing.findLast((e) => e.kind === "plant");
+    if (plant) return plant;
     const deathCard = plyOverlays(plyIndex).some((e) =>
       DEATH_CARDS.includes(OVERLAYS[e.asset].card),
     );
@@ -5559,7 +5564,7 @@ const renderStyle = async (styleName) => {
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place${beside ? ` next to the ${w.ev.pawn} (a green-screen clip stands beside its pawn, C59)` : ""}${w.ev.place === undefined ? "" : ` at its place ${w.ev.place}`} while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place${beside ? ` next to the ${w.ev.pawn} (a green-screen clip stands beside its pawn, C59)` : ""}${w.ev.place === undefined ? "" : ` at its place ${w.ev.place}`} while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt && !beside ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;
