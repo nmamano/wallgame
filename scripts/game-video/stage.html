@@ -1781,7 +1781,15 @@
             (Nil, 2026-10-26: "the sweat looks like its pouring to the
             right, but it appears on the left side of the mouse").
           */
-          sweat.style.left = "78%";
+          /*
+            In the board's last column the right side runs off the board
+            (Wall Game Director, 2026-11-05: the drop beside Csp's h1 mouse
+            was cut at the edge of the edge-to-edge board), so there the
+            drop goes on the left, mirrored, its drops flying off the face.
+          */
+          const atEdge = b.cell.x + b.size * 0.58 > 1;
+          sweat.style.left = atEdge ? "-8%" : "78%";
+          sweat.style.transform = atEdge ? "scaleX(-1)" : "";
           sweat.style.top = -5 + cycle * 30 + "%";
           sweat.style.opacity = 1 - cycle * 0.8;
         } else {

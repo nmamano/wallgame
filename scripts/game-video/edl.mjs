@@ -516,6 +516,8 @@ export const LINT_KINDS = {
   "stamp-covers": "warns",
   "mark-covers-wall": "warns",
   "mark-covers-pawn": "stops",
+  "mark-cut": "warns",
+  "name-covers-pawn": "stops",
   "finish-cut": "warns",
   "sounds-together": "warns",
   "race-small": "warns",

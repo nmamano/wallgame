@@ -3039,6 +3039,7 @@ const bubbleSide = (
   at,
   covered = new Set(),
   onPawn = new Set(),
+  cut = new Set(),
 ) => {
   // One cell in each axis, so a board with rows != cols measures true cells.
   const cellX = GRID.pitchX;
@@ -3047,10 +3048,12 @@ const bubbleSide = (
   const others = (pawnSpots.get(boardIndex) ?? []).filter(
     (p) => away(p, at.x, at.y) > 0.3,
   );
-  // Rank: hides no pawn, then reads as no other pawn's, then covers no
-  // wall, then the most room.
+  // Rank: hides no pawn, then reads as no other pawn's, then is cut by no
+  // edge (`cut`: its mark, measured, runs off the board; Wall Game
+  // Director, 2026-11-05: the drop beside Csp's h1 mouse was cut at the
+  // board's right edge), then covers no wall, then the most room.
   let best = "up";
-  let bestRank = [-1, -1, -1, -1];
+  let bestRank = [-1, -1, -1, -1, -1];
   const better = (a, b) => {
     for (let i = 0; i < a.length; i += 1) {
       if (Math.abs(a[i] - b[i]) > 1e-9) return a[i] > b[i];
@@ -3066,6 +3069,7 @@ const bubbleSide = (
     const rank = [
       onPawn.has(side) ? 0 : 1,
       room > OWN_MARK_CELLS + 1e-6 ? 1 : 0,
+      cut.has(side) ? 0 : 1,
       covered.has(side) ? 0 : 1,
       room,
     ];
@@ -3171,6 +3175,11 @@ const depthInto = (b, k) =>
     (Math.min(b.y + b.h, k.y1) - Math.max(b.y, k.y0)) / GRID.pitchY,
   );
 const TOUCH_CELLS = 0.01;
+/**
+ * How far past the board's edge a mark may reach, as a part of the board,
+ * before it reads as cut (a hair of anti-aliasing is not a cut).
+ */
+const EDGE_CUT = 0.002;
 
 /**
  * An EDL wall as the line it draws on the board image, [x1, y1, x2, y2] in
@@ -6480,6 +6489,8 @@ const renderStyle = async (styleName) => {
   const fxSides = new Map();
   const fxCovers = new Map();
   const fxHides = new Map();
+  /** The marks cut by the board's edge on every side they can take. */
+  const fxCuts = new Map();
   for (const ev of EVENTS) {
     if (!(ev.kind in MARK_SECONDS)) continue;
     const board = ev.ply + 1;
@@ -6501,6 +6512,7 @@ const renderStyle = async (styleName) => {
       }));
     const hides = new Map();
     const covers = new Map();
+    const cuts = new Set();
     const ts = Array.from(
       { length: Math.round(MARK_SECONDS[ev.kind] * FPS) },
       (_, i) => i / FPS,
@@ -6517,13 +6529,28 @@ const renderStyle = async (styleName) => {
       if (hit) covers.set(side, hit.what);
       const under = pawns.find((k) => depthInto(box, k) > TOUCH_CELLS);
       if (under) hides.set(side, under.what);
+      if (
+        box.x < -EDGE_CUT ||
+        box.y < -EDGE_CUT ||
+        box.x + box.w > 1 + EDGE_CUT ||
+        box.y + box.h > 1 + EDGE_CUT
+      ) {
+        cuts.add(side);
+      }
     }
     const side = bubbleSide(
       board,
       at,
       new Set(covers.keys()),
       new Set(hides.keys()),
+      cuts,
     );
+    if (cuts.has(side)) {
+      fxCuts.set(
+        ev,
+        `the ${ev.kind} mark on ${ev.cell} runs off the board's edge: every side it can take ${hides.size > 0 ? "hides a pawn or " : ""}is cut by an edge`,
+      );
+    }
     fxSides.set(ev, side);
     if (hides.has(side)) {
       fxHides.set(
@@ -7609,6 +7636,7 @@ const renderStyle = async (styleName) => {
       if (fxCovers.has(ev))
         fault("mark-covers-wall", plyIndex, fxCovers.get(ev));
       if (fxHides.has(ev)) fault("mark-covers-pawn", plyIndex, fxHides.get(ev));
+      if (fxCuts.has(ev)) fault("mark-cut", plyIndex, fxCuts.get(ev));
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's or trap's sound lands with its word (-12 vet, 2026-10-31:
@@ -7773,6 +7801,33 @@ const renderStyle = async (styleName) => {
   const names = wallz
     ? openingNames(INTRO_PLAN, dailyName, (id) => side(id).hex, buttonsOnBoard)
     : [];
+  // A name covers no pawn (Wall Game Director, 2026-11-05, from VR1's
+  // review 150 N2): its letters' box against each pawn the page drew.
+  for (const { paint } of names) {
+    const half = (NAME_LETTER_WIDTH * paint.size * paint.text.length) / 2;
+    const box = {
+      x: paint.x - half,
+      y: paint.y - paint.size,
+      w: 2 * half,
+      h: paint.size * 1.2,
+    };
+    const under = (pawnSpots.get(START_PLY) ?? []).find(
+      (p) =>
+        depthInto(box, {
+          x0: p.x - p.w / 2,
+          y0: p.y - p.h / 2,
+          x1: p.x + p.w / 2,
+          y1: p.y + p.h / 2,
+        }) > TOUCH_CELLS,
+    );
+    if (under) {
+      fault(
+        "name-covers-pawn",
+        START_PLY - 1,
+        `the opening name "${paint.text}" covers the pawn on ${cellUnder(under.x, under.y)}`,
+      );
+    }
+  }
   /** The names `t` seconds into the opening, at `alpha`. */
   const namesAt = (t, alpha = 1) =>
     names
