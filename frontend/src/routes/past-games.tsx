@@ -50,7 +50,9 @@ const FILTERS_STORAGE_KEY = "past_games_filters";
 
 type ViewMode = "list" | "plot";
 
-const readError = async (res: Response): Promise<never> => {
+const readError = async (
+  res: Pick<Response, "json" | "status" | "statusText">,
+): Promise<never> => {
   const data: unknown = await res.json().catch(() => null);
   throw new Error(messageFromApiErrorBody(data, res.status, res.statusText));
 };

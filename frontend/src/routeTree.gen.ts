@@ -9,78 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TermsRouteImport } from './routes/terms'
-import { Route as StudyBoardRouteImport } from './routes/study-board'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as RankingRouteImport } from './routes/ranking'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as PlayRouteImport } from './routes/play'
-import { Route as PastGamesRouteImport } from './routes/past-games'
-import { Route as LiveGamesRouteImport } from './routes/live-games'
-import { Route as LearnRouteImport } from './routes/learn'
-import { Route as GeneratedCandidatesRouteImport } from './routes/generated-candidates'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
-import { Route as PuzzlesIndexRouteImport } from './routes/puzzles.index'
-import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
-import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as GeneratedCandidatesRouteImport } from './routes/generated-candidates'
+import { Route as LearnRouteImport } from './routes/learn'
+import { Route as LiveGamesRouteImport } from './routes/live-games'
+import { Route as PastGamesRouteImport } from './routes/past-games'
+import { Route as PlayRouteImport } from './routes/play'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as RankingRouteImport } from './routes/ranking'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StudyBoardRouteImport } from './routes/study-board'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as GameIdRouteImport } from './routes/game.$id'
+import { Route as PuzzlesIndexRouteImport } from './routes/puzzles.index'
+import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
+import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
+import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
 
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StudyBoardRoute = StudyBoardRouteImport.update({
-  id: '/study-board',
-  path: '/study-board',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RankingRoute = RankingRouteImport.update({
-  id: '/ranking',
-  path: '/ranking',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlayRoute = PlayRouteImport.update({
-  id: '/play',
-  path: '/play',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PastGamesRoute = PastGamesRouteImport.update({
-  id: '/past-games',
-  path: '/past-games',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LiveGamesRoute = LiveGamesRouteImport.update({
-  id: '/live-games',
-  path: '/live-games',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LearnRoute = LearnRouteImport.update({
-  id: '/learn',
-  path: '/learn',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GeneratedCandidatesRoute = GeneratedCandidatesRouteImport.update({
-  id: '/generated-candidates',
-  path: '/generated-candidates',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -88,14 +38,64 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const GeneratedCandidatesRoute = GeneratedCandidatesRouteImport.update({
+  id: '/generated-candidates',
+  path: '/generated-candidates',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SoloCampaignIndexRoute = SoloCampaignIndexRouteImport.update({
-  id: '/solo-campaign/',
-  path: '/solo-campaign/',
+const LearnRoute = LearnRouteImport.update({
+  id: '/learn',
+  path: '/learn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveGamesRoute = LiveGamesRouteImport.update({
+  id: '/live-games',
+  path: '/live-games',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PastGamesRoute = PastGamesRouteImport.update({
+  id: '/past-games',
+  path: '/past-games',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RankingRoute = RankingRouteImport.update({
+  id: '/ranking',
+  path: '/ranking',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudyBoardRoute = StudyBoardRouteImport.update({
+  id: '/study-board',
+  path: '/study-board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameIdRoute = GameIdRouteImport.update({
+  id: '/game/$id',
+  path: '/game/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PuzzlesIndexRoute = PuzzlesIndexRouteImport.update({
@@ -103,19 +103,19 @@ const PuzzlesIndexRoute = PuzzlesIndexRouteImport.update({
   path: '/puzzles/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SoloCampaignIdRoute = SoloCampaignIdRouteImport.update({
-  id: '/solo-campaign/$id',
-  path: '/solo-campaign/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PuzzlesIdRoute = PuzzlesIdRouteImport.update({
   id: '/puzzles/$id',
   path: '/puzzles/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GameIdRoute = GameIdRouteImport.update({
-  id: '/game/$id',
-  path: '/game/$id',
+const SoloCampaignIndexRoute = SoloCampaignIndexRouteImport.update({
+  id: '/solo-campaign/',
+  path: '/solo-campaign/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SoloCampaignIdRoute = SoloCampaignIdRouteImport.update({
+  id: '/solo-campaign/$id',
+  path: '/solo-campaign/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -136,8 +136,8 @@ export interface FileRoutesByFullPath {
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
-  '/puzzles': typeof PuzzlesIndexRoute
-  '/solo-campaign': typeof SoloCampaignIndexRoute
+  '/puzzles/': typeof PuzzlesIndexRoute
+  '/solo-campaign/': typeof SoloCampaignIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -199,8 +199,8 @@ export interface FileRouteTypes {
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
-    | '/puzzles'
-    | '/solo-campaign'
+    | '/puzzles/'
+    | '/solo-campaign/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -266,81 +266,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/study-board': {
-      id: '/study-board'
-      path: '/study-board'
-      fullPath: '/study-board'
-      preLoaderRoute: typeof StudyBoardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ranking': {
-      id: '/ranking'
-      path: '/ranking'
-      fullPath: '/ranking'
-      preLoaderRoute: typeof RankingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/play': {
-      id: '/play'
-      path: '/play'
-      fullPath: '/play'
-      preLoaderRoute: typeof PlayRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/past-games': {
-      id: '/past-games'
-      path: '/past-games'
-      fullPath: '/past-games'
-      preLoaderRoute: typeof PastGamesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/live-games': {
-      id: '/live-games'
-      path: '/live-games'
-      fullPath: '/live-games'
-      preLoaderRoute: typeof LiveGamesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/learn': {
-      id: '/learn'
-      path: '/learn'
-      fullPath: '/learn'
-      preLoaderRoute: typeof LearnRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/generated-candidates': {
-      id: '/generated-candidates'
-      path: '/generated-candidates'
-      fullPath: '/generated-candidates'
-      preLoaderRoute: typeof GeneratedCandidatesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -350,32 +280,95 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/generated-candidates': {
+      id: '/generated-candidates'
+      path: '/generated-candidates'
+      fullPath: '/generated-candidates'
+      preLoaderRoute: typeof GeneratedCandidatesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/solo-campaign/': {
-      id: '/solo-campaign/'
-      path: '/solo-campaign'
-      fullPath: '/solo-campaign'
-      preLoaderRoute: typeof SoloCampaignIndexRouteImport
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live-games': {
+      id: '/live-games'
+      path: '/live-games'
+      fullPath: '/live-games'
+      preLoaderRoute: typeof LiveGamesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/past-games': {
+      id: '/past-games'
+      path: '/past-games'
+      fullPath: '/past-games'
+      preLoaderRoute: typeof PastGamesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ranking': {
+      id: '/ranking'
+      path: '/ranking'
+      fullPath: '/ranking'
+      preLoaderRoute: typeof RankingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/study-board': {
+      id: '/study-board'
+      path: '/study-board'
+      fullPath: '/study-board'
+      preLoaderRoute: typeof StudyBoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/game/$id': {
+      id: '/game/$id'
+      path: '/game/$id'
+      fullPath: '/game/$id'
+      preLoaderRoute: typeof GameIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/puzzles/': {
       id: '/puzzles/'
       path: '/puzzles'
-      fullPath: '/puzzles'
+      fullPath: '/puzzles/'
       preLoaderRoute: typeof PuzzlesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/solo-campaign/$id': {
-      id: '/solo-campaign/$id'
-      path: '/solo-campaign/$id'
-      fullPath: '/solo-campaign/$id'
-      preLoaderRoute: typeof SoloCampaignIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/puzzles/$id': {
@@ -385,11 +378,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PuzzlesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/game/$id': {
-      id: '/game/$id'
-      path: '/game/$id'
-      fullPath: '/game/$id'
-      preLoaderRoute: typeof GameIdRouteImport
+    '/solo-campaign/': {
+      id: '/solo-campaign/'
+      path: '/solo-campaign'
+      fullPath: '/solo-campaign/'
+      preLoaderRoute: typeof SoloCampaignIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/solo-campaign/$id': {
+      id: '/solo-campaign/$id'
+      path: '/solo-campaign/$id'
+      fullPath: '/solo-campaign/$id'
+      preLoaderRoute: typeof SoloCampaignIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
