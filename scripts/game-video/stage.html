@@ -2290,7 +2290,11 @@
 
         if (c.kind === "react") {
           // One cell over, on the clear side; the centre is then clamped so
-          // the emoji at its largest stays inside the board's square.
+          // the emoji at its largest, turned, stays inside the board's
+          // square. Its box is measured, not taken as 1 em: the eyes are
+          // wider than they are high, and cut by the board's right edge for
+          // a frame of their pop (vet of v-2026-11-05-10, 2026-11-05: 👀
+          // on h2).
           const [dx, dy] = {
             up: [0, -1],
             down: [0, 1],
@@ -2298,17 +2302,21 @@
             right: [1, 0],
           }[c.side];
           const most = 1.15;
-          const half = (px * 0.95 * most) / 2;
-          const clamp = (v) => Math.max(half, Math.min(W - half, v));
-          const x = clamp(c.cell.x * W + dx * px) - c.cell.x * W;
-          const y = clamp(c.cell.y * W + dy * px) - c.cell.y * W;
+          const tilt = (6 * Math.PI) / 180;
+          emoji.textContent = c.emoji;
+          emoji.style.fontSize = px * 0.95 + "px";
+          const w = emoji.offsetWidth;
+          const h = emoji.offsetHeight;
+          const halfX = ((w * Math.cos(tilt) + h * Math.sin(tilt)) * most) / 2;
+          const halfY = ((h * Math.cos(tilt) + w * Math.sin(tilt)) * most) / 2;
+          const clamp = (v, half) => Math.max(half, Math.min(W - half, v));
+          const x = clamp(c.cell.x * W + dx * px, halfX) - c.cell.x * W;
+          const y = clamp(c.cell.y * W + dy * px, halfY) - c.cell.y * W;
           // A clean pop: grows past full size, settles, holds, fades.
           const grow =
             c.t < 0.18
               ? 0.4 + (most - 0.4) * easeOut3(c.t / 0.18)
               : most - (most - 1) * easeOut3(span(c.t, 0.18, 0.32));
-          emoji.textContent = c.emoji;
-          emoji.style.fontSize = px * 0.95 + "px";
           emoji.style.transform =
             "translate(calc(-50% + " +
             x +
