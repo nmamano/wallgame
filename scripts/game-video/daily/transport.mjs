@@ -133,7 +133,9 @@ export const ok = (reply) => reply.status >= 200 && reply.status < 300;
  * The stored text of a failed post: the message and, when the error has
  * one, its cause's code and message. Node's fetch says only "fetch failed"
  * for any network fault; the cause names it (ECONNRESET, a time-out, a
- * closed socket). Cut to 200 characters (Wall Game PM, 2026-11-05).
+ * closed socket). Cut to 200 characters (Wall Game PM, 2026-11-05). An
+ * access_token, token or key value (any name that ends in token or key)
+ * in a URL that a runtime might quote is masked (VR1, Wall Game PM).
  */
 export const errorText = (err) => {
   const text = String(err?.message ?? err);
@@ -142,7 +144,11 @@ export const errorText = (err) => {
   const what = [cause.code, cause.message ?? String(cause)]
     .filter((x) => typeof x === "string" && x)
     .join(" ");
-  return what ? `${text} (cause: ${what.slice(0, 200)})` : text;
+  const masked = what.replace(
+    /([\w.-]*(?:token|key))=[^&\s#]+/gi,
+    "$1=<masked>",
+  );
+  return what ? `${text} (cause: ${masked.slice(0, 200)})` : text;
 };
 
 /**

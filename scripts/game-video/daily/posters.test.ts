@@ -1727,5 +1727,17 @@ describe("errorText keeps a network fault's cause", () => {
     expect(
       errorText(new Error("x", { cause: new Error("y".repeat(300)) })),
     ).toBe(`x (cause: ${"y".repeat(200)})`);
+    // A URL with a token in a cause's text is masked.
+    expect(
+      errorText(
+        new Error("fetch failed", {
+          cause: new Error(
+            "bad https://graph.facebook.com/v1/me?access_token=SECRET-T&x=1 https://h/p?key=SECRET-K#f https://h/p?a=1&refresh_token=SECRET-R",
+          ),
+        }),
+      ),
+    ).toBe(
+      "fetch failed (cause: bad https://graph.facebook.com/v1/me?access_token=<masked>&x=1 https://h/p?key=<masked>#f https://h/p?a=1&refresh_token=<masked>)",
+    );
   });
 });
