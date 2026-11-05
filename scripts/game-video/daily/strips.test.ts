@@ -58,7 +58,7 @@ describe("event strips", () => {
     expect(timelineOf({ ...TIMELINE, moves: [{ ply: 1, at: -1 }] })).toBeNull();
   });
 
-  test("a clip's own sound keeps the timeline, on a move's event and on the opening", () => {
+  test("a clip's own sound keeps the timeline, on a move's event and on no event", () => {
     // Every clip's sound name, as the renderer names its cue (VR1, review
     // 108: "clip:<asset>" failed the name check and dropped the timeline).
     const clips = Object.keys(OVERLAYS).filter(
@@ -72,7 +72,7 @@ describe("event strips", () => {
           ...TIMELINE.sounds,
           // An overlay event's clip, at its event.
           { name: clipSoundName(asset), role: "event", start: 19.8, event: 2 },
-          // The opening is not in EVENTS: its cue has no event.
+          // A cue of no event (as music has none).
           { name: clipSoundName(asset), role: "event", start: 0, event: null },
         ],
       };

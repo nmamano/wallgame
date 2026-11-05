@@ -1918,15 +1918,12 @@ export const createDaily = ({
       // A daily video is posted: a MEDIUM or HIGH picture needs Nil's OK
       // for it (overlays.mjs needsNilOk; Wall Game PM's risk rule,
       // 2026-10-30). A preview is never posted and may show it.
-      // The opening clip (edl.mjs `opening`) is an overlay too.
       ...[
         ...new Set(
-          [
-            ...edl.events
-              .filter((e) => e.kind === "overlay")
-              .map((e) => e.asset),
-            ...(edl.opening ? [edl.opening] : []),
-          ].filter((name) => needsNilOk(OVERLAYS[name])),
+          edl.events
+            .filter((e) => e.kind === "overlay")
+            .map((e) => e.asset)
+            .filter((name) => needsNilOk(OVERLAYS[name])),
         ),
       ].map(
         (name) =>

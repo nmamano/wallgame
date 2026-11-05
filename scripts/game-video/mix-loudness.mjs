@@ -463,7 +463,7 @@ export const measureSilences = (ffmpeg, file, seconds) => {
 /**
  * The silences over the rules, each with the rule it breaks: over
  * SILENCE_SECONDS anywhere, or over OPENING_SILENCE_SECONDS inside the
- * opening [VS hit, first move] (null: a video with no VS overlay).
+ * opening [VS sound, first move] (null: a video without the daily opening).
  * @param {{ start: number, end: number, seconds: number }[]} gaps
  * @param {[number, number] | null} opening
  */

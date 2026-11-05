@@ -1517,13 +1517,10 @@ describe("the meme pack's clips", () => {
     ]);
   });
 
-  test("the opening is a cover clip, stored only when set", () => {
-    expect(accept({ ...base, opening: "curtain-open" }).opening).toBe(
-      "curtain-open",
-    );
+  test("the opening clip is retired", () => {
     expect("opening" in accept(base)).toBe(false);
-    expect(errorsOf({ ...base, opening: "stupid-stamp" })).toEqual([
-      'opening must be a cover clip (curtain-open, gs-fire, gs-math, gs-tumbleweed, confetti, curtain-open-pack, confetti-pack, rec-frame), or absent for none; got "stupid-stamp"',
+    expect(errorsOf({ ...base, opening: "curtain-open" })).toEqual([
+      'opening is retired (Nil, 2026-11-05, C56): no cover clip opens a video; got "curtain-open"',
     ]);
   });
 });

@@ -200,7 +200,6 @@ import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import { pageArrows, routeNear } from "./page-arrows.mjs";
 import {
   allocateFrameRanges,
-  movesUnderOverlay,
   restAfterEvents,
   videoTimeline,
 } from "./timeline-frames.mjs";
@@ -426,9 +425,10 @@ const ORIGIN = "https://wallgame.io";
  *            frame with every key element inside the Reels safe area
  *            (SAFE_AREA in edl.mjs), one meme caption, the race counter, the
  *            punch-ins, mouse beats, stamps and meme sounds the director's
- *            EDL places, "Bot" vs "Human" in their colours as an OVERLAY over
- *            the first seconds of play (an intro screen loses viewers), and
- *            one of our own endings. No plates, no winner card.
+ *            EDL places, each side's name ("Bot", "Human") in its colour over
+ *            its cat as its opening walk draws (Nil, 2026-11-05, C56: the
+ *            VS banners and the curtain had become repetitive), and one of
+ *            our own endings. No plates, no winner card.
  *
  * A daily render takes everything that varies from its EDL (`--edl`), the
  * ending too: Nil, 2026-10-26, the three endings (stage.html describes each)
@@ -447,7 +447,6 @@ const STYLES = {
   daily: {
     look: "wallz",
     vsSeconds: 0,
-    vsOverlay: true,
     vsSound: "vsMeme",
     secondsPerMove: DEFAULT_SECONDS_PER_MOVE,
   },
@@ -516,22 +515,6 @@ const captionAt = (boardIndex) =>
   PAYOFF && boardIndex > PAYOFF.ply ? PAYOFF.text : CAPTION;
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
-/**
- * The EDL's opening clip (edl.mjs `opening`) as an overlay event: it opens
- * with the VS overlay, not on a move, and plays muted. Its ply is the first
- * the video plays, for the messages. Not in EVENTS: no move opens it.
- */
-const OPENING = EDL?.opening
-  ? {
-      kind: "overlay",
-      form: "cover",
-      asset: EDL.opening,
-      ply: EDL.startPly,
-      // The whole clip: it closes on its own (null would never close it).
-      seconds: OVERLAYS[EDL.opening].seconds,
-      opening: true,
-    }
-  : null;
 /**
  * --plies FROM..TO previews only those plies of an EDL, from the capture
  * cache, so the director can look at one moment in seconds. The board, the
@@ -1109,10 +1092,10 @@ const MUSIC_BED = 0.35;
  * gain. Both only warn (edl.mjs LINT_KINDS). The silence rules
  * (SILENCE_SECONDS, OPENING_SILENCE_SECONDS) are mix-loudness.mjs's: this
  * check is a forecast before the mix, and the render's `silence` measure
- * of its final track is the one the vet judges. From the VS hit to the
+ * of its final track is the one the vet judges. From the VS sound to the
  * first move the limit is OPENING_SILENCE_SECONDS (the T5b rule), only when
- * the VS overlay plays: a video without it (no VS in the style, or a --plies
- * window without the opening) has only the SILENCE_SECONDS rule, so a
+ * the daily opening plays: a video without it (the current look, or a
+ * --plies window without the opening) has only the SILENCE_SECONDS rule, so a
  * silent cold open alone does not trip it (Video Reviewer 1, review 64).
  */
 const STILL_BEFORE_ENDING_SECONDS = 0.5;
@@ -2693,11 +2676,10 @@ const meme = (name) => {
  * step with the file list.
  *
  *   vsStamp   lands on the VS mark's punch (current)
- *   vsMeme    lands on the VS mark's punch in the overlay (daily: no riser,
- *             the overlay has no time for its 1.6 s lead-in)
+ *   vsMeme    lands as the opening's first name shows (daily: no riser,
+ *             the name has no 1.6 s lead-in)
  *   shake     lands on the winning capture, under the screen shake (current)
  *   win       lands with the end card (current)
- *   vsMeme    lands on the punch of the VS overlay (daily)
  *   finish    lands on the impact of the ending (daily)
  *
  * The two daily meme slots are defaults (DEFAULT_SLOT_SOUNDS in edl.mjs):
@@ -2709,24 +2691,6 @@ const meme = (name) => {
  */
 const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
 const STING_DIR = join(REPO, "assets/stings");
-/**
- * The daily VS banners' whoosh (make-stings.mjs): its peak meets the
- * banners' exit, about 6 dB under the VS hit (Wall Game Director,
- * 2026-10-29: choice (b), Nil's 4.0 s VS card kept).
- */
-const VS_WHOOSH = {
-  name: "vs-whoosh",
-  file: join(STING_DIR, "vs-whoosh.wav"),
-  gain: 10 ** (-5 / 20),
-};
-/**
- * How much sooner the exit whoosh starts, played slower so that its peak
- * still meets the banners' exit. Its first 0.12 s are under the silence
- * floor (-45 dBFS), and the gap from the VS hit's tail to it measured
- * 0.63-0.66 s, over the 0.6 s rule (v-2026-10-29-1 and -2, 2026-10-29);
- * 0.2 s sooner at rate 1/1.2 brings it to about 0.48 s.
- */
-const VS_EXIT_WHOOSH_LEAD = 0.2;
 const SOUNDS = {
   vsStamp: {
     name: "vs-b-riser",
@@ -2785,10 +2749,9 @@ const soundsFor = (styleName) => {
 */
 /**
  * Whether every sting and every time in stings.json is there (make-stings.mjs
- * --check, which owns that list). A copy from before the whoosh had no
- * whooshPeakSeconds, and with both wavs present it was never rebuilt: the
- * whoosh's cue went to NaN and every render failed in the mix (Wall Game
- * Director, 2026-10-29, main 10f2b1ca).
+ * --check, which owns that list). A copy with a time missing was once never
+ * rebuilt: its cue went to NaN and every render failed in the mix (Wall
+ * Game Director, 2026-10-29, main 10f2b1ca).
  */
 const MAKE_STINGS = join(HERE, "make-stings.mjs");
 const stingsReady = () =>
@@ -2804,7 +2767,7 @@ if (AUDIO && !stingsReady()) {
 
 const stingManifest = AUDIO
   ? JSON.parse(readFileSync(join(STING_DIR, "stings.json"), "utf8"))
-  : { vsHitSeconds: 0, whooshPeakSeconds: 0 };
+  : { vsHitSeconds: 0 };
 
 /**
  * The music as mix parts (mix-loudness.mjs Music), one per played cue
@@ -3631,7 +3594,15 @@ const INTRO_WALKS =
             .filter((h) => h.hunter.player === player)
             .map((h) => huntPath(start.grid, start.pawns, h));
           const walk = walks.reduce((a, b) => (b.length < a.length ? b : a));
-          return { player, ...drawnWalk(start.pawns, walk) };
+          // The name goes over the cat, or under it on the top row or
+          // where a pawn stands over it (openingNames).
+          const [row, col] = walk[0];
+          const nameBelow =
+            row === 0 ||
+            boardPawns(start.pawns).some(
+              (p) => p.cell[0] === row - 1 && p.cell[1] === col,
+            );
+          return { player, ...drawnWalk(start.pawns, walk), nameBelow };
         });
       })()
     : [];
@@ -3640,6 +3611,42 @@ const INTRO_PLAN = (() => {
   const plan = introWalkPlan(INTRO_WALKS);
   return INTRO_WALKS.map((w, k) => ({ ...w, ...plan[k] }));
 })();
+/**
+ * The opening's names (Nil, 2026-11-05, C56: "when the paths for each cat
+ * are drawn, we can add 'Bot' and 'Human' over their cats"): a side's name
+ * shows over its cat as its opening walk starts, in its colour, and stays
+ * to the first move. NAME_SIZE is the letters' height in cells; a name
+ * sits NAME_GAP cells off its cat's cell, and NAME_EDGE in from the board's
+ * side. It pops in over NAME_POP_SECONDS and fades over the opening's last
+ * NAME_FADE_SECONDS, as the last walk does.
+ */
+const NAME_SIZE = 0.42;
+const NAME_GAP = 0.06;
+const NAME_EDGE = 0.01;
+/** A bold letter's width over its height, about (TikTok Sans 900). */
+const NAME_LETTER_WIDTH = 0.62;
+const NAME_POP_SECONDS = 0.18;
+const NAME_FADE_SECONDS = 0.3;
+/**
+ * Each opening walk's name as stage.html paints it (paintNames): its text
+ * and colour, and its baseline's centre and letter size as fractions of the
+ * board image. `from`: the second of the opening it shows at.
+ */
+const openingNames = (plan, nameOf, hexOf) =>
+  plan.map((w) => {
+    const [row, col] = w.cells[0];
+    const size = NAME_SIZE * GRID.pitchY;
+    const text = nameOf(w.player);
+    const half = (NAME_LETTER_WIDTH * size * text.length) / 2;
+    const x = Math.min(
+      1 - NAME_EDGE - half,
+      Math.max(NAME_EDGE + half, GRID.x(col + 0.5)),
+    );
+    const y = w.nameBelow
+      ? GRID.y(row + 1) + NAME_GAP * GRID.pitchY + size * 0.8
+      : GRID.y(row) - NAME_GAP * GRID.pitchY;
+    return { from: w.start, paint: { text, hex: hexOf(w.player), x, y, size } };
+  });
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
   const [row, col] = [
@@ -4023,10 +4030,7 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *            holds while it shows, so the pawn stays there).
  */
 const OVERLAY_FACTS = new Map();
-for (const ev of [
-  ...EVENTS.filter((e) => e.kind === "overlay"),
-  ...(OPENING ? [OPENING] : []),
-]) {
+for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
   const draw = OVERLAYS[ev.asset].draw;
   if (takesPawn(OVERLAYS[ev.asset])) {
     const pawn = parsePawn(ev.pawn);
@@ -4163,8 +4167,8 @@ const closestHuntAt = (boardIndex) => {
  */
 /**
  * The rules in one line, for a viewer who does not know the game (Nil and
- * Wall Game Director, 2026-10-28): the head row shows it while the VS overlay
- * is in, where the goal sentence (variant-rules.ts GOAL_SENTENCES) was, which
+ * Wall Game Director, 2026-10-28): the head row shows it through the opening,
+ * to the first move, where the goal sentence (variant-rules.ts GOAL_SENTENCES) was, which
  * it contains. Keyed by the variant's captureKind, as GOAL_SENTENCES is. Each
  * side has a cat AND a mouse, so the line says which hunts which.
  */
@@ -4189,7 +4193,7 @@ const RULES_VARIANT = helpVariantFor(replay.state.config.variant);
 const CAPTURE_KIND = RULES_VARIANT
   ? helpRulesFor(RULES_VARIANT).captureKind
   : null;
-/** The head row's line during the VS overlay (stage.html #goal). */
+/** The head row's line during the opening (stage.html #goal). */
 const GOAL_LINE = EDL && CAPTURE_KIND ? RULES_LINES[CAPTURE_KIND] : null;
 if (
   CAPTURE_KIND &&
@@ -4325,7 +4329,7 @@ const renderStyle = async (styleName) => {
   const pace = PACE_OVERRIDE ? Number(PACE_OVERRIDE) : style.secondsPerMove;
   /**
    * Seconds per move at a ply: the EDL's pace where it sets one (daily),
-   * rounded to whole frames, so a move lasts the same inside the VS overlay
+   * rounded to whole frames, so a move lasts the same inside an overlay
    * (which splits it into single frames) as outside it.
    */
   const paceAt = (plyIndex) =>
@@ -4387,22 +4391,12 @@ const renderStyle = async (styleName) => {
   });
   const dailyName = (id) => (id === redSeat ? dailyNames.red : dailyNames.blue);
   /**
-   * A side as the daily VS overlay shows it: its daily name, never a
-   * player's (Nil, 2026-10-26: "AI (in Red) vs Human (in Blue)"; 2026-10-29:
-   * Bot and Human, as everywhere else), drawn in the side's colour. No
-   * emoji: Nil found the first version "too crowded".
-   */
-  /**
    * A side as a frame of this look carries it. In the daily look its name
    * is the daily one, so a seat's own name (a member's account, a guest's)
    * never enters the stage, not even under a hidden plate (name-mask.mjs).
    */
   const filmedSide = (id) =>
     wallz ? { ...side(id), name: dailyName(id) } : side(id);
-  const overlaySide = (playerId) => ({
-    ...filmedSide(playerId),
-    word: dailyName(playerId),
-  });
   /**
    * The players strip under the daily board (stage.html #strip): each side's
    * portrait and its daily name in its colour.
@@ -4635,15 +4629,9 @@ const renderStyle = async (styleName) => {
       start,
       end: elapsed,
     });
-  /**
-   * The cue of an EDL event's own sound, at `at`. The opening is not in
-   * EVENTS, so its cue has no event, as music has none.
-   */
+  /** The cue of an EDL event's own sound, at `at`. */
   const cueEvent = (sound, ev, at = elapsed) =>
-    cue(sound, "event", {
-      at,
-      event: ev === OPENING ? null : EVENTS.indexOf(ev),
-    });
+    cue(sound, "event", { at, event: EVENTS.indexOf(ev) });
   let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
   /**
@@ -4745,7 +4733,7 @@ const renderStyle = async (styleName) => {
   /** Every image to shoot, in order: its stage state and its file (shootAll). */
   const shots = [];
   /*
-    Play frames go through emit(), or the VS guard (movesUnderOverlay) misses
+    Play frames go through emit(), or its overlay and pounce frames miss
     them. shoot() records the image; shootAll() takes the screenshots after
     the whole video is composed. The main page still paints each state, so
     the checks that read the page (the geometry probes, the board box after
@@ -4802,32 +4790,14 @@ const renderStyle = async (styleName) => {
   };
 
   /**
-   * The VS overlay covers the first seconds of play, whatever is being shown
-   * under it - the opening position, routine moves or a punch-in. So the
-   * overlay is applied HERE, to every play image that starts inside its
-   * window: such an image is split into single frames that each carry the
-   * overlay, and only what is left after the window stays one image. Those
-   * frames are their own kind: the encode check classifies "move" frames by
-   * the board, and a board under two banners is not one it can read.
-   */
-  const overlay =
-    style.vsOverlay && PLAYS_OPENING
-      ? await stage.evaluate(() => window.__VS_OVERLAY)
-      : null;
-  /** Where the overlay starts: after the cold open, if there is one. */
-  let overlayStart = 0;
-  /**
    * Whether the head row shows the rules line (GOAL_LINE) in place of the
-   * race counter: from the VS overlay's start to the first move, through
+   * race counter: from the opening's start to the first move, through
    * the opening walks it explains (Wall Game Director, 2026-10-29).
    */
   let goalOn = false;
-  const inOverlay = () =>
-    elapsed >= overlayStart - 1e-6 &&
-    elapsed < overlayStart + overlay.seconds - 1e-6;
   /*
-    The EDL's overlays (edl.mjs "overlay", overlays.mjs) work the same way:
-    an overlay opens a window as its move lands (openOverlay), and every play
+    The EDL's overlays (edl.mjs "overlay", overlays.mjs): an overlay opens
+    a window as its move lands (openOverlay), and every play
     image while it is live is split into single frames that carry it. A plain
     position under an overlay is not one the encode check can read, so those
     frames are kind "overlay"; an effect's frames keep their own kind.
@@ -5381,8 +5351,6 @@ const renderStyle = async (styleName) => {
    * and of each thing in play under its pixels (overlay-clips.mjs
    * coverOver), the clip drawn as the stage draws it: filling the board, or
    * in the cage's box `full`. The worst over COVER_HIDE_SHARE, or null.
-   * An opening's frames under the VS banners are free: no move is shown
-   * there, and the banners cover the board anyway.
    * @param {any} w
    * @param {{ x: number, y: number, w: number, h: number }} [full]
    */
@@ -5401,7 +5369,6 @@ const renderStyle = async (styleName) => {
     const { cols, rows, grids } = facts.coverage;
     let worst = null;
     for (const f of w.frames) {
-      if (w.ev.opening && f.state.vsOverlay) continue;
       const grid =
         grids[clipFrameIndex(f.at - w.start, facts.fps, grids.length)];
       for (const b of [...inPlay(f.state), ...pawnBoxes(f.state)]) {
@@ -5762,7 +5729,6 @@ const renderStyle = async (styleName) => {
   let captureLandAt = null;
   const emit = async (state, seconds, meta = {}) => {
     checkPathWalls(state, meta);
-    const vs = () => overlay && state.segment === "play" && inOverlay();
     const overlaid = () => state.segment === "play" && liveOverlay() !== null;
     const pouncing = () =>
       !!state.capture &&
@@ -5771,7 +5737,7 @@ const renderStyle = async (styleName) => {
     // The evaluation strip moving to a move's value, frame by frame.
     const striping = () =>
       !!state.evalStrip && evalMoving(boardIndexOf.get(state.board));
-    if (!vs() && !overlaid() && !pouncing() && !striping()) {
+    if (!overlaid() && !pouncing() && !striping()) {
       await shoot(state, seconds, meta);
       return;
     }
@@ -5779,7 +5745,7 @@ const renderStyle = async (styleName) => {
     let used = 0;
     for (
       ;
-      used < frames && (vs() || overlaid() || pouncing() || striping());
+      used < frames && (overlaid() || pouncing() || striping());
       used += 1
     ) {
       let s = state;
@@ -5796,20 +5762,6 @@ const renderStyle = async (styleName) => {
           },
         };
         if (kind === "move") kind = "capture";
-      }
-      if (vs()) {
-        s = {
-          ...s,
-          // Red on top, in the strip's order ("Red vs Blue"), not the
-          // replay page's (Wall Game Director, 2026-10-30: v-2026-10-30-7,
-          // two humans, showed Blue on top over a "Red vs Blue" strip).
-          vsOverlay: {
-            t: elapsed - overlayStart,
-            a: overlaySide(redSeat),
-            b: overlaySide(blueSeat),
-          },
-        };
-        kind = "vs-overlay";
       }
       const o = overlayFrame(s);
       if (o) {
@@ -6194,55 +6146,15 @@ const renderStyle = async (styleName) => {
         { kind: "cold-open", ply: coldPly },
       );
     }
-    overlayStart = elapsed;
     log(`cold open: ply ${coldPly}, ${COLD_OPEN_SECONDS}s`);
   }
 
-  goalOn = Boolean(overlay);
-  // The opening clip plays over the board from the VS overlay's start,
-  // under its banners (edl.mjs `opening`).
-  if (OPENING && overlay) openOverlay(OPENING);
-  // The overlay's punch gets the VS sound, at the second the mark lands.
-  const vsHitAt = overlay
-    ? overlayStart + overlay.entry * vsPunchFraction
-    : null;
-  if (overlay) {
-    const vsSound = sounds[style.vsSound];
-    cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
-      at: vsHitAt,
-    });
-    /*
-      The same whoosh under the banners' slide-in, so the video has sound
-      from its first frame (Wall Game Director, 2026-10-29: the first 0.8 s
-      were silent). It starts with the slide and is played faster, so its
-      peak meets the VS hit; the rest of it goes under the hit.
-    */
-    cue(
-      {
-        ...VS_WHOOSH,
-        rate: stingManifest.whooshPeakSeconds / (vsHitAt - overlayStart),
-      },
-      "vs",
-      { at: overlayStart },
-    );
-    cue(
-      {
-        ...VS_WHOOSH,
-        rate:
-          stingManifest.whooshPeakSeconds /
-          (stingManifest.whooshPeakSeconds + VS_EXIT_WHOOSH_LEAD),
-      },
-      "vs",
-      {
-        at:
-          overlayStart +
-          overlay.seconds -
-          overlay.exit -
-          stingManifest.whooshPeakSeconds -
-          VS_EXIT_WHOOSH_LEAD,
-      },
-    );
-  }
+  goalOn = wallz && PLAYS_OPENING;
+  /**
+   * The second the VS sound plays: as the opening's first name shows
+   * (Nil, 2026-11-05, C56), or at the opening's start with no names.
+   */
+  let vsHitAt = null;
 
   // --- the VS screen, animated
   if (style.vsSeconds > 0 && PLAYS_OPENING) {
@@ -7790,56 +7702,49 @@ const renderStyle = async (styleName) => {
   };
 
   /*
-    The starting position gets one beat of its own, so the first move is a
-    change the eye can catch rather than the first thing it ever sees. Under
-    the VS overlay it holds longer: no move plays under the banners, so the
-    first move lands only once they have fully left, at the end of their
-    exit, rounded up to a whole frame (Nil's rule; Wall Game PM, 2026-10-26:
-    a move under the sliding banner was half hidden). movesUnderOverlay
-    holds the timeline to it.
+    The opening (Nil, 2026-11-05, C56: the VS banners and the curtain had
+    become repetitive). The opening walks (edl.mjs introPaths) start at
+    once, as INTRO_PLAN times them, each ticking its steps as it draws, and
+    as each starts, its side's name pops up over its cat (openingNames).
+    The VS sound lands with the first name, so the video has sound from its
+    first frame. The last walk's hold gets a soft settle sound SETTLE_AT
+    into it, so the opening has no gap of silence over about 0.4 s (Wall
+    Game Director, 2026-10-29). A contact-sheet still of each walk once it
+    is drawn.
 
-    The rules line shows from the overlay's start to the first move, so it
-    is read: at least its reading time (overlays.mjs readingSeconds; it was
-    on screen 3.4 s for the 4.5 s its 11 words need, Wall Game Director,
-    2026-10-29). The opening walks count toward it; the hold covers the
-    rest.
+    The first move comes as the last walk has faded, and the names fade
+    with it: a hold after the walks was a gap of silence (0.66 s at a 0.5 s
+    beat, Csp, local preview, 2026-11-05). The walks are the start
+    position's beat. The rules line shows from the opening's start until it
+    has had its reading time (overlays.mjs readingSeconds; it was on screen
+    3.4 s for the 4.5 s its 11 words need, Wall Game Director, 2026-10-29),
+    over the first moves if the walks are shorter: a silent hold for it
+    would break the opening's silence rule (OPENING_SILENCE_SECONDS). It
+    gives the head row to the race counter sooner at a ply with an event,
+    which may need the counter.
   */
-  const goalRead = goalOn ? readingSeconds({}, GOAL_LINE) : 0;
-  /*
-    The opening walks start as the VS banners start to leave, so no silence
-    follows the VS hit (Wall Game Director, 2026-10-29); a move still waits
-    for the banners to be gone, and the walks outlast their exit.
-  */
+  const goalUntil = goalOn ? elapsed + readingSeconds({}, GOAL_LINE) : 0;
   const introSeconds = introWalkSeconds(INTRO_PLAN);
-  const walksAt = overlay
-    ? overlayStart +
-      Math.max(
-        INTRO_PLAN.length > 0
-          ? overlay.seconds - overlay.exit
-          : overlay.seconds,
-        overlay.seconds - introSeconds,
-        goalRead - introSeconds,
-      )
-    : 0;
-  // With a startPly, the opening position is the one before that ply; it is
-  // labelled as that earlier ply, which the video never plays on its own.
-  await emit(
-    playState(START_PLY),
-    Math.max(
-      paceAt(START_PLY),
-      Math.ceil((walksAt - elapsed) * FPS - 1e-6) / FPS,
-    ),
-    { kind: "initial", ply: START_PLY - 1 },
-  );
-
-  /*
-    The opening walks (edl.mjs introPaths) on the start position, as
-    INTRO_PLAN times them: each ticks its steps as it draws; the last one's
-    hold gets a soft settle sound SETTLE_AT into it, so the opening has no
-    gap of silence over about 0.4 s (Wall Game Director, 2026-10-29). A
-    contact-sheet still of each once it is drawn.
-  */
   const introStart = elapsed;
+  const names = wallz
+    ? openingNames(INTRO_PLAN, dailyName, (id) => side(id).hex)
+    : [];
+  /** The names `t` seconds into the opening, at `alpha`. */
+  const namesAt = (t, alpha = 1) =>
+    names
+      .filter((n) => t >= n.from)
+      .map((n) => ({
+        ...n.paint,
+        pop: Math.min(1, (t - n.from) / NAME_POP_SECONDS),
+        alpha,
+      }));
+  if (wallz && PLAYS_OPENING) {
+    vsHitAt = introStart + (names[0]?.from ?? 0);
+    const vsSound = sounds[style.vsSound];
+    cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
+      at: vsHitAt,
+    });
+  }
   for (const w of INTRO_PLAN) {
     cueWalkTicks(w.points, introStart + w.start);
     log(`intro path: ${logName(w.player)}, ${w.points.length - 1} steps`);
@@ -7883,12 +7788,25 @@ const renderStyle = async (styleName) => {
             alpha: 1 - span01((t - w.fadeAt) / WALK_FADE_SECONDS),
           })),
         },
+        names: namesAt(
+          t,
+          1 -
+            span01((t - introSeconds + NAME_FADE_SECONDS) / NAME_FADE_SECONDS),
+        ),
       }),
       1 / FPS,
       { kind: "intro-path", ply: START_PLY - 1 },
     );
   }
-  goalOn = false;
+  // With no opening, the starting position gets a beat of its own. With a
+  // startPly, it is the position before that ply; it is labelled as that
+  // earlier ply, which the video never plays on its own.
+  if (introFrames === 0) {
+    await emit(playState(START_PLY), paceAt(START_PLY), {
+      kind: "initial",
+      ply: START_PLY - 1,
+    });
+  }
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;
@@ -7898,6 +7816,9 @@ const renderStyle = async (styleName) => {
   for (let ply = START_PLY + 1; ply <= LAST_BOARD; ply += 1) {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
+    if (elapsed >= goalUntil - 1e-6 || eventsAt(plyIndex).length > 0) {
+      goalOn = false;
+    }
     beatStartAt.set(plyIndex, elapsed);
     if (wallz) await playFreeze(ply, plyIndex);
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
@@ -8655,14 +8576,6 @@ const renderStyle = async (styleName) => {
   const frameSequence = join(work, "cfr");
   rmSync(frameSequence, { recursive: true, force: true });
   mkdirSync(frameSequence, { recursive: true });
-  if (overlay) {
-    const under = movesUnderOverlay(encodedRanges, START_PLY - 1);
-    if (under.length > 0) {
-      throw new Error(
-        `a move plays under the VS banners (frames ${under[0].startFrame}-${under.at(-1).endFrame}, ply ${under[0].ply}); the first move must wait until they have left`,
-      );
-    }
-  }
   const encodedFrame = encodedRanges.at(-1)?.endFrame ?? 0;
   for (const range of encodedRanges) {
     for (let frame = range.startFrame; frame < range.endFrame; frame += 1) {

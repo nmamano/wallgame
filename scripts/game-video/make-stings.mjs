@@ -1,6 +1,7 @@
 /**
- * Build the VS riser - the one synthesised sting Nil kept - and the VS
- * whoosh, under the daily VS banners' exit.
+ * Build the VS riser - the one synthesised sting Nil kept. (The daily VS
+ * banners' whoosh went with the banners: Nil, 2026-11-05, C56, "the static
+ * noise at the beginning".)
  *
  * Board task f89e649f. This file once produced six candidates for the VS stamp
  * and the win. Nil rejected five of them as synthetic and chose real
@@ -17,7 +18,7 @@
  * written by this script as it is now (its sha256, `script`), else 1. The
  * renderer and sync-render-kit.sh ask it, so the list of what must be
  * there is this file's alone (Video Reviewer 1, review 59: a stale
- * stings.json with no whooshPeakSeconds failed every render, 2026-10-29;
+ * stings.json with a time missing failed every render, 2026-10-29;
  * review 64: a changed time with an old stings.json passed).
  *
  * Writes assets/stings/vs-b-riser.wav and stings.json. The output is NOT
@@ -38,8 +39,8 @@ const REPO = resolve(HERE, "../..");
 const AUDIO = join(REPO, "frontend/public/audio");
 const OUT = join(REPO, "assets/stings");
 /** The stings this script builds, and the times stings.json gives. */
-const STINGS = ["vs-b-riser.wav", "vs-whoosh.wav"];
-const TIMES = ["vsHitSeconds", "whooshPeakSeconds"];
+const STINGS = ["vs-b-riser.wav"];
+const TIMES = ["vsHitSeconds"];
 /** This script as it is now: stings.json from another one is stale. */
 const SCRIPT = createHash("sha256")
   .update(readFileSync(fileURLToPath(import.meta.url)))
@@ -183,33 +184,11 @@ build("vs-b-riser", 3.2, [
   },
 ]);
 
-/* ---------------------------------------------------------- the whoosh -- */
-
-/*
-  Under the daily VS banners: soft pink noise in the middle of the band
-  swells for WHOOSH_SWELL seconds to its peak as the banners start to leave,
-  then dies with their exit, so the hook has no silence between the VS hit
-  and the first walk (Wall Game Director, 2026-10-29). No tone and no hit,
-  so it never reads as a ding. A fixed seed keeps it the same every build.
-*/
-const WHOOSH_SWELL = 1.0;
-const WHOOSH_FADE = 0.6;
-build("vs-whoosh", WHOOSH_SWELL + WHOOSH_FADE, [
-  {
-    gen: `anoisesrc=d=${WHOOSH_SWELL + WHOOSH_FADE}:c=pink:a=0.5:seed=1029:r=44100`,
-    filter: "highpass=f=300,lowpass=f=3500",
-    at: 0,
-    gain: 1.0,
-    fadeIn: WHOOSH_SWELL,
-    fadeOut: { at: WHOOSH_SWELL, dur: WHOOSH_FADE, curve: "qsin" },
-  },
-]);
-
 /*
   Publish where the impact sits inside a VS sting, so the renderer can line the
   sound up with the visual punch instead of keeping its own copy of the number.
 */
-const times = { vsHitSeconds: HIT, whooshPeakSeconds: WHOOSH_SWELL };
+const times = { vsHitSeconds: HIT };
 // --check reads TIMES: a time written here and not listed there would not
 // be checked.
 if (Object.keys(times).join() !== TIMES.join()) {

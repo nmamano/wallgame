@@ -41,15 +41,6 @@ export function restAfterEvents({ landedAt, pace, now, minRest }) {
 }
 
 /**
- * The frames under the VS overlay (kind "vs-overlay") that show anything but
- * the opening position: a move under the banners, which Nil's rule forbids.
- * `openingPly` is the opening position's label, startPly - 1.
- */
-export function movesUnderOverlay(ranges, openingPly) {
-  return ranges.filter((r) => r.kind === "vs-overlay" && r.ply !== openingPly);
-}
-
-/**
  * RESULT.timeline: when each move, EDL event and sound happens in the
  * output MP4, in seconds from its first frame, to 0.01 s. The daily app
  * copies it into the render record and builds the event strips on it.

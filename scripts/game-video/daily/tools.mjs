@@ -503,8 +503,8 @@ export const fullcheck = ({ video, name }) => {
   const info = probe(video);
   const d = info.duration;
   const last = lastFrameAt(info);
-  // The opening (the VS banners' hit and exit) and the end; the last one
-  // is the video's last frame.
+  // The opening (the walks and the names) and the end; the last one is
+  // the video's last frame.
   const times = [0.05, 2.0, 3.6, 4.05, d - 3, d - 2, d - 1, d - 0.6, d]
     .map((t) => round(Math.min(t, last)))
     .filter((t, i, all) => t >= 0 && all.indexOf(t) === i);

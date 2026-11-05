@@ -66,7 +66,7 @@ export function fileUrlsIn(states) {
  * for a position held between effects; and its state must be exactly
  * `plainState`, the plain state of its board (playState with nothing added),
  * so no effect field (zoom, freeze, beat, stamp, trap, race flash, cell
- * effect, VS overlay, ending, rewind, or any later one) is on it. The label
+ * effect, opening names, ending, rewind, or any later one) is on it. The label
  * alone is not enough because nothing else checks it; the state alone is not
  * enough because a stamp's first frames, before its word lands, have the
  * plain state but are part of the stamp.

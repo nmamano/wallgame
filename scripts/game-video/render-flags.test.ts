@@ -147,8 +147,8 @@ describe("the stage", () => {
 
 describe("make-stings.mjs --check", () => {
   test("a stings.json without a time the renderer reads is out of date", () => {
-    // The state of 2026-10-29: both wavs there, stings.json from before the
-    // whoosh, so the whoosh's cue time was NaN.
+    // As on 2026-10-29: the wav there, stings.json without a time the
+    // renderer reads, so that cue's time was NaN.
     const kit = mkdtempSync(join(tmpdir(), "render-stings-"));
     mkdirSync(join(kit, "scripts/game-video"), { recursive: true });
     cpSync(
@@ -158,17 +158,16 @@ describe("make-stings.mjs --check", () => {
     const stings = join(kit, "assets/stings");
     mkdirSync(stings, { recursive: true });
     writeFileSync(join(stings, "vs-b-riser.wav"), "");
-    writeFileSync(join(stings, "vs-whoosh.wav"), "");
     const check = () =>
       spawnSync(
         "bun",
         [join(kit, "scripts/game-video/make-stings.mjs"), "--check"],
         { encoding: "utf8", timeout: 30_000 },
       );
-    writeFileSync(join(stings, "stings.json"), '{"vsHitSeconds": 1.6}');
+    writeFileSync(join(stings, "stings.json"), "{}");
     const stale = check();
     expect(stale.status).toBe(1);
-    expect(stale.stderr).toContain("stings.json whooshPeakSeconds");
+    expect(stale.stderr).toContain("stings.json vsHitSeconds");
     const script = createHash("sha256")
       .update(readFileSync(join(kit, "scripts/game-video/make-stings.mjs")))
       .digest("hex");
@@ -177,7 +176,6 @@ describe("make-stings.mjs --check", () => {
         join(stings, "stings.json"),
         JSON.stringify({
           vsHitSeconds: 1.6,
-          whooshPeakSeconds: 1,
           script: from,
         }),
       );

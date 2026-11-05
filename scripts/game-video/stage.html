@@ -442,7 +442,8 @@
         object-fit: fill;
       }
       #trapSvg,
-      #pathSvg {
+      #pathSvg,
+      #namesSvg {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -468,7 +469,7 @@
       /*
         The head of the daily look, between the caption and the board: the
         race counter (each side's steps to its target, all video long), and
-        in the same place, while the VS overlay is in, the variant's goal in
+        in the same place, through the opening, the variant's goal in
         one line (Wall Game PM, 2026-10-26, audit item 1). Both sit in one
         grid cell, so the row is as tall as the taller of the two and the
         board never moves when one gives way to the other. Above the board,
@@ -1452,6 +1453,12 @@
               viewBox="0 0 1000 1000"
               preserveAspectRatio="none"
             ></svg>
+            <svg
+              id="namesSvg"
+              class="hidden"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+            ></svg>
             <div id="cellFx" class="hidden">
               <div id="cellRing"></div>
               <svg id="cellBurst" viewBox="-200 -200 400 400"></svg>
@@ -1568,16 +1575,6 @@
       window.__VS_PUNCH_FRACTION = 0.55;
       /** How long the punch takes, as a fraction of the same segment. */
       window.__VS_PUNCH_DURATION = 0.26;
-      /**
-       * The VS overlay's timing, in seconds: the whole of it, the entry the
-       * VS screen's 0..1 animation is stretched over, and the exit. The
-       * renderer reads it to place the overlay frames and the punch sound,
-       * and plays the first move only once the exit starts. Nil, 2026-10-26:
-       * 3.0 s was "still too crowded and fast"; at 4.0 the words stand still
-       * for about 2.5 s.
-       */
-      window.__VS_OVERLAY = { seconds: 4.0, entry: 1.6, exit: 0.6 };
-
       /**
        * The three endings of the wallz look, one frame at a time.
        *
@@ -2426,6 +2423,45 @@
               circles(p.dotRadius, l.hex) +
               disc +
               "</g>"
+            );
+          })
+          .join("");
+      };
+
+      /**
+       * The opening's names (render-game-video.mjs openingNames): each
+       * side's name over its cat, in its colour on a dark rim, its baseline
+       * centred at (x, y) and its letters `size` high, as fractions of the
+       * board. It pops in as `pop` goes 0..1 (bigger, then settling) and
+       * fades by `alpha`.
+       */
+      const paintNames = (names) => {
+        const svg = $("namesSvg");
+        show(svg, !!names && names.length > 0);
+        if (!names || names.length === 0) return;
+        const k = (v) => (v * 1000).toFixed(1);
+        svg.innerHTML = names
+          .map((n) => {
+            const grow = 1 + 0.35 * (1 - n.pop) * (1 - n.pop);
+            const size = n.size * 1000;
+            return (
+              '<g opacity="' +
+              Math.min(1, 0.5 + n.pop) * n.alpha +
+              '" transform="translate(' +
+              k(n.x) +
+              " " +
+              k(n.y) +
+              ") scale(" +
+              grow.toFixed(3) +
+              ')"><text x="0" y="0" text-anchor="middle" font-family="TikTok Sans, DejaVu Sans, sans-serif" font-weight="900" font-size="' +
+              size.toFixed(1) +
+              '" fill="' +
+              n.hex +
+              '" stroke="#0b0f1c" stroke-width="' +
+              (size * 0.16).toFixed(1) +
+              '" stroke-linejoin="round" paint-order="stroke">' +
+              n.text +
+              "</text></g>"
             );
           })
           .join("");
@@ -3578,7 +3614,7 @@
           ),
         );
         /*
-          The goal line (the rules, during the VS overlay) on one line: it
+          The goal line (the rules, during the opening) on one line: it
           shrinks from its size until the page sets it on one line, measured
           (textLines), inside the height it has at full size (--goal-h), so
           the head row, and with it the board, keep their size.
@@ -4062,8 +4098,8 @@
         // No watermark in the daily look (audit item 8).
         show($("brand"), s.segment === "play" && s.look !== "wallz");
         /*
-          The goal line holds the head row while the VS overlay is in and
-          the game has not started; from the first move on, the race counter
+          The goal line holds the head row through the opening, while the
+          game has not started; from the first move on, the race counter
           has it.
         */
         // The renderer shows the rules line through the opening walks.
@@ -4072,45 +4108,6 @@
         $("vs").style.transform = "";
 
         if (s.segment === "vs") paintVs(s.a, s.b, s.t, 0);
-
-        /*
-          The VS overlay (Nil, 2026-10-26: an intro screen loses viewers, so
-          the names fly in over the board while the game already plays). The
-          same banners and mark as the VS screen, run over the first
-          __VS_OVERLAY.entry seconds, then sliding off over the last
-          __VS_OVERLAY.exit seconds.
-        */
-        if (s.segment === "play" && s.vsOverlay) {
-          const o = s.vsOverlay;
-          const v = window.__VS_OVERLAY;
-          show($("vs"), true);
-          paintVs(
-            o.a,
-            o.b,
-            Math.min(1, o.t / v.entry),
-            Math.max(0, Math.min(1, (o.t - (v.seconds - v.exit)) / v.exit)),
-          );
-          /*
-            The banners never cover the caption or the head row (Wall Game
-            PM, 2026-10-26: the top banner cut into "winning"). Their skew
-            lifts one end, so the clearance is MEASURED: the overlay moves
-            down until the top banner's box starts below both.
-          */
-          $("caption").textContent = s.caption ?? "";
-          paintHud(s.race, goalNow, s.credit, s.fastForward);
-          const above = [$("caption"), $("hud")]
-            .filter((el) => el.offsetHeight > 0)
-            .map((el) => el.getBoundingClientRect().bottom);
-          if (above.length > 0) {
-            const clear =
-              Math.max(...above) +
-              12 -
-              $("beamTop").getBoundingClientRect().top;
-            if (clear > 0) {
-              $("vs").style.transform = "translateY(" + clear + "px)";
-            }
-          }
-        }
 
         if (s.segment === "play") {
           $("boardImg").src = s.board;
@@ -4140,6 +4137,7 @@
           paintFlashback(s.flashback);
           paintTrap(s.trap);
           paintPath(s.path);
+          paintNames(s.names);
           paintOverlay(s.overlay);
           paintHud(s.race, goalNow, s.credit, s.fastForward);
           paintFreeze(s.freeze);

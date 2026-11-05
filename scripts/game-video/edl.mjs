@@ -42,8 +42,8 @@
  *            never falls back to one silently.
  *   music    optional: 0 to 3 cues { fromPly, track }, where `track` is a
  *            track's slug in music-tracks.mjs. The first cue's fromPly is
- *            startPly: the track the video opens with (cold open and VS
- *            included). Each later cue changes the track at the start of
+ *            startPly: the track the video opens with (cold open and
+ *            opening included). Each later cue changes the track at the start of
  *            its ply's beat (before a lead zoom or freeze): the old track
  *            fades out and the new one starts from its beginning. fromPly
  *            increases, and two cues in a row name different tracks; at
@@ -63,25 +63,24 @@
  *   coldOpenPly
  *            optional: the video first shows the position after this ply
  *            for about a second, caption up and that ply's walls glowing,
- *            and then cuts to the VS overlay and the game (audit item 2).
+ *            and then cuts to the opening and the game (audit item 2).
  *            Absent (null after validation): no cold open.
  *   introPaths
- *            optional, default true: before the first move, after the VS
- *            overlay, each side's hunter draws its shortest walk to its
- *            target with the dots of a `path` event and its step count,
- *            the first mover's first (Nil, 2026-10-28: the intro must
- *            explain "the gist of the game before the action starts ...
- *            the path from each cat to each mouse"). false: none. A
- *            variant where no side hunts shows none.
+ *            optional, default true: the video opens with them. Each
+ *            side's hunter draws its shortest walk to its target with the
+ *            dots of a `path` event and its step count, the first mover's
+ *            first (Nil, 2026-10-28: the intro must explain "the gist of
+ *            the game before the action starts ... the path from each cat
+ *            to each mouse"), and in the daily look the side's name shows
+ *            over its cat as its walk starts (Nil, 2026-11-05, C56). false:
+ *            none, and no names. A variant where no side hunts shows none.
  *   vsSound, finishSound
- *            optional: the meme sound on the VS overlay's punch and on the
- *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
- *   opening  optional: a cover clip (overlays.mjs, form "cover") that plays
- *            over the board from the VS overlay's start, under its banners:
- *            "the show starts" (the Director's line for Curtain Opening,
- *            meme-pack.md, 2026-10-31). It must hide nothing once the VS
- *            overlay ends, as any cover clip. Muted: the VS slot has its
- *            sound. Absent: none.
+ *            optional: the meme sound as the opening's first name shows
+ *            (the daily look; the VS mark's punch in the current look) and
+ *            on the ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
+ *   opening  retired (Nil, 2026-11-05, C56: the curtain had become
+ *            repetitive): no cover clip opens a video. A list that sets it
+ *            is refused.
  *   cta      optional for the renderer, required by the daily app for a
  *            new list: the call to action (Nil, 2026-10-31, the revise of
  *            v-2026-10-31-6: "a clear CTA to all videos ... you can make
@@ -405,7 +404,8 @@ export const areaOf = (boxName) =>
   boxName === "strip" ? STRIP_AREA : SAFE_AREA;
 
 /**
- * The sounds of the VS punch and the finish where the EDL names none. Wall
+ * The sounds of the VS slot (the opening's first name) and the finish where
+ * the EDL names none. Wall
  * Game PM, 2026-10-26 (Content ID): the finish was shotgun-1, which is
  * Fortnite-named and a high claim risk (meme-sounds.md), and it was in every
  * video; shotgun-2 has no named owner. The renderer and the app's sounds
@@ -840,16 +840,10 @@ export const validateEdl = (raw) => {
     }
   }
 
-  const opening = raw.opening ?? null;
-  if (opening !== null) {
-    const asset = Object.hasOwn(OVERLAYS, opening) ? OVERLAYS[opening] : null;
-    if (!asset || asset.form !== "cover") {
-      fail(
-        `opening must be a cover clip (${Object.keys(OVERLAYS)
-          .filter((k) => OVERLAYS[k].form === "cover")
-          .join(", ")}), or absent for none; got ${JSON.stringify(opening)}`,
-      );
-    }
+  if (raw.opening !== undefined) {
+    fail(
+      `opening is retired (Nil, 2026-11-05, C56): no cover clip opens a video; got ${JSON.stringify(raw.opening)}`,
+    );
   }
 
   const cta = raw.cta ?? null;
@@ -1452,7 +1446,6 @@ export const validateEdl = (raw) => {
       introPaths,
       ...slots,
       // Only when set, so a list without one stores the same bytes as before.
-      ...(opening !== null ? { opening } : {}),
       ...(cta !== null ? { cta } : {}),
       ...(evalStrip !== null ? { evalStrip } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
