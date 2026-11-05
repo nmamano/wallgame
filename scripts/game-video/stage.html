@@ -2407,8 +2407,8 @@
        * The opening's names (render-game-video.mjs openingNames): each
        * side's name over its cat, in its colour on a dark rim, its baseline
        * centred at (x, y) and its letters `size` high, as fractions of the
-       * board. It pops in as `pop` goes 0..1 (bigger, then settling) and
-       * fades by `alpha`.
+       * board. It pops in as `pop` goes 0..1 (from `peak` times its size,
+       * settling to its size) and fades by `alpha`.
        */
       const paintNames = (names) => {
         const svg = $("namesSvg");
@@ -2417,7 +2417,7 @@
         const k = (v) => (v * 1000).toFixed(1);
         svg.innerHTML = names
           .map((n) => {
-            const grow = 1 + 0.35 * (1 - n.pop) * (1 - n.pop);
+            const grow = 1 + (n.peak - 1) * (1 - n.pop) * (1 - n.pop);
             const size = n.size * 1000;
             return (
               '<g opacity="' +

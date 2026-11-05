@@ -3633,8 +3633,11 @@ const INTRO_PLAN = (() => {
  * shows over its cat as its opening walk starts, in its colour, and stays
  * to the first move. NAME_SIZE is the letters' height in cells; a name
  * sits NAME_GAP cells off its cat's cell, and NAME_EDGE in from the board's
- * side. It pops in over NAME_POP_SECONDS and fades over the opening's last
- * NAME_FADE_SECONDS, as the last walk does.
+ * side. It pops in over NAME_POP_SECONDS, from NAME_POP_PEAK times its size
+ * down to its size, and fades over the opening's last NAME_FADE_SECONDS, as
+ * the last walk does. It keeps NAME_EDGE in at its peak size: kept in at
+ * its rest size only, "Human" at the board's right edge lost its last
+ * letter for 2 frames of its pop (vet of v-2026-11-05-8, 2026-11-05).
  */
 const NAME_SIZE = 0.42;
 const NAME_GAP = 0.06;
@@ -3642,6 +3645,7 @@ const NAME_EDGE = 0.01;
 /** A bold letter's width over its height, about (TikTok Sans 900). */
 const NAME_LETTER_WIDTH = 0.62;
 const NAME_POP_SECONDS = 0.18;
+const NAME_POP_PEAK = 1.35;
 const NAME_FADE_SECONDS = 0.3;
 /**
  * Each opening walk's name as stage.html paints it (paintNames): its text
@@ -3653,7 +3657,7 @@ const openingNames = (plan, nameOf, hexOf, buttons) =>
     const [row, col] = w.cells[0];
     const size = NAME_SIZE * GRID.pitchY;
     const text = nameOf(w.player);
-    const half = (NAME_LETTER_WIDTH * size * text.length) / 2;
+    const half = (NAME_POP_PEAK * NAME_LETTER_WIDTH * size * text.length) / 2;
     const y = w.nameBelow
       ? GRID.y(row + 1) + NAME_GAP * GRID.pitchY + size * 0.8
       : GRID.y(row) - NAME_GAP * GRID.pitchY;
@@ -3666,7 +3670,10 @@ const openingNames = (plan, nameOf, hexOf, buttons) =>
       right - half,
       Math.max(NAME_EDGE + half, GRID.x(col + 0.5)),
     );
-    return { from: w.start, paint: { text, hex: hexOf(w.player), x, y, size } };
+    return {
+      from: w.start,
+      paint: { text, hex: hexOf(w.player), x, y, size, peak: NAME_POP_PEAK },
+    };
   });
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
