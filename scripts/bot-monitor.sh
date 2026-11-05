@@ -143,8 +143,7 @@ declare -A listings=()
 reachable=1
 check_start_ms="$(date +%s%3N)"
 for entry in "${BOTS[@]}"; do
-  variant="$(cut -d'|' -f2 <<< "$entry")"
-  placement="$(cut -d'|' -f3 <<< "$entry")"
+  IFS='|' read -r _ variant placement _ <<< "$entry"
   listing_key="$variant|$placement"
   if [ -z "${listings[$listing_key]+set}" ]; then
     resp="$(curl -s -m 20 "$API_BASE/api/bots?variant=$variant&randomStart=false&placement=$placement")"
@@ -184,10 +183,7 @@ fi
 missing=""
 if [ "$reachable" = "1" ]; then
   for entry in "${BOTS[@]}"; do
-    bot_id="$(cut -d'|' -f1 <<< "$entry")"
-    variant="$(cut -d'|' -f2 <<< "$entry")"
-    placement="$(cut -d'|' -f3 <<< "$entry")"
-    label="$(cut -d'|' -f4 <<< "$entry")"
+    IFS='|' read -r bot_id variant placement label <<< "$entry"
     listing_key="$variant|$placement"
     if ! printf '%s' "${listings[$listing_key]}" | grep -q "\"botId\":\"$bot_id\""; then
       missing="$missing $label"
@@ -246,21 +242,17 @@ FORFEITS_HEADER="game_id|started_at|bot_id|bot_resign_cause|puzzle_id|moves_coun
 FORFEITS_BURST=3 # more new forfeits than this in one tick go out as one alert
 FORFEITS_FAIL_WARN_RUNS=12 # failed reads in a row (1 hour at 5 min) before a warning
 
-# The display name for a "clientId:botId", or the id itself for any other bot.
-bot_label() {
-  local bot_id="${1#*:}" entry
-  for entry in "${BOTS[@]}"; do
-    if [ "$(cut -d'|' -f1 <<< "$entry")" = "$bot_id" ]; then
-      cut -d'|' -f4 <<< "$entry"
-      return
-    fi
-  done
-  echo "$1"
-}
+# The display name of each bot id. A forfeit burst names up to 50 games, so
+# the lookup starts no process per game.
+declare -A BOT_LABELS=()
+for entry in "${BOTS[@]}"; do
+  IFS='|' read -r bot_id _ _ label <<< "$entry"
+  BOT_LABELS[$bot_id]="$label"
+done
 
 check_forfeits() {
   [ -n "$FORFEITS_TARGET" ] || return
-  local out first_run=0 id started bot cause puzzle moves where
+  local out first_run=0 id started bot cause puzzle moves where label seen_id
   if ! out="$(timeout 40 "${FORFEITS_SSH[@]}" -i "$FORFEITS_KEY" \
         -o "UserKnownHostsFile=$FORFEITS_KNOWN_HOSTS" \
         "$FORFEITS_TARGET" wallgame-bot-forfeits 2>/dev/null)" ||
@@ -301,16 +293,25 @@ check_forfeits() {
   # list holds, so an empty first list still ends the first run.
   [ -f "$FORFEITS_FILE" ] || first_run=1
   touch "$FORFEITS_FILE"
+  # The ids seen before, read once: the list holds 50 games every run.
+  local -A seen=()
+  while IFS= read -r seen_id; do
+    [ -n "$seen_id" ] && seen[$seen_id]=1
+  done < "$FORFEITS_FILE"
   local -a singles=() lines=()
   while IFS='|' read -r id started bot cause puzzle moves; do
     [ -n "$id" ] || continue
-    grep -qxF -e "$id" "$FORFEITS_FILE" && continue
+    [ -n "${seen[$id]+set}" ] && continue
+    seen[$id]=1
     echo "$id" >> "$FORFEITS_FILE"
     [ "$first_run" = "1" ] && continue
     where="$API_BASE/game/$id"
     [ -n "$puzzle" ] && where="$where (puzzle $puzzle)"
-    singles+=("🏳️ **$(bot_label "$bot") forfeited a game**: $where. Cause: \`$cause\`, $moves moves, started $started (seen ${now}). Bots do not resign by design, so an internal failure ended this game: investigate it.")
-    lines+=("- $(bot_label "$bot"): $where \`$cause\`")
+    # A "clientId:botId" shows the bot's display name; any other bot its id.
+    label="$bot"
+    [ -n "${bot#*:}" ] && label="${BOT_LABELS[${bot#*:}]:-$bot}"
+    singles+=("🏳️ **$label forfeited a game**: $where. Cause: \`$cause\`, $moves moves, started $started (seen ${now}). Bots do not resign by design, so an internal failure ended this game: investigate it.")
+    lines+=("- $label: $where \`$cause\`")
   done <<< "$(tail -n +2 <<< "$out")"
 
   # A bot-client drop or an engine crash forfeits many games in one tick. One
