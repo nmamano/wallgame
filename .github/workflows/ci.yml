@@ -87,9 +87,11 @@ jobs:
       # Not `bun run lint`: that one passes --fix, which would repair the
       # problem and report success instead of failing the build. `lint:check`
       # is the same eslint run without --fix, and it carries the raised heap
-      # limit that type-aware linting of seven TS projects needs.
+      # limit that type-aware linting of seven TS projects needs. The script
+      # runs `lint:check`, keeps its exit code, and records its peak RSS for
+      # the growth report below.
       - name: Lint
-        run: bun run lint:check
+        run: bun scripts/ci-growth-report.ts lint
 
       # Six projects in series, as of 2026-08-09: server+shared, tests,
       # scripts, scripts/browser-harness, the frontend bun:test files, and
@@ -107,6 +109,16 @@ jobs:
 
       - name: Build frontend
         run: bun run build
+
+      # REPORT ONLY (board task 2aacada6): lint peak RSS against its heap cap,
+      # first-load JS, and source files over 3,000 lines, with a warning at 80%
+      # of each limit. It never fails the build. Crew doc sizes are not here:
+      # those docs are in a local repo that CI never sees, and the improve
+      # loop checks them.
+      - name: Report the numbers that grow (report only)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: bun scripts/ci-growth-report.ts report
 
       # The runner starts ONE Postgres through Testcontainers (each test file
       # clones a migrated template database inside it), which needs the Docker
