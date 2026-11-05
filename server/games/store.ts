@@ -1,3 +1,4 @@
+import { logDetail, logLine } from "../log-line";
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
@@ -446,7 +447,7 @@ export const recordSocketConnect = (
       session.socketConnects.first.push({ ...event, at: Date.now() });
     }
   }
-  console.info("[ws-connect]", {
+  logLine("[ws-connect]", {
     sessionId,
     outcome: event.outcome,
     role: event.role,
@@ -722,7 +723,7 @@ const refreshAbandonTimer = (sessionId: string): void => {
 
   abandonTimers.set(sessionId, timer);
 
-  console.info("[abandon-timer] scheduled", {
+  logDetail("[abandon-timer] scheduled", {
     sessionId,
     playerId: abandoned.playerId,
     timeoutMs,
@@ -963,7 +964,7 @@ const refreshIdleTimer = (sessionId: string): void => {
 
   idleTimers.set(sessionId, timer);
 
-  console.info("[idle-timer] scheduled", {
+  logDetail("[idle-timer] scheduled", {
     sessionId,
     playerId: idle.playerId,
     timeoutMs: remainingMs,
@@ -2029,10 +2030,6 @@ export const serializeGameState = (
 ): SerializedGameState => {
   const state = session.gameState;
   const historyRows = state.config.boardHeight;
-  console.info("[debug-serialize] walls", {
-    sessionId: session.id,
-    walls: state.grid.getWalls(),
-  });
   return {
     status: state.status,
     result: state.result,

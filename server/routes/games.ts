@@ -1,3 +1,4 @@
+import { logLine } from "../log-line";
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -759,7 +760,7 @@ export const botsRoute = new Hono()
           session.players.host.displayName,
         );
 
-        console.info("[games] created bot game", {
+        logLine("[games] created bot game", {
           gameId: session.id,
           botId: parsed.botId,
           botName: bot.name,

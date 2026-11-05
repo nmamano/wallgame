@@ -735,15 +735,14 @@ describe("connect-failure shapes for a bot game that never starts", () => {
         }),
       );
 
+      // One line since task 0e0087af: "[ws-connect] key=value ...".
       const logged = infoSpy.mock.calls.some(
         (call) =>
-          call[0] === "[ws-connect]" &&
-          typeof call[1] === "object" &&
-          call[1] !== null &&
-          (call[1] as Record<string, unknown>).sessionId ===
-            "no-such-game-id" &&
-          (call[1] as Record<string, unknown>).outcome === "game-not-found" &&
-          (call[1] as Record<string, unknown>).knownGame === false,
+          typeof call[0] === "string" &&
+          call[0].startsWith("[ws-connect] ") &&
+          call[0].includes(" sessionId=no-such-game-id ") &&
+          call[0].includes(" outcome=game-not-found ") &&
+          call[0].includes(" knownGame=false "),
       );
       expect(logged).toBe(true);
     } finally {

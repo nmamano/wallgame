@@ -11,6 +11,7 @@
  * - V3: No request queue - BGS uses direct request/response per session
  */
 
+import { logLine } from "../log-line";
 import type { ServerWebSocket } from "bun";
 import type { PlayerId, Variant } from "../../shared/domain/game-types";
 import {
@@ -680,7 +681,7 @@ export const addActiveGame = (
     startedAt: Date.now(),
   });
 
-  console.info("[bot-store] active game added", {
+  logLine("[bot-store] active game added", {
     compositeId,
     gameId,
     playerId,
@@ -695,7 +696,7 @@ export const removeActiveGame = (compositeId: string, gameId: string): void => {
   if (!bot) return;
 
   bot.activeGames.delete(gameId);
-  console.info("[bot-store] active game removed", { compositeId, gameId });
+  logLine("[bot-store] active game removed", { compositeId, gameId });
 };
 
 /**

@@ -13,6 +13,7 @@
  * The engine maintains game state internally - no state sent per request.
  */
 
+import { logLine } from "../log-line";
 import type { Hono } from "hono";
 import { createBunWebSocket } from "hono/bun";
 import type { WSContext } from "hono/ws";
@@ -168,6 +169,30 @@ interface BgsRequestResolver<T> {
    */
   drain: boolean;
 }
+
+/** Milliseconds since a cleared request was sent, or undefined if none was. */
+const elapsedSince = (
+  pending: { createdAt: number } | null,
+): number | undefined => (pending ? Date.now() - pending.createdAt : undefined);
+
+/**
+ * The one line per bot reply. A refused reply is a warning with every field the
+ * bot sent, because that is the record a forfeit investigation starts from.
+ */
+const logBotReply = (
+  kind: BotResponseType,
+  fields: { bgsId: string; success: boolean; error?: string } & Record<
+    string,
+    unknown
+  >,
+): void => {
+  const tag = `[custom-bot-ws] ${kind} handled`;
+  if (fields.success) {
+    logLine(tag, { ...fields, error: undefined });
+  } else {
+    console.warn(tag, fields);
+  }
+};
 
 /** Pending request resolvers by bgsId */
 const pendingResolvers = new Map<string, BgsRequestResolver<unknown>>();
@@ -637,6 +662,7 @@ const handleGameSessionStarted = (
   message: GameSessionStartedMessage,
 ): void => {
   const { bgsId, success, error } = message;
+  let requestMs: number | undefined;
 
   // Validate BGS exists
   const bgs = getBgs(bgsId);
@@ -676,7 +702,7 @@ const handleGameSessionStarted = (
 
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
-    clearPendingRequest(bgsId);
+    requestMs = elapsedSince(clearPendingRequest(bgsId));
 
     if (success) {
       markBgsReady(bgsId);
@@ -693,11 +719,7 @@ const handleGameSessionStarted = (
     });
   }
 
-  console.info("[custom-bot-ws] game_session_started handled", {
-    bgsId,
-    success,
-    error: error || undefined,
-  });
+  logBotReply("game_session_started", { bgsId, success, error, requestMs });
 };
 
 /**
@@ -708,6 +730,7 @@ const handleGameSessionEnded = (
   message: GameSessionEndedMessage,
 ): void => {
   const { bgsId, success, error } = message;
+  let requestMs: number | undefined;
 
   // Resolve the pending request (if any)
   const resolver = pendingResolvers.get(bgsId);
@@ -723,7 +746,7 @@ const handleGameSessionEnded = (
 
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
-    clearPendingRequest(bgsId);
+    requestMs = elapsedSince(clearPendingRequest(bgsId));
 
     if (success) {
       resolver.resolve({ success: true });
@@ -738,11 +761,7 @@ const handleGameSessionEnded = (
     removeClientBgsSession(socket.clientId, bgsId);
   }
 
-  console.info("[custom-bot-ws] game_session_ended handled", {
-    bgsId,
-    success,
-    error: error || undefined,
-  });
+  logBotReply("game_session_ended", { bgsId, success, error, requestMs });
 };
 
 /**
@@ -754,6 +773,7 @@ const handleEvaluateResponse = (
   message: EvaluateResponseMessage,
 ): void => {
   const { bgsId, ply, bestMove, evaluation, success, error } = message;
+  let requestMs: number | undefined;
 
   // Validate BGS exists
   const bgs = getBgs(bgsId);
@@ -793,7 +813,7 @@ const handleEvaluateResponse = (
 
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
-    clearPendingRequest(bgsId);
+    requestMs = elapsedSince(clearPendingRequest(bgsId));
 
     if (success) {
       // Validate ply matches expected
@@ -824,12 +844,14 @@ const handleEvaluateResponse = (
     console.debug("[custom-bot-ws] late evaluate_response", { bgsId, ply });
   }
 
-  console.info("[custom-bot-ws] evaluate_response handled", {
+  logBotReply("evaluate_response", {
     bgsId,
     ply,
     evaluation,
     bestMove,
     success,
+    error,
+    requestMs,
   });
 };
 
@@ -842,6 +864,7 @@ const handleMoveApplied = (
   message: MoveAppliedMessage,
 ): void => {
   const { bgsId, ply, success, error } = message;
+  let requestMs: number | undefined;
 
   // Validate BGS exists
   const bgs = getBgs(bgsId);
@@ -881,7 +904,7 @@ const handleMoveApplied = (
 
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
-    clearPendingRequest(bgsId);
+    requestMs = elapsedSince(clearPendingRequest(bgsId));
 
     if (success) {
       // Update current ply in BGS
@@ -895,12 +918,7 @@ const handleMoveApplied = (
     console.debug("[custom-bot-ws] late move_applied", { bgsId, ply });
   }
 
-  console.info("[custom-bot-ws] move_applied handled", {
-    bgsId,
-    ply,
-    success,
-    error: error || undefined,
-  });
+  logBotReply("move_applied", { bgsId, ply, success, error, requestMs });
 };
 
 // ============================================================================

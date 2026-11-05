@@ -25,6 +25,7 @@
  * - BGS is closed when the game ends (not when viewers leave)
  */
 
+import { logDetail } from "../log-line";
 import type { Hono } from "hono";
 import { createBunWebSocket } from "hono/bun";
 import type { WSContext } from "hono/ws";
@@ -955,7 +956,7 @@ setEvalUpdateListener((gameId, bgsId, entry) => {
     }
   }
 
-  console.debug("[eval-ws] eval update broadcast", {
+  logDetail("[eval-ws] eval update broadcast", {
     gameId,
     bgsId,
     ply: entry.ply,

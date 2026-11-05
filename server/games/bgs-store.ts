@@ -17,6 +17,7 @@
  * - "ended": Session terminated, no further requests accepted
  */
 
+import { logLine } from "../log-line";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
 
 // ============================================================================
@@ -152,7 +153,7 @@ export const createBgs = (
   };
 
   sessions.set(bgsId, session);
-  console.info("[bgs-store] BGS created", {
+  logLine("[bgs-store] BGS created", {
     bgsId,
     botCompositeId,
     gameId,
@@ -189,7 +190,7 @@ export const endBgs = (bgsId: string): BotGameSession | undefined => {
   }
 
   sessions.delete(bgsId);
-  console.info("[bgs-store] BGS ended", {
+  logLine("[bgs-store] BGS ended", {
     bgsId,
     historyLength: session.history.length,
     finalPly: session.currentPly,
@@ -221,7 +222,7 @@ export const markBgsReady = (bgsId: string): boolean => {
 
   session.status = "ready";
   session.updatedAt = Date.now();
-  console.info("[bgs-store] BGS marked ready", { bgsId });
+  logLine("[bgs-store] BGS marked ready", { bgsId });
   return true;
 };
 

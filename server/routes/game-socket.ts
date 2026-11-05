@@ -1,3 +1,4 @@
+import { logDetail, logLine } from "../log-line";
 import type { Hono, MiddlewareHandler, Context } from "hono";
 import { createBunWebSocket } from "hono/bun";
 import { createWsOriginCheck } from "../ws-origin";
@@ -166,7 +167,7 @@ const startBotGameSession = async (
 
   try {
     await startBgsSession(botCompositeId, bgsId, session.id, config);
-    console.info("[ws] BGS started for bot game", {
+    logLine("[ws] BGS started for bot game", {
       gameId: session.id,
       bgsId,
       botCompositeId,
@@ -349,9 +350,11 @@ const initializeBotGameSession = async (
     return false;
   }
 
-  console.info("[ws] BGS initialized with evaluation", {
+  logLine("[ws] BGS initialized with evaluation", {
     gameId: session.id,
-    initialEval,
+    ply: initialEval.ply,
+    evaluation: initialEval.evaluation,
+    bestMove: initialEval.bestMove,
   });
 
   return true;
@@ -454,7 +457,7 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     return;
   }
 
-  console.info("[ws] bot move applied", {
+  logLine("[ws] bot move applied", {
     sessionId,
     playerId: activePlayer.playerId,
     move: bestMoveNotation,
@@ -943,7 +946,7 @@ const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
   }
 
   // Initialize BGS for this bot game
-  console.info("[ws] initializing BGS on player connect", {
+  logLine("[ws] initializing BGS on player connect", {
     sessionId,
     botCompositeId: botPlayer.botCompositeId,
   });
@@ -1093,7 +1096,7 @@ export const broadcast = (sessionId: string, message: unknown) => {
       rawSocket && typeof rawSocket.readyState === "number"
         ? rawSocket.readyState
         : undefined;
-    console.debug("[broadcast]", {
+    logDetail("[broadcast]", {
       sessionId,
       messageType:
         typeof message === "object" && message !== null
@@ -1387,7 +1390,7 @@ const handleMove = async (
     move: message.move,
     timestamp: Date.now(),
   });
-  console.info("[ws] move processed", {
+  logLine("[ws] move processed", {
     sessionId: socket.sessionId,
     playerId,
     actionCount: message.move?.actions?.length ?? 0,
@@ -2224,7 +2227,7 @@ const handleActionRequest = async (
           cause: "player",
         });
         sendActionAck(socket, message);
-        console.info("[ws] action-resign processed", {
+        logLine("[ws] action-resign processed", {
           sessionId: socket.sessionId,
           playerId,
         });
@@ -2888,7 +2891,7 @@ export const registerGameSocketRoute = (app: Hono) => {
               socketToken: socketToken!,
               connected: true,
             });
-            console.info("[ws] connected", {
+            logLine("[ws] connected", {
               sessionId,
               socketToken,
               playerId: getSocketPlayerId(entry),
@@ -3011,7 +3014,7 @@ export const registerGameSocketRoute = (app: Hono) => {
               connected: false,
             });
             sendMatchStatus(entry.sessionId);
-            console.info("[ws] disconnected", {
+            logLine("[ws] disconnected", {
               sessionId: entry.sessionId,
               socketToken: entry.socketToken,
             });
