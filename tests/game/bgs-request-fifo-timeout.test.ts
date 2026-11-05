@@ -6,6 +6,7 @@ import {
   expect,
   it,
   jest,
+  spyOn,
 } from "bun:test";
 import type {
   EngineRequestV3,
@@ -49,6 +50,8 @@ class ControlledEngine {
   readonly events: string[] = [];
   private readonly held = new Map<string, Deferred<EngineResponseV3>[]>();
   readonly heldTypes = new Set<EngineRequestV3["type"]>();
+  /** Added to the ply of a successful evaluate reply, to fake a faulty bot. */
+  evalPlyOffset = 0;
 
   send(request: EngineRequestV3): Promise<EngineResponseV3> {
     this.events.push(`${request.type}:${request.bgsId}`);
@@ -107,7 +110,7 @@ class ControlledEngine {
         return {
           type: "evaluate_response",
           bgsId: id,
-          ply: request.expectedPly,
+          ply: request.expectedPly + (live ? this.evalPlyOffset : 0),
           evaluation: 0,
           bestMove: live ? "---" : "",
           success: live,
@@ -274,6 +277,7 @@ beforeAll(async () => {
 afterEach(() => {
   timers.useRealTimers();
   engine.heldTypes.clear();
+  engine.evalPlyOffset = 0;
   clearBgs();
   for (const id of createdGameIds.splice(0)) removeActiveGame(BOT_ID, id);
 });
@@ -755,5 +759,41 @@ describe("client-only rapid resync convergence", () => {
     timers.useRealTimers();
     expect(oldInternals.sessionRoutes.has(id)).toBe(true);
     await assertConverged(id, newestHistoryLength);
+  });
+});
+
+describe("evaluate_response ply check", () => {
+  it("refuses a successful reply for another ply and keeps it out of the history", async () => {
+    const id = "ply-mismatch";
+    await start(id);
+    engine.evalPlyOffset = 1;
+    const warn = spyOn(console, "warn");
+    try {
+      const outcome = await requestEvaluation(BOT_ID, id, 0).then(
+        () => "resolved" as const,
+        (error: unknown) => String(error),
+      );
+      expect(outcome).toContain("Ply mismatch: expected 0, got 1");
+      const refusals = warn.mock.calls.filter(
+        ([tag]) => tag === "[custom-bot-ws] evaluate_response handled",
+      );
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0][1]).toMatchObject({
+        refused: "ply mismatch",
+        expectedPly: 0,
+        ply: 1,
+        success: true,
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(getBgs(id)?.history).toEqual([]);
+    expect(getBgs(id)?.pendingRequest).toBeNull();
+
+    // The refusal leaves the BGS usable: the next right reply is accepted.
+    engine.evalPlyOffset = 0;
+    const accepted = await requestEvaluation(BOT_ID, id, 0);
+    expect(accepted).toMatchObject({ success: true, ply: 0 });
+    expect(getBgs(id)?.history).toHaveLength(1);
   });
 });

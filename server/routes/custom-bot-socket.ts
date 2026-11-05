@@ -176,18 +176,21 @@ const elapsedSince = (
 ): number | undefined => (pending ? Date.now() - pending.createdAt : undefined);
 
 /**
- * The one line per bot reply. A refused reply is a warning with every field the
- * bot sent, because that is the record a forfeit investigation starts from.
+ * The one line per bot reply. A reply that the bot failed, or that the server
+ * refused (`refused` names why), is a warning with every field the bot sent,
+ * because that is the record a forfeit investigation starts from.
  */
 const logBotReply = (
   kind: BotResponseType,
-  fields: { bgsId: string; success: boolean; error?: string } & Record<
-    string,
-    unknown
-  >,
+  fields: {
+    bgsId: string;
+    success: boolean;
+    error?: string;
+    refused?: string;
+  } & Record<string, unknown>,
 ): void => {
   const tag = `[custom-bot-ws] ${kind} handled`;
-  if (fields.success) {
+  if (fields.success && fields.refused === undefined) {
     logLine(tag, { ...fields, error: undefined });
   } else {
     console.warn(tag, fields);
@@ -774,6 +777,7 @@ const handleEvaluateResponse = (
 ): void => {
   const { bgsId, ply, bestMove, evaluation, success, error } = message;
   let requestMs: number | undefined;
+  let refusedExpectedPly: number | undefined;
 
   // Validate BGS exists
   const bgs = getBgs(bgsId);
@@ -813,20 +817,18 @@ const handleEvaluateResponse = (
 
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
-    requestMs = elapsedSince(clearPendingRequest(bgsId));
+    const pending = clearPendingRequest(bgsId);
+    requestMs = elapsedSince(pending);
 
-    if (success) {
-      // Validate ply matches expected
-      const pending = bgs.pendingRequest;
-      if (pending && pending.expectedPly !== ply) {
-        console.warn("[custom-bot-ws] evaluate_response ply mismatch", {
-          bgsId,
-          expectedPly: pending.expectedPly,
-          receivedPly: ply,
-        });
-        // Still process it, but log the warning
-      }
-
+    if (success && pending && pending.expectedPly !== ply) {
+      // The bot evaluated another position than the one asked about. Its best
+      // move would be played on the wrong board, so the reply is refused like
+      // a failed one and kept out of the history.
+      refusedExpectedPly = pending.expectedPly;
+      resolver.reject(
+        new Error(`Ply mismatch: expected ${pending.expectedPly}, got ${ply}`),
+      );
+    } else if (success) {
       // Add to history
       const historyEntry: BgsHistoryEntry = {
         ply,
@@ -852,6 +854,8 @@ const handleEvaluateResponse = (
     success,
     error,
     requestMs,
+    refused: refusedExpectedPly === undefined ? undefined : "ply mismatch",
+    expectedPly: refusedExpectedPly,
   });
 };
 
