@@ -3493,6 +3493,8 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   expect(wrong.render?.error).toMatch(/music elevator-jazz/);
 }, 30_000);
 
+// 30 s as the other render tests here: two renders, each a real child
+// process that encodes a video (about 1 s each on auntie-2, 2026-11-05).
 test("two music cues: direct takes them, and the render must play both from their plies", async () => {
   // Two cues need two tracks that may play; only deja-vus may today. The app
   // runs in this process here, so the test clears skippy and puts it back.
@@ -3558,7 +3560,7 @@ test("two music cues: direct takes them, and the render must play both from thei
   } finally {
     cleared.forEach((t, i) => (t.license = licenses[i]));
   }
-});
+}, 30_000);
 
 test('no music ("music": []): direct takes it, and the render stores no cues, not null', async () => {
   const dir = tempDir();

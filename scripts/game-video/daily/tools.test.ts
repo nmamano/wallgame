@@ -260,13 +260,28 @@ describe("the tools on a real video", () => {
   ]);
   const pathOf = (lines: string[]) => lines[0].split(": ")[1].split(" ")[0];
 
-  test("scan, strip, crop and fullcheck write their PNG", () => {
+  // One test per tool: each runs ffmpeg and ffprobe several times, and the
+  // four in one test came near the 5 s limit on a loaded box.
+  test("scan writes its PNG", () => {
     expect(existsSync(pathOf(scan({ video, name: "t", every: 1 })))).toBe(true);
+  });
+
+  test("strip writes its PNG, cut at the video's end", () => {
     expect(
       existsSync(
         pathOf(strip({ video, name: "t", from: 1, seconds: 1, fps: 4 })),
       ),
     ).toBe(true);
+    // Past the end: the frames that exist, or a refusal; never no file.
+    const late = strip({ video, name: "t", from: 3.5, seconds: 2, fps: 4 });
+    expect(existsSync(pathOf(late))).toBe(true);
+    expect(late[1]).toBe("  2 frames at 3.5 3.75 s (the video ends there)");
+    expect(() =>
+      strip({ video, name: "t", from: 5, seconds: 1, fps: 4 }),
+    ).toThrow("--from must be in 0..3.95 s, got 5");
+  });
+
+  test("crop writes its PNG, of a box or around a cell at rest", () => {
     expect(
       existsSync(pathOf(crop({ video, name: "t", at: 2, box: "0,0,100,50" }))),
     ).toBe(true);
@@ -296,23 +311,21 @@ describe("the tools on a real video", () => {
     ).toThrow(
       "2 s is inside the zoom on ply 5 (1-3 s): --cell holds only at rest; use --box",
     );
-    // Past the end: the frames that exist, or a refusal; never no file.
-    const late = strip({ video, name: "t", from: 3.5, seconds: 2, fps: 4 });
-    expect(existsSync(pathOf(late))).toBe(true);
-    expect(late[1]).toBe("  2 frames at 3.5 3.75 s (the video ends there)");
-    expect(() =>
-      strip({ video, name: "t", from: 5, seconds: 1, fps: 4 }),
-    ).toThrow("--from must be in 0..3.95 s, got 5");
     expect(() => crop({ video, name: "t", at: 3.99, box: "0,0,1,1" })).toThrow(
       "--at must be in 0..3.95 s",
     );
+  });
+
+  // 15 s: fullcheck itself runs ffmpeg about 9 times (a frame each, the
+  // stack, the loudness), 2.5 s at load 8 on auntie-2 (2026-11-05).
+  test("fullcheck writes its PNG and the loudness from 3 s", () => {
     const check = fullcheck({ video, name: "t" });
     expect(check[0]).toBe(
       "fullcheck: h264 320x568 at 30 fps, 4 s, audio aac 44100 Hz",
     );
     expect(existsSync(check[1].split(": ")[1])).toBe(true);
     expect(check[3]).toMatch(/from 3 s .*: 3s:-\d+$/);
-  });
+  }, 15_000);
 
   test("audio finds the gap, and a range gives each 0.1 s", () => {
     const whole = audio({ video });

@@ -28,16 +28,25 @@ const run = (...args: string[]) => {
 
 describe("the renderer's flags", () => {
   test("a word that is not its flag stops it before the browser", () => {
-    // An old kit without --from-cache captured live: a real view.
-    const bogus = run("--edl", "x.json", "--from-cach");
+    // The check names every problem at once, so one start of the renderer
+    // (about 1 s: it loads all its imports first) covers the three words.
+    const bogus = run(
+      "--edl",
+      "x.json",
+      // An old kit without --from-cache captured live: a real view.
+      "--from-cach",
+      "stray",
+      // A switch takes no value.
+      "--from-cache",
+      "x",
+    );
     expect(bogus.status).toBe(2);
     expect(bogus.stderr).toContain(
       "--from-cach is not a flag of this renderer",
     );
     expect(bogus.stderr).toMatch(/Known: .*--from-cache /);
-    expect(run("stray").stderr).toContain("stray is not a flag");
-    // A switch takes no value.
-    expect(run("--from-cache", "x").stderr).toContain("x is not a flag");
+    expect(bogus.stderr).toContain("stray is not a flag");
+    expect(bogus.stderr).toContain("x is not a flag");
   });
 
   test("--help prints the usage line that ship checks, and stops", () => {
@@ -72,12 +81,11 @@ describe("the renderer's flags", () => {
   });
 
   test("a flag that takes a value needs one", () => {
-    const r = run("--from-cache", "--plies");
+    // One start: --edl meets the next flag, --plies the end of the line.
+    const r = run("--edl", "--from-cache", "--plies");
     expect(r.status).toBe(2);
+    expect(r.stderr).toContain("--edl needs a value");
     expect(r.stderr).toContain("--plies needs a value");
-    expect(run("--edl", "--from-cache").stderr).toContain(
-      "--edl needs a value",
-    );
   });
 
   test("every name the renderer reads is in FLAGS", () => {
