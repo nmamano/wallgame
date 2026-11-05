@@ -202,6 +202,12 @@ import {
   silencesOverRules,
 } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
+import {
+  TOUCH_CELLS,
+  cutByEdge,
+  depthInto as boxDepth,
+  pawnUnderName,
+} from "./mark-fit.mjs";
 import { pageArrows, routeNear } from "./page-arrows.mjs";
 import {
   allocateFrameRanges,
@@ -3166,20 +3172,9 @@ const wallBoxes = (boardIndex) =>
   });
 /**
  * How far box `b` ({x, y, w, h}) goes into box `k` ({x0, y0, x1, y1}), in
- * cells: the lesser of its two overlaps, 0 or less when they are apart. A
- * box under a hundredth of a cell into another only touches it.
+ * this board's cells (mark-fit.mjs depthInto).
  */
-const depthInto = (b, k) =>
-  Math.min(
-    (Math.min(b.x + b.w, k.x1) - Math.max(b.x, k.x0)) / GRID.pitchX,
-    (Math.min(b.y + b.h, k.y1) - Math.max(b.y, k.y0)) / GRID.pitchY,
-  );
-const TOUCH_CELLS = 0.01;
-/**
- * How far past the board's edge a mark may reach, as a part of the board,
- * before it reads as cut (a hair of anti-aliasing is not a cut).
- */
-const EDGE_CUT = 0.002;
+const depthInto = (b, k) => boxDepth(b, k, GRID.pitchX, GRID.pitchY);
 
 /**
  * An EDL wall as the line it draws on the board image, [x1, y1, x2, y2] in
@@ -6536,14 +6531,7 @@ const renderStyle = async (styleName) => {
       if (hit) covers.set(side, hit.what);
       const under = pawns.find((k) => depthInto(box, k) > TOUCH_CELLS);
       if (under) hides.set(side, under.what);
-      if (
-        box.x < -EDGE_CUT ||
-        box.y < -EDGE_CUT ||
-        box.x + box.w > 1 + EDGE_CUT ||
-        box.y + box.h > 1 + EDGE_CUT
-      ) {
-        cuts.add(side);
-      }
+      if (cutByEdge(box)) cuts.add(side);
     }
     const side = bubbleSide(
       board,
@@ -6555,7 +6543,7 @@ const renderStyle = async (styleName) => {
     if (cuts.has(side)) {
       fxCuts.set(
         ev,
-        `the ${ev.kind} mark on ${ev.cell} runs off the board's edge: every side it can take ${hides.size > 0 ? "hides a pawn or " : ""}is cut by an edge`,
+        `the ${ev.kind} mark on ${ev.cell} runs off the board's edge: the side it takes (${side}) is cut by the board's edge`,
       );
     }
     fxSides.set(ev, side);
@@ -7811,22 +7799,11 @@ const renderStyle = async (styleName) => {
   // A name covers no pawn (Wall Game Director, 2026-11-05, from VR1's
   // review 150 N2): its letters' box against each pawn the page drew.
   for (const { paint } of names) {
-    const half = (NAME_LETTER_WIDTH * paint.size * paint.text.length) / 2;
-    const box = {
-      x: paint.x - half,
-      y: paint.y - paint.size,
-      w: 2 * half,
-      h: paint.size * 1.2,
-    };
-    const under = (pawnSpots.get(START_PLY) ?? []).find(
-      (p) =>
-        depthInto(box, {
-          x0: p.x - p.w / 2,
-          y0: p.y - p.h / 2,
-          x1: p.x + p.w / 2,
-          y1: p.y + p.h / 2,
-        }) > TOUCH_CELLS,
-    );
+    const under = pawnUnderName(paint, pawnSpots.get(START_PLY) ?? [], {
+      letterWidth: NAME_LETTER_WIDTH,
+      pitchX: GRID.pitchX,
+      pitchY: GRID.pitchY,
+    });
     if (under) {
       fault(
         "name-covers-pawn",
