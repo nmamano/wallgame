@@ -1366,6 +1366,19 @@ describe("the overlay event's pawn (Nil, 2026-10-30, C20: who emotes)", () => {
     ).toEqual([
       "events[0]: gs-jail-bars goes round the red mouse; it has one place and takes no place",
     ]);
+    // A green-screen clip stands next to its pawn (C59).
+    expect(
+      validateEdl(
+        ev({
+          asset: "gs-squidward-bm",
+          pawn: "blue mouse",
+          sound: "giggle-1",
+          place: "left-middle",
+        }),
+      ).errors,
+    ).toEqual([
+      "events[0]: gs-squidward-bm stands next to the blue mouse (Nil, 2026-11-05, C59) and takes no place",
+    ]);
     expect(
       validateEdl(ev({ asset: "chat-toast", text: "hi", place: "top-left" }))
         .errors,

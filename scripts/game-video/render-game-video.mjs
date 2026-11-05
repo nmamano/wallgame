@@ -129,6 +129,8 @@ import {
   placeOverlay,
   placeNear,
   placeAround,
+  besidePlaces,
+  standsBeside,
   parsePawn,
   DEATH_CARDS,
   nearFaults,
@@ -3598,12 +3600,14 @@ const INTRO_WALKS =
             .map((h) => huntPath(start.grid, start.pawns, h));
           const walk = walks.reduce((a, b) => (b.length < a.length ? b : a));
           // The name goes over the cat, or under it on the top row or
-          // where a pawn stands over it (openingNames).
+          // where a pawn stands in the row over it, under the name's width
+          // (openingNames; VR1, review 150 N2: a name spans about 1.3 to
+          // 1.8 cells).
           const [row, col] = walk[0];
           const nameBelow =
             row === 0 ||
             boardPawns(start.pawns).some(
-              (p) => p.cell[0] === row - 1 && p.cell[1] === col,
+              (p) => p.cell[0] === row - 1 && Math.abs(p.cell[1] - col) <= 1,
             );
           return { player, ...drawnWalk(start.pawns, walk), nameBelow };
         });
@@ -3635,19 +3639,24 @@ const NAME_FADE_SECONDS = 0.3;
  * and colour, and its baseline's centre and letter size as fractions of the
  * board image. `from`: the second of the opening it shows at.
  */
-const openingNames = (plan, nameOf, hexOf) =>
+const openingNames = (plan, nameOf, hexOf, buttons) =>
   plan.map((w) => {
     const [row, col] = w.cells[0];
     const size = NAME_SIZE * GRID.pitchY;
     const text = nameOf(w.player);
     const half = (NAME_LETTER_WIDTH * size * text.length) / 2;
-    const x = Math.min(
-      1 - NAME_EDGE - half,
-      Math.max(NAME_EDGE + half, GRID.x(col + 0.5)),
-    );
     const y = w.nameBelow
       ? GRID.y(row + 1) + NAME_GAP * GRID.pitchY + size * 0.8
       : GRID.y(row) - NAME_GAP * GRID.pitchY;
+    // Its right end keeps off the apps' buttons where its line meets them.
+    const right =
+      buttons && y > buttons.y0 && y - size < buttons.y1
+        ? Math.min(1 - NAME_EDGE, buttons.x0)
+        : 1 - NAME_EDGE;
+    const x = Math.min(
+      right - half,
+      Math.max(NAME_EDGE + half, GRID.x(col + 0.5)),
+    );
     return { from: w.start, paint: { text, hex: hexOf(w.player), x, y, size } };
   });
 const PATHS = new Map();
@@ -5427,17 +5436,8 @@ const renderStyle = async (styleName) => {
         edge-to-edge board reaches under them (Nil, 2026-11-05, C58), and
         no overlay goes there.
       */
-      const board = layoutBoxes?.board;
-      const buttons = board
-        ? [
-            {
-              x0: (BUTTONS_ZONE.x - board.x) / board.w,
-              y0: (BUTTONS_ZONE.y - board.y) / board.h,
-              x1: (BUTTONS_ZONE.x + BUTTONS_ZONE.w - board.x) / board.w,
-              y1: (BUTTONS_ZONE.y + BUTTONS_ZONE.h - board.y) / board.h,
-              what: "the apps' buttons",
-            },
-          ]
+      const buttons = buttonsOnBoard
+        ? [{ ...buttonsOnBoard, what: "the apps' buttons" }]
         : [];
       const busy =
         w.asset.form === "bar"
@@ -5542,22 +5542,24 @@ const renderStyle = async (styleName) => {
         // What is under each place, each thing once, and what stops each
         // place off the board: the director moves the overlay to a ply
         // where one place is free.
+        const beside = pawnAt && standsBeside(w.asset);
         const under = placesOf(w.asset).flatMap((kind) =>
           kind === "board"
-            ? overlayPlaces(w.asset, reach, { middles: !!pawnAt })
-                .filter(
-                  (p) => w.ev.place === undefined || p.where === w.ev.place,
-                )
-                .map(
-                  (p) =>
-                    `${placeName(p)}: ${nearFaults(p, pawnAt && w.asset.tail !== false ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
-                )
+            ? (beside
+                ? besidePlaces(w.asset, reach, pawnAt, PITCH)
+                : overlayPlaces(w.asset, reach, { middles: !!pawnAt }).filter(
+                    (p) => w.ev.place === undefined || p.where === w.ev.place,
+                  )
+              ).map(
+                (p) =>
+                  `${placeName(p)}: ${nearFaults(p, pawnAt && w.asset.tail !== false ? tailOf(p.full, pawnAt, PITCH) : null, busy, others, PITCH).join(", ")}`,
+              )
             : [`${kind}: ${offRoom(kind)}`],
         );
         fault(
           "overlay-place",
           w.ev.ply,
-          `${where} has no free place${w.ev.place === undefined ? "" : ` at its place ${w.ev.place}`} while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
+          `${where} has no free place${beside ? ` next to the ${w.ev.pawn} (a green-screen clip stands beside its pawn, C59)` : ""}${w.ev.place === undefined ? "" : ` at its place ${w.ev.place}`} while it shows (${(w.end - w.start).toFixed(1)} s)${reachWords(reach(1))}${pawnAt ? `, nor one whose tail to the ${w.ev.pawn} on ${termOfCell(OVERLAY_FACTS.get(w.ev).cell)} is clear and points at it only` : ""}; under each place:\n  ${under.join("\n  ")}`,
           w.start,
         );
         continue;
@@ -6245,6 +6247,23 @@ const renderStyle = async (styleName) => {
         credit: Boolean(CREDIT),
         strip: Boolean(strip),
       })
+    : null;
+  /**
+   * The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest, 0..1:
+   * the edge-to-edge board reaches under them (C58); no overlay and no
+   * opening name goes there.
+   */
+  const buttonsOnBoard = layoutBoxes?.board
+    ? {
+        x0: (BUTTONS_ZONE.x - layoutBoxes.board.x) / layoutBoxes.board.w,
+        y0: (BUTTONS_ZONE.y - layoutBoxes.board.y) / layoutBoxes.board.h,
+        x1:
+          (BUTTONS_ZONE.x + BUTTONS_ZONE.w - layoutBoxes.board.x) /
+          layoutBoxes.board.w,
+        y1:
+          (BUTTONS_ZONE.y + BUTTONS_ZONE.h - layoutBoxes.board.y) /
+          layoutBoxes.board.h,
+      }
     : null;
   /*
     The board's cells in the video's frame, at rest with no zoom, in
@@ -7748,7 +7767,7 @@ const renderStyle = async (styleName) => {
   const introSeconds = introWalkSeconds(INTRO_PLAN);
   const introStart = elapsed;
   const names = wallz
-    ? openingNames(INTRO_PLAN, dailyName, (id) => side(id).hex)
+    ? openingNames(INTRO_PLAN, dailyName, (id) => side(id).hex, buttonsOnBoard)
     : [];
   /** The names `t` seconds into the opening, at `alpha`. */
   const namesAt = (t, alpha = 1) =>

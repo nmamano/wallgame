@@ -272,6 +272,7 @@ import {
   parsePawn,
   takesPawn,
   PAWN_PLACES,
+  standsBeside,
   takesSeat,
   READ_BASE_SECONDS,
   READ_WORD_SECONDS,
@@ -1010,6 +1011,10 @@ export const validateEdl = (raw) => {
       if (ev.place !== undefined && asset.around) {
         fail(
           `${where}: ${ev.asset} goes round the ${ev.pawn}; it has one place and takes no place`,
+        );
+      } else if (ev.place !== undefined && standsBeside(asset)) {
+        fail(
+          `${where}: ${ev.asset} stands next to the ${ev.pawn} (Nil, 2026-11-05, C59) and takes no place`,
         );
       } else if (ev.place !== undefined && !PAWN_PLACES.includes(ev.place)) {
         fail(

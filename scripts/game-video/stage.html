@@ -3038,7 +3038,14 @@
           // an edge's middle ("right-middle", a pawn's place) centres it
           // along that edge. Ringed in the seat's colour when a pawn
           // emotes it.
-          const edges = p.where.split("-");
+          // A clip beside its pawn ("beside-left", ...) leans toward it.
+          const toward = {
+            "beside-left": "right",
+            "beside-right": "left",
+            "beside-top": "bottom",
+            "beside-bottom": "top",
+          }[p.where];
+          const edges = toward ? [toward] : p.where.split("-");
           const x = edges.find((e) => e === "left" || e === "right");
           const y = edges.find((e) => e === "top" || e === "bottom");
           el.innerHTML =

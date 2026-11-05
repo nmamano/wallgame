@@ -25,6 +25,8 @@ import {
   nearFaults,
   placeNear,
   placeAround,
+  besidePlaces,
+  standsBeside,
   PAWN_PLACES,
   tailHits,
   tailLength,
@@ -771,5 +773,85 @@ describe("the death cards (Wall Game Director, 2026-10-30)", () => {
       expect(CARDS).toContain(card);
       expect(OVERLAYS[card]).toMatchObject({ draw: "card", card });
     }
+  });
+});
+
+describe("a green-screen clip stands next to its pawn (Nil, 2026-11-05, C59)", () => {
+  const PITCH = { x: 0.125, y: 0.125 };
+  const squidward = OVERLAYS["gs-squidward-bm"] as Parameters<
+    typeof placeNear
+  >[0];
+  const pawnBox = (pawn: { x: number; y: number }) => ({
+    ...cell(pawn.x - PITCH.x / 2, pawn.y - PITCH.y / 2),
+    what: "the pawn",
+  });
+  const touches = (
+    f: { x: number; y: number; w: number; h: number },
+    pawn: { x: number; y: number },
+  ) => {
+    const [x0, y0] = [pawn.x - PITCH.x / 2, pawn.y - PITCH.y / 2];
+    const [x1, y1] = [x0 + PITCH.x, y0 + PITCH.y];
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+    const overlapX = f.x < x1 && f.x + f.w > x0;
+    const overlapY = f.y < y1 && f.y + f.h > y0;
+    return (
+      ((near(f.x + f.w, x0) || near(f.x, x1)) && overlapY) ||
+      ((near(f.y + f.h, y0) || near(f.y, y1)) && overlapX)
+    );
+  };
+
+  test("the green-screen clips with no tail stand beside; a cage does not", () => {
+    const beside = Object.entries(OVERLAYS)
+      .filter(([, a]) => standsBeside(a))
+      .map(([k]) => k);
+    expect(beside.every((k) => k.startsWith("gs-"))).toBe(true);
+    expect(beside).toContain("gs-squidward-bm");
+    expect(beside).not.toContain("gs-jail-bars");
+    expect(standsBeside(OVERLAYS["the-scream"])).toBe(false);
+  });
+
+  test("every beside place touches the pawn's cell and stays on the board", () => {
+    const pawn = { x: 0.4375, y: 0.5625 };
+    const places = besidePlaces(squidward, NO_REACH, pawn, PITCH);
+    expect(places.length).toBeGreaterThan(0);
+    for (const p of places) {
+      expect(touches(p.full, pawn)).toBe(true);
+      expect(p.full.x).toBeGreaterThanOrEqual(0);
+      expect(p.full.x + p.full.w).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("it takes the nearest free place beside the pawn, with no tail", () => {
+    const pawn = { x: 0.4375, y: 0.5625 };
+    const place = placeNear(
+      squidward,
+      [pawnBox(pawn)],
+      NO_REACH,
+      pawn,
+      [],
+      PITCH,
+    );
+    expect(place?.where).toMatch(/^beside-/);
+    expect(place?.tail).toBeNull();
+    expect(touches(place!.full, pawn)).toBe(true);
+  });
+
+  test("with every side busy it takes no far place", () => {
+    const pawn = { x: 0.4375, y: 0.5625 };
+    // The pawn's neighbours, two cells deep on every side.
+    const busy = [pawnBox(pawn)];
+    for (let dx = -2; dx <= 2; dx += 1) {
+      for (let dy = -2; dy <= 2; dy += 1) {
+        if (dx === 0 && dy === 0) continue;
+        busy.push({
+          ...cell(
+            pawn.x - PITCH.x / 2 + dx * PITCH.x,
+            pawn.y - PITCH.y / 2 + dy * PITCH.y,
+          ),
+          what: "a pawn",
+        });
+      }
+    }
+    expect(placeNear(squidward, busy, NO_REACH, pawn, [], PITCH)).toBeNull();
   });
 });

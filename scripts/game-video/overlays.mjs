@@ -1903,6 +1903,70 @@ export const tailLength = (tail, pitch) =>
     : 0;
 
 /**
+ * Whether a clip tied to a pawn stands next to it (Nil, 2026-11-05, C59:
+ * "it's better if the green screen memes appear next to the piece emoting
+ * it"): a green-screen clip with no tail. A cage (`around`) has its own place.
+ * @param {{ draw?: string, tail?: boolean, around?: unknown }} asset
+ */
+export const standsBeside = (asset) =>
+  asset.draw === "sequence" && asset.tail === false && !asset.around;
+
+/**
+ * The places beside a pawn for a clip that stands next to it
+ * (standsBeside), at either size: its whole art (`full`) touches the
+ * pawn's cell on one side, left or right of it standing on the cell's row,
+ * centred on it or hanging from its top, or above or below it, centred or
+ * at either end of the cell, slid along that side to stay inside the
+ * board. Named "beside-<side>". In no order (placeNear ranks them).
+ * @param {{ size: { w: number, h: number }, small?: { w: number, h: number } }} asset
+ * @param {(scale: number) => Reach} reach
+ * @param {{ x: number, y: number }} pawn its centre in the board
+ * @param {{ x: number, y: number }} pitch a cell's size in the board
+ * @returns {Place[]}
+ */
+export const besidePlaces = (asset, reach, pawn, pitch) => {
+  const cell = {
+    x0: pawn.x - pitch.x / 2,
+    y0: pawn.y - pitch.y / 2,
+    x1: pawn.x + pitch.x / 2,
+    y1: pawn.y + pitch.y / 2,
+  };
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const out = [];
+  for (const size of [asset.size, ...(asset.small ? [asset.small] : [])]) {
+    const { w, h } = size;
+    const scale = w / asset.size.w;
+    const r = reach(scale);
+    const fw = w * (1 + r.left + r.right);
+    const fh = h * (1 + r.top + r.bottom);
+    const fit = (where, fx, fy) => {
+      if (fx < INSET - 1e-9 || fx + fw > 1 - INSET + 1e-9) return;
+      if (fy < INSET - 1e-9 || fy + fh > 1 - INSET + 1e-9) return;
+      out.push({
+        where,
+        x: fx + r.left * w,
+        y: fy + r.top * h,
+        w,
+        h,
+        scale,
+        full: { x: fx, y: fy, w: fw, h: fh },
+      });
+    };
+    const slideY = (fy) => clamp(fy, INSET, 1 - INSET - fh);
+    const slideX = (fx) => clamp(fx, INSET, 1 - INSET - fw);
+    for (const fy of [cell.y1 - fh, pawn.y - fh / 2, cell.y0]) {
+      fit("beside-left", cell.x0 - fw, slideY(fy));
+      fit("beside-right", cell.x1, slideY(fy));
+    }
+    for (const fx of [pawn.x - fw / 2, cell.x0, cell.x1 - fw]) {
+      fit("beside-top", slideX(fx), cell.y0 - fh);
+      fit("beside-bottom", slideX(fx), cell.y1);
+    }
+  }
+  return out;
+};
+
+/**
  * The place of a picture tied to a pawn (`pawn`; Nil, 2026-10-30, C20:
  * "it should be clear who is emoting"): of its board places at either
  * size, corners and edge middles, that nearFaults finds free, the one with
@@ -1922,7 +1986,9 @@ export const tailLength = (tail, pitch) =>
  * the same faults; a wall it covers is the director's choice. With its
  * tail (null when the pawn is too near for one), or null when no place is
  * free. `onWall` says that its art or tail covers a wall (every free
- * place did, or the EDL named it).
+ * place did, or the EDL named it). A clip that stands beside its pawn
+ * (standsBeside) takes only the places beside it (besidePlaces), nearest
+ * first, never a far free place, and no EDL place.
  * @param {{ form: "clip", size: { w: number, h: number }, small?: { w: number, h: number }, tail?: boolean }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number, what: string, wall?: boolean }[]} busy
  * @param {(scale: number) => Reach} reach
@@ -1941,8 +2007,13 @@ export const placeNear = (
   pitch,
   { walls = [], place } = {},
 ) => {
-  const ranked = overlayPlaces(asset, reach, { middles: true })
-    .filter((p) => place === undefined || p.where === place)
+  const beside = standsBeside(asset);
+  const candidates = beside
+    ? besidePlaces(asset, reach, pawn, pitch)
+    : overlayPlaces(asset, reach, { middles: true }).filter(
+        (p) => place === undefined || p.where === place,
+      );
+  const ranked = candidates
     .map((p) => {
       // With no tail (`tail: false`), the tail it would have still ranks
       // the places by nearness.
@@ -1956,7 +2027,13 @@ export const placeNear = (
           (tail !== null && tailHits(tail, p.full, walls, pitch).length > 0)
             ? 1
             : 0,
-        length: tailLength(line, pitch),
+        // Beside: the art's middle nearest the pawn.
+        length: beside
+          ? Math.hypot(
+              (p.full.x + p.full.w / 2 - pawn.x) / pitch.x,
+              (p.full.y + p.full.h / 2 - pawn.y) / pitch.y,
+            )
+          : tailLength(line, pitch),
       };
     })
     .sort(
