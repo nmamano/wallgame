@@ -85,7 +85,8 @@ export type Tag =
  *   reach into it (NxKhTj4H ply 21, C28: "a doomed run").
  * - cat-on-own-mouse: the mover's cat and mouse end on one cell, and did not
  *   start on one (NxKhTj4H plies 3, 7, 15, C28: "his cat stands on his
- *   mouse's square").
+ *   mouse's square"). Not on the engine's best move: there the cat only
+ *   passes its mouse's cell on its way (qbh10ebA ply 21, a 2 -> 18 wall).
  * `walk` is the closest such walk (for mouse-into-reach, after the move).
  * Walls that change no counter are no huh (C45, X-TQBFZA ply 11: Nil "didn't
  * make sense"): the board shows nothing odd.
@@ -459,7 +460,8 @@ const huhOf = (f: PlyFacts): Huh | null => {
     cat &&
     mouse &&
     cat.hunterTo === mouse.targetTo &&
-    cat.hunterFrom !== mouse.targetFrom
+    cat.hunterFrom !== mouse.targetFrom &&
+    !e?.playedBest
   )
     return { kind: "cat-on-own-mouse", walk: mouse.after, shown: true };
   return null;

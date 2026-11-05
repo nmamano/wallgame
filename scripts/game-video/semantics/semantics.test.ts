@@ -1171,6 +1171,12 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     ]);
   });
 
+  test("qbh10ebA: a cat that passes its own mouse on the engine's best move is no huh", () => {
+    const p = fixtureLabels("qbh10ebA").plies[21];
+    expect(p.huh).toBeUndefined();
+    expect(p.destroys).toBe(true);
+  });
+
   test("C32 PnGQWON1: the bot's cat beside the mouse at 13 and 19 is a threat; 20 saves", () => {
     const l = fixtureLabels("PnGQWON1");
     expect(l.plies[13].tags).toContain("threat");
