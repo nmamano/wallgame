@@ -20,8 +20,8 @@
     "harness:game-help": "bun run build && bun scripts/browser-harness/drive-game-help.ts",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
-    "lint": "NODE_OPTIONS=--max-old-space-size=4096 bun x eslint . --fix --cache --cache-location .eslintcache",
-    "lint:check": "NODE_OPTIONS=--max-old-space-size=4096 bun x eslint .",
+    "lint": "NODE_OPTIONS=--max-old-space-size=6144 bun x eslint . --fix --cache --cache-location .eslintcache",
+    "lint:check": "NODE_OPTIONS=--max-old-space-size=6144 bun x eslint .",
     "ci": "bun x prettier --check . && bun run lint:check && bun run typecheck && bun run test && bun run build",
     "cip": "bun x prettier --write . && bun run lint && bun run typecheck && bun run test && bun run build"
   },

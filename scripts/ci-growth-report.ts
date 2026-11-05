@@ -5,7 +5,9 @@
  *
  * - lint peak RSS against the heap cap that `lint:check` sets. At 2026-11-03
  *   it was 3.17 GiB of 4 GiB (79%); one more typed project can crash lint
- *   with exit 134. Raise the cap with any new typed project.
+ *   with exit 134. Raise the cap with any new typed project. The cap went
+ *   to 6 GiB on 2026-11-05: with that room, peak RSS was 3.94-4.01 GiB, up
+ *   from 3.24-3.44 GiB under 4 GiB, because V8 collects harder near its cap.
  * - first-load JS (what index.html loads before the app starts), raw and
  *   gzip, against Vite's chunk-size warning.
  * - tracked source files against 3,000 lines.
