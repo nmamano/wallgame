@@ -1594,6 +1594,30 @@ export const createDaily = ({
       publishId,
     });
 
+  /**
+   * The channel's last 5 uploads in every state (post-youtube.mjs
+   * youtubeRecentUploads). It refreshes the YouTube token as a post does,
+   * so the caller holds the post lock (asThePost). Refused when the Connect
+   * has no youtube.readonly scope.
+   */
+  const youtubeRecentNow = () => {
+    const record = tokens.read("youtube");
+    if (!record?.scopes?.includes(YOUTUBE_READ_SCOPE)) {
+      throw new StepRefused(
+        "youtube: the Connect has no youtube.readonly scope: connect again (/daily/connect)",
+      );
+    }
+    return youtubeRecentUploads({
+      transport: makeLiveTransport(),
+      creds: {
+        YOUTUBE_CLIENT_ID: env.YOUTUBE_CLIENT_ID,
+        YOUTUBE_CLIENT_SECRET: env.YOUTUBE_CLIENT_SECRET,
+        refreshToken: record.refreshToken,
+      },
+      onRefreshToken: (token) => keepRefreshToken("youtube", token),
+    });
+  };
+
   // Nil's TikTok inbox holds one draft (tiktok-drafts.mjs): the latest
   // draft is the newest tiktok row of the live post log.
   const tiktokDrafts = createTiktokDrafts({
@@ -1639,6 +1663,8 @@ export const createDaily = ({
     postPlatform,
     logPost,
     tiktokWaiting: tiktokDrafts.waiting,
+    // An async wrapper: a scope refusal is a failed read, as is a 4xx.
+    youtubeRecent: async () => youtubeRecentNow(),
   });
   const scheduler = createScheduler({
     statePath: join(dirs.root, "schedule.json"),
@@ -2957,30 +2983,15 @@ export const createDaily = ({
 
     /**
      * READ-ONLY: the channel's last 5 uploads in every state (post-youtube.mjs
-     * youtubeRecentUploads), for a person who checks an UNCERTAIN upload
-     * before a retry. It refreshes the YouTube token as a post does, so it
-     * runs as THE post (asThePost). The reply has no token.
+     * youtubeRecentNow), for a person who looks at an UNCERTAIN upload; a
+     * YouTube retry reads them itself (review-post.mjs). It refreshes the
+     * YouTube token as a post does, so it runs as THE post (asThePost). The
+     * reply has no token.
      */
     "GET /api/daily/youtube-recent": async (req, res) => {
       const why = platformReasons("youtube", env, connectedNow());
       if (why.length) throw new StepRefused(`youtube: ${why.join("; ")}`);
-      const videos = await asThePost(() => {
-        const record = tokens.read("youtube");
-        if (!record?.scopes?.includes(YOUTUBE_READ_SCOPE)) {
-          throw new StepRefused(
-            "youtube: the Connect has no youtube.readonly scope: connect again (/daily/connect)",
-          );
-        }
-        return youtubeRecentUploads({
-          transport: makeLiveTransport(),
-          creds: {
-            YOUTUBE_CLIENT_ID: env.YOUTUBE_CLIENT_ID,
-            YOUTUBE_CLIENT_SECRET: env.YOUTUBE_CLIENT_SECRET,
-            refreshToken: record.refreshToken,
-          },
-          onRefreshToken: (token) => keepRefreshToken("youtube", token),
-        });
-      });
+      const videos = await asThePost(youtubeRecentNow);
       json(res, 200, { at: new Date().toISOString(), videos });
     },
 

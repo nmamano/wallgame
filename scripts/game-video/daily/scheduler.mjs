@@ -77,7 +77,11 @@ const resultLine = (platform, r) => {
       : `- ${platform}: posted${where ? ` ${where}` : ""}`;
   }
   if (r.pending || r.uncertain) {
-    return `- ${platform}: UNCERTAIN, the post may exist; check the account before a retry${r.error ? ` (${r.error})` : ""}`;
+    const check =
+      platform === "youtube"
+        ? "a retry with --confirm-not-posted youtube checks the channel's last uploads first"
+        : "check the account before a retry";
+    return `- ${platform}: UNCERTAIN, the post may exist; ${check}${r.error ? ` (${r.error})` : ""}`;
   }
   return `- ${platform}: FAILED (${r.error ?? "no reason"})`;
 };
@@ -485,7 +489,7 @@ export const createScheduler = ({
         `The app stopped while ${item.id} was posting; it is post-failed now.`,
         ...item.platforms.map((p) => resultLine(p, item.posts[p])),
         ...notApplicableLines(item.notApplicable),
-        `Check each UNCERTAIN account, then retry by hand: crew.mjs post --item ${item.id} (with --confirm-not-posted for a checked platform).`,
+        `Check each UNCERTAIN account, then retry by hand: crew.mjs post --item ${item.id} (with --confirm-not-posted for a checked platform; for youtube the app checks).`,
       ]);
     }
     // A stop after the slot was written and before an item was taken (the

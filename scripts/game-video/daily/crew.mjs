@@ -250,7 +250,11 @@
  *                                  the cause is fixed: only the platforms of
  *                                  its slot that did not post. A platform
  *                                  whose post may exist needs a check of the
- *                                  account, then --confirm-not-posted. Slots
+ *                                  account, then --confirm-not-posted. For
+ *                                  youtube the app checks: it reads the
+ *                                  channel's last uploads and refuses when
+ *                                  one has the item's title in any state,
+ *                                  or when it cannot read them. Slots
  *                                  post approved items on their own; a retry
  *                                  uses no slot
  *   slot --now --by "<agent name>" (Growth) fire a slot now: the oldest

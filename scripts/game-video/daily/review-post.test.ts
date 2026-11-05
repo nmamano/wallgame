@@ -57,6 +57,14 @@ interface Item {
   events: string[];
 }
 
+/** One upload of youtubeRecentUploads, with the fields the retry reads. */
+interface Upload {
+  id: string;
+  title: string | null;
+  uploadStatus: string | null;
+  processingStatus: string | null;
+}
+
 /** What postNext and retry return. */
 interface Outcome {
   kind: string;
@@ -112,6 +120,10 @@ const world = (live: string[]) => {
   // an Error is a read that throws (a damaged file).
   let tiktokWhy: string | Error | null = null;
   let tiktokReads = 0;
+  // post-youtube.mjs youtubeRecentUploads: the channel's last uploads; an
+  // Error is a read that fails.
+  let youtubeUploads: Upload[] | Error = [];
+  let youtubeReads = 0;
   const store = {
     item: (id: string) => structuredClone(items.get(id)) ?? null,
     items: ({ states }: { states?: string[] } = {}) =>
@@ -168,6 +180,12 @@ const world = (live: string[]) => {
         ? Promise.reject(tiktokWhy)
         : Promise.resolve(tiktokWhy);
     },
+    youtubeRecent: () => {
+      youtubeReads++;
+      return youtubeUploads instanceof Error
+        ? Promise.reject(youtubeUploads)
+        : Promise.resolve(youtubeUploads);
+    },
   });
   const post = async (slot: { slotAt: string; firedBy?: string }) =>
     (await poster.postNext(slot)) as Outcome;
@@ -186,6 +204,8 @@ const world = (live: string[]) => {
     setVideo: (b: Buffer) => (video = b),
     setTiktok: (why: string | Error | null) => (tiktokWhy = why),
     tiktokReads: () => tiktokReads,
+    setYoutube: (v: Upload[] | Error) => (youtubeUploads = v),
+    youtubeReads: () => youtubeReads,
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
       (reasons = { ...reasons, ...r }),
@@ -569,6 +589,105 @@ describe("post(itemId)", () => {
       ["x", false],
       ["x", true],
     ]);
+  });
+
+  describe("a YouTube retry after an uncertain upload", () => {
+    // v-2026-11-01-6, 2026-11-05: the PUT ended "fetch failed", the upload
+    // was on YouTube in "processing", and a retry uploaded it again.
+    const uncertainYoutube = async () => {
+      const w = world(["youtube"]);
+      w.replies.youtube = (commit) => {
+        commit();
+        return {
+          ok: false,
+          uncertain: true,
+          mode: "live",
+          at: "t",
+          error: "fetch failed",
+        };
+      };
+      await w.post(SLOT);
+      delete w.replies.youtube;
+      return w;
+    };
+    const confirmed = { confirmNotPosted: ["youtube"] };
+
+    test("an upload with the same title in processing refuses, with its id", async () => {
+      const w = await uncertainYoutube();
+      w.setYoutube([
+        {
+          id: "zzOther0001",
+          title: "another video #Shorts",
+          uploadStatus: "processed",
+          processingStatus: "succeeded",
+        },
+        {
+          id: "ARss61GrZXk",
+          title: "title #Shorts",
+          uploadStatus: "uploaded",
+          processingStatus: "processing",
+        },
+      ]);
+      expect(await refusal(w.retry("v-2026-10-28-1", confirmed))).toBe(
+        'youtube: the channel already has this upload: ARss61GrZXk has the title "title #Shorts" (uploaded, processing); no retry',
+      );
+      expect(w.get().state).toBe("post-failed");
+      expect(w.confirmedSeen).toEqual([["youtube", false]]);
+    });
+
+    test("no upload with the title: the retry runs", async () => {
+      const w = await uncertainYoutube();
+      // The copy title alone is not the posted title (the app adds #Shorts).
+      w.setYoutube([
+        {
+          id: "zzOther0001",
+          title: "title",
+          uploadStatus: "processed",
+          processingStatus: "succeeded",
+        },
+      ]);
+      const r = await w.retry("v-2026-10-28-1", confirmed);
+      expect(r).toMatchObject({ kind: "posted", platforms: ["youtube"] });
+      expect(w.youtubeReads()).toBe(1);
+      expect(w.confirmedSeen).toEqual([
+        ["youtube", false],
+        ["youtube", true],
+      ]);
+    });
+
+    test("a read that fails refuses: no blind retry", async () => {
+      const w = await uncertainYoutube();
+      w.setYoutube(new Error("youtube videos: HTTP 403 quotaExceeded"));
+      expect(await refusal(w.retry("v-2026-10-28-1", confirmed))).toBe(
+        "youtube: the channel's last uploads cannot be read (youtube videos: HTTP 403 quotaExceeded), so the app cannot check for this upload; retry when the read works (GET /api/daily/youtube-recent)",
+      );
+      expect(w.get().state).toBe("post-failed");
+      expect(w.confirmedSeen).toEqual([["youtube", false]]);
+    });
+
+    test("without the confirmation the refusal says the app checks; nothing is read", async () => {
+      const w = await uncertainYoutube();
+      expect(await refusal(w.retry("v-2026-10-28-1"))).toContain(
+        "retry with --confirm-not-posted youtube: the app checks the channel's last uploads first",
+      );
+      expect(w.youtubeReads()).toBe(0);
+    });
+
+    test("a retry after a clear YouTube failure reads nothing", async () => {
+      const w = world(["youtube"]);
+      w.replies.youtube = () => ({
+        ok: false,
+        uncertain: false,
+        mode: "live",
+        at: "t",
+        error: "youtube start: HTTP 401",
+      });
+      await w.post(SLOT);
+      delete w.replies.youtube;
+      w.setYoutube(new Error("not read"));
+      expect((await w.retry("v-2026-10-28-1")).kind).toBe("posted");
+      expect(w.youtubeReads()).toBe(0);
+    });
   });
 
   test("postPlatform's last guard (StepRefused) is a clear failure, not uncertain", async () => {

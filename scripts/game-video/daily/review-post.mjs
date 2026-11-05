@@ -18,7 +18,10 @@
  * - A retry is by hand (Growth): it posts only the platforms of the set that
  *   did not post. A platform whose last attempt may have made the post
  *   (pending: the app stopped during its final request; uncertain: no clear
- *   answer to it) needs confirmNotPosted, as before.
+ *   answer to it) needs confirmNotPosted, as before. For YouTube the app
+ *   then reads the channel's last uploads itself and refuses when one has
+ *   the item's title, in any state (a "processing" upload is not on the
+ *   public list: v-2026-11-01-6 went up twice, 2026-11-05).
  *
  * `postPlatform` is the per-platform poster of routes.mjs: it runs the
  * platform's requests, calls beforeCommit just before the final public one,
@@ -26,7 +29,7 @@
  * error }); it never throws for a platform's failure.
  */
 import { StepRefused, blockedMusic } from "./store.mjs";
-import { copySha256 } from "./copy.mjs";
+import { copySha256, postTexts } from "./copy.mjs";
 import { errorText, sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
 import { notInSlot } from "./slots.mjs";
@@ -84,6 +87,10 @@ const liveOf = (reasons) =>
  * @param {() => Promise<string | null>} deps.tiktokWaiting why a slot sends
  *   no TikTok draft now (tiktok-drafts.mjs waiting), or null; read once per
  *   slot, inside the post lock
+ * @param {() => Promise<{ id: string, title: string | null,
+ *   uploadStatus: string | null, processingStatus: string | null }[]>}
+ *   deps.youtubeRecent the channel's last uploads in every state
+ *   (post-youtube.mjs youtubeRecentUploads), read inside the post lock
  * @param {() => number} [deps.now]
  */
 export const createItemPoster = ({
@@ -93,6 +100,7 @@ export const createItemPoster = ({
   postPlatform,
   logPost,
   tiktokWaiting,
+  youtubeRecent,
   now = () => Date.now(),
 }) => {
   const iso = () => new Date(now()).toISOString();
@@ -131,6 +139,27 @@ export const createItemPoster = ({
       return `music license blocked since approval: ${bad.track} has the license ${bad.license}`;
     }
     return null;
+  };
+
+  /**
+   * Why a YouTube retry of `item` may not upload, or null: an upload of
+   * the channel has the title the post gives (postTexts), in any upload or
+   * processing state, or the uploads cannot be read. No blind retry.
+   */
+  const youtubeTwin = async (item) => {
+    const title = postTexts(item.copy.block).youtubeTitle.trim();
+    let videos;
+    try {
+      videos = await youtubeRecent();
+    } catch (err) {
+      return `the channel's last uploads cannot be read (${String(err?.message ?? err)}), so the app cannot check for this upload; retry when the read works (GET /api/daily/youtube-recent)`;
+    }
+    const twin = videos.find((v) => v.title?.trim() === title);
+    if (!twin) return null;
+    const state = [twin.uploadStatus, twin.processingStatus]
+      .filter(Boolean)
+      .join(", ");
+    return `the channel already has this upload: ${twin.id} has the title "${title}" (${state || "state unknown"}); no retry`;
   };
 
   const need = (id) => {
@@ -362,9 +391,13 @@ export const createItemPoster = ({
       const last = item.posts[p];
       if ((last?.pending || last?.uncertain) && !confirmNotPosted.includes(p)) {
         throw new StepRefused(
-          `${p} may already have this post (${last.pending ? "the app stopped during" : "no clear answer to"} its final request at ${last.at}); check the account, then retry with --confirm-not-posted ${p}`,
+          `${p} may already have this post (${last.pending ? "the app stopped during" : "no clear answer to"} its final request at ${last.at}); ${p === "youtube" ? "retry with --confirm-not-posted youtube: the app checks the channel's last uploads first" : `check the account, then retry with --confirm-not-posted ${p}`}`,
         );
       }
+    }
+    if (todo.includes("youtube") && confirmNotPosted.includes("youtube")) {
+      const twin = await youtubeTwin(item);
+      if (twin) throw new StepRefused(`youtube: ${twin}`);
     }
     // TikTok is gated as at a slot: a draft that waits now (another item's,
     // sent since this item's slot) or a status that is unknown sends none.
