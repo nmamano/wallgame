@@ -170,10 +170,18 @@ describe("one request body", () => {
     app = appModule.createApp().app;
   });
 
-  const post = (body: string) =>
+  // A string body gets no Content-Length header here, so these requests take
+  // the streamed path of the limit. Real traffic behind the proxy carries the
+  // header, and the limit then reads only the header.
+  const post = (body: string, withContentLength = false) =>
     app.request("/api/no-such-route", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(withContentLength
+          ? { "Content-Length": String(Buffer.byteLength(body)) }
+          : {}),
+      },
       body,
     });
 
@@ -203,5 +211,12 @@ describe("one request body", () => {
   it("passes a body of the largest size on to the routes", async () => {
     const response = await post("x".repeat(maxBodyBytes));
     expect(response.status).toBe(404);
+  });
+
+  it("applies the same limit to a body with a Content-Length header", async () => {
+    const longer = await post("x".repeat(maxBodyBytes + 1), true);
+    expect(longer.status).toBe(413);
+    const largest = await post("x".repeat(maxBodyBytes), true);
+    expect(largest.status).toBe(404);
   });
 });
