@@ -1166,7 +1166,6 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(odd).toEqual([
       [3, "cat-on-own-mouse"],
       [7, "cat-on-own-mouse"],
-      [15, "cat-on-own-mouse"],
       [21, "mouse-into-reach"],
     ]);
   });
@@ -1180,7 +1179,12 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(fixtureLabels("PnGQWON1").plies[20].label).toBe("trap-closes");
   });
 
-  test("qbh10ebA: a cat that passes its own mouse on the engine's best move is no huh", () => {
+  test("l2fZ3oxY: the first cat step onto its own mouse (the setup's path) is no huh", () => {
+    // a7 -> b7, walk 6 -> 5; the engine's best move makes the same step.
+    expect(fixtureLabels("l2fZ3oxY").plies[0].huh).toBeUndefined();
+  });
+
+  test("qbh10ebA: a cat that passes its own mouse on its way to the prey is no huh", () => {
     const p = fixtureLabels("qbh10ebA").plies[21];
     expect(p.huh).toBeUndefined();
     expect(p.destroys).toBe(true);
