@@ -1005,7 +1005,7 @@ const ensureAuthorizedPlayer = (
     console.warn("[ws] blocked stale token action", {
       sessionId: socket.sessionId,
       action,
-      socketToken: socket.socketToken,
+      role: socket.role,
     });
     return null;
   }
@@ -1103,7 +1103,6 @@ export const broadcast = (sessionId: string, message: unknown) => {
           ? (message as { type?: string }).type
           : undefined,
       role: entry.role,
-      socketToken: entry.socketToken,
       hasWebSocket: !!rawSocket,
       readyState,
     });
@@ -1113,7 +1112,7 @@ export const broadcast = (sessionId: string, message: unknown) => {
       console.error("Failed to send websocket payload", {
         error,
         sessionId,
-        socketToken: entry.socketToken,
+        role: entry.role,
       });
     }
   });
@@ -1140,7 +1139,7 @@ const sendToOpponent = (
       console.error("Failed to send websocket payload to opponent", {
         error,
         sessionId,
-        socketToken: entry.socketToken,
+        role: entry.role,
       });
     }
   });
@@ -1281,7 +1280,7 @@ const sendWelcome = (entry: SessionSocket) => {
     console.error("Failed to send welcome message", {
       error,
       sessionId: entry.sessionId,
-      socketToken: entry.socketToken,
+      role: entry.role,
     });
   }
 };
@@ -1298,7 +1297,7 @@ const sendStateOnce = (entry: SessionSocket) => {
     console.error("Failed to send initial state snapshot", {
       error,
       sessionId: entry.sessionId,
-      socketToken: entry.socketToken,
+      role: entry.role,
     });
   }
 };
@@ -1315,7 +1314,7 @@ const sendMatchStatusOnce = (entry: SessionSocket) => {
     console.error("Failed to send match status snapshot", {
       error,
       sessionId: entry.sessionId,
-      socketToken: entry.socketToken,
+      role: entry.role,
     });
   }
 };
@@ -2767,7 +2766,7 @@ const gameSocketAuth: MiddlewareHandler<GameSocketEnv> = async (c, next) => {
     recordSocketConnect(sessionId, { role, outcome: "rejected-token" });
     console.warn("[ws] rejected connection with invalid token", {
       sessionId,
-      socketToken,
+      role,
     });
     return c.text("Invalid socket token", 401);
   }
@@ -2893,7 +2892,6 @@ export const registerGameSocketRoute = (app: Hono) => {
             });
             logLine("[ws] connected", {
               sessionId,
-              socketToken,
               playerId: getSocketPlayerId(entry),
             });
             sendWelcome(entry);
@@ -2962,7 +2960,7 @@ export const registerGameSocketRoute = (app: Hono) => {
             console.error("[ws] failed to handle message", {
               error,
               sessionId: entry.sessionId,
-              socketToken: entry.socketToken,
+              role: entry.role,
             });
             ws.send(
               JSON.stringify({
@@ -3004,7 +3002,7 @@ export const registerGameSocketRoute = (app: Hono) => {
             // replaced this one, so the player has not gone anywhere.
             console.info("[ws] socket closed, seat still held elsewhere", {
               sessionId: entry.sessionId,
-              socketToken: entry.socketToken,
+              role: entry.role,
             });
           } else {
             // Player disconnect
@@ -3016,7 +3014,7 @@ export const registerGameSocketRoute = (app: Hono) => {
             sendMatchStatus(entry.sessionId);
             logLine("[ws] disconnected", {
               sessionId: entry.sessionId,
-              socketToken: entry.socketToken,
+              role: entry.role,
             });
           }
         },

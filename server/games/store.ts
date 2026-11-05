@@ -2202,7 +2202,6 @@ export const updateConnectionState = (args: {
       "[sessions] updateConnectionState skipped for unknown socket",
       {
         sessionId: args.id,
-        socketToken: args.socketToken,
         connected: args.connected,
       },
     );
