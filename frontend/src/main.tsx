@@ -86,7 +86,10 @@ const stopPreloadWatch = router.subscribe("onResolved", () => {
   const preloadAll = () => {
     const routes = router.routesById;
     for (const id of Object.keys(routes) as (keyof typeof routes)[]) {
-      void router.loadRouteChunk(routes[id]);
+      // A chunk that a later deploy removed fails here and again when its
+      // page opens; there the router reloads the tab once to get the new build
+      // (lazyRouteComponent), so the preload drops the error.
+      router.loadRouteChunk(routes[id])?.catch(() => undefined);
     }
   };
   if ("requestIdleCallback" in window) window.requestIdleCallback(preloadAll);
