@@ -870,4 +870,65 @@ describe("bot connection lifecycle", () => {
     expect(await listBotIds("standard")).toContain(compositeId);
     bot2.drop();
   }, 30000);
+
+  it("T11: ten anonymous clients attached first cannot keep the official client out", async () => {
+    // Past the grace: the clients of the earlier tests are gone.
+    await sleep(TEST_GRACE_MS + 500);
+
+    const anonymous: AutoBot[] = [];
+    for (let i = 0; i < 10; i++) {
+      anonymous.push(await openAutoBot(`lc-cap-${i}`, ["b"]));
+    }
+    const { bot: eleventh, reply } = await connectAutoBot(
+      "lc-cap-10",
+      ["b"],
+      {},
+    );
+    expect(reply.type).toBe("attach-rejected");
+    if (reply.type === "attach-rejected") {
+      expect(reply.code).toBe("TOO_MANY_CLIENTS");
+    }
+    eleventh.drop();
+
+    // At the cap, a known anonymous clientId still reattaches in its grace.
+    anonymous[0].drop();
+    await sleep(200);
+    anonymous[0] = await openAutoBot("lc-cap-0", ["b"]);
+
+    // A fresh official clientId, as after a server restart.
+    const official = await openAutoBot("lc-cap-official", ["b"], {
+      officialToken: TEST_OFFICIAL_TOKEN,
+    });
+    expect(await listBotIds("standard")).toContain("lc-cap-official:b");
+
+    official.drop();
+    for (const bot of anonymous) bot.drop();
+  }, 30000);
+
+  it("T12: an official client attached first takes no anonymous slot", async () => {
+    // Past the grace: the clients of T11 are gone.
+    await sleep(TEST_GRACE_MS + 500);
+
+    const official = await openAutoBot("lc-cap2-official", ["b"], {
+      officialToken: TEST_OFFICIAL_TOKEN,
+    });
+    const anonymous: AutoBot[] = [];
+    for (let i = 0; i < 10; i++) {
+      anonymous.push(await openAutoBot(`lc-cap2-${i}`, ["b"]));
+    }
+    const { bot: eleventh, reply } = await connectAutoBot(
+      "lc-cap2-10",
+      ["b"],
+      {},
+    );
+    expect(reply.type).toBe("attach-rejected");
+    if (reply.type === "attach-rejected") {
+      expect(reply.code).toBe("TOO_MANY_CLIENTS");
+    }
+    eleventh.drop();
+    expect(await listBotIds("standard")).toContain("lc-cap2-official:b");
+
+    official.drop();
+    for (const bot of anonymous) bot.drop();
+  }, 30000);
 });

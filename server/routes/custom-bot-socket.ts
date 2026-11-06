@@ -50,7 +50,7 @@ import {
   getClientForBot,
   getActiveGamesForClient,
   removeActiveGame,
-  isAtClientLimit,
+  isAtAnonymousClientLimit,
   incrementInvalidMessageCount,
   resetInvalidMessageCount,
   addClientBgsSession,
@@ -550,9 +550,16 @@ const handleAttach = (
     }
   }
 
-  // Check client limit (before checking for existing connection)
+  // The tokens were all checked above, so a bot that carries one carries the
+  // valid official token.
+  const carriesOfficialToken = message.bots.some(
+    (bot) => bot.officialToken !== undefined,
+  );
+
+  // Only a new client without the token counts against the client cap, so
+  // anonymous clients can never keep the official client from attaching.
   const existingClient = getClient(message.clientId);
-  if (!existingClient && isAtClientLimit()) {
+  if (!existingClient && !carriesOfficialToken && isAtAnonymousClientLimit()) {
     sendAttachRejected(
       ctx,
       "TOO_MANY_CLIENTS",
@@ -562,12 +569,7 @@ const handleAttach = (
   }
 
   // An attach with an existing clientId takes over the client's registration
-  // and its live games, so it must prove it is the same client. The tokens
-  // were all checked above, so a bot that carries one carries the valid
-  // official token.
-  const carriesOfficialToken = message.bots.some(
-    (bot) => bot.officialToken !== undefined,
-  );
+  // and its live games, so it must prove it is the same client.
   if (carriesOfficialToken) {
     officialClientIds.add(message.clientId);
   } else if (officialClientIds.has(message.clientId)) {

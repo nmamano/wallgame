@@ -215,7 +215,7 @@ Sent when the server rejects `attach`, then the server closes the socket.
 - `INVALID_BOT_CONFIG` - A bot has invalid configuration (e.g., empty name, invalid variant settings).
 - `INVALID_OFFICIAL_TOKEN` - A bot claims to be official but the token is wrong.
 - `DUPLICATE_BOT_ID` - Multiple bots have the same `botId`.
-- `TOO_MANY_CLIENTS` - Connection limit reached (max 10 bot clients).
+- `TOO_MANY_CLIENTS` - Connection limit reached (max 10 bot clients without an official token; an official client does not count and is never refused).
 - `CLIENT_ID_IN_USE` - The `clientId` is attached on another open connection, and this attach does not carry the official token. Retry after the old connection closes.
 - `PROTOCOL_UNSUPPORTED` - Unsupported `protocolVersion`.
 - `INVALID_MESSAGE` - Message does not match expected schema.

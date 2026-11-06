@@ -98,8 +98,12 @@ const clients = new Map<string, BotClientConnection>();
 /** Index: compositeId (clientId:botId) -> RegisteredBot */
 const botIndex = new Map<string, RegisteredBot>();
 
-/** Maximum number of connected clients */
-const MAX_CLIENTS = 10;
+/**
+ * Maximum number of connected clients without an official bot. Such a client
+ * needs no credential to attach, so the count is capped; an official client
+ * proved the token and never counts against it.
+ */
+const MAX_ANONYMOUS_CLIENTS = 10;
 
 const makeCompositeId = (clientId: string, botId: string): string =>
   `${clientId}:${botId}`;
@@ -373,10 +377,16 @@ export const getClientCount = (): number => {
 };
 
 /**
- * Check if we've reached the maximum client limit.
+ * Check if we've reached the limit on clients without an official bot.
  */
-export const isAtClientLimit = (): boolean => {
-  return clients.size >= MAX_CLIENTS;
+export const isAtAnonymousClientLimit = (): boolean => {
+  let anonymousClients = 0;
+  for (const client of clients.values()) {
+    if (![...client.bots.values()].some((bot) => bot.isOfficial)) {
+      anonymousClients++;
+    }
+  }
+  return anonymousClients >= MAX_ANONYMOUS_CLIENTS;
 };
 
 // ============================================================================
