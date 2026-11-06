@@ -101,8 +101,44 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   // "/" to dist/index.html as a directory index, so the homepage would never
   // reach this and would keep the template's generic title.
   if (htmlShell) registerHtmlShell(app, htmlShell);
-  app.get("*", serveStatic({ root: "./frontend/dist" }));
-  app.get("*", serveStatic({ path: "./frontend/dist/index.html" }));
+  // Every file the build writes under /assets has a content hash in its name
+  // (Vite), so it never changes: browsers and Cloudflare keep it a year. A
+  // name that is not there is a 404 that nobody keeps - not the HTML page,
+  // which Cloudflare cached for 4 h as the "chunk" (task f23b28a4). Before
+  // that, the origin sent no Cache-Control at all.
+  app.get(
+    "/assets/*",
+    serveStatic({
+      root: "./frontend/dist",
+      onFound: (_path, c) => {
+        c.header("Cache-Control", "public, max-age=31536000, immutable");
+      },
+    }),
+  );
+  app.get("/assets/*", (c) =>
+    c.text("Not found", 404, { "Cache-Control": "no-store" }),
+  );
+  app.get(
+    "*",
+    serveStatic({
+      root: "./frontend/dist",
+      // "/" without the HTML shell (tests, vite development) is this file.
+      onFound: (path, c) => {
+        if (path.endsWith("/index.html")) c.header("Cache-Control", "no-cache");
+      },
+    }),
+  );
+  // The page itself is checked again on each visit, so a deploy's new
+  // index.html (and with it the new asset names) reaches every tab.
+  app.get(
+    "*",
+    serveStatic({
+      path: "./frontend/dist/index.html",
+      onFound: (_path, c) => {
+        c.header("Cache-Control", "no-cache");
+      },
+    }),
+  );
 
   return { app, websocket, apiRoutes };
 }

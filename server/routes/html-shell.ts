@@ -295,6 +295,9 @@ export const registerHtmlShell = (app: Hono, shell: HtmlShell) => {
 
     const headers: Record<string, string> = {
       "Content-Type": "text/html; charset=UTF-8",
+      // Checked again on each visit: after a deploy the page names the new
+      // hashed assets (server/app.ts keeps those a year).
+      "Cache-Control": "no-cache",
     };
     if (shouldNoIndex(c.req.path)) {
       headers["X-Robots-Tag"] = "noindex, follow";
