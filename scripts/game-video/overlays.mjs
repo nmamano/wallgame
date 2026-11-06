@@ -31,9 +31,10 @@
  * target of the closest hunt. The ending's bar avoids the ending's own
  * boxes instead (and, on a replay ending, what the replay shows). Places lie
  * inside the board, so an overlay never covers the head row or the strip.
- * The renderer keeps only the ending's bar off the apps' buttons, which the
- * edge-to-edge board reaches under (edl.mjs BUTTONS_ZONE; Nil, 2026-11-06,
- * C58: only TikTok paints them over the board).
+ * The renderer keeps an overlay with words (overlayWords) off the apps'
+ * buttons, which the edge-to-edge board reaches under; a picture or a clip
+ * may stand there (edl.mjs BUTTONS_ZONE; Nil, 2026-11-06, C58: only TikTok
+ * paints them over the board; Wall Game Director, review 156 N1).
  *
  * Off the board, two places hide nothing at all (Nil, 2026-10-30: visual
  * memes "can be carve outs outside the board or on parts of the board that

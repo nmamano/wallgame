@@ -5472,14 +5472,17 @@ const renderStyle = async (styleName) => {
         p.x0 >= a.x0 && p.y0 >= a.y0 && p.x1 <= a.x1 && p.y1 <= a.y1;
       /*
         The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest: the
-        edge-to-edge board reaches under them. Only the ending's bar keeps
-        off them, because it is text. A meme or a clip may stand there: only
-        TikTok paints buttons over the board (Nil, 2026-11-06, C58: "just
-        keep it edge to edge").
+        edge-to-edge board reaches under them. An overlay with words (the
+        ones its reading time counts: the bar, a card's words, a line) keeps
+        off them; a picture or a clip may stand there. Only TikTok paints
+        buttons over the board (Nil, 2026-11-06, C58: "just keep it edge to
+        edge"), and a picture half under them still reads, a line does not
+        (Wall Game Director, 2026-11-06, review 156 N1).
       */
-      const buttons = buttonsOnBoard
-        ? [{ ...buttonsOnBoard, what: "the apps' buttons" }]
-        : [];
+      const buttons =
+        buttonsOnBoard && overlayWords(w.asset, text) > 0
+          ? [{ ...buttonsOnBoard, what: "the apps' buttons" }]
+          : [];
       const busy =
         w.asset.form === "bar"
           ? [
@@ -5493,6 +5496,7 @@ const renderStyle = async (styleName) => {
               ]),
             ]
           : [
+              ...buttons,
               ...w.frames.flatMap((f) => [
                 ...inPlay(f.state),
                 ...pawnBoxes(f.state),
@@ -6290,8 +6294,8 @@ const renderStyle = async (styleName) => {
     : null;
   /**
    * The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest, 0..1:
-   * the edge-to-edge board reaches under them (C58); no ending bar and no
-   * opening name goes there.
+   * the edge-to-edge board reaches under them (C58); no overlay with words
+   * and no opening name goes there.
    */
   const buttonsOnBoard = layoutBoxes?.board
     ? {
