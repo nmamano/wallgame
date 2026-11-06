@@ -13,6 +13,7 @@
  * The engine maintains game state internally - no state sent per request.
  */
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import { logLine } from "../log-line";
 import type { Hono } from "hono";
 import { createBunWebSocket } from "hono/bun";
@@ -32,6 +33,7 @@ import {
   type EvaluateResponseMessage,
   type MoveAppliedMessage,
 } from "../../shared/contracts/custom-bot-protocol";
+import type { BotGameSession } from "../games/bgs-store";
 import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
 
 import {
@@ -83,6 +85,17 @@ const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 // Official bot token from environment
 const OFFICIAL_BOT_TOKEN = process.env.OFFICIAL_BOT_TOKEN;
+
+/**
+ * Whether `token` is the official bot token, compared in constant time. Both
+ * sides are hashed first, so the compare does not depend on the length either.
+ * False when the server has no token configured.
+ */
+const isOfficialToken = (token: string): boolean => {
+  if (!OFFICIAL_BOT_TOKEN) return false;
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(token), digest(OFFICIAL_BOT_TOKEN));
+};
 
 // ============================================================================
 // Constants
@@ -459,12 +472,17 @@ const handleAttach = (
     return false;
   }
 
-  // Validate clientId
-  if (typeof message.clientId !== "string" || message.clientId.trim() === "") {
+  // Validate clientId. No ":": every bot is addressed as "clientId:botId" and
+  // the server reads the clientId back as the part before the first ":".
+  if (
+    typeof message.clientId !== "string" ||
+    message.clientId.trim() === "" ||
+    message.clientId.includes(":")
+  ) {
     sendAttachRejected(
       ctx,
       "INVALID_MESSAGE",
-      "`clientId` is required and must be non-empty.",
+      "`clientId` is required, must be non-empty and must not contain `:`.",
     );
     return false;
   }
@@ -505,7 +523,7 @@ const handleAttach = (
   // Validate official tokens
   for (const bot of message.bots) {
     if (bot.officialToken !== undefined) {
-      if (bot.officialToken !== OFFICIAL_BOT_TOKEN) {
+      if (!isOfficialToken(bot.officialToken)) {
         sendAttachRejected(
           ctx,
           "INVALID_OFFICIAL_TOKEN",
@@ -525,6 +543,37 @@ const handleAttach = (
       "Maximum number of bot clients reached.",
     );
     return false;
+  }
+
+  // A re-attach takes over the client's registration and its live games, so
+  // it must prove it is the same client. The tokens were all checked above, so
+  // a bot that carries one carries the valid official token.
+  if (existingClient) {
+    const carriesOfficialToken = message.bots.some(
+      (bot) => bot.officialToken !== undefined,
+    );
+    const holdsOfficialBot = [...existingClient.bots.values()].some(
+      (bot) => bot.isOfficial,
+    );
+    if (holdsOfficialBot && !carriesOfficialToken) {
+      // An official client re-attaches with its token, every time.
+      sendAttachRejected(
+        ctx,
+        "INVALID_OFFICIAL_TOKEN",
+        "This clientId serves official bots; a re-attach needs the official token.",
+      );
+      return false;
+    }
+    if (!carriesOfficialToken && clientIdToContext.has(message.clientId)) {
+      // Any other client has no credential, so it can only take over a
+      // registration whose connection is already gone (the disconnect grace).
+      sendAttachRejected(
+        ctx,
+        "CLIENT_ID_IN_USE",
+        "This clientId is attached on another connection.",
+      );
+      return false;
+    }
   }
 
   // Register or replace client
@@ -658,6 +707,15 @@ const handleAttach = (
 // ============================================================================
 
 /**
+ * Whether this socket's client serves the BGS. An exact match on the clientId
+ * part of the bot's composite id ("clientId:botId"), never a prefix, so one
+ * client cannot answer for another.
+ */
+const isBgsOfSocket = (bgs: BotGameSession, socket: BotSocket): boolean =>
+  socket.clientId !== null &&
+  bgs.botCompositeId.split(":")[0] === socket.clientId;
+
+/**
  * Handle game_session_started response from bot.
  */
 const handleGameSessionStarted = (
@@ -679,7 +737,7 @@ const handleGameSessionStarted = (
   }
 
   // Validate the bot matches
-  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+  if (!isBgsOfSocket(bgs, socket)) {
     console.warn("[custom-bot-ws] game_session_started from wrong client", {
       bgsId,
       expectedBot: bgs.botCompositeId,
@@ -734,6 +792,19 @@ const handleGameSessionEnded = (
 ): void => {
   const { bgsId, success, error } = message;
   let requestMs: number | undefined;
+
+  // The BGS lives until its end is confirmed, so while a resolver waits for
+  // this reply the BGS is there to say whose it is.
+  const bgs = getBgs(bgsId);
+  if (bgs && !isBgsOfSocket(bgs, socket)) {
+    console.warn("[custom-bot-ws] game_session_ended from wrong client", {
+      bgsId,
+      expectedBot: bgs.botCompositeId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
 
   // Resolve the pending request (if any)
   const resolver = pendingResolvers.get(bgsId);
@@ -791,7 +862,7 @@ const handleEvaluateResponse = (
   }
 
   // Validate the bot matches
-  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+  if (!isBgsOfSocket(bgs, socket)) {
     console.warn("[custom-bot-ws] evaluate_response from wrong client", {
       bgsId,
       expectedBot: bgs.botCompositeId,
@@ -882,7 +953,7 @@ const handleMoveApplied = (
   }
 
   // Validate the bot matches
-  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+  if (!isBgsOfSocket(bgs, socket)) {
     console.warn("[custom-bot-ws] move_applied from wrong client", {
       bgsId,
       expectedBot: bgs.botCompositeId,

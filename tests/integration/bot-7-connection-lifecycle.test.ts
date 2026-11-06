@@ -42,6 +42,8 @@ import type {
 // Short grace so expiry tests run fast. Must be set before the server
 // modules load (the constant is read at module initialization).
 const TEST_GRACE_MS = 1500;
+// Read at module initialization too.
+const TEST_OFFICIAL_TOKEN = "lifecycle-official-token";
 
 // ================================
 // --- Test Harness ---
@@ -249,6 +251,8 @@ interface AutoBot {
   ws: WebSocket;
   clientId: string;
   transcript: CustomBotServerMessage[];
+  /** Send a raw protocol message on this socket. */
+  send: (msg: CustomBotClientMessage) => void;
   waitFor: (
     pred: (m: CustomBotServerMessage) => boolean,
     timeoutMs?: number,
@@ -257,10 +261,18 @@ interface AutoBot {
   drop: () => void;
 }
 
-function botConfigFor(botId: string): BotConfig {
+interface AutoBotOptions {
+  /** Sent as every bot's officialToken. */
+  officialToken?: string;
+  /** Leave the evaluate_position for this ply unanswered (the test answers). */
+  holdEvaluationAtPly?: number;
+}
+
+function botConfigFor(botId: string, officialToken?: string): BotConfig {
   return {
     botId,
     name: `Bot ${botId}`,
+    officialToken,
     username: null,
     variants: {
       standard: {
@@ -279,7 +291,26 @@ function botConfigFor(botId: string): BotConfig {
 async function openAutoBot(
   clientId: string,
   botIds: string[],
+  options: AutoBotOptions = {},
 ): Promise<AutoBot> {
+  const { bot, reply } = await connectAutoBot(clientId, botIds, options);
+  if (reply.type !== "attached") {
+    throw new Error(`attach failed: ${JSON.stringify(reply)}`);
+  }
+  return bot;
+}
+
+type AttachReply = Extract<
+  CustomBotServerMessage,
+  { type: "attached" } | { type: "attach-rejected" }
+>;
+
+/** Sends an attach and resolves with the server's answer, either kind. */
+async function connectAutoBot(
+  clientId: string,
+  botIds: string[],
+  options: AutoBotOptions,
+): Promise<{ bot: AutoBot; reply: AttachReply }> {
   return new Promise((resolve, reject) => {
     const wsUrl = baseUrl.replace("http", "ws") + `/ws/custom-bot`;
     const ws = new WebSocket(wsUrl, {
@@ -291,7 +322,7 @@ async function openAutoBot(
       pred: (m: CustomBotServerMessage) => boolean;
       resolve: (m: CustomBotServerMessage) => void;
     }[] = [];
-    let attachedResolve: ((bot: AutoBot) => void) | null = null;
+    let attachedResolve: ((reply: AttachReply) => void) | null = null;
 
     const sendMsg = (msg: CustomBotClientMessage) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -303,6 +334,7 @@ async function openAutoBot(
       ws,
       clientId,
       transcript,
+      send: sendMsg,
       drop: () => ws.close(),
       waitFor: (pred, timeoutMs = 10000) => {
         const existing = transcript.find(pred);
@@ -333,10 +365,13 @@ async function openAutoBot(
       transcript.push(msg);
 
       // Autopilot responses
-      if (msg.type === "attached" && attachedResolve) {
+      if (
+        (msg.type === "attached" || msg.type === "attach-rejected") &&
+        attachedResolve
+      ) {
         const r = attachedResolve;
         attachedResolve = null;
-        r(bot);
+        r(msg);
       } else if (msg.type === "start_game_session") {
         sendMsg({
           type: "game_session_started",
@@ -351,7 +386,10 @@ async function openAutoBot(
           success: true,
           error: "",
         });
-      } else if (msg.type === "evaluate_position") {
+      } else if (
+        msg.type === "evaluate_position" &&
+        msg.expectedPly !== options.holdEvaluationAtPly
+      ) {
         sendMsg({
           type: "evaluate_response",
           bgsId: msg.bgsId,
@@ -382,12 +420,12 @@ async function openAutoBot(
     });
 
     ws.on("open", () => {
-      attachedResolve = resolve;
+      attachedResolve = (reply) => resolve({ bot, reply });
       sendMsg({
         type: "attach",
         protocolVersion: 3,
         clientId,
-        bots: botIds.map(botConfigFor),
+        bots: botIds.map((id) => botConfigFor(id, options.officialToken)),
         client: { name: "lifecycle-test-bot", version: "3.0.0" },
       });
     });
@@ -466,6 +504,7 @@ const latestState = (human: HumanSocket) =>
 describe("bot connection lifecycle", () => {
   beforeAll(async () => {
     process.env.BOT_DISCONNECT_GRACE_MS = String(TEST_GRACE_MS);
+    process.env.OFFICIAL_BOT_TOKEN = TEST_OFFICIAL_TOKEN;
     try {
       const handle = await setupEphemeralDb();
       container = handle.container;
@@ -497,12 +536,13 @@ describe("bot connection lifecycle", () => {
     const clientId = "lc-race";
     const compositeId = `${clientId}:b`;
 
-    const bot1 = await openAutoBot(clientId, ["b"]);
+    const official = { officialToken: TEST_OFFICIAL_TOKEN };
+    const bot1 = await openAutoBot(clientId, ["b"], official);
     const human = await startGameWithOneRound("user-t1", compositeId);
 
-    // New connection attaches with the SAME clientId — the server
-    // force-closes bot1 and resyncs the game onto bot2.
-    const bot2 = await openAutoBot(clientId, ["b"]);
+    // New connection attaches with the SAME clientId and the token — the
+    // server force-closes bot1 and resyncs the game onto bot2.
+    const bot2 = await openAutoBot(clientId, ["b"], official);
 
     // bot1's socket gets closed by the server; its close event must not
     // destroy bot2's registration or the game.
@@ -630,13 +670,14 @@ describe("bot connection lifecycle", () => {
     const keptId = `${clientId}:kept`;
     const droppedId = `${clientId}:dropped`;
 
-    const bot1 = await openAutoBot(clientId, ["kept", "dropped"]);
+    const official = { officialToken: TEST_OFFICIAL_TOKEN };
+    const bot1 = await openAutoBot(clientId, ["kept", "dropped"], official);
     const humanKept = await startGameWithOneRound("user-t5a", keptId);
     const humanDropped = await startGameWithOneRound("user-t5b", droppedId);
 
     // Reattach declaring only "kept": the dropped bot's game must be
     // resigned, the kept bot's game must survive and resync.
-    const bot2 = await openAutoBot(clientId, ["kept"]);
+    const bot2 = await openAutoBot(clientId, ["kept"], official);
 
     const dropFinished = await humanDropped.waitForState(
       (s) => s.state.status === "finished",
@@ -678,5 +719,132 @@ describe("bot connection lifecycle", () => {
     );
     expect(status).toBe(404);
     expect((body as { error: string }).error).toContain("reconnecting");
+  }, 30000);
+  it("T7: a re-attach to an official client without the token is refused; the client keeps its games", async () => {
+    const clientId = "lc-official";
+    const compositeId = `${clientId}:b`;
+    const official = { officialToken: TEST_OFFICIAL_TOKEN };
+
+    const bot1 = await openAutoBot(clientId, ["b"], official);
+    const human = await startGameWithOneRound("user-t7", compositeId);
+
+    // No token, then a wrong token: both refused while bot1 is live.
+    for (const officialToken of [undefined, "not-the-token"]) {
+      const { bot, reply } = await connectAutoBot(clientId, ["b"], {
+        officialToken,
+      });
+      expect(reply.type).toBe("attach-rejected");
+      if (reply.type === "attach-rejected") {
+        expect(reply.code).toBe("INVALID_OFFICIAL_TOKEN");
+      }
+      bot.drop();
+    }
+    await sleep(200);
+
+    // The old connection was not touched and still plays the game.
+    expect(bot1.ws.readyState).toBe(WebSocket.OPEN);
+    expect(await listBotIds("standard")).toContain(compositeId);
+    await humanMove(human, "---", 3, 3);
+    await human.waitForState(
+      (s) => s.state.history.length >= 4 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    // In the disconnect grace a tokenless attach is refused too, and the
+    // client's own re-attach with the token still heals the game.
+    bot1.drop();
+    await sleep(200);
+    const { bot: intruder, reply } = await connectAutoBot(clientId, ["b"], {});
+    expect(reply.type).toBe("attach-rejected");
+    intruder.drop();
+
+    const bot2 = await openAutoBot(clientId, ["b"], official);
+    await bot2.waitFor((m) => m.type === "start_game_session");
+    expect(await listBotIds("standard")).toContain(compositeId);
+    await humanMove(human, "---", 3, 5);
+    await human.waitForState(
+      (s) => s.state.history.length >= 6 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    human.close();
+    bot2.drop();
+  }, 30000);
+
+  it("T8: a second connection cannot take over a live non-official client", async () => {
+    const clientId = "lc-inuse";
+    const compositeId = `${clientId}:b`;
+
+    const bot1 = await openAutoBot(clientId, ["b"]);
+    const human = await startGameWithOneRound("user-t8", compositeId);
+
+    const { bot, reply } = await connectAutoBot(clientId, ["b"], {});
+    expect(reply.type).toBe("attach-rejected");
+    if (reply.type === "attach-rejected") {
+      expect(reply.code).toBe("CLIENT_ID_IN_USE");
+    }
+    bot.drop();
+    await sleep(200);
+
+    expect(bot1.ws.readyState).toBe(WebSocket.OPEN);
+    await humanMove(human, "---", 3, 3);
+    await human.waitForState(
+      (s) => s.state.history.length >= 4 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    human.close();
+    bot1.drop();
+  }, 30000);
+
+  it("T9: a client whose id is a prefix of another's cannot answer its requests", async () => {
+    const victimId = "lc-prefix-victim";
+    const compositeId = `${victimId}:b`;
+
+    // The victim leaves its move request (ply 1) for the test to answer.
+    const victim = await openAutoBot(victimId, ["b"], {
+      holdEvaluationAtPly: 1,
+    });
+    const intruder = await openAutoBot("lc-prefix", ["b"]);
+
+    const { body } = await playVsBot("user-t9", compositeId, gameConfig, true);
+    const play = body as PlayVsBotResponse;
+    const human = await openHumanSocket(
+      "user-t9",
+      play.gameId,
+      play.socketToken,
+    );
+    await human.waitForState((s) => s.state.status === "playing");
+    await humanMove(human, "---", 3, 1);
+
+    const request = await victim.waitFor(
+      (m) => m.type === "evaluate_position" && m.expectedPly === 1,
+    );
+    if (request.type !== "evaluate_position") throw new Error("unreachable");
+    const answer = {
+      type: "evaluate_response",
+      bgsId: request.bgsId,
+      ply: request.expectedPly,
+      bestMove: "---",
+      evaluation: 0,
+      success: true,
+      error: "",
+    } as const;
+
+    // The intruder's answer is dropped: the bot does not move.
+    intruder.send(answer);
+    await sleep(300);
+    expect(latestState(human).history.length).toBe(1);
+
+    // The victim's own answer is still awaited and plays the move.
+    victim.send(answer);
+    await human.waitForState(
+      (s) => s.state.history.length >= 2 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    human.close();
+    intruder.drop();
+    victim.drop();
   }, 30000);
 });

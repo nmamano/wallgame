@@ -49,9 +49,10 @@ Bot clients connect **proactively** to the server without needing a per-game tok
 Key characteristics:
 
 - A single bot client can serve multiple bots.
-- Clients are identified by a `clientId` (an arbitrary string chosen by the client).
-- If a client connects with a `clientId` already in use, the new connection force-disconnects the old one ("latest connection wins").
-  - All messages from the old connection are treated as stale. This handles the common crash-restart scenario gracefully.
+- Clients are identified by a `clientId` (an arbitrary string chosen by the client, without `:`).
+- A connection that attaches with a `clientId` already in use takes over that client only if it proves it is the same client:
+  - If the client serves official bots, the new attach must carry the valid official token. Then it force-disconnects the old connection ("latest connection wins") and all messages from the old connection are treated as stale. This handles the common crash-restart scenario gracefully.
+  - Otherwise the new attach is accepted only when the old connection is already closed (the disconnect grace). While the old connection is open it is rejected with `CLIENT_ID_IN_USE`.
 - The server maintains a FIFO queue of requests per client; only one request is active at a time.
 
 ## Protocol Model (Request/Response)
@@ -214,6 +215,7 @@ Sent when the server rejects `attach`, then the server closes the socket.
 - `INVALID_OFFICIAL_TOKEN` - A bot claims to be official but the token is wrong.
 - `DUPLICATE_BOT_ID` - Multiple bots have the same `botId`.
 - `TOO_MANY_CLIENTS` - Connection limit reached (max 10 bot clients).
+- `CLIENT_ID_IN_USE` - The `clientId` is attached on another open connection, and this attach does not carry the official token. Retry after the old connection closes.
 - `PROTOCOL_UNSUPPORTED` - Unsupported `protocolVersion`.
 - `INVALID_MESSAGE` - Message does not match expected schema.
 - `INTERNAL_ERROR` - Unexpected server error.
@@ -442,7 +444,7 @@ The dedicated WS endpoint for custom bot clients has these responsibilities:
 ## Reconnection
 
 - The official bot client automatically reconnects (with backoff + jitter) and re-attaches to re-register their bots.
-- Re-attaching with the same Client ID is idempotent; bots are re-registered and any previous presence for the same client is replaced.
+- Re-attaching with the same Client ID is idempotent; bots are re-registered and any previous presence for the same client is replaced (subject to the takeover rule above).
 
 ## Abuse Controls / Limits
 
@@ -1020,7 +1022,7 @@ Add hooks:
 - Multiple bots per client
 - Distinction between official and custom bots
 - Request queueing and invalidation behavior
-- Force-disconnects when duplicate `clientId` connects
+- Force-disconnects when duplicate `clientId` connects with proof (see the takeover rule)
 
 ---
 
