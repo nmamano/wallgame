@@ -46,10 +46,11 @@ async function importServerModules() {
   unregisterClient = storeModule.unregisterClient;
 }
 
-function botConfigFor(botId: string): BotConfig {
+function botConfigFor(botId: string, officialToken?: string): BotConfig {
   return {
     botId,
     name: `Bot ${botId}`,
+    officialToken,
     username: null,
     variants: {
       standard: {
@@ -75,7 +76,11 @@ interface BotSocket {
 const openSockets: BotSocket[] = [];
 
 /** Opens a bot socket and resolves once the server confirms the attach. */
-async function attachBot(clientId: string, botId: string): Promise<BotSocket> {
+async function attachBot(
+  clientId: string,
+  botId: string,
+  officialToken?: string,
+): Promise<BotSocket> {
   const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/ws/custom-bot`, {
     headers: { Origin: "http://localhost:5173" },
   });
@@ -112,7 +117,7 @@ async function attachBot(clientId: string, botId: string): Promise<BotSocket> {
           type: "attach",
           protocolVersion: 3,
           clientId,
-          bots: [botConfigFor(botId)],
+          bots: [botConfigFor(botId, officialToken)],
           client: { name: "pong-honesty-test-bot", version: "3.0.0" },
         }),
       );
@@ -146,9 +151,12 @@ const settle = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 // pending teardown when afterAll runs. Must be set before the server modules
 // load, since the constant is read at module initialization.
 const TEST_GRACE_MS = 300;
+// Read at module initialization too.
+const TEST_OFFICIAL_TOKEN = "pong-honesty-official-token";
 
 beforeAll(async () => {
   process.env.BOT_DISCONNECT_GRACE_MS = String(TEST_GRACE_MS);
+  process.env.OFFICIAL_BOT_TOKEN = TEST_OFFICIAL_TOKEN;
 
   const handle = await setupEphemeralDb();
   container = handle.container;
@@ -240,9 +248,10 @@ describe("a socket whose client is no longer registered", () => {
     // far as the pong branch, and the old socket is never closed by it. That
     // path heals on the client's own no-pong timeout instead, which is slower
     // than a close but not an outage.
+    // Official, because only the token can take over a live connection.
     const clientId = "superseded-client";
-    const first = await attachBot(clientId, "sup-bot");
-    const second = await attachBot(clientId, "sup-bot");
+    const first = await attachBot(clientId, "sup-bot", TEST_OFFICIAL_TOKEN);
+    const second = await attachBot(clientId, "sup-bot", TEST_OFFICIAL_TOKEN);
 
     first.ping();
     await settle();
