@@ -11,7 +11,6 @@ import {
   markHostReady,
   resolveGameAccess,
   resolveSessionForToken,
-  reconcileAuthenticatedSeat,
   listMatchmakingGames,
   listLiveGames,
   countGamesInFlight,
@@ -210,6 +209,11 @@ export const gamesRoute = new Hono()
       try {
         const parsed = c.req.valid("json");
         const user = c.get("user"); // May be undefined for guests
+        // The host half of "a rated game has two accounts"; joinGameSession
+        // holds the joiner half (ratedSeatRequiresLogin in store.ts).
+        if (parsed.config.rated && !user?.id) {
+          return c.json({ error: "Log in to create a rated game." }, 403);
+        }
         console.log(
           "[games] POST /api/games body:",
           JSON.stringify(parsed, null, 2),
@@ -317,33 +321,11 @@ export const gamesRoute = new Hono()
         const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
         const shareUrl = `${origin}/game/${id}`;
 
-        if (user?.id && token && resolveSessionForToken({ id, token })) {
-          const displayName = await getDisplayNameForAuthUser(user.id);
-          const reconciliation = reconcileAuthenticatedSeat({
-            id,
-            credential: token,
-            credentialKind: "seat",
-            authUserId: user.id,
-            displayName,
-          });
-          if (reconciliation.kind === "account-conflict") {
-            return c.json(
-              { error: "This seat belongs to another account." },
-              403,
-            );
-          }
-          if (reconciliation.kind === "invalid-name") {
-            return c.json(
-              { error: "Your account is not ready yet. Please try again." },
-              503,
-            );
-          }
-          if (reconciliation.kind === "credential-not-found") {
-            return c.json({ error: "This seat is no longer available." }, 409);
-          }
-          sendMatchStatus(id);
-        }
-
+        // This GET never binds a seat to the account (board task 4e003c12):
+        // a top-level navigation from another site carries the Lax session
+        // cookie, so a link holding someone else's seat token would bind that
+        // seat to whoever clicked it. The game socket handshake does the
+        // binding (gameSocketAuth), behind its Origin check.
         const access = resolveGameAccess({
           id,
           token,
@@ -374,6 +356,18 @@ export const gamesRoute = new Hono()
           lifecycle: matchStatus.status,
           matchType,
         });
+
+        if (
+          access.kind === "player" &&
+          user?.id &&
+          access.player.authUserId &&
+          access.player.authUserId !== user.id
+        ) {
+          return c.json(
+            { error: "This seat belongs to another account." },
+            403,
+          );
+        }
 
         if (access.kind === "player") {
           return c.json({

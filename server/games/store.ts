@@ -262,12 +262,14 @@ const sessions = new Map<string, GameSession>();
 
 /**
  * The invariant behind rated games: `config.rated` implies both seats are
- * authenticated. The host side is enforced when the game is created (a
- * logged-out creator cannot switch Rated on); this is the joiner side.
+ * authenticated. This function is the joiner side.
  *
- * Checked in exactly two places: `resolveGameAccess`, so a guest is told to
- * make an account instead of being offered a seat, and `joinGameSession`,
- * which is the only function that seats a second player.
+ * Checked in exactly three places: POST /api/games (routes/games.ts) refuses
+ * a rated game from a logged-out host, and createGameSession binds the host
+ * seat to the creator's account (board task 4e003c12); `resolveGameAccess`
+ * tells a guest to make an account instead of offering a seat; and
+ * `joinGameSession`, the only function that seats a second player, refuses a
+ * guest joiner.
  */
 const ratedSeatRequiresLogin = (
   session: GameSession,

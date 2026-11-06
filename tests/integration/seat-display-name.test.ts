@@ -106,20 +106,29 @@ const authHeaders = (authUserId?: string) => ({
   ...(authUserId ? { "x-test-user-id": authUserId } : {}),
 });
 
-async function createGame(args: {
+function postGame(args: {
   authUserId?: string;
   hostDisplayName?: string;
-}): Promise<GameCreateResponse> {
-  const res = await fetch(`${baseUrl}/api/games`, {
+  rated?: boolean;
+}): Promise<Response> {
+  return fetch(`${baseUrl}/api/games`, {
     method: "POST",
     headers: authHeaders(args.authUserId),
     body: JSON.stringify({
-      config: GAME_CONFIG,
+      config: { ...GAME_CONFIG, rated: args.rated ?? false },
       matchType: "friend",
       hostDisplayName: args.hostDisplayName,
       hostIsPlayer1: true,
     }),
   });
+}
+
+async function createGame(args: {
+  authUserId?: string;
+  hostDisplayName?: string;
+  rated?: boolean;
+}): Promise<GameCreateResponse> {
+  const res = await postGame(args);
   expect(res.status).toBe(201);
   return (await res.json()) as GameCreateResponse;
 }
@@ -291,14 +300,14 @@ async function playerHandshakeStatus(args: {
 
 async function resolveAccess(args: {
   gameId: string;
-  token: string;
+  token?: string;
   authUserId?: string;
 }): Promise<{
   status: number;
   body: ResolveGameAccessResponse | { error: string };
 }> {
   const url = new URL(`${baseUrl}/api/games/${args.gameId}`);
-  url.searchParams.set("token", args.token);
+  if (args.token) url.searchParams.set("token", args.token);
   const response = await fetch(url, {
     headers: args.authUserId ? { "x-test-user-id": args.authUserId } : {},
   });
@@ -485,19 +494,34 @@ describe("seat display names", () => {
     });
   });
 
-  it("promotes on authenticated refresh before an anonymous reconnect", async () => {
+  it("promotes on the authenticated socket, then keeps the name on an anonymous reconnect", async () => {
     const game = await createGame({ hostDisplayName: "Guest" });
+    const guestName = seatName(game.snapshot, "host");
     const alfa = await seedAccount("alfa");
 
+    // The page's GET after login does not bind the seat (board 4e003c12).
     const refreshed = await resolveAccess({
       gameId: game.gameId,
       token: game.hostToken,
       authUserId: alfa.authUserId,
     });
     expect(refreshed.status).toBe(200);
-    expect("matchStatus" in refreshed.body).toBe(true);
-    if (!("matchStatus" in refreshed.body)) return;
-    expect(seatName(refreshed.body.matchStatus, "host")).toBe(alfa.accountName);
+    if (!("matchStatus" in refreshed.body)) throw new Error("no matchStatus");
+    expect(seatName(refreshed.body.matchStatus, "host")).toBe(guestName);
+
+    // Its socket does.
+    expect(
+      await playerSocketIdentity({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        role: "host",
+        authUserId: alfa.authUserId,
+      }),
+    ).toEqual({
+      kind: "opened",
+      seatName: alfa.accountName,
+      chatName: alfa.accountName,
+    });
 
     const reconnected = await playerSocketIdentity({
       gameId: game.gameId,
@@ -600,12 +624,13 @@ describe("seat display names", () => {
       }),
     ).toBe(503);
 
+    // The GET binds nothing, so it needs no account name either.
     const refresh = await resolveAccess({
       gameId: game.gameId,
       token: game.hostToken,
       authUserId: "account-without-users-row",
     });
-    expect(refresh.status).toBe(503);
+    expect(refresh.status).toBe(200);
   });
 
   it("keeps an established account's non-guest fallback while its row is pending", async () => {
@@ -653,5 +678,102 @@ describe("seat display names", () => {
       seatName: originalName,
       chatName: originalName,
     });
+  });
+
+  it("a cross-site GET with someone else's seat token does not bind the seat", async () => {
+    // Board 4e003c12. The attacker creates a game as a guest, then sends the
+    // victim to /api/games/<id>?token=<host token>. A top-level navigation
+    // carries the victim's Lax session cookie, which x-test-user-id stands
+    // in for here.
+    const game = await createGame({ hostDisplayName: "Guest" });
+    const guestName = seatName(game.snapshot, "host");
+    const victim = await seedAccount("victim");
+
+    const clicked = await resolveAccess({
+      gameId: game.gameId,
+      token: game.hostToken,
+      authUserId: victim.authUserId,
+    });
+    expect(clicked.status).toBe(200);
+    if (!("seat" in clicked.body)) throw new Error("no seat in the response");
+    expect(clicked.body.seat.token).toBe(game.hostToken);
+    expect(clicked.body.seat.socketToken).toBe(game.socketToken);
+    expect(seatName(clicked.body.matchStatus, "host")).toBe(guestName);
+
+    // The attacker's cookie-less socket still plays a guest seat, not the
+    // victim's account.
+    expect(
+      await playerSocketIdentity({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        role: "host",
+      }),
+    ).toEqual({ kind: "opened", seatName: guestName, chatName: guestName });
+
+    // And the victim's account holds no seat: without a token it is offered
+    // the open seat, not a player seat.
+    const victimView = await resolveAccess({
+      gameId: game.gameId,
+      authUserId: victim.authUserId,
+    });
+    expect(victimView.status).toBe(200);
+    expect("kind" in victimView.body && victimView.body.kind).toBe("waiting");
+  });
+
+  it("lets a logged-in player rejoin by GET with the cookie and no token", async () => {
+    const alfa = await seedAccount("alfa");
+    const game = await createGame({
+      authUserId: alfa.authUserId,
+      hostDisplayName: alfa.accountName,
+    });
+
+    const rejoined = await resolveAccess({
+      gameId: game.gameId,
+      authUserId: alfa.authUserId,
+    });
+    expect(rejoined.status).toBe(200);
+    if (!("seat" in rejoined.body)) throw new Error("no seat in the response");
+    expect(rejoined.body.kind).toBe("player");
+    expect(rejoined.body.seat.role).toBe("host");
+    expect(seatName(rejoined.body.matchStatus, "host")).toBe(alfa.accountName);
+
+    // The rejoin hands out fresh credentials, and they open the seat.
+    expect(rejoined.body.seat.socketToken).not.toBe(game.socketToken);
+    expect(
+      await playerSocketIdentity({
+        gameId: game.gameId,
+        socketToken: rejoined.body.seat.socketToken,
+        role: "host",
+        authUserId: alfa.authUserId,
+      }),
+    ).toEqual({
+      kind: "opened",
+      seatName: alfa.accountName,
+      chatName: alfa.accountName,
+    });
+  });
+
+  it("refuses a rated game from a guest host and allows it from an account", async () => {
+    const refused = await postGame({ hostDisplayName: "Guest", rated: true });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({
+      error: "Log in to create a rated game.",
+    });
+
+    const alfa = await seedAccount("alfa");
+    const rated = await createGame({
+      authUserId: alfa.authUserId,
+      hostDisplayName: alfa.accountName,
+      rated: true,
+    });
+    expect(rated.snapshot.config.rated).toBe(true);
+    // The host seat is the account's from the create on, before any socket:
+    // a tokenless GET with the cookie finds it (matchByAuth).
+    expect(seatName(rated.snapshot, "host")).toBe(alfa.accountName);
+    const rejoined = await resolveAccess({
+      gameId: rated.gameId,
+      authUserId: alfa.authUserId,
+    });
+    expect("kind" in rejoined.body && rejoined.body.kind).toBe("player");
   });
 });
