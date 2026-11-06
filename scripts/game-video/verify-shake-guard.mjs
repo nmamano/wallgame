@@ -18,9 +18,10 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// Chromium's own sandbox stays on (b2a19d62; render-game-video.mjs).
 const browser = await chromium.launch({
   channel: "chrome",
-  args: ["--no-sandbox"],
+  chromiumSandbox: true,
 });
 const page = await browser.newPage({
   viewport: { width: 1080, height: 1920 },

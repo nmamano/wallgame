@@ -16,7 +16,8 @@
  * - inlineLayer: fetches only a pawn file of the site (builtInLayerUrl), with
  *   no redirect, and keeps only an SVG or PNG reply of a pawn's size.
  * - composeLayers: builds the stack with DOM properties, not HTML text, so
- *   no value can add an attribute.
+ *   no value can add an attribute, on a page with no network
+ *   (newComposePage).
  */
 
 /** The site folders that hold pawn art (frontend/public). */
@@ -118,6 +119,20 @@ export const inlineLayer = async (src, origin, fetchImpl = fetch) => {
     throw new Error(`refused ${url}: ${bytes.length} bytes`);
   }
   return `data:${type};base64,${bytes.toString("base64")}`;
+};
+
+/**
+ * A page to compose pawns on, with no network at all: its layers come in as
+ * data: URLs (inlineLayer), so any request it makes (a CSS url() in a
+ * filter, say) is aborted (b2a19d62, Video Reviewer 1's N2).
+ *
+ * @param {import("playwright-core").Browser} browser
+ * @param {Parameters<import("playwright-core").Browser["newPage"]>[0]} options
+ */
+export const newComposePage = async (browser, options) => {
+  const page = await browser.newPage(options);
+  await page.route("**/*", (route) => route.abort());
+  return page;
 };
 
 /**

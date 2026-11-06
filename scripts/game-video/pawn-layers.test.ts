@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -15,6 +16,7 @@ import {
   composeLayers,
   inlineLayer,
   isBuiltInSkin,
+  newComposePage,
   scrubOffSiteSkins,
 } from "./pawn-layers.mjs";
 
@@ -258,4 +260,56 @@ describe.skipIf(!existsSync(CHROME))("composeLayers in Chromium", () => {
       },
     );
   }, 30000);
+
+  test("the compose page makes no request: a filter's url() is aborted", async () => {
+    let hits = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (req) => {
+        if (new URL(req.url).pathname !== "/pawns/cat/x.svg") hits += 1;
+        return new Response(SVG, {
+          headers: { "content-type": "image/svg+xml" },
+        });
+      },
+    });
+    const browser = await chromium.launch({ executablePath: CHROME });
+    const dir = mkdtempSync(join(tmpdir(), "pawn-layers-"));
+    try {
+      const origin = `http://127.0.0.1:${server.port}`;
+      const page = await newComposePage(browser, {
+        viewport: { width: 30, height: 30 },
+      });
+      await composeLayers(
+        page,
+        [
+          {
+            src: `${origin}/pawns/cat/x.svg`,
+            filter: `url(${origin}/leak.svg#f)`,
+          },
+        ],
+        join(dir, "out.png"),
+        { origin, size: 30 },
+      );
+      await page.waitForTimeout(300);
+      expect(hits).toBe(0);
+    } finally {
+      await browser.close();
+      void server.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
+});
+
+/*
+  Chromium's own sandbox stays on where the render opens a public page or
+  composes a pawn (b2a19d62): Playwright passes --no-sandbox unless
+  chromiumSandbox is true.
+*/
+test("the render's Chromium keeps its sandbox", () => {
+  for (const file of ["render-game-video.mjs", "verify-shake-guard.mjs"]) {
+    const src = readFileSync(join(import.meta.dir, file), "utf8");
+    expect(src).not.toContain("--no-sandbox");
+    expect(src).toContain("chromiumSandbox: true");
+  }
 });

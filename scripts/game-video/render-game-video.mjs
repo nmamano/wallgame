@@ -79,6 +79,7 @@ import {
 } from "./capture-replay-frames.mjs";
 import {
   composeLayers as composePawnLayers,
+  newComposePage,
   scrubOffSiteSkins,
 } from "./pawn-layers.mjs";
 import { captureFeedbackPlan } from "./capture-feedback.mjs";
@@ -1293,10 +1294,16 @@ for (const f of readdirSync(WORK))
   rmSync(join(WORK, f), { recursive: true, force: true });
 mkdirSync(dirname(OUT), { recursive: true });
 
+/*
+  Chromium's own sandbox stays on (board task b2a19d62, Wall Game PM,
+  2026-11-06): the capture opens a public page. Playwright turns the
+  sandbox off unless chromiumSandbox is true; the 4090's WSL runs it
+  (checked 2026-11-06: no Chromium process there had the sandbox off).
+*/
 const launchBrowser = () =>
   chromium.launch({
     ...(BROWSER === "chrome" ? { channel: "chrome" } : {}),
-    args: ["--no-sandbox"],
+    chromiumSandbox: true,
   });
 const browser = await launchBrowser();
 
@@ -1392,10 +1399,14 @@ const openGamePage = async (dpr) => {
   });
   await page.addInitScript(installBoardGrid);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  // No pawn art from another host, even if the page asks for one (b2a19d62).
+  /*
+    Nothing from another host (b2a19d62, Video Reviewer 1's N1): not an
+    off-site pawn the page might still draw, and not the site's analytics
+    tag (Google Tag Manager, its one other host on 2026-11-06), which draws
+    nothing.
+  */
   await page.route(
-    (url) =>
-      url.origin !== new URL(ORIGIN).origin && /\/pawn/i.test(url.pathname),
+    (url) => url.origin !== new URL(ORIGIN).origin,
     (route) => route.abort(),
   );
 
@@ -1818,7 +1829,7 @@ if (cached) {
   Object.assign(portraits, cached.portraits);
   Object.assign(accents, cached.accents);
 } else {
-  const portraitPage = await browser.newPage(portraitPageOptions);
+  const portraitPage = await newComposePage(browser, portraitPageOptions);
   for (const playerId of [1, 2]) {
     const file = join(WORK, `portrait-p${playerId}.png`);
     await composeLayers(portraitPage, cardFor(playerId).layers, file);
@@ -2531,7 +2542,7 @@ if (EDL) {
         stop: `the start position shows ${hits.length} ${type} pawns in ${seat}'s colour, not one`,
       };
     }
-    page ??= await browser.newPage(portraitPageOptions);
+    page ??= await newComposePage(browser, portraitPageOptions);
     const file = join(WORK, `prey-p${player}-${type}.png`);
     await composeLayers(page, hits[0].layers, file);
     return { url: fileUrl(file) };
@@ -5932,7 +5943,7 @@ const renderStyle = async (styleName) => {
       const found =
         own.length === 1 ? seatPawnArt(own[0].playerId, own[0].type) : [];
       if (found.length === 1) {
-        artPage ??= await browser.newPage(portraitPageOptions);
+        artPage ??= await newComposePage(browser, portraitPageOptions);
         const path = join(WORK, file);
         await composeLayers(artPage, found[0].layers, path);
         // As a data: URL: a file: one taints the stage's canvas.
