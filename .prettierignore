@@ -17,3 +17,17 @@ frontend/src/components/ui/
 frontend/src/components/unused-components/
 frontend/src/routeTree.gen.ts
 deep-wallwars/
+# Images, sounds and PDFs: Prettier has no parser for them, but it still
+# visits each one (985 files, most under frontend/public). Ignoring them takes
+# about 8-10 s off a whole-repo check of about 45-50 s (auntie-2, 2026-11-06).
+# The rest of that time is real formatting: the four largest scripts/game-video
+# files take 3-4 s each.
+*.png
+*.jpg
+*.webp
+*.ico
+*.svg
+*.mp3
+*.wav
+*.ogg
+*.pdf
