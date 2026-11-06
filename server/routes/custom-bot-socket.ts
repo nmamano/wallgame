@@ -1913,7 +1913,21 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
           }
 
           socket.inboundFrames += 1;
-          handleMessage(ws, socket, event.data as string | ArrayBuffer);
+          // A throw here would end the whole process (Bun exits on an
+          // uncaught error in a socket handler), so it ends this socket only.
+          try {
+            handleMessage(ws, socket, event.data as string | ArrayBuffer);
+          } catch (error) {
+            console.error(
+              "[custom-bot-ws] message failed, closing the socket",
+              { error, clientId: socket.clientId },
+            );
+            try {
+              ws.close(1011, "Message processing failed");
+            } catch {
+              // Ignore close errors
+            }
+          }
         },
 
         onClose(_event: CloseEvent, ws: WSContext) {

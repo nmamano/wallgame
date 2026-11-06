@@ -31,8 +31,8 @@ import { createBunWebSocket } from "hono/bun";
 import type { WSContext } from "hono/ws";
 import { nanoid } from "nanoid";
 
+import { evalClientMessageSchema } from "../../shared/contracts/eval-protocol";
 import type {
-  EvalClientMessage,
   EvalServerMessage,
   EvalHandshakeRequest,
   EvalHistoryEntry,
@@ -820,13 +820,20 @@ const handleMessage = async (
     return;
   }
 
-  let message: EvalClientMessage;
+  let json: unknown;
   try {
-    message = JSON.parse(data) as EvalClientMessage;
+    json = JSON.parse(data);
   } catch {
     console.warn("[eval-ws] failed to parse message", { data });
     return;
   }
+
+  const parsed = evalClientMessageSchema.safeParse(json);
+  if (!parsed.success) {
+    console.warn("[eval-ws] invalid message", { data });
+    return;
+  }
+  const message = parsed.data;
 
   switch (message.type) {
     case "eval-handshake":
@@ -836,9 +843,6 @@ const handleMessage = async (
     case "ping":
       send(ctx, { type: "pong" });
       break;
-
-    default:
-      console.warn("[eval-ws] unknown message type", { message });
   }
 };
 
@@ -908,7 +912,19 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
             return;
           }
 
-          void handleMessage(ws, socket, event.data as string | ArrayBuffer);
+          handleMessage(ws, socket, event.data as string | ArrayBuffer).catch(
+            (error: unknown) => {
+              console.error("[eval-ws] message failed, closing the socket", {
+                error,
+                socketId,
+              });
+              try {
+                ws.close(1011, "Message processing failed");
+              } catch {
+                // Ignore close errors
+              }
+            },
+          );
         },
 
         onClose(_event: CloseEvent, ws: WSContext) {

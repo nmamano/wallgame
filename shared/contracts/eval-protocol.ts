@@ -15,30 +15,38 @@
  * 7. BGS is closed when game ends (live) or immediately after history sent (replays)
  */
 
-import type { Variant } from "../domain/game-types";
+import { z } from "zod";
+import { variantValues } from "./games";
 
 // ============================================================================
 // Client -> Server Messages
 // ============================================================================
 
+// A shape check only: the bot lookup decides which sizes it serves, and a
+// replay of an old game must still reach it.
+const boardSideSchema = z.number().int().positive();
+
 /** Initial handshake to establish eval connection */
-export interface EvalHandshakeRequest {
-  type: "eval-handshake";
+const evalHandshakeRequestSchema = z.object({
+  type: z.literal("eval-handshake"),
   /** The game ID this eval connection is for */
-  gameId: string;
+  gameId: z.string(),
   /** The variant being played */
-  variant: Variant;
+  variant: z.enum(variantValues),
   /** Board dimensions */
-  boardWidth: number;
-  boardHeight: number;
-}
+  boardWidth: boardSideSchema,
+  boardHeight: boardSideSchema,
+});
 
-/** Ping to keep connection alive */
-export interface EvalPing {
-  type: "ping";
-}
+/** Every frame the eval socket accepts. */
+export const evalClientMessageSchema = z.discriminatedUnion("type", [
+  evalHandshakeRequestSchema,
+  /** Ping to keep connection alive */
+  z.object({ type: z.literal("ping") }),
+]);
 
-export type EvalClientMessage = EvalHandshakeRequest | EvalPing;
+export type EvalHandshakeRequest = z.infer<typeof evalHandshakeRequestSchema>;
+export type EvalClientMessage = z.infer<typeof evalClientMessageSchema>;
 
 // ============================================================================
 // Server -> Client Messages
