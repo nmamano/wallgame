@@ -433,3 +433,24 @@ limits it harder.
 | scream-1     | Freesound 319258 | 0.8 s  | `-af "atrim=1.46:2.22,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=0.66:d=0.1"`                                     |
 | scream-2     | Freesound 169628 | 1.6 s  | `-af "atrim=0.10:1.70,asetpts=PTS-STARTPTS,afade=t=in:d=0.02,afade=t=out:st=1.3:d=0.3"`                                      |
 | nooo-1       | Freesound 818202 | 1.1 s  | `-af "atrim=0.02:1.12,asetpts=PTS-STARTPTS,afade=t=in:d=0.01,afade=t=out:st=1.0:d=0.1"`, then `volume=1dB` and the limiter   |
+
+## bonk-1, a second detour sound (2026-11-06)
+
+Director Rewriter, meme list step 2 cycle 4 (director repo a34e765): a
+second sound for a `detour` of 3-4 steps, the line boom-3 has alone. The
+page shows "Creative Commons 0" and says how the sound was made (the
+renderer read it on 2026-11-06). It is not a voice. The file is Freesound's
+HQ preview mp3 as fetched, with no cut: sha256
+965e1f8e5f7707b0b2ba12d86c4bf80338202eb8b7b3db8bf8d4e41d9200df25.
+
+| Key    | Freesound title | Length | Uploader | Why it is safe                                                                    | Claim risk | Source page                                          |
+| ------ | --------------- | ------ | -------- | --------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------- |
+| bonk-1 | Bonk.wav        | 0.7 s  | facklere | CC0; "Drum hit recorded on a Samson Meteor Mic and edited in Audacity" (the page) | LOW        | https://freesound.org/people/facklere/sounds/458572/ |
+
+Agents cannot hear, so this is measured, not heard (2026-11-06, on the
+mono mix, the 0.2 s after the peak). bonk-1 is a short low thud: most of
+its energy is at 105-175 Hz, its spectral centroid is 400 Hz, and it falls
+20 dB in 0.19 s. boom-3 has its energy median at 80 Hz, a bright 8-bit edge
+(centroid 3.0 kHz) and falls 20 dB in 1.04 s. Its true peak is high for its
+loudness, so memeGain plays it at about -24 LUFS, near boom-3's -23; a
+limiter would cost a drum hit its attack, so the preview is used as is.

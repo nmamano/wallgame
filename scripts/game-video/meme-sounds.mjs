@@ -144,6 +144,11 @@ export const MEME_SOUNDS = {
   "scream-1": { lufs: -11.0, truePeak: -3.7 },
   "scream-2": { lufs: -8.3, truePeak: -0.8 },
   "nooo-1": { lufs: -20.9, truePeak: -12.0 },
+  // A second sound for a detour of 3-4 steps, next to boom-3 (Director
+  // Rewriter, meme list step 2 cycle 4, 2026-11-06): a drum hit the
+  // uploader recorded, CC0 on freesound.org (meme-sounds.md), measured
+  // 2026-11-06.
+  "bonk-1": { lufs: -14.2, truePeak: -0.3 },
 };
 
 /**
@@ -197,7 +202,8 @@ export const MEME_FAMILIES = {
   eternity: "the eternity-later card's own voice",
   rewind: "the flashback: the board plays back",
   forward: "the flashback: the board plays forward to now",
-  crickets: "an awkward quiet: a move nobody can explain (with Travolta)",
+  crickets:
+    "an awkward quiet: a move nobody can explain (with Travolta), or a stand-off (with the tumbleweed)",
   sneak: "got away with it: a blunder nobody punished (with Terio)",
   nono: "oh no no no no: a voice that sees the disaster coming",
   haha: "a short mocking laugh: the other side profits",
@@ -207,6 +213,7 @@ export const MEME_FAMILIES = {
   gasp: "a sudden gasp: a threat out of a quiet move",
   scream: "a scream of fear: a strong threat (a woman, a man)",
   nooo: "a dramatic nooo: the lead is lost",
+  bonk: "a detour: the walk bumps longer",
 };
 
 /**
@@ -226,7 +233,7 @@ export const MEME_FAMILIES = {
  * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh-1 (a sting),
  * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
  * audience off screen, as ooh), and gasp and scream (no word,
- * as scared-2). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * as scared-2), and bonk-1 (a drum hit). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
  * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
