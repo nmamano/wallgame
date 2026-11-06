@@ -1429,6 +1429,58 @@ describe("the ending's caption bar", () => {
     ]);
   });
 
+  test("may ring one pawn by seat and piece; no other overlay takes a ring", () => {
+    const bar = {
+      ply: 2,
+      kind: "overlay",
+      form: "bar",
+      asset: "ending-caption",
+      text: "gg",
+    };
+    expect(
+      accept({ ...base, events: [{ ...bar, ring: "blue cat" }] }).events[0],
+    ).toMatchObject({ ring: "blue cat" });
+    expect(
+      validateEdl({ ...base, events: [{ ...bar, ring: "green cat" }] }).errors,
+    ).toEqual([
+      'events[0]: ring must be a seat and a piece, as "blue cat" or "red mouse"',
+    ]);
+    expect(
+      validateEdl({
+        ...base,
+        events: [
+          {
+            ply: 1,
+            kind: "overlay",
+            form: "panel",
+            asset: "wasted",
+            ring: "blue cat",
+          },
+        ],
+      }).errors,
+    ).toContain("events[0]: only the ending's bar takes a ring");
+  });
+
+  test('finishAt "bar" needs the bar, and no other value', () => {
+    const bar = {
+      ply: 2,
+      kind: "overlay",
+      form: "bar",
+      asset: "ending-caption",
+      text: "gg",
+    };
+    expect(accept({ ...base, finishAt: "bar", events: [bar] }).finishAt).toBe(
+      "bar",
+    );
+    expect(accept({ ...base, events: [bar] })).not.toHaveProperty("finishAt");
+    expect(validateEdl({ ...base, finishAt: "bar" }).errors).toEqual([
+      'finishAt "bar" needs the ending\'s bar',
+    ]);
+    expect(
+      validateEdl({ ...base, finishAt: "card", events: [bar] }).errors,
+    ).toEqual(['finishAt must be "bar", got "card"']);
+  });
+
   test("never with the ko ending: its thrown pawn crosses every place (a4wv, 2026-10-30)", () => {
     const bar = {
       ply: 2,

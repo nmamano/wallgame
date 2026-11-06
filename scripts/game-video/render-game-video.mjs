@@ -4054,7 +4054,30 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
  *            holds while it shows, so the pawn stays there).
  */
 const OVERLAY_FACTS = new Map();
+/**
+ * The ending bar's ring (edl.mjs `ring`), by its event: the named pawn's
+ * player and its cell on the end board.
+ * @type {Map<object, { player: 1 | 2, cell: [number, number] }>}
+ */
+const BAR_RINGS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
+  if (ev.ring !== undefined) {
+    const pawn = parsePawn(ev.ring);
+    const player = SEAT_COLORS(replay)[1] === pawn.seat ? 1 : 2;
+    const cell = pawnCell(
+      REPLAYED.states[ev.ply + 1].pawns,
+      player,
+      pawn.piece,
+    );
+    if (!cell) {
+      console.error(
+        `ply ${ev.ply}: the bar's ring is on the ${ev.ring}, and ${replay.state.config.variant} gives ${pawn.seat} no ${pawn.piece}`,
+      );
+      await browser.close();
+      process.exit(2);
+    }
+    BAR_RINGS.set(ev, { player, cell });
+  }
   const draw = OVERLAYS[ev.asset].draw;
   if (takesPawn(OVERLAYS[ev.asset])) {
     const pawn = parsePawn(ev.pawn);
@@ -7994,6 +8017,24 @@ const renderStyle = async (styleName) => {
         (e) => e.kind === "overlay" && e.form === "bar",
       );
       /*
+        The bar's ring (edl.mjs `ring`): a plain ring in the seat's colour
+        round the named pawn, t seconds after the bar opens, on every frame
+        the bar shows (Wall Game Director, 2026-11-06).
+      */
+      const ringOf = BAR_RINGS.get(bar);
+      const barRing = (t) =>
+        ringOf
+          ? {
+              cellFx: {
+                kind: "ring",
+                t,
+                cell: cellAt(ringOf.cell),
+                size: GRID.pitchX,
+                color: side(ringOf.player).hex,
+              },
+            }
+          : {};
+      /*
         The ending holds as long as its bar's line needs to be read (Wall
         Game Director, 2026-10-29: Nil's "you can run but you can't hide"
         is 7 words, 3.3 s, and the gg ending shows the bar 2.6 s).
@@ -8044,10 +8085,14 @@ const renderStyle = async (styleName) => {
         const deathCard = overlayWindows.find(
           (w) => w.ev.ply === plyIndex && DEATH_CARDS.includes(w.asset.card),
         );
+        const finishWithBar = EDL?.finishAt === "bar";
         cue(sounds.finish, "finish", {
-          at: deathCard ? deathCard.start : elapsed + timing.impact,
+          at:
+            deathCard && !finishWithBar
+              ? deathCard.start
+              : elapsed + timing.impact,
         });
-        if (deathCard) {
+        if (deathCard && !finishWithBar) {
           log(
             `finish sound ${sounds.finish.name} at ${deathCard.start.toFixed(2)} s, as the ${deathCard.ev.asset} card opens`,
           );
@@ -8059,6 +8104,7 @@ const renderStyle = async (styleName) => {
             playState(ply, {
               ending: ending(i / FPS),
               credit: creditAt(i / FPS),
+              ...(i >= impactFrame && barRing((i - impactFrame) / FPS)),
             }),
             1 / FPS,
             { kind: "ending", ply: plyIndex },
@@ -8118,6 +8164,7 @@ const renderStyle = async (styleName) => {
                   cta: timing.seconds + i / FPS,
                 },
                 credit: creditAt(timing.seconds),
+                ...barRing(timing.seconds - timing.impact + i / FPS),
               }),
               1 / FPS,
               { kind: "ending-hold", ply: plyIndex },
@@ -8128,6 +8175,7 @@ const renderStyle = async (styleName) => {
             playState(ply, {
               ending: ending(timing.seconds),
               credit: creditAt(timing.seconds),
+              ...barRing(timing.seconds - timing.impact),
             }),
             holdSeconds,
             { kind: "ending-hold", ply: plyIndex },
@@ -8142,13 +8190,20 @@ const renderStyle = async (styleName) => {
         if (bar) openOverlay(bar);
         const fade = Math.round(CREDIT_FADE_SECONDS * FPS);
         for (let i = 0; i < fade; i += 1) {
-          await emit(playState(ply, { credit: creditAt(i / FPS) }), 1 / FPS, {
-            kind: "ending-hold",
-            ply: plyIndex,
-          });
+          await emit(
+            playState(ply, { credit: creditAt(i / FPS), ...barRing(i / FPS) }),
+            1 / FPS,
+            {
+              kind: "ending-hold",
+              ply: plyIndex,
+            },
+          );
         }
         await emit(
-          playState(ply, { credit: creditAt(CREDIT_FADE_SECONDS) }),
+          playState(ply, {
+            credit: creditAt(CREDIT_FADE_SECONDS),
+            ...barRing(CREDIT_FADE_SECONDS),
+          }),
           DRAW_HOLD_SECONDS -
             fade / FPS +
             (bar ? holdFor(DRAW_HOLD_SECONDS, 0) : 0),

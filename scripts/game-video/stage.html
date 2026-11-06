@@ -2225,6 +2225,9 @@
        *              flash (fxFlash) and the shake (s.shake).
        *   brilliant  a burst of rays and a ring out of the cell, and a "!!"
        *              bubble.
+       *   ring       a plain ring in the seat's colour (c.color) round the
+       *              cell, no bubble: the pawn the ending's bar names
+       *              (edl.mjs `ring`; Wall Game Director, 2026-11-06).
        *   react      an emoji pops once NEXT TO the cell, on the side the
        *              renderer measured to be clear, so it never covers the
        *              pawn it reacts to, and kept inside the board (Wall Game
@@ -2250,7 +2253,7 @@
         const burst = $("cellBurst");
         const emoji = $("cellEmoji");
         show(ring, c.kind !== "react");
-        show(badge, c.kind !== "react");
+        show(badge, c.kind === "blunder" || c.kind === "brilliant");
         show(burst, c.kind === "brilliant");
         show(emoji, c.kind === "react");
         badge.style.fontSize = px * 0.6 + "px";
@@ -2266,6 +2269,14 @@
           badge.textContent = "??";
           badge.style.background = "#dc2626";
           placeBubble(badge, c.side, pop);
+        }
+
+        if (c.kind === "ring") {
+          ring.style.borderWidth = px * 0.08 + "px";
+          ring.style.borderColor = c.color;
+          ring.style.boxShadow = "0 0 " + px * 0.25 + "px " + c.color;
+          ring.style.opacity = span(c.t, 0, 0.2);
+          ring.style.transform = "scale(" + pop + ")";
         }
 
         if (c.kind === "brilliant") {

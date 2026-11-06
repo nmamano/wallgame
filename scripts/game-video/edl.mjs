@@ -78,6 +78,12 @@
  *            optional: the meme sound as the opening's first name shows
  *            (the daily look; the VS mark's punch in the current look) and
  *            on the ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
+ *   finishAt optional: "bar" starts the finish sound as the ending's bar
+ *            opens (the ending's impact), even when a death card on the
+ *            last move opened earlier (Wall Game Director, 2026-11-06: a
+ *            finish with the wasted band left 5.4 s of silence at the end).
+ *            Absent: at the impact, or as a death card on the last move
+ *            opens. Needs a bar.
  *   opening  retired (Nil, 2026-11-05, C56: the curtain had become
  *            repetitive): no cover clip opens a video. A list that sets it
  *            is refused.
@@ -256,7 +262,11 @@
  *             be on screen for EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
  *             caption) is on the last move only and shows from the ending's
  *             impact to its end, so it takes no seconds; the ending holds
- *             longer when its line needs more reading time.
+ *             longer when its line needs more reading time. Its optional
+ *             `ring` ("blue cat": a seat and a piece) puts a plain ring in
+ *             that seat's colour round that pawn on the end board while the
+ *             bar shows: no picture, no tail (Wall Game Director,
+ *             2026-11-06: the bar's joke is that pawn).
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
@@ -590,6 +600,7 @@ const KIND_FIELDS = {
     "place",
     "audio",
     "at",
+    "ring",
   ],
   explain: ["hunter", "label", "expect", "callback", "buildUp"],
   plant: ["wall"],
@@ -741,6 +752,7 @@ export const validateEdl = (raw) => {
       "introPaths",
       "vsSound",
       "finishSound",
+      "finishAt",
       "opening",
       "cta",
       "evalStrip",
@@ -857,6 +869,17 @@ export const validateEdl = (raw) => {
           `music plays ${tracks.size} different tracks; at most ${EDL_LIMITS.musicTracks} fit the credit`,
         );
       }
+    }
+  }
+  if (raw.finishAt !== undefined) {
+    if (raw.finishAt !== "bar") {
+      fail(`finishAt must be "bar", got ${JSON.stringify(raw.finishAt)}`);
+    } else if (
+      !(Array.isArray(raw.events) ? raw.events : []).some(
+        (e) => e?.kind === "overlay" && e?.form === "bar",
+      )
+    ) {
+      fail('finishAt "bar" needs the ending\'s bar');
     }
   }
   const introPaths = raw.introPaths ?? true;
@@ -991,6 +1014,15 @@ export const validateEdl = (raw) => {
           ? `${where}: ${ev.asset} shows a seat's portrait; seat must be "red" or "blue" (who reacts)`
           : `${where}: ${ev.asset} takes a seat's colour; seat must be "red" or "blue" (who plays it)`,
       );
+    }
+    if (ev.ring !== undefined) {
+      if (asset.form !== "bar") {
+        fail(`${where}: only the ending's bar takes a ring`);
+      } else if (!parsePawn(ev.ring)) {
+        fail(
+          `${where}: ring must be a seat and a piece, as "blue cat" or "red mouse"`,
+        );
+      }
     }
     if (!takesPawn(asset)) {
       if (ev.pawn !== undefined)
@@ -1517,6 +1549,7 @@ export const validateEdl = (raw) => {
       ...slots,
       // Only when set, so a list without one stores the same bytes as before.
       ...(cta !== null ? { cta } : {}),
+      ...(raw.finishAt !== undefined ? { finishAt: raw.finishAt } : {}),
       ...(evalStrip !== null ? { evalStrip } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
