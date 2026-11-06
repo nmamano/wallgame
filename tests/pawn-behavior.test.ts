@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { sortPawnNames } from "../frontend/src/lib/pawn-sort";
@@ -9,6 +9,11 @@ import {
   normalizePawnStyleSelection,
   resolvePawnBackingSrc,
 } from "../frontend/src/lib/pawn-style";
+import {
+  defaultPawnDisplayLabel,
+  dogPawnDisplayLabel,
+} from "../frontend/src/lib/pawn-labels";
+import { DOG_PAWNS } from "../frontend/src/lib/pawns";
 import {
   DEFAULT_PAWN_STYLES,
   type PawnStyleType,
@@ -23,11 +28,11 @@ import {
  *
  * The pawn lists used to be `Object.keys(import.meta.glob(...))`, sorted. That
  * glob also pulled 385 files from `public/` into the bundle, so it was replaced
- * by `vite-plugin-pawn-manifest.ts`, which reads the same directories with `fs`.
+ * by a list of filenames (now `shared/domain/pawn-files.generated.ts`).
  *
  * A glob hands its keys over already sorted lexicographically; `readdirSync`
  * promises no order at all. The sort tests exist because the ORDER the player
- * sees must not depend on that difference.
+ * sees must not depend on the order a list of names arrives in.
  *
  * This lives in `tests/` rather than beside the helpers because
  * `scripts/run-tests.ts` globs `tests/**` only - a test under `frontend/src`
@@ -47,15 +52,6 @@ const pawnTypes = [
   "elephant",
   "home",
 ] as const satisfies readonly PawnStyleType[];
-
-void mock.module("virtual:pawn-manifest", () => ({
-  default: Object.fromEntries(
-    pawnTypes.map((type) => [type, readPawnDir(type)]),
-  ),
-}));
-const { defaultPawnDisplayLabel, dogPawnDisplayLabel } =
-  await import("../frontend/src/lib/pawn-labels");
-const { DOG_PAWNS } = await import("../frontend/src/lib/pawns");
 
 const leadingNumber = (name: string) => parseInt(/\d+/.exec(name)?.[0] ?? "0");
 

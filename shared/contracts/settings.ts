@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { pawnSkinError } from "./pawn-skin";
+import { isBuiltInPawnStyle } from "../domain/pawn-styles";
 import type { TimeControlPreset, Variant } from "../domain/game-types";
 import {
   BOARD_SIDE_MAX,
@@ -29,10 +31,19 @@ export const pawnSkinTypeValues = [
 ] as const;
 export type PawnSkinType = (typeof pawnSkinTypeValues)[number];
 
-export const updatePawnSchema = z.object({
-  pawnType: z.enum(pawnSkinTypeValues),
-  pawnShape: z.string(),
-});
+export const updatePawnSchema = z
+  .object({
+    pawnType: z.enum(pawnSkinTypeValues),
+    pawnShape: z.string().trim().max(64),
+  })
+  .superRefine(({ pawnType, pawnShape }, ctx) => {
+    if (isBuiltInPawnStyle(pawnShape, pawnType)) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["pawnShape"],
+      message: pawnSkinError(pawnType),
+    });
+  });
 
 export const updateDefaultVariantSchema = z.object({
   variant: z.enum(variantValues),

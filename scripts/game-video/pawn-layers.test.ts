@@ -10,12 +10,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { DEFAULT_PAWN_STYLES } from "../../shared/domain/pawn-styles";
+import {
+  DEFAULT_PAWN_STYLES,
+  isBuiltInPawnStyle,
+  type PawnStyleType,
+} from "../../shared/domain/pawn-styles";
 import {
   builtInLayerUrl,
   composeLayers,
   inlineLayer,
-  isBuiltInSkin,
   newComposePage,
   scrubOffSiteSkins,
 } from "./pawn-layers.mjs";
@@ -62,19 +65,25 @@ describe("skins", () => {
     const pawns = siteFiles.filter((f) => f.startsWith("pawns/"));
     expect(pawns.length).toBeGreaterThan(400);
     const refused = pawns.flatMap((f) => {
-      const name = f.split("/").at(-1)!;
-      return [name, name.replace(/\.svg$/, ""), f, `/${f}`].filter(
-        (v) => !isBuiltInSkin(v),
+      const [, folder, name] = f.split("/");
+      // animal-cycle holds no skins of its own type, so only its paths count.
+      const byName = folder === "animal-cycle" ? [] : [name, name.slice(0, -4)];
+      const type = (
+        folder === "animal-cycle" ? "cat" : folder
+      ) as PawnStyleType;
+      return [...byName, f, `/${f}`].filter(
+        (v) => !isBuiltInPawnStyle(v, type),
       );
     });
     expect(refused).toEqual([]);
-    expect(
-      ["default", ...Object.values(DEFAULT_PAWN_STYLES)].every(isBuiltInSkin),
-    ).toBe(true);
+    for (const [type, name] of Object.entries(DEFAULT_PAWN_STYLES)) {
+      expect(isBuiltInPawnStyle("default", type as PawnStyleType)).toBe(true);
+      expect(isBuiltInPawnStyle(name, type as PawnStyleType)).toBe(true);
+    }
   });
 
   test("an off-site or odd skin is not built in", () => {
-    expect(OFF_SITE.filter(isBuiltInSkin)).toEqual([]);
+    expect(OFF_SITE.filter((v) => isBuiltInPawnStyle(v, "cat"))).toEqual([]);
   });
 
   test("the replay's off-site skins become the default; built-in ones stay", () => {

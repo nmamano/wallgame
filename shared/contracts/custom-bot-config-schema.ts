@@ -5,6 +5,7 @@
  * V3: timeControls removed - bot games are untimed.
  */
 import { z } from "zod";
+import { pawnSkinSchema } from "./pawn-skin";
 
 const boardDimensionRangeSchemaBase = z.object({
   min: z.number().int().min(3).max(20),
@@ -60,12 +61,12 @@ export const variantConfigSchema = z
 
 export const botAppearanceSchema = z
   .object({
-    color: z.string(),
-    dogStyle: z.string(),
-    catStyle: z.string(),
-    mouseStyle: z.string(),
-    elephantStyle: z.string(),
-    homeStyle: z.string(),
+    color: z.string().max(32),
+    dogStyle: pawnSkinSchema("dog"),
+    catStyle: pawnSkinSchema("cat"),
+    mouseStyle: pawnSkinSchema("mouse"),
+    elephantStyle: pawnSkinSchema("elephant"),
+    homeStyle: pawnSkinSchema("home"),
   })
   .partial();
 

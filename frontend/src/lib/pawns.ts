@@ -1,13 +1,15 @@
-import manifest from "virtual:pawn-manifest";
+import { PAWN_FILES as manifest } from "../../../shared/domain/pawn-files.generated";
 import { sortPawnNames } from "./pawn-sort";
 import { isRetiredPawnStyle } from "./pawn-style";
 
 /**
  * The pawn art a player can choose from, by filename, in reading order.
  *
- * The names come from `vite-plugin-pawn-manifest.ts`, which reads
- * `frontend/public/pawns/<type>/` at build time. Adding art needs no code change;
- * see that file for why the app does not import the SVGs.
+ * The names come from `shared/domain/pawn-files.generated.ts`, the same list
+ * the server accepts skins from. Run `bun run pawns:files` after you add art.
+ * The app does not import the SVGs: an import of each one put a hashed copy of
+ * all of them (~9.4 MB) in every build, on top of the copies in `dist/pawns/`;
+ * the art is fetched by URL (`lib/pawn-style.ts`, `components/pawn-selector.tsx`).
  */
 export const CAT_PAWNS = sortPawnNames(
   manifest.cat.filter((name) => !isRetiredPawnStyle(name, "cat")),

@@ -1,6 +1,8 @@
 import { assetUrl } from "@/lib/asset-url";
 import {
   DEFAULT_PAWN_STYLES,
+  builtInPawnPath,
+  isBuiltInPawnStyle,
   type PawnStyleType,
 } from "../../../shared/domain/pawn-styles";
 
@@ -42,13 +44,22 @@ export const isRetiredPawnStyle = (
   return filename ? RETIRED_PAWN_STYLES[type].has(filename) : false;
 };
 
+/**
+ * The skin to show: "default" for no skin, a retired one, or any value that
+ * names no pawn file the site ships. Games stored before the server checked
+ * skins (board task 6a245eee) can hold a URL; it is never loaded.
+ */
 export const normalizePawnStyleSelection = (
   pawnStyle: string | undefined,
   type: PawnStyleType,
-): string =>
-  !pawnStyle || pawnStyle === "default" || isRetiredPawnStyle(pawnStyle, type)
+): string => {
+  const skin = pawnStyle?.trim();
+  return !skin ||
+    !isBuiltInPawnStyle(skin, type) ||
+    isRetiredPawnStyle(skin, type)
     ? "default"
-    : pawnStyle;
+    : skin;
+};
 
 /** Board surfaces use undefined to ask the source resolver for the type default. */
 export const normalizeBoardPawnStyle = (
@@ -56,52 +67,17 @@ export const normalizeBoardPawnStyle = (
 ): string | undefined =>
   pawnStyle && pawnStyle !== "default" ? pawnStyle : undefined;
 
-const ensureSvgExtension = (value: string): string => {
-  if (value.includes(".")) {
-    return value;
-  }
-  return `${value}.svg`;
-};
-
-const normalizePath = (value: string): string => {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return "";
-  }
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("/")) {
-    return trimmed;
-  }
-  if (trimmed.includes("/")) {
-    return `/${trimmed}`;
-  }
-  return trimmed;
-};
-
+/** The URL of a pawn's art: its skin's file, or the type's default. */
 export const resolvePawnStyleSrc = (
   pawnStyle: string | undefined,
   type: PawnStyleType,
 ): string => {
   const selection = normalizePawnStyleSelection(pawnStyle, type);
-  const requestedStyle =
-    selection === "default" ? DEFAULT_PAWN_STYLES[type] : selection;
-  const normalized = normalizePath(requestedStyle);
-  if (!normalized) {
-    return assetUrl(`/pawns/${type}/${DEFAULT_PAWN_STYLES[type]}`);
-  }
-
-  // An off-site pawn is whatever the URL says; a site path still has to move
-  // with the build's base.
-  if (normalized.startsWith("http")) {
-    return normalized;
-  }
-  if (normalized.startsWith("/")) {
-    return assetUrl(normalized);
-  }
-
-  return assetUrl(`/pawns/${type}/${ensureSvgExtension(normalized)}`);
+  const skin = selection === "default" ? DEFAULT_PAWN_STYLES[type] : selection;
+  const path = builtInPawnPath(skin, type);
+  return path
+    ? assetUrl(path)
+    : assetUrl(`/pawns/${type}/${DEFAULT_PAWN_STYLES[type]}`);
 };
 
 /**

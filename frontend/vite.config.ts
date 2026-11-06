@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
-import { pawnManifestPlugin } from "./vite-plugin-pawn-manifest";
 
 export default defineConfig({
   plugins: [
@@ -12,7 +11,6 @@ export default defineConfig({
     TanStackRouterVite({ autoCodeSplitting: true }),
     react(),
     tailwindcss(),
-    pawnManifestPlugin(path.resolve(__dirname, "./public")),
   ],
   build: {
     rollupOptions: {

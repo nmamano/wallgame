@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { boundedArray } from "./bounded-array";
+import { pawnSkinSchema } from "./pawn-skin";
 import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
 import { isValidTimeZone } from "../domain/past-games";
 import type { PastGamesActivityDay } from "../domain/past-games";
@@ -269,11 +270,11 @@ export const timeControlSchema = z.object({
 export const appearanceSchema = z
   .object({
     pawnColor: z.string().max(32).optional(),
-    dogSkin: z.string().max(64).optional(),
-    catSkin: z.string().max(64).optional(),
-    mouseSkin: z.string().max(64).optional(),
-    elephantSkin: z.string().max(64).optional(),
-    homeSkin: z.string().max(64).optional(),
+    dogSkin: pawnSkinSchema("dog").optional(),
+    catSkin: pawnSkinSchema("cat").optional(),
+    mouseSkin: pawnSkinSchema("mouse").optional(),
+    elephantSkin: pawnSkinSchema("elephant").optional(),
+    homeSkin: pawnSkinSchema("home").optional(),
   })
   .optional();
 

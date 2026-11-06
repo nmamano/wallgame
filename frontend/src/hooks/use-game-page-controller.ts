@@ -54,7 +54,6 @@ import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { useAccountNudge } from "@/hooks/use-account-nudge";
 import { useGameFirstMove } from "@/hooks/use-game-first-move";
 import { sounds, play } from "@/lib/sounds";
-import { assetUrl } from "@/lib/asset-url";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -2270,7 +2269,8 @@ export function useGamePageController(gameId: string) {
           pawn.type === "cat" ? player?.catSkin : player?.mouseSkin;
         pawnStyle = normalizeBoardPawnStyle(selected);
       } else if (sourceState.config.variant === "animal-cycle") {
-        pawnStyle = assetUrl(`/pawns/animal-cycle/${pawn.type}.svg`);
+        // A skin path; resolveBoardPawnSrc puts it under the build's base.
+        pawnStyle = `pawns/animal-cycle/${pawn.type}.svg`;
       } else if (
         pawn.type === "cat" &&
         player?.catSkin &&

@@ -11,6 +11,7 @@
     "test:wsl": "wsl.exe -d Ubuntu -- bash -lc 'cd \"$PWD\" && env PATH=\"$HOME/.bun/bin:/usr/bin:/bin\" bun scripts/run-tests.ts'",
     "typecheck": "sh scripts/run-parallel.sh 'server+shared' 'bun x tsc --noEmit -p tsconfig.server.json' 'tests' 'bun x tsc --noEmit -p tsconfig.tests.json' 'scripts' 'bun x tsc --noEmit -p tsconfig.scripts.json' 'harness' 'bun x tsc --noEmit -p tsconfig.harness.json' 'frontend tests' 'bun x tsc --noEmit -p frontend/tsconfig.test.json' 'bot client' 'bun x tsc --noEmit -p official-custom-bot-client/tsconfig.json'",
     "build": "bun --cwd=frontend run build",
+    "pawns:files": "bun scripts/generate-pawn-files.ts",
     "harness:nudge": "bun run build && bun scripts/browser-harness/drive-account-nudge.ts",
     "harness:puzzles": "bun run build && bun scripts/browser-harness/drive-puzzles-page.ts",
     "harness:campaign": "bun run build && bun scripts/browser-harness/drive-campaign-progress.ts",

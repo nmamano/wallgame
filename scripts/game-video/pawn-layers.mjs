@@ -11,28 +11,28 @@
  *
  * Three guards, each enough alone for the script:
  * - scrubOffSiteSkins: the capture browser gives the replay page the default
- *   skin for each skin that is not a built-in name, so the page never draws
- *   an off-site pawn and the scrape finds none.
+ *   skin for each skin that is not built in (isBuiltInPawnStyle, the rule the
+ *   server and the site use), so the page never draws an off-site pawn and
+ *   the scrape finds none.
  * - inlineLayer: fetches only a pawn file of the site (builtInLayerUrl), with
  *   no redirect, and keeps only an SVG or PNG reply of a pawn's size.
  * - composeLayers: builds the stack with DOM properties, not HTML text, so
  *   no value can add an attribute, on a page with no network
  *   (newComposePage).
  */
+import { isBuiltInPawnStyle } from "../../shared/domain/pawn-styles.ts";
 
 /** The site folders that hold pawn art (frontend/public). */
 const PAWN_FOLDERS = ["pawns", "pawn-backings", "pawn-foreground-fixes"];
 
-/**
- * A skin the site ships: "default", a file name ("cat3.svg", or "cat3"), or
- * its site path ("/pawns/cat/cat3.svg"). Every other value is replaced.
- */
-const BUILT_IN_SKIN =
-  /^(?:default|[a-z0-9][a-z0-9_-]*(?:\.svg)?|\/?pawns\/[a-z-]+\/[a-z0-9][a-z0-9_-]*\.svg)$/i;
-
-/** Whether a skin value names one of the site's own pawn files. */
-export const isBuiltInSkin = (value) =>
-  typeof value === "string" && BUILT_IN_SKIN.test(value.trim());
+/** The pawn type of each skin key of an appearance. */
+const SKIN_TYPES = {
+  dogSkin: "dog",
+  catSkin: "cat",
+  mouseSkin: "mouse",
+  elephantSkin: "elephant",
+  homeSkin: "home",
+};
 
 /**
  * Set every skin of the replay response that is not built in to "default",
@@ -45,7 +45,13 @@ export const scrubOffSiteSkins = (body) => {
     if (!appearance || typeof appearance !== "object") continue;
     for (const [key, value] of Object.entries(appearance)) {
       if (!key.endsWith("Skin") || value == null) continue;
-      if (isBuiltInSkin(value)) continue;
+      const type = SKIN_TYPES[key];
+      if (
+        type &&
+        typeof value === "string" &&
+        isBuiltInPawnStyle(value.trim(), type)
+      )
+        continue;
       appearance[key] = "default";
       replaced.push(`player ${p.playerId} ${key}`);
     }
