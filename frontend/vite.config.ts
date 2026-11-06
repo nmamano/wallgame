@@ -7,11 +7,29 @@ import { pawnManifestPlugin } from "./vite-plugin-pawn-manifest";
 
 export default defineConfig({
   plugins: [
+    // Before react(): the code splitter must see the route files before JSX
+    // is compiled.
+    TanStackRouterVite({ autoCodeSplitting: true }),
     react(),
     tailwindcss(),
-    TanStackRouterVite(),
     pawnManifestPlugin(path.resolve(__dirname, "./public")),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // React and the TanStack libraries change only with a dependency
+        // update, so their own file stays cached across deploys. An explicit
+        // list: a package used by only some pages (the Markdown stack) must
+        // stay in those pages' chunks.
+        manualChunks: (id) =>
+          /\/node_modules\/(react|react-dom|scheduler|@tanstack\/[^/]+)\//.test(
+            id,
+          )
+            ? "vendor"
+            : undefined,
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

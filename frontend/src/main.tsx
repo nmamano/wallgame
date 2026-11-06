@@ -43,7 +43,13 @@ markEmbeddedDocument(isEmbedded(), document.body);
 const queryClient = new QueryClient();
 
 // From https://tanstack.com/router/latest/docs/framework/react/quick-start
-const router = createRouter({ routeTree, context: { queryClient } });
+// Route code is split per page (vite.config.ts). "intent": a link loads its
+// page's code on hover or touch, so the click seldom waits for it.
+const router = createRouter({
+  routeTree,
+  context: { queryClient },
+  defaultPreload: "intent",
+});
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
@@ -66,6 +72,25 @@ const stopNavigationReporting = installNavigationReporting(
 );
 import.meta.hot?.dispose(() => {
   stopNavigationReporting();
+});
+
+/**
+ * Once the first page shows, the other pages' code loads in idle time, so a
+ * later click does not wait for it on a slow connection (board task
+ * f23b28a4). The first page needs only its own code before it can show; the
+ * total download stays about the same (508 kB gzip after idle against 483 kB
+ * as one file, 2026-11-06), in a different order.
+ */
+const stopPreloadWatch = router.subscribe("onResolved", () => {
+  stopPreloadWatch();
+  const preloadAll = () => {
+    const routes = router.routesById;
+    for (const id of Object.keys(routes) as (keyof typeof routes)[]) {
+      void router.loadRouteChunk(routes[id]);
+    }
+  };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(preloadAll);
+  else setTimeout(preloadAll, 1);
 });
 
 createRoot(document.getElementById("root")!).render(
