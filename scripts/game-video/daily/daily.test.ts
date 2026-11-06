@@ -4179,7 +4179,9 @@ test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () =>
       "",
     ].join("\n"),
   );
-  writeFileSync(join(dir, "slow"), "600");
+  // Each job runs 2 s, so the two side-by-side jobs overlap even when a busy
+  // box starts the second one late (task 8060a5e2: 600 ms missed by 17 ms).
+  writeFileSync(join(dir, "slow"), "2000");
   const ids: string[] = [];
   for (let i = 0; i < 3; i++) {
     const queued = await call<{ previewId: string }>(
