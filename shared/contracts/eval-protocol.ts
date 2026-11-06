@@ -16,7 +16,7 @@
  */
 
 import { z } from "zod";
-import { variantValues } from "./games";
+import type { Variant } from "../domain/game-types";
 
 // ============================================================================
 // Client -> Server Messages
@@ -26,13 +26,23 @@ import { variantValues } from "./games";
 // replay of an old game must still reach it.
 const boardSideSchema = z.number().int().positive();
 
+// Every Variant, survival too, as the handshake took before it had a schema.
+// If Variant grows, the frontend's handshake stops type-checking until this
+// list grows with it.
+const evalVariantValues = [
+  "standard",
+  "animal-cycle",
+  "classic",
+  "survival",
+] as const satisfies readonly Variant[];
+
 /** Initial handshake to establish eval connection */
 const evalHandshakeRequestSchema = z.object({
   type: z.literal("eval-handshake"),
   /** The game ID this eval connection is for */
   gameId: z.string(),
   /** The variant being played */
-  variant: z.enum(variantValues),
+  variant: z.enum(evalVariantValues),
   /** Board dimensions */
   boardWidth: boardSideSchema,
   boardHeight: boardSideSchema,
