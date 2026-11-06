@@ -283,6 +283,13 @@ export const RATED_REQUIRES_LOGIN_MESSAGE =
 
 const TIMEOUT_FLOOR_MS = 100;
 
+/**
+ * The longest delay setTimeout takes: a longer one overflows and fires after
+ * about 1 ms. A longer clock is then waited out in steps of this, each step
+ * rescheduled by the timer's "fired early" branch.
+ */
+export const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
 // Map of session ID to timeout timer
 const timeoutTimers = new Map<string, Timer>();
 
@@ -387,6 +394,7 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
   }
 
   // Schedule the timeout
+  const delayMs = Math.min(remainingMs, MAX_TIMER_DELAY_MS);
   const timer = setTimeout(() => {
     timeoutTimers.delete(sessionId);
 
@@ -411,7 +419,7 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
     }
 
     applyTimeoutToSession(sessionId, currentSession);
-  }, remainingMs);
+  }, delayMs);
 
   timeoutTimers.set(sessionId, timer);
 
@@ -1931,6 +1939,15 @@ export const resignGame = (args: {
   });
 };
 
+/**
+ * The most a clock can hold after a gift: two hours, twice the start clock of
+ * the longest time control, so a player of that game reaches it only after
+ * 60 of the UI's 60 s gifts. A started timed game is ended by its clock, not
+ * by the abandon or idle policies, so the cap also bounds how long a gifted
+ * game stays in memory after both players leave.
+ */
+export const MAX_CLOCK_AFTER_GIFT_SECONDS = 2 * 60 * 60;
+
 export const giveTime = (args: {
   id: string;
   playerId: PlayerId;
@@ -1944,7 +1961,12 @@ export const giveTime = (args: {
   }
 
   const opponent: PlayerId = args.playerId === 1 ? 2 : 1;
-  state.timeLeft[opponent] += args.seconds;
+  const timeLeft = state.timeLeft[opponent];
+  // Gifts stop at the cap; a clock already above it keeps what it has.
+  state.timeLeft[opponent] = Math.max(
+    timeLeft,
+    Math.min(timeLeft + args.seconds, MAX_CLOCK_AFTER_GIFT_SECONDS),
+  );
 
   session.updatedAt = Date.now();
   return state;

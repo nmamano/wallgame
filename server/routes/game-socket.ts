@@ -58,6 +58,7 @@ import {
   clientMessageSchema,
   GAME_SOCKET_GONE_CLOSE_CODE,
 } from "../../shared/contracts/websocket-messages";
+import { giveTimePayloadSchema } from "../../shared/contracts/controller-actions";
 import type {
   ActionNackCode,
   RematchDecision,
@@ -2356,16 +2357,12 @@ const handleActionRequest = async (
       return;
     }
     case "giveTime": {
-      const seconds = (message.payload as { seconds?: number } | undefined)
-        ?.seconds;
-      if (
-        typeof seconds !== "number" ||
-        Number.isNaN(seconds) ||
-        seconds <= 0
-      ) {
+      const payload = giveTimePayloadSchema.safeParse(message.payload);
+      if (!payload.success) {
         sendActionNack(socket, message, "INVALID_SECONDS");
         return;
       }
+      const { seconds } = payload.data;
       const playerId = ensureAuthorizedPlayer(socket, "give-time");
       if (playerId === null) {
         sendActionNack(socket, message, "UNAUTHORIZED");

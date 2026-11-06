@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type RematchDecision = "accepted" | "declined";
 
 export type ControllerActionKind =
@@ -8,11 +10,23 @@ export type ControllerActionKind =
   | "offerRematch"
   | "respondRematch";
 
+/**
+ * The most one gift of time can add: one hour, the start clock of the longest
+ * time control. A gift larger than a whole game is not a real gift; the UI
+ * gives 60 s per click.
+ */
+export const MAX_TIME_GIFT_SECONDS = 60 * 60;
+
+/** A gift of time: a finite number of seconds, above 0, at most one hour. */
+export const giveTimePayloadSchema = z.object({
+  seconds: z.number().positive().max(MAX_TIME_GIFT_SECONDS),
+});
+
 export interface ActionRequestPayloadMap {
   resign: void;
   offerDraw: void;
   requestTakeback: void;
-  giveTime: { seconds: number };
+  giveTime: z.infer<typeof giveTimePayloadSchema>;
   offerRematch: void;
   respondRematch: { decision: RematchDecision };
 }
