@@ -173,12 +173,16 @@ export const changedSpan = (timeline, changed, duration, events) => {
   };
   /*
     The whole video, not a clip, when the clip would start in the intro
-    (before ply 0's move lands) or run over half the video (Nil, 2026-11-06,
+    (before the first move lands: ply 0, or the startPly of a video that
+    opens later) or run over half the video (Nil, 2026-11-06,
     on BIn's clip of 0.4-29.7 s of 44.7 s: "what you sent is not a full
     video. start is missing and end is missing"; Wall Game Director's rule).
     A clip that cut the intro or most of the video reads as a broken video.
   */
-  const firstMove = timeline.moves.find((m) => m.ply === 0);
+  const firstMove = timeline.moves.reduce(
+    (a, m) => (a === undefined || m.ply < a.ply ? m : a),
+    undefined,
+  );
   if (firstMove && span.from < firstMove.at) return null;
   if (span.to - span.from > duration / 2) return null;
   return span;

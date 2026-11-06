@@ -12,9 +12,14 @@ import {
   parseChanged,
 } from "./changed-clip.mjs";
 
-/** -8's timeline (render mvxy88al, 2026-11-01), its last plies. */
+/**
+ * -8's timeline (render mvxy88al, 2026-11-01), its last plies. Ply 0 at
+ * 2.5 s stands in for the end of the intro (the render did not keep its
+ * time): the clip rule reads the first move.
+ */
 const TIMELINE = {
   moves: [
+    { ply: 0, at: 2.5 },
     { ply: 17, at: 20.2 },
     { ply: 18, at: 22 },
     { ply: 19, at: 25.23 },
@@ -221,6 +226,23 @@ describe("a revision's clip (Nil, 2026-11-01, C54)", () => {
     ).toBeNull();
     // One ply past the intro: a clip.
     expect(changedSpan(bin, plies([20]), 44.7, [])).toEqual({
+      from: 18.4,
+      to: 21.4,
+    });
+  });
+
+  test("a video that opens on a later ply has its intro before that ply's move (review 155 N1)", () => {
+    // startPly 6: the first move on screen is ply 6, at 2.47 s.
+    const moves = Array.from({ length: 39 }, (_, i) => ({
+      ply: i + 6,
+      at: 2.47 + i * 0.9,
+    }));
+    const late = { moves, events: [] };
+    const plies = (list: number[]) => ({ plies: list, beats: [], end: false });
+    // Ply 6 alone: its lead-in reaches into the intro.
+    expect(changedSpan(late, plies([6]), 40, [])).toBeNull();
+    // One ply past the intro: a clip.
+    expect(changedSpan(late, plies([26]), 40, [])).toEqual({
       from: 18.4,
       to: 21.4,
     });
