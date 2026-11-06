@@ -7,6 +7,12 @@
 #   sh scripts/run-parallel.sh <name> <command> [<name> <command> ...]
 set -u
 
+# Check the pairs before anything starts, so a misuse leaves nothing running.
+if [ $# -eq 0 ] || [ $(($# % 2)) -ne 0 ]; then
+  echo "usage: sh scripts/run-parallel.sh <name> <command> [<name> <command> ...]" >&2
+  exit 2
+fi
+
 logs=$(mktemp -d "${TMPDIR:-/tmp}/run-parallel.XXXXXX")
 trap 'rm -rf "$logs"' EXIT
 
@@ -24,10 +30,6 @@ while [ $# -ge 2 ]; do
   pids="$pids $!"
   shift 2
 done
-if [ $# -ne 0 ] || [ "$n" -eq 0 ]; then
-  echo "usage: sh scripts/run-parallel.sh <name> <command> [<name> <command> ...]" >&2
-  exit 2
-fi
 
 failed=""
 i=0
