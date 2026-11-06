@@ -168,6 +168,23 @@ export interface GameSession {
    */
   pendingTakebackFrom?: PlayerId;
   /**
+   * The player waiting on an answer to a draw offer, if any (board task
+   * b387a044). Before this the server kept no record of a draw offer, so
+   * either seat could send an accept alone and turn a loss into a draw.
+   *
+   * Unlike a takeback, a draw offer is about the game, not one turn, so the
+   * offerer's own move keeps it standing ("offer, then move" is the normal
+   * order). The recipient's move retires it - playing on is declining - and so
+   * does an answer or the end of the game; `applyActionToSession` does both.
+   */
+  pendingDrawFrom?: PlayerId;
+  /**
+   * The player waiting on an answer to a rematch offer, if any. Without it
+   * either seat could start a rematch alone, and the other seat's client would
+   * follow it into the new game.
+   */
+  pendingRematchFrom?: PlayerId;
+  /**
    * Chat names for the spectators of this game, keyed by socket id.
    *
    * Seats carry their own name, so this covers the one kind of guest that has
@@ -1861,6 +1878,13 @@ const applyActionToSession = (
   // Expiring here rather than at each call site is what stops a later action
   // kind from quietly leaving an offer alive behind it.
   session.pendingTakebackFrom = undefined;
+  // A draw offer survives only the offerer's own move (see pendingDrawFrom).
+  if (
+    next.status === "finished" ||
+    (action.kind === "move" && action.playerId !== session.pendingDrawFrom)
+  ) {
+    session.pendingDrawFrom = undefined;
+  }
   session.status = next.status === "finished" ? "completed" : "in-progress";
   if (next.status === "finished") {
     // Game ended - clear any pending timers
@@ -1974,11 +1998,60 @@ export const giveTime = (args: {
   return state;
 };
 
+/**
+ * What became of an offer:
+ * - "offered": recorded; the caller tells the opponent.
+ * - "agreed": the other seat's offer stands. Two offers that cross are an
+ *   agreement: each client shows its player the other's offer, and with one
+ *   pending slot the second accept would be refused. The offer is left in
+ *   place, so the caller accepts it through the checked accept, in the same
+ *   tick as this call.
+ * - "repeated": this seat's own offer already stands. Nothing changes and the
+ *   opponent is not told again, so an offer cannot be spammed at them.
+ * - "unavailable": the game is in the wrong phase for this offer.
+ */
+export type OfferOutcome = "offered" | "agreed" | "repeated" | "unavailable";
+
+const recordOffer = (
+  pendingFrom: PlayerId | undefined,
+  playerId: PlayerId,
+): Exclude<OfferOutcome, "unavailable"> =>
+  pendingFrom === undefined
+    ? "offered"
+    : pendingFrom === playerId
+      ? "repeated"
+      : "agreed";
+
+/** Records a draw offer, made while the game is on (see `OfferOutcome`). */
+export const offerDraw = (args: {
+  id: string;
+  playerId: PlayerId;
+}): OfferOutcome => {
+  const session = ensureSession(args.id);
+  if (session.gameState.status !== "playing") return "unavailable";
+  const outcome = recordOffer(session.pendingDrawFrom, args.playerId);
+  if (outcome === "offered") session.pendingDrawFrom = args.playerId;
+  return outcome;
+};
+
+/**
+ * Answers a draw offer, if the other seat made one that still stands.
+ *
+ * Returns null otherwise: no offer, an offer the recipient's move retired, or
+ * the accepter's own offer. As with `acceptTakeback`, a stale accept is a
+ * normal thing for a client to send, not an error.
+ */
 export const acceptDraw = (args: {
   id: string;
   playerId: PlayerId;
-}): GameState => {
+}): GameState | null => {
   const session = ensureSession(args.id);
+  if (
+    session.pendingDrawFrom === undefined ||
+    session.pendingDrawFrom === args.playerId
+  ) {
+    return null;
+  }
   return applyActionToSession(session, {
     kind: "draw",
     playerId: args.playerId,
@@ -1987,8 +2060,9 @@ export const acceptDraw = (args: {
 };
 
 export const rejectDraw = (args: { id: string; playerId: PlayerId }): void => {
-  // This is handled in the WebSocket layer for broadcasting
-  // The function exists for API consistency
+  // Broadcasting is the WebSocket layer's job; retiring the offer is this one's,
+  // so a declined offer cannot be accepted afterwards.
+  ensureSession(args.id).pendingDrawFrom = undefined;
   console.info("Draw rejected", {
     sessionId: args.id,
     playerId: args.playerId,
@@ -2094,6 +2168,66 @@ export interface RematchSessionResult {
   };
 }
 
+/**
+ * Records a rematch offer, made once the game is over (see `OfferOutcome`).
+ * Only a finished game holds one, so it cannot outlive anything.
+ */
+export const offerRematch = (args: {
+  id: string;
+  playerId: PlayerId;
+}): OfferOutcome => {
+  const session = ensureSession(args.id);
+  if (session.gameState.status !== "finished") return "unavailable";
+  const outcome = recordOffer(session.pendingRematchFrom, args.playerId);
+  if (outcome === "offered") session.pendingRematchFrom = args.playerId;
+  return outcome;
+};
+
+export const rejectRematch = (args: { id: string }): void => {
+  ensureSession(args.id).pendingRematchFrom = undefined;
+};
+
+/**
+ * Answers a rematch offer: starts the rematch when the other seat offered it,
+ * or returns the rematch both seats already agreed to. Returns null when there
+ * is nothing to accept - no offer, or the accepter's own.
+ *
+ * The already-started answer needs no offer: the rematch exists by agreement,
+ * and a double click or a late second accept only gets the same credentials
+ * again.
+ */
+export const acceptRematch = (args: {
+  id: string;
+  playerId: PlayerId;
+}): {
+  kind: "started" | "already-started";
+  result: RematchSessionResult;
+} | null => {
+  const session = ensureSession(args.id);
+  if (session.nextGameId && session.nextGameSeatCredentials) {
+    return {
+      kind: "already-started",
+      result: {
+        newSession: ensureSession(session.nextGameId),
+        seatCredentials: session.nextGameSeatCredentials,
+      },
+    };
+  }
+  if (
+    session.pendingRematchFrom === undefined ||
+    session.pendingRematchFrom === args.playerId
+  ) {
+    return null;
+  }
+  const result = createRematchSession(args.id);
+  session.pendingRematchFrom = undefined;
+  return { kind: "started", result };
+};
+
+/**
+ * Builds the rematch session. It checks no offer: the socket layer reaches it
+ * only through `acceptRematch`.
+ */
 export const createRematchSession = (
   previousSessionId: string,
 ): RematchSessionResult => {

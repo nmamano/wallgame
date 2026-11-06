@@ -1010,22 +1010,13 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
-    // Both players offer draws in parallel
+    // Both players offer a draw. Only the opponent receives the first offer;
+    // the second meets it, and two crossed offers are an agreement (board
+    // b387a044), so the game ends in a draw with no separate accept.
     await sendActionRequestAndExpectAck(socketA, "offerDraw");
-    await sendActionRequestAndExpectAck(socketB, "offerDraw");
-
-    // Each socket receives only the opponent's offer (not their own)
-    const [drawOfferFromB, drawOfferFromA] = await Promise.all([
-      socketA.waitForMessage("draw-offer"),
-      socketB.waitForMessage("draw-offer"),
-    ]);
-    expect(drawOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
+    const drawOfferFromA = await socketB.waitForMessage("draw-offer");
     expect(drawOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
-
-    // One player rejects, the other accepts
-    // Player A rejects (B's offer), Player B accepts (A's offer) → Draw happens
-    socketA.ws.send(JSON.stringify({ type: "draw-reject" }));
-    socketB.ws.send(JSON.stringify({ type: "draw-accept" }));
+    await sendActionRequestAndExpectAck(socketB, "offerDraw");
 
     // Both players receive the draw result
     const [drawState2A, drawState2B] = await Promise.all([
@@ -1070,22 +1061,15 @@ describe("friend game WebSocket integration", () => {
     expect(hostRatingAfterDraw).toBeLessThan(hostNewRating);
     expect(joinerRatingAfterDraw).toBeGreaterThan(joinerNewRating);
 
-    // Both players offer rematch
+    // Both players offer a rematch: the second offer meets the first, which
+    // starts the rematch.
     await sendActionRequestAndExpectAck(socketA, "offerRematch");
-    await sendActionRequestAndExpectAck(socketB, "offerRematch");
-
-    // Each socket receives only the opponent's offer (not their own)
-    const [rematchOfferFromB, rematchOfferFromA] = await Promise.all([
-      socketA.waitForMessage("rematch-offer"),
-      socketB.waitForMessage("rematch-offer"),
-    ]);
-    expect(rematchOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
-    expect(rematchOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
-
-    // One player accepts
-    await sendActionRequestAndExpectAck(socketB, "respondRematch", {
-      decision: "accepted",
+    const rematchOfferFromA = await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+      preserveIgnored: true,
     });
+    expect(rematchOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
+    await sendActionRequestAndExpectAck(socketB, "offerRematch");
 
     const rematch2 = await reconnectPlayersForRematch({
       hostSocket: socketA,
@@ -1164,24 +1148,13 @@ describe("friend game WebSocket integration", () => {
       resignMatchStatusA.snapshot.matchScore,
     );
 
-    // Both players offer rematch
+    // Both players offer a rematch; the second offer meets the first.
     await sendActionRequestAndExpectAck(socketA, "offerRematch");
-    await sendActionRequestAndExpectAck(socketB, "offerRematch");
-
-    // Each socket receives only the opponent's offer
-    await Promise.all([
-      socketA.waitForMessage("rematch-offer", {
-        ignore: ["match-status", "state"],
-      }),
-      socketB.waitForMessage("rematch-offer", {
-        ignore: ["match-status", "state"],
-      }),
-    ]);
-
-    // One player accepts
-    await sendActionRequestAndExpectAck(socketA, "respondRematch", {
-      decision: "accepted",
+    await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+      preserveIgnored: true,
     });
+    await sendActionRequestAndExpectAck(socketB, "offerRematch");
 
     const rematch3 = await reconnectPlayersForRematch({
       hostSocket: socketA,

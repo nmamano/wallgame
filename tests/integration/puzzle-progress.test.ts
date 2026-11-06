@@ -36,6 +36,7 @@ let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
+let offerDraw: typeof import("../../server/games/store").offerDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let readPuzzleProgress: typeof import("../../server/games/puzzle-progress").readPuzzleProgress;
 let hasVerifiedSavedPuzzleSolve: typeof import("../../server/games/puzzle-progress").hasVerifiedSavedPuzzleSolve;
@@ -71,6 +72,7 @@ async function importServerModules() {
   applyPlayerMove = store.applyPlayerMove;
   resignGame = store.resignGame;
   acceptDraw = store.acceptDraw;
+  offerDraw = store.offerDraw;
   persistCompletedGame = (await import("../../server/games/persistence"))
     .persistCompletedGame;
   const progress = await import("../../server/games/puzzle-progress");
@@ -182,9 +184,9 @@ async function createFinishedGame(args: {
 
   if (args.ending === "draw") {
     // A draw is the path that produces a winner-less result, which is exactly
-    // what gives two rank-1 rows. One call finishes the game: the offer/accept
-    // handshake lives in the socket layer, and store-level acceptDraw applies
-    // the agreed draw outright. Calling it for both seats throws.
+    // what gives two rank-1 rows. Player 2 offers and Player 1 accepts: the
+    // store applies a draw only when the other seat made the offer.
+    offerDraw({ id: session.id, playerId: 2 });
     acceptDraw({ id: session.id, playerId: 1 });
   } else {
     resignGame({

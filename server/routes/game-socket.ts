@@ -20,11 +20,14 @@ import {
   decrementSpectatorCount,
   giveTime,
   acceptDraw,
+  offerDraw,
   rejectDraw,
   offerTakeback,
   acceptTakeback,
   rejectTakeback,
-  createRematchSession,
+  acceptRematch,
+  offerRematch,
+  rejectRematch,
   type RematchSessionResult,
   processRatingUpdate,
   type SessionPlayer,
@@ -1197,27 +1200,33 @@ export const broadcastRematchStarted = (
   });
 };
 
+/**
+ * Accepts a rematch for `playerId`, or returns null when the other seat made
+ * no offer to accept (acceptRematch, board task b387a044).
+ */
 const ensureRematchSession = (
   sessionId: string,
+  playerId: PlayerId,
 ): {
   kind: "started" | "already-started";
   result: RematchSessionResult;
-} => {
-  const session = getSession(sessionId);
-  if (session.nextGameId && session.nextGameSeatCredentials) {
-    const existingResult: RematchSessionResult = {
-      newSession: getSession(session.nextGameId),
-      seatCredentials: session.nextGameSeatCredentials,
-    };
-    // V3: Register bot games asynchronously
-    void registerRematchBotGamesV3(existingResult.newSession, false);
-    return { kind: "already-started", result: existingResult };
-  }
-  const result = createRematchSession(sessionId);
-  // V3: Initialize BGS and execute first bot turn if needed
-  void registerRematchBotGamesV3(result.newSession, true);
-  return { kind: "started", result };
+} | null => {
+  const outcome = acceptRematch({ id: sessionId, playerId });
+  if (!outcome) return null;
+  // V3: Initialize BGS and execute the first bot turn on a new rematch; an
+  // existing one only re-registers.
+  void registerRematchBotGamesV3(
+    outcome.result.newSession,
+    outcome.kind === "started",
+  );
+  return outcome;
 };
+
+const NO_REMATCH_OFFER_MESSAGE = "There is no rematch offer to accept.";
+const DRAW_OFFER_UNAVAILABLE_MESSAGE =
+  "A draw can be offered only while the game is on.";
+const REMATCH_OFFER_UNAVAILABLE_MESSAGE =
+  "A rematch can be offered only after the game ends.";
 
 // ============================================================================
 // Live Games WebSocket (for /live-games page)
@@ -1384,12 +1393,23 @@ const handleMove = async (
   const session = getSession(socket.sessionId);
   const totalRows = session.config.boardHeight;
 
+  const drawOfferFrom = session.pendingDrawFrom;
   const newState = applyPlayerMove({
     id: socket.sessionId,
     playerId,
     move: message.move,
     timestamp: Date.now(),
   });
+  // The recipient played on instead of answering, which declines the offer
+  // (applyActionToSession retired it). Tell both sides, as an explicit decline
+  // would; once the game is over, the offer ends without a word.
+  if (
+    drawOfferFrom !== undefined &&
+    session.pendingDrawFrom === undefined &&
+    newState.status === "playing"
+  ) {
+    broadcast(socket.sessionId, { type: "draw-rejected", playerId });
+  }
   logLine("[ws] move processed", {
     sessionId: socket.sessionId,
     playerId,
@@ -1766,7 +1786,7 @@ const handleTakebackReject = (socket: SessionSocket) => {
   });
 };
 
-const handleDrawOffer = (socket: SessionSocket) => {
+const handleDrawOffer = async (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "draw-offer");
   if (playerId === null || socket.socketToken === null) return;
 
@@ -1791,6 +1811,24 @@ const handleDrawOffer = (socket: SessionSocket) => {
     return;
   }
 
+  const offer = offerDraw({ id: socket.sessionId, playerId });
+  if (offer === "unavailable") {
+    socket.ctx.send(
+      JSON.stringify({
+        type: "error",
+        message: DRAW_OFFER_UNAVAILABLE_MESSAGE,
+      }),
+    );
+    return;
+  }
+  // This seat's offer already stands; the opponent has seen it.
+  if (offer === "repeated") return;
+  // The opponent offered too: the offers cross, which is an agreement.
+  if (offer === "agreed") {
+    await finishAcceptedDraw(socket, playerId);
+    return;
+  }
+
   // Regular player opponent - send via WebSocket
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "draw-offer",
@@ -1806,11 +1844,28 @@ const handleDrawOffer = (socket: SessionSocket) => {
 const handleDrawAccept = async (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "draw-accept");
   if (playerId === null) return;
+  await finishAcceptedDraw(socket, playerId);
+};
 
+/**
+ * Ends the game in a draw if the other seat's offer still stands. A stale or
+ * absent offer changes nothing and tells the board nothing, as with takeback.
+ */
+const finishAcceptedDraw = async (
+  socket: SessionSocket,
+  playerId: PlayerId,
+) => {
   const newState = acceptDraw({
     id: socket.sessionId,
     playerId,
   });
+  if (!newState) {
+    console.info("[ws] draw-accept ignored - no offer stands", {
+      sessionId: socket.sessionId,
+      playerId,
+    });
+    return;
+  }
   console.info("[ws] draw-accept processed", {
     sessionId: socket.sessionId,
     playerId,
@@ -1879,10 +1934,23 @@ const handleRematchOffer = (socket: SessionSocket) => {
   const opponent =
     opponentRole === "host" ? session.players.host : session.players.joiner;
 
-  // V3: server auto-accepts rematches for bots
+  const offer = offerRematch({ id: socket.sessionId, playerId });
+  if (offer === "unavailable") {
+    socket.ctx.send(
+      JSON.stringify({
+        type: "error",
+        message: REMATCH_OFFER_UNAVAILABLE_MESSAGE,
+      }),
+    );
+    return;
+  }
+
+  // V3: server auto-accepts rematches for bots, through the offer like any
+  // other accept, so there is one way in.
   if (opponent.botCompositeId) {
     try {
-      const outcome = ensureRematchSession(socket.sessionId);
+      const outcome = ensureRematchSession(socket.sessionId, opponent.playerId);
+      if (!outcome) throw new Error("The bot's rematch accept found no offer.");
       broadcastRematchStarted(socket.sessionId, outcome.result);
       console.info("[ws] rematch-offer auto-accepted (bot opponent)", {
         sessionId: socket.sessionId,
@@ -1906,6 +1974,14 @@ const handleRematchOffer = (socket: SessionSocket) => {
     return;
   }
 
+  // This seat's offer already stands; the opponent has seen it.
+  if (offer === "repeated") return;
+  // The opponent offered too: the offers cross, which is an agreement.
+  if (offer === "agreed") {
+    handleRematchAccept(socket);
+    return;
+  }
+
   // Regular player opponent - send rematch offer via WebSocket
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "rematch-offer",
@@ -1923,7 +1999,17 @@ const handleRematchAccept = (socket: SessionSocket) => {
   if (playerId === null) return;
 
   try {
-    const outcome = ensureRematchSession(socket.sessionId);
+    const outcome = ensureRematchSession(socket.sessionId, playerId);
+    if (!outcome) {
+      console.info("[ws] rematch-accept refused - no offer stands", {
+        sessionId: socket.sessionId,
+        playerId,
+      });
+      socket.ctx.send(
+        JSON.stringify({ type: "error", message: NO_REMATCH_OFFER_MESSAGE }),
+      );
+      return;
+    }
     broadcastRematchStarted(socket.sessionId, outcome.result);
     console.info("[ws] rematch-accept processed", {
       sessionId: socket.sessionId,
@@ -1951,6 +2037,7 @@ const handleRematchReject = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "rematch-reject");
   if (playerId === null) return;
 
+  rejectRematch({ id: socket.sessionId });
   broadcast(socket.sessionId, {
     type: "rematch-rejected",
     playerId,
@@ -2290,6 +2377,25 @@ const handleActionRequest = async (
         return;
       }
 
+      const offer = offerDraw({ id: socket.sessionId, playerId });
+      if (offer === "unavailable") {
+        sendActionNack(socket, message, "TOO_LATE", {
+          error: new Error(DRAW_OFFER_UNAVAILABLE_MESSAGE),
+        });
+        return;
+      }
+      // This seat's offer already stands; the opponent has seen it.
+      if (offer === "repeated") {
+        sendActionAck(socket, message);
+        return;
+      }
+      // The opponent offered too: the offers cross, which is an agreement.
+      if (offer === "agreed") {
+        sendActionAck(socket, message);
+        await finishAcceptedDraw(socket, playerId);
+        return;
+      }
+
       sendToOpponent(socket.sessionId, socket.socketToken, {
         type: "draw-offer",
         playerId,
@@ -2404,10 +2510,24 @@ const handleActionRequest = async (
       const opponent =
         opponentRole === "host" ? session.players.host : session.players.joiner;
 
-      // V3: server auto-accepts rematches for bots
+      const offer = offerRematch({ id: socket.sessionId, playerId });
+      if (offer === "unavailable") {
+        sendActionNack(socket, message, "REMATCH_NOT_AVAILABLE", {
+          error: new Error(REMATCH_OFFER_UNAVAILABLE_MESSAGE),
+        });
+        return;
+      }
+
+      // V3: server auto-accepts rematches for bots, through the offer
       if (opponent.botCompositeId) {
         try {
-          const outcome = ensureRematchSession(socket.sessionId);
+          const outcome = ensureRematchSession(
+            socket.sessionId,
+            opponent.playerId,
+          );
+          if (!outcome) {
+            throw new Error("The bot's rematch accept found no offer.");
+          }
           sendActionAck(socket, message);
           broadcastRematchStarted(socket.sessionId, outcome.result);
           console.info(
@@ -2421,6 +2541,29 @@ const handleActionRequest = async (
           );
         } catch (error) {
           console.error("[ws] action-offerRematch auto-accept failed", {
+            error,
+            sessionId: socket.sessionId,
+            playerId,
+          });
+          sendActionNack(socket, message, "REMATCH_NOT_AVAILABLE", { error });
+        }
+        return;
+      }
+
+      // This seat's offer already stands; the opponent has seen it.
+      if (offer === "repeated") {
+        sendActionAck(socket, message);
+        return;
+      }
+      // The opponent offered too: the offers cross, which is an agreement.
+      if (offer === "agreed") {
+        try {
+          const outcome = ensureRematchSession(socket.sessionId, playerId);
+          if (!outcome) throw new Error("The crossed rematch offer is gone.");
+          sendActionAck(socket, message);
+          broadcastRematchStarted(socket.sessionId, outcome.result);
+        } catch (error) {
+          console.error("[ws] action-offerRematch agreement failed", {
             error,
             sessionId: socket.sessionId,
             playerId,
@@ -2460,7 +2603,17 @@ const handleActionRequest = async (
       }
       try {
         if (decision === "accepted") {
-          const outcome = ensureRematchSession(socket.sessionId);
+          const outcome = ensureRematchSession(socket.sessionId, playerId);
+          if (!outcome) {
+            console.info("[ws] action-respondRematch refused - no offer", {
+              sessionId: socket.sessionId,
+              playerId,
+            });
+            sendActionNack(socket, message, "REMATCH_NOT_AVAILABLE", {
+              error: new Error(NO_REMATCH_OFFER_MESSAGE),
+            });
+            return;
+          }
           sendActionAck(socket, message);
           broadcastRematchStarted(socket.sessionId, outcome.result);
           console.info("[ws] action-respondRematch accept processed", {
@@ -2470,6 +2623,7 @@ const handleActionRequest = async (
             newGameId: outcome.result.newSession.id,
           });
         } else {
+          rejectRematch({ id: socket.sessionId });
           sendActionAck(socket, message);
           broadcast(socket.sessionId, {
             type: "rematch-rejected",
@@ -2544,7 +2698,7 @@ const handleClientMessage = async (
       handleTakebackReject(socket);
       break;
     case "draw-offer":
-      handleDrawOffer(socket);
+      await handleDrawOffer(socket);
       break;
     case "draw-accept":
       await handleDrawAccept(socket);

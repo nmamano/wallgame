@@ -44,6 +44,7 @@ let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let listLiveGames: typeof import("../../server/games/store").listLiveGames;
 let getSession: typeof import("../../server/games/store").getSession;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
+let offerDraw: typeof import("../../server/games/store").offerDraw;
 
 beforeAll(async () => {
   const store = await import("../../server/games/store");
@@ -58,6 +59,7 @@ beforeAll(async () => {
   listLiveGames = store.listLiveGames;
   getSession = store.getSession;
   acceptDraw = store.acceptDraw;
+  offerDraw = store.offerDraw;
 });
 
 const UNLIMITED: PartialGameConfiguration = {
@@ -1063,6 +1065,7 @@ describe("the cause of a resignation", () => {
   it("is absent when the game ends any other way", () => {
     const session = startedSession(UNLIMITED);
     playMoves(session.id, 2);
+    offerDraw({ id: session.id, playerId: 2 });
     acceptDraw({ id: session.id, playerId: 1 });
     expect(getSession(session.id).gameState.result?.reason).toBe(
       "draw-agreement",

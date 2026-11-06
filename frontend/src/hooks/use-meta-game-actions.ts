@@ -1111,6 +1111,9 @@ export function useMetaGameActions({
         return;
       }
       if (playerId === primaryLocalPlayerId) {
+        // This seat declined, by its answer or by playing on (the server ends
+        // an offer when its recipient moves), so no prompt stays open.
+        setDrawDecisionPrompt(null);
         return;
       }
       if (

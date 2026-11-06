@@ -43,6 +43,7 @@ let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
+let offerDraw: typeof import("../../server/games/store").offerDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let savedPuzzlesTable: typeof import("../../server/db/schema/saved-puzzles").savedPuzzlesTable;
@@ -72,6 +73,7 @@ async function importServerModules() {
   applyPlayerMove = storeModule.applyPlayerMove;
   resignGame = storeModule.resignGame;
   acceptDraw = storeModule.acceptDraw;
+  offerDraw = storeModule.offerDraw;
   persistCompletedGame = persistenceModule.persistCompletedGame;
   gamesTable = gamesSchemaModule.gamesTable;
   gamePlayersTable = gamePlayersSchemaModule.gamePlayersTable;
@@ -419,6 +421,7 @@ describe("past games persistence", () => {
         timestamp: startTimestamp + 1000,
       });
 
+      offerDraw({ id: session.id, playerId: 2 });
       acceptDraw({
         id: session.id,
         playerId: 1,

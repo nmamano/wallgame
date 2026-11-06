@@ -46,6 +46,7 @@ let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
+let offerDraw: typeof import("../../server/games/store").offerDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let getReplayGameReadonly: typeof import("../../server/db/game-queries").getReplayGameReadonly;
 
@@ -170,6 +171,7 @@ beforeAll(async () => {
   applyPlayerMove = store.applyPlayerMove;
   resignGame = store.resignGame;
   acceptDraw = store.acceptDraw;
+  offerDraw = store.offerDraw;
   persistCompletedGame = persistence.persistCompletedGame;
   getReplayGameReadonly = (await import("../../server/db/game-queries"))
     .getReplayGameReadonly;
@@ -210,6 +212,7 @@ describe("a finished game", () => {
 
   it("stores NULL for a game that did not end in a resignation", async () => {
     const session = gameUnderWay();
+    offerDraw({ id: session.id, playerId: 2 });
     acceptDraw({ id: session.id, playerId: 1 });
     await persistCompletedGame(session);
     expect(await resignCauseOf(session.id)).toBeNull();

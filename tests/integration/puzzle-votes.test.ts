@@ -41,6 +41,7 @@ let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
+let offerDraw: typeof import("../../server/games/store").offerDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
@@ -70,6 +71,7 @@ async function importServerModules() {
   applyPlayerMove = store.applyPlayerMove;
   resignGame = store.resignGame;
   acceptDraw = store.acceptDraw;
+  offerDraw = store.offerDraw;
   persistCompletedGame = (await import("../../server/games/persistence"))
     .persistCompletedGame;
   gamesTable = (await import("../../server/db/schema/games")).gamesTable;
@@ -173,9 +175,9 @@ async function playPuzzleGame(args: {
   });
 
   if (args.ending === "draw") {
-    // One call finishes the game: the offer/accept handshake lives in the
-    // socket layer, and store-level acceptDraw applies the agreed draw
-    // outright. Calling it for both seats throws.
+    // Player 2 offers and Player 1 accepts: the store applies a draw only
+    // when the other seat made the offer.
+    offerDraw({ id: session.id, playerId: 2 });
     acceptDraw({ id: session.id, playerId: 1 });
   } else {
     resignGame({
