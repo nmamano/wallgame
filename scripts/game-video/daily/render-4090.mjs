@@ -471,7 +471,11 @@ const main = async () => {
   step("start");
 
   // The app's deadline arrives as SIGTERM. Stop the remote render with it,
-  // then delete the job's folders.
+  // then delete the job's folders. Two small gaps (VR1, review 152): a
+  // SIGTERM between the send and desktop-run's answer has no handler yet,
+  // so the job folder (only the EDL) stays; and a unit that still writes to
+  // its tmp/ in its stop window can leave a few files after the delete. No
+  // later job deletes either: the cleanup takes no pattern.
   process.on("SIGTERM", () => {
     void ssh(`systemctl --user stop job-${unit}`)
       .then(() => cleanRemote())
