@@ -1255,6 +1255,28 @@ describe("custom bot WebSocket integration V3", () => {
     botSocket.close();
   }, 10000);
 
+  it("rejects attach with a bot entry that is not an object", async () => {
+    // Each entry used to reach `bot.botId` before any shape check.
+    for (const entry of [null, 5, "bot", []]) {
+      const botSocket = await openBotSocket();
+      botSocket.ws.send(
+        JSON.stringify({
+          type: "attach",
+          protocolVersion: 3,
+          clientId: "bad-entry-client",
+          bots: [entry],
+          client: { name: "test-bot", version: "3.0.0" },
+        }),
+      );
+
+      const rejected = await botSocket.waitForMessage("attach-rejected");
+      expect(rejected.code).toBe("INVALID_BOT_CONFIG");
+      expect(rejected.message).toContain("(unknown)");
+
+      botSocket.close();
+    }
+  }, 10000);
+
   it("supports multiple bots per client", async () => {
     const clientId = "multi-bot-client";
     const bot1Id = "multi-bot-1";

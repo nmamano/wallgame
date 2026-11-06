@@ -26,7 +26,6 @@ import {
   type CustomBotServerMessage,
   type AttachMessage,
   type AttachRejectedCode,
-  type BotConfig,
   type BgsConfig,
   type GameSessionStartedMessage,
   type GameSessionEndedMessage,
@@ -428,7 +427,7 @@ const sendAttachRejected = (
 // ============================================================================
 
 const validateBotConfig = (
-  bot: BotConfig,
+  bot: unknown,
 ): { valid: true } | { valid: false; reason: string } => {
   const parsed = botConfigSchema.safeParse(bot);
   if (!parsed.success) {
@@ -501,14 +500,23 @@ const handleAttach = (
     return false;
   }
 
-  // Validate each bot config
-  for (const bot of message.bots) {
+  // Validate each bot config. An entry is untrusted JSON until the schema
+  // accepts it: it can be null or not an object at all.
+  for (const bot of message.bots as unknown[]) {
     const validation = validateBotConfig(bot);
     if (!validation.valid) {
+      const botId =
+        typeof bot === "object" &&
+        bot !== null &&
+        "botId" in bot &&
+        typeof bot.botId === "string" &&
+        bot.botId !== ""
+          ? bot.botId
+          : "(unknown)";
       sendAttachRejected(
         ctx,
         "INVALID_BOT_CONFIG",
-        `Invalid bot config for "${bot.botId || "(unknown)"}": ${validation.reason}`,
+        `Invalid bot config for "${botId}": ${validation.reason}`,
       );
       return false;
     }
