@@ -1519,6 +1519,19 @@ export const overlayWords = (asset, text) => {
 };
 
 /**
+ * Whether an overlay keeps off the apps' buttons (edl.mjs BUTTONS_ZONE),
+ * which the edge-to-edge board reaches under: the ending's bar by its form,
+ * and every overlay with words (overlayWords); a picture or a clip may
+ * stand there. Only TikTok paints buttons over the board (Nil, 2026-11-06,
+ * C58: "just keep it edge to edge"); a picture half under them still reads,
+ * a line does not (Wall Game Director, 2026-11-06, review 156 N1).
+ * @param {{ form: string, shows?: string }} asset
+ * @param {string | undefined} text the EDL's text, or the asset's line
+ */
+export const keepsOffButtons = (asset, text) =>
+  asset.form === "bar" || overlayWords(asset, text) > 0;
+
+/**
  * The seconds an overlay must show to be read, to 0.1 s; 0 with no words.
  * @param {{ shows?: string }} asset
  * @param {string | undefined} text

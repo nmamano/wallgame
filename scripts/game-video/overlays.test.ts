@@ -7,6 +7,7 @@ import {
   OVERLAY_FORMS,
   PLACE_KINDS,
   boxOnScreen,
+  keepsOffButtons,
   needsNilOk,
   offBoardPlace,
   placesOf,
@@ -854,4 +855,25 @@ describe("a green-screen clip stands next to its pawn (Nil, 2026-11-05, C59)", (
     }
     expect(placeNear(squidward, busy, NO_REACH, pawn, [], PITCH)).toBeNull();
   });
+});
+
+test("an overlay with words keeps off the apps' buttons; a picture or a clip may stand there (C58, review 156)", () => {
+  const off = (name: string, text?: string) => {
+    const a = OVERLAYS[name];
+    return keepsOffButtons(a, text ?? a.line);
+  };
+  // The ending's bar, by its form, even with no words.
+  expect(
+    keepsOffButtons({ ...OVERLAYS["ending-caption"], shows: "" }, ""),
+  ).toBe(true);
+  expect(off("ending-caption", "bro's cat never moved. gg")).toBe(true);
+  // Words a card draws, a line, an EDL text.
+  expect(off("wasted")).toBe(true);
+  expect(off("resign-flag")).toBe(true);
+  expect(off("chat-toast", "gg ez")).toBe(true);
+  expect(off("reactor-stare", "bro...")).toBe(true);
+  // Pictures and clips.
+  expect(off("gs-squidward-bm")).toBe(false);
+  expect(off("uno-reverse")).toBe(false);
+  expect(off("reactor-stare")).toBe(false);
 });

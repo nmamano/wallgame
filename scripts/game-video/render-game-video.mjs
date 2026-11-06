@@ -146,6 +146,7 @@ import {
   TEXT_TIMING,
   overlayWords,
   readingSeconds,
+  keepsOffButtons,
 } from "./overlays.mjs";
 import { boardPawns, pawnCell } from "../../shared/domain/pawns.ts";
 import {
@@ -5470,17 +5471,9 @@ const renderStyle = async (styleName) => {
       */
       const inside = (p, a) =>
         p.x0 >= a.x0 && p.y0 >= a.y0 && p.x1 <= a.x1 && p.y1 <= a.y1;
-      /*
-        The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest: the
-        edge-to-edge board reaches under them. An overlay with words (the
-        ones its reading time counts: the bar, a card's words, a line) keeps
-        off them; a picture or a clip may stand there. Only TikTok paints
-        buttons over the board (Nil, 2026-11-06, C58: "just keep it edge to
-        edge"), and a picture half under them still reads, a line does not
-        (Wall Game Director, 2026-11-06, review 156 N1).
-      */
+      // The apps' buttons on the board at rest (overlays.mjs keepsOffButtons).
       const buttons =
-        buttonsOnBoard && overlayWords(w.asset, text) > 0
+        buttonsOnBoard && keepsOffButtons(w.asset, text)
           ? [{ ...buttonsOnBoard, what: "the apps' buttons" }]
           : [];
       const busy =
