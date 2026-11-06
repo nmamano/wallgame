@@ -5472,8 +5472,10 @@ const renderStyle = async (styleName) => {
         p.x0 >= a.x0 && p.y0 >= a.y0 && p.x1 <= a.x1 && p.y1 <= a.y1;
       /*
         The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest: the
-        edge-to-edge board reaches under them (Nil, 2026-11-05, C58), and
-        no overlay goes there.
+        edge-to-edge board reaches under them. Only the ending's bar keeps
+        off them, because it is text. A meme or a clip may stand there: only
+        TikTok paints buttons over the board (Nil, 2026-11-06, C58: "just
+        keep it edge to edge").
       */
       const buttons = buttonsOnBoard
         ? [{ ...buttonsOnBoard, what: "the apps' buttons" }]
@@ -5491,7 +5493,6 @@ const renderStyle = async (styleName) => {
               ]),
             ]
           : [
-              ...buttons,
               ...w.frames.flatMap((f) => [
                 ...inPlay(f.state),
                 ...pawnBoxes(f.state),
@@ -6289,7 +6290,7 @@ const renderStyle = async (styleName) => {
     : null;
   /**
    * The apps' buttons (edl.mjs BUTTONS_ZONE) on the board at rest, 0..1:
-   * the edge-to-edge board reaches under them (C58); no overlay and no
+   * the edge-to-edge board reaches under them (C58); no ending bar and no
    * opening name goes there.
    */
   const buttonsOnBoard = layoutBoxes?.board
