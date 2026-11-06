@@ -77,6 +77,10 @@ import {
   assertCompleteCapture,
   captureReplayFrames,
 } from "./capture-replay-frames.mjs";
+import {
+  composeLayers as composePawnLayers,
+  scrubOffSiteSkins,
+} from "./pawn-layers.mjs";
 import { captureFeedbackPlan } from "./capture-feedback.mjs";
 import {
   validateEdl,
@@ -1388,6 +1392,12 @@ const openGamePage = async (dpr) => {
   });
   await page.addInitScript(installBoardGrid);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  // No pawn art from another host, even if the page asks for one (b2a19d62).
+  await page.route(
+    (url) =>
+      url.origin !== new URL(ORIGIN).origin && /\/pawn/i.test(url.pathname),
+    (route) => route.abort(),
+  );
 
   /*
     Read the page's OWN replay request rather than making a second one. That
@@ -1420,6 +1430,17 @@ const openGamePage = async (dpr) => {
       return;
     }
     replay ??= structuredClone(body);
+    /*
+      A skin that is not one of the site's own files becomes the default
+      skin, before the page reads it: the page then never draws an off-site
+      pawn, and the render never fetches one (board task b2a19d62).
+    */
+    const scrubbed = scrubOffSiteSkins(body);
+    if (scrubbed.length > 0) {
+      log(
+        `off-site pawn skins drawn as the default skin: ${scrubbed.join(", ")}`,
+      );
+    }
     if (!EDL) {
       await route.fulfill({ response: res, json: body });
       return;
@@ -1781,44 +1802,13 @@ const portraits = {};
 const accents = {};
 
 /**
- * Inline a layer as a data url.
- *
- * The bytes still come from the origin - this is the same read the browser
- * would do - but inlining keeps the canvas untainted, so the colour below can
- * be sampled from the pixels the product paints.
- */
-const inlineLayer = async (src) => {
-  const res = await fetch(src);
-  if (!res.ok) throw new Error(`could not read ${src}: HTTP ${res.status}`);
-  const type = res.headers.get("content-type") ?? "application/octet-stream";
-  const body = Buffer.from(await res.arrayBuffer()).toString("base64");
-  return `data:${type};base64,${body}`;
-};
-
-/**
  * Compose a pawn's layer stack ({src, filter}, as the page drew it) into a
  * PORTRAIT_PX PNG at `file`, on `page` (PORTRAIT_PX square). The seat cards,
  * a reactor's prey (REACTOR_ART) and the capture picture's pawns are
- * composed the same way.
+ * composed the same way. Only the site's own pawn files (pawn-layers.mjs).
  */
-const composeLayers = async (page, layers, file) => {
-  const inlined = await Promise.all(
-    layers.map(async (l) => ({ ...l, data: await inlineLayer(l.src) })),
-  );
-  await page.setContent(
-    `<html><body style="margin:0;width:${PORTRAIT_PX}px;height:${PORTRAIT_PX}px;background:transparent">
-       <div style="position:relative;width:100%;height:100%">
-         ${inlined
-           .map(
-             (l) =>
-               `<img src="${l.data}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:${l.filter}">`,
-           )
-           .join("")}
-       </div></body></html>`,
-    { waitUntil: "networkidle" },
-  );
-  await page.screenshot({ path: file, omitBackground: true });
-};
+const composeLayers = (page, layers, file) =>
+  composePawnLayers(page, layers, file, { origin: ORIGIN, size: PORTRAIT_PX });
 const portraitPageOptions = {
   viewport: { width: PORTRAIT_PX, height: PORTRAIT_PX },
   deviceScaleFactor: 2,
