@@ -411,7 +411,8 @@ from Whisper and the level per 20 ms, not from listening:
 - scream-2 (the director's scream-m-2, a man): one long even scream, 0.2-6.3 s ("AHHHH"); the cut is its
   first 1.6 s, faded out. The scream goes on at -10 dB past the cut; Wall Game Director, 2026-11-05: keep
   the faded cut ("a scream that fades is no cut word"). meme-sounds.mjs OUR_CUTS lists how each of our
-  cuts ends, and KNOWN_FADE_OUTS the cuts that may fade over sound.
+  cuts ends (every row of a "Made from" table here that is made from a file; its test reads these
+  tables, so a new cut must be added there), and KNOWN_FADE_OUTS the cuts that may fade over sound.
 - nooo-1: "Nooo." (0-1.1 s); the whole upload.
 
 Five had peaks high for their loudness (haha-1, giggle-1, evillaugh-2,

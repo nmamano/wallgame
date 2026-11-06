@@ -303,15 +303,19 @@ export const MEME_SOURCE_NOTES = {
 };
 
 /**
- * Our own cuts of a longer upload (meme-sounds.md, "Made from"), with how
- * the upload sounds just past each cut's end (ffmpeg volumedetect, measured
- * 2026-11-05 on the uploads; uhoh-1 and fightbell-1 on the cuts, as their
- * uploads are not on the box). A cut that stops inside a word cuts it off:
+ * Our own cuts of an upload: every row of a Made-from table in
+ * meme-sounds.md that is made from a file (the test reads them, so a new
+ * cut must come here). With how the upload sounds just past each cut's end
+ * (ffmpeg volumedetect, measured 2026-11-05 and 2026-11-06). Where the
+ * upload is not on the box (uhoh-1, fightbell-1, tada-1, tick-1, wind-1,
+ * whoosh-1, chomp-1, whistle-1), the cut itself is measured just before its
+ * fade, and the notes in meme-sounds.md say what the upload does next. A
+ * cut that stops inside a word cuts it off:
  *
  *   silence   the upload is quiet just past the cut's end
  *   file-end  the cut ends where the upload ends
  *   fade      the upload goes on loud; the cut fades out over it, and only
- *             a sound in KNOWN_FADE_OUTS may (Wall Game Director)
+ *             a sound in KNOWN_FADE_OUTS may
  */
 export const OUR_CUTS = {
   "nono-1": {
@@ -334,14 +338,60 @@ export const OUR_CUTS = {
     end: "fade",
     measured: "sung music: -14 dB past 2.8 s, a 0.25 s fade",
   },
+  "eternity-1": {
+    end: "silence",
+    measured: 'the edit\'s silence after "later": -82 dB at 200.55-200.59 s',
+  },
+  "bell-2": {
+    end: "fade",
+    measured: "the bell's decay: -23 dB past 2.2 s, a 0.8 s fade",
+  },
+  "whistle-1": {
+    end: "fade",
+    measured: "a 42 s whistle: the cut is at -40 dB before its 0.8 s fade",
+  },
+  "tada-1": {
+    end: "silence",
+    measured: "the cut is at -43 dB before its fade",
+  },
+  "tick-1": {
+    end: "fade",
+    measured: "even ticking: the cut is at -23 dB before its 0.3 s fade",
+  },
+  "wind-1": {
+    end: "fade",
+    measured: "one gust: the cut is at -39 dB before its 0.8 s fade",
+  },
+  "whoosh-1": {
+    end: "fade",
+    measured: "the cut is at -27 dB before its 40 ms fade",
+  },
+  "chomp-1": { end: "silence", measured: "the cut ends at -50 dB" },
+  "haha-1": { end: "silence", measured: "-91 dB past 0.62 s" },
+  "giggle-1": { end: "silence", measured: "-51 dB past 7.32 s" },
+  "evillaugh-2": {
+    end: "file-end",
+    measured: "the upload ends at 2.33 s, 0.03 s past the cut",
+  },
+  "uhoh-3": { end: "silence", measured: "-50 dB past 0.58 s" },
+  "nooo-1": { end: "silence", measured: "-62 dB past 1.12 s" },
 };
 
 /**
- * The cuts that may end in a fade over sound: scream-2 (Wall Game
+ * The cuts that may end in a fade over sound, each with why. A voice is
+ * never cut mid-word: scream-2 is a scream with no word (Wall Game
  * Director, 2026-11-05: "a scream that fades is no cut word"); pointing-2
- * (not used until Nil hears it, meme-sounds.md).
+ * is not used until Nil hears it (meme-sounds.md); the rest have no voice.
  */
-export const KNOWN_FADE_OUTS = ["scream-2", "pointing-2"];
+export const KNOWN_FADE_OUTS = {
+  "scream-2": "a scream with no word (Wall Game Director, 2026-11-05)",
+  "pointing-2": "not used until Nil hears it",
+  "bell-2": "a bell's decay, no voice (Wall Game Director, 2026-10-28)",
+  "whistle-1": "a whistled tune, no voice; not used until Nil hears it",
+  "tick-1": "a clock's ticking, no voice",
+  "wind-1": "a gust of wind, no voice",
+  "whoosh-1": "a whoosh, no voice",
+};
 
 /** "boom-2" -> "boom". @type {(key: string) => string} */
 export const memeFamily = (key) => key.replace(/-\d+$/, "");
