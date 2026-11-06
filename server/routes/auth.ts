@@ -1,6 +1,20 @@
 import { Hono } from "hono";
 import { kindeClient, sessionManager } from "../kinde";
 import { ensureUserExists } from "../db/user-helpers";
+import { createWsOriginCheck } from "../ws-origin";
+
+// Logout clears the session, so another site must not be able to trigger it.
+// The site's own pages are exactly the origins its game socket accepts, so
+// ADDITIONAL_WS_ORIGINS also controls which origins can log out.
+//
+// This relies on the browser sending the site's real Origin on a same-origin
+// form POST. It does under the default Referrer-Policy; under
+// "Referrer-Policy: no-referrer" (set by the app, Caddy or Cloudflare) the
+// browser sends "Origin: null" instead, and every logout would get a 403.
+const isAllowedOrigin = createWsOriginCheck(
+  process.env.NODE_ENV,
+  process.env.ADDITIONAL_WS_ORIGINS,
+);
 
 // Largely based on:
 // https://docs.kinde.com/developer-tools/sdks/backend/typescript-sdk/
@@ -51,9 +65,16 @@ export const authRoute = new Hono()
 
     return c.redirect("/");
   })
-  .get("/logout", async (c) => {
+  // POST only: the Kinde cookies are SameSite=Lax, so a GET would let any
+  // same-origin <img> or a cross-site link log the viewer out. A browser always
+  // sends Origin on a cross-site POST, so a missing Origin is not a browser.
+  .post("/logout", async (c) => {
+    if (!isAllowedOrigin(c.req.header("origin"))) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
     const logoutUrl = await kindeClient.logout(sessionManager(c));
-    return c.redirect(logoutUrl.toString());
+    // 303: the browser follows with a GET to Kinde, which returns to the site.
+    return c.redirect(logoutUrl.toString(), 303);
   })
   .get("/me", async (c) => {
     // Check authentication without throwing errors for unauthenticated users

@@ -182,9 +182,17 @@ function Profile() {
               <CardTitle className="text-2xl font-serif">Account</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
-              <Button variant="outline" asChild className="w-40">
-                <a href="/api/logout">Log out</a>
-              </Button>
+              {/* A form, not fetch: the server answers with a redirect to
+                  Kinde, and only a navigation can follow it off-site. */}
+              <form method="post" action="/api/logout">
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="cursor-pointer w-40"
+                >
+                  Log out
+                </Button>
+              </form>
               <p className="text-sm text-muted-foreground">
                 To delete your account,{" "}
                 <Link
