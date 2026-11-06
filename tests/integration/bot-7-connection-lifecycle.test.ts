@@ -931,4 +931,62 @@ describe("bot connection lifecycle", () => {
     official.drop();
     for (const bot of anonymous) bot.drop();
   }, 30000);
+
+  it("T13: a community bot client is held to its share; an official bot game still starts", async () => {
+    // Past the grace: the clients of the earlier tests are gone.
+    await sleep(TEST_GRACE_MS + 500);
+    const limit = 16; // MAX_SESSIONS_PER_COMMUNITY_CLIENT (bgs-store.ts)
+
+    const community = await openAutoBot("lc-pool-community", ["b"]);
+    const official = await openAutoBot("lc-pool-official", ["b"], {
+      officialToken: TEST_OFFICIAL_TOKEN,
+    });
+    const humans: HumanSocket[] = [];
+    const startsOf = (bot: AutoBot) =>
+      bot.transcript.filter((m) => m.type === "start_game_session").length;
+
+    // Each host connect starts the game's engine session.
+    for (let i = 0; i < limit; i++) {
+      const userId = `user-pool-${i}`;
+      const { status, body } = await playVsBot(
+        userId,
+        "lc-pool-community:b",
+        gameConfig,
+        true,
+      );
+      expect(status).toBe(201);
+      const play = body as PlayVsBotResponse;
+      const human = await openHumanSocket(
+        userId,
+        play.gameId,
+        play.socketToken,
+      );
+      humans.push(human);
+      await human.waitForState((s) => s.state.status === "playing");
+    }
+    expect(startsOf(community)).toBe(limit);
+
+    // One game more is refused at creation, with a reason.
+    const refused = await playVsBot(
+      "user-pool-extra",
+      "lc-pool-community:b",
+      gameConfig,
+      true,
+    );
+    expect(refused.status).toBe(429);
+    expect((refused.body as { error: string }).error).toContain("Try again");
+
+    // The official bot is not held to the community client's share.
+    const officialHuman = await startGameWithOneRound(
+      "user-pool-official",
+      "lc-pool-official:b",
+    );
+    humans.push(officialHuman);
+    expect(startsOf(official)).toBe(1);
+    expect(latestState(officialHuman).status).toBe("playing");
+
+    for (const human of humans) human.close();
+    community.drop();
+    official.drop();
+  }, 60000);
 });

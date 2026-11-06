@@ -9,7 +9,10 @@
 import { createApp } from "./app";
 import { loadHtmlShell } from "./routes/html-shell";
 import { startSessionMaintenance } from "./games/session-maintenance";
-import { hasGameConnections } from "./routes/game-socket";
+import {
+  endGameEngineSessions,
+  hasGameConnections,
+} from "./routes/game-socket";
 import { startBgsJanitor } from "./routes/bgs-janitor";
 
 // Unconditional, where this was gated on `import.meta.main` to keep it away
@@ -22,7 +25,7 @@ const { app, websocket } = createApp({ htmlShell: loadHtmlShell() });
 // It reads PORT as the default export did; under `bun --hot` a second call
 // reloads the same server in place.
 Bun.serve({ fetch: app.fetch, websocket });
-startSessionMaintenance(hasGameConnections);
+startSessionMaintenance(hasGameConnections, endGameEngineSessions);
 startBgsJanitor();
 
 // A backstop, installed only once the server serves: Bun ends the process on

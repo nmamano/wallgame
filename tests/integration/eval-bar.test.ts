@@ -112,7 +112,7 @@ async function createGameVsBot(
 
 interface GameCreateResponse {
   gameId: string;
-  token: string;
+  hostToken: string;
   socketToken: string;
   role: "host" | "joiner";
   playerId: 1 | 2;
@@ -356,13 +356,18 @@ interface EvalSocket {
   close: () => void;
 }
 
-async function openEvalSocket(gameId: string): Promise<EvalSocket> {
+/** `source` stands in for the viewer address Caddy puts in X-Forwarded-For. */
+async function openEvalSocket(
+  gameId: string,
+  source?: string,
+): Promise<EvalSocket> {
   return new Promise((resolve, reject) => {
     const wsUrl = baseUrl.replace("http", "ws") + `/ws/eval/${gameId}`;
 
     const ws = new WebSocket(wsUrl, {
       headers: {
         Origin: "http://localhost:5173",
+        ...(source === undefined ? {} : { "x-forwarded-for": source }),
       },
     });
 
@@ -1319,6 +1324,183 @@ describe("eval bar integration tests", () => {
       }
     }
   }, 60000);
+
+  it("lifecycle: the shared eval BGS ends on resign, timeout and abort; a lobby is refused; a replay works; a source past its limit is refused", async () => {
+    const clientId = "eval-life-client";
+    const botId = "eval-life-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let configFile: BotConfigFile | null = null;
+    const sockets: { close: () => void }[] = [];
+    const fillerIds: string[] = [];
+
+    const configWithClock = (initialSeconds: number): GameConfiguration => ({
+      timeControl: { initialSeconds, incrementSeconds: 0 },
+      variant: "standard",
+      randomStart: false,
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: buildStandardInitialState(5, 5),
+    });
+
+    const startLiveGame = async (tag: string, initialSeconds: number) => {
+      const hostGame = await createFriendGame(
+        `${tag}-host`,
+        configWithClock(initialSeconds),
+        true,
+      );
+      const joinerGame = await joinFriendGame(`${tag}-joiner`, hostGame.gameId);
+      const hostSocket = await openHumanSocket(
+        `${tag}-host`,
+        hostGame.gameId,
+        hostGame.socketToken,
+      );
+      const joinerSocket = await openHumanSocket(
+        `${tag}-joiner`,
+        hostGame.gameId,
+        joinerGame.socketToken,
+      );
+      sockets.push(hostSocket, joinerSocket);
+      await hostSocket.waitForState((s) => s.state.status === "playing");
+      return {
+        gameId: hostGame.gameId,
+        hostToken: hostGame.hostToken,
+        hostSocket,
+      };
+    };
+
+    const handshake = async (gameId: string, source: string) => {
+      const viewer = await openEvalSocket(gameId, source);
+      sockets.push(viewer);
+      await sleep(100);
+      viewer.sendHandshake(gameId, "standard", 5, 5);
+      return viewer;
+    };
+
+    const openSharedEval = async (gameId: string, source: string) => {
+      const viewer = await handshake(gameId, source);
+      await viewer.waitForMessage("eval-history");
+      expect(bgsStore.getBgs(gameId)?.status).toBe("ready");
+    };
+
+    // Ending a BGS waits for the engine's game_session_ended.
+    const sessionsOfGame = (gameId: string) =>
+      bgsStore.getAllBgs().filter((bgs) => bgs.gameId === gameId);
+    const waitForNoSessions = async (gameId: string) => {
+      for (let i = 0; i < 50 && sessionsOfGame(gameId).length > 0; i++) {
+        await sleep(100);
+      }
+      expect(sessionsOfGame(gameId)).toEqual([]);
+    };
+
+    const abort = async (gameId: string, token: string) => {
+      const res = await fetch(`${baseUrl}/api/games/${gameId}/abort`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      expect(res.status).toBe(200);
+    };
+
+    try {
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: "Eval Lifecycle Bot",
+        engine: "bun run ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      // Resign ends the shared eval BGS.
+      const resigned = await startLiveGame("eval-life-resign", 600);
+      await openSharedEval(resigned.gameId, "10.0.0.1");
+      resigned.hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await resigned.hostSocket.waitForState(
+        (s) => s.state.status === "finished",
+      );
+      await waitForNoSessions(resigned.gameId);
+
+      // The finished game, still in memory, replays: the handshake rule for
+      // live games does not catch it, and the replay BGS closes after.
+      const replay = await handshake(resigned.gameId, "10.0.0.1");
+      await replay.waitForMessage("eval-history");
+      await waitForNoSessions(resigned.gameId);
+
+      // A clock timeout ends it: P1 moves, then P2's 2 s run out.
+      const timed = await startLiveGame("eval-life-timeout", 2);
+      await openSharedEval(timed.gameId, "10.0.0.2");
+      await submitHumanMove(timed.hostSocket, "Cb5.Cc5", 5);
+      await timed.hostSocket.waitForState(
+        (s) => s.state.status === "finished",
+        { timeoutMs: 10000 },
+      );
+      await waitForNoSessions(timed.gameId);
+
+      // A host abort ends it.
+      const aborted = await startLiveGame("eval-life-abort", 600);
+      await openSharedEval(aborted.gameId, "10.0.0.3");
+      await abort(aborted.gameId, aborted.hostToken);
+      await waitForNoSessions(aborted.gameId);
+
+      // A waiting lobby, and the same lobby cancelled, get no eval session.
+      const lobby = await createFriendGame(
+        "eval-life-lobby-host",
+        configWithClock(600),
+        true,
+      );
+      for (let round = 0; round < 2; round++) {
+        const viewer = await handshake(lobby.gameId, "10.0.0.4");
+        const rejected = await viewer.waitForMessage("eval-handshake-rejected");
+        expect(rejected.code).toBe("GAME_NOT_FOUND");
+        expect(sessionsOfGame(lobby.gameId)).toEqual([]);
+        if (round === 0) await abort(lobby.gameId, lobby.hostToken);
+      }
+
+      // A source at its limit is refused with a reason; another source is not.
+      const limited = await startLiveGame("eval-life-limit", 600);
+      const bgsConfig = {
+        variant: "standard" as const,
+        boardWidth: 5,
+        boardHeight: 5,
+        initialState: buildStandardInitialState(5, 5),
+      };
+      for (let i = 0; i < bgsStore.MAX_SESSIONS_PER_EVAL_SOURCE; i++) {
+        const fillerId = `eval-life-filler-${i}`;
+        const created = bgsStore.createBgs(
+          fillerId,
+          compositeId,
+          fillerId,
+          bgsConfig,
+          { kind: "eval", source: "10.0.0.5" },
+        );
+        expect(created.ok).toBe(true);
+        fillerIds.push(fillerId);
+      }
+      const refused = await handshake(limited.gameId, "10.0.0.5");
+      const rejected = await refused.waitForMessage("eval-handshake-rejected");
+      expect(rejected.code).toBe("LIMIT_REACHED");
+      expect(bgsStore.getBgs(limited.gameId)).toBeUndefined();
+      await openSharedEval(limited.gameId, "10.0.0.6");
+      limited.hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await waitForNoSessions(limited.gameId);
+    } finally {
+      for (const fillerId of fillerIds) bgsStore.endBgs(fillerId);
+      for (const socket of sockets) socket.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 90000);
 
   it("takeback: eval bar receives reset history after rollback in bot game", async () => {
     const hostUserId = "eval-takeback-user";

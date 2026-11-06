@@ -126,10 +126,13 @@ const getSocketPlayerId = (socket: SessionSocket): PlayerId | null => {
 };
 
 /**
- * Notify any bot players that the game has ended.
- * Called when game finishes by any means (move, resign, draw, timeout).
+ * The one place a game's engine sessions end: each bot seat's session and the
+ * shared eval bar session. Every way a game ends calls it - each finish (move,
+ * resign, draw, timeout and the idle and abandonment timers, a bot's forced
+ * resignation), a host abort, and the release of an ended session from
+ * memory. A session already ended is skipped, so a second call is harmless.
  */
-const notifyBotsGameEnded = (sessionId: string): void => {
+export const endGameEngineSessions = (sessionId: string): void => {
   const session = getSession(sessionId);
   const { host, joiner } = session.players;
 
@@ -139,6 +142,7 @@ const notifyBotsGameEnded = (sessionId: string): void => {
   if (joiner.botCompositeId) {
     void notifyBotGameEnded(joiner.botCompositeId, sessionId);
   }
+  void handleEvalBarGameEnd(sessionId);
 };
 
 // ============================================================================
@@ -170,7 +174,9 @@ const startBotGameSession = async (
   const config = buildBgsConfig(session);
 
   try {
-    await startBgsSession(botCompositeId, bgsId, session.id, config);
+    await startBgsSession(botCompositeId, bgsId, session.id, config, {
+      kind: "game",
+    });
     logLine("[ws] BGS started for bot game", {
       gameId: session.id,
       bgsId,
@@ -312,7 +318,7 @@ const resignBotOnFailure = async (
     // forced resignation used to skip this, so each one leaked a session on
     // the engine (capped at 256 per process) — the production bot log shows
     // them as a "Starting game session" with no matching end.
-    notifyBotsGameEnded(session.id);
+    endGameEngineSessions(session.id);
   }
 
   broadcast(session.id, {
@@ -488,7 +494,7 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
         }),
     });
     broadcastLiveGamesRemove(sessionId);
-    notifyBotsGameEnded(sessionId);
+    endGameEngineSessions(sessionId);
     sendMatchStatus(sessionId);
     return;
   }
@@ -715,7 +721,9 @@ const rebuildPass = async (
   // Start a new BGS with the same ID
   const config = buildBgsConfig(session);
   try {
-    await startBgsSession(botCompositeId, bgsId, sessionId, config);
+    await startBgsSession(botCompositeId, bgsId, sessionId, config, {
+      kind: "game",
+    });
   } catch (error) {
     if (superseded()) {
       console.info("[ws] takeback BGS start cancelled by newer reset", {
@@ -1369,7 +1377,7 @@ const handleTimeoutFromTimer = async (sessionId: string): Promise<void> => {
   broadcastLiveGamesRemove(sessionId);
 
   // Notify any bot players that the game ended
-  notifyBotsGameEnded(sessionId);
+  endGameEngineSessions(sessionId);
 
   // Broadcast final state and match status to all connected clients
   broadcast(sessionId, {
@@ -1430,9 +1438,7 @@ const handleMove = async (
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
     // Notify any bot players that the game ended
-    notifyBotsGameEnded(socket.sessionId);
-    // Clean up eval bar state for human vs human games
-    void handleEvalBarGameEnd(socket.sessionId);
+    endGameEngineSessions(socket.sessionId);
   } else {
     // Broadcast upsert for live games list (game became in-progress or move count updated)
     broadcastLiveGamesUpsert(socket.sessionId);
@@ -1657,7 +1663,7 @@ const handleResign = async (socket: SessionSocket) => {
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
     // Notify any bot players that the game ended
-    notifyBotsGameEnded(socket.sessionId);
+    endGameEngineSessions(socket.sessionId);
   }
 
   broadcast(socket.sessionId, {
@@ -1885,7 +1891,7 @@ const finishAcceptedDraw = async (
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
     // Notify any bot players that the game ended
-    notifyBotsGameEnded(socket.sessionId);
+    endGameEngineSessions(socket.sessionId);
   }
 
   broadcast(socket.sessionId, {
@@ -2330,7 +2336,7 @@ const handleActionRequest = async (
           }
           broadcastLiveGamesRemove(socket.sessionId);
           // Notify any bot players that the game ended
-          notifyBotsGameEnded(socket.sessionId);
+          endGameEngineSessions(socket.sessionId);
         }
         broadcast(socket.sessionId, {
           type: "state",

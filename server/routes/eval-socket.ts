@@ -43,11 +43,13 @@ import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import { getSession } from "../games/store";
 import { getReplayGameReadonly } from "../db/game-queries";
 import { findEvalBot } from "../games/custom-bot-store";
+import { clientIpKey } from "./anonymous-write-limiter";
 import {
   getBgs,
   endBgs,
   getBgsHistory,
   setEvalUpdateListener,
+  bgsPoolRefusal,
 } from "../games/bgs-store";
 import {
   startBgsSession,
@@ -68,6 +70,8 @@ interface EvalSocket {
   gameId: string;
   bgsId: string | null; // Set after BGS is initialized
   botCompositeId: string | null; // Set after eval bot is found
+  /** The viewer's address; the pool counts eval sessions per source */
+  source: string;
 }
 
 /**
@@ -180,6 +184,7 @@ const initializeBgsHistory = async (
   gameId: string,
   config: BgsConfig,
   moves: { notation: string }[],
+  source: string,
   gameResult?: { winner?: number; reason: string },
 ): Promise<
   | { success: true; history: EvalHistoryEntry[] }
@@ -187,7 +192,10 @@ const initializeBgsHistory = async (
 > => {
   // Create and start the BGS
   try {
-    await startBgsSession(botCompositeId, bgsId, gameId, config);
+    await startBgsSession(botCompositeId, bgsId, gameId, config, {
+      kind: "eval",
+      source,
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Failed to start BGS";
     console.error("[eval-ws] failed to start eval BGS", {
@@ -313,6 +321,25 @@ const initializeBgsHistory = async (
 // ============================================================================
 
 /**
+ * Refuse the handshake when the pool has no room for a new eval session from
+ * this viewer's source. Asked before the handshake is accepted, so the viewer
+ * sees why rather than a failed initialization.
+ */
+const rejectIfPoolFull = (ctx: WSContext, source: string): boolean => {
+  const refusal = bgsPoolRefusal({ kind: "eval", source });
+  if (refusal === null) return false;
+  send(ctx, {
+    type: "eval-handshake-rejected",
+    code: "LIMIT_REACHED",
+    message:
+      refusal === "over-quota"
+        ? "Too many evaluation bars are open from your network. Close one and try again."
+        : "The evaluation bar is busy right now. Try again in a few minutes.",
+  });
+  return true;
+};
+
+/**
  * Handle eval handshake for games only in the database (not in memory).
  * These are always finished replays, so we use an ephemeral BGS:
  * create it, replay all moves, send history, then close immediately.
@@ -354,6 +381,8 @@ const handleDatabaseGameHandshake = async (
   const { compositeId: botCompositeId } = evalBotResult;
   socket.botCompositeId = botCompositeId;
 
+  if (rejectIfPoolFull(ctx, socket.source)) return;
+
   const bgsId = `${gameId}_${nanoid()}`;
   const { config, history } = replayData.state;
   const moves = history.map((entry) => ({ notation: entry.notation }));
@@ -377,6 +406,7 @@ const handleDatabaseGameHandshake = async (
     gameId,
     bgsConfig,
     moves,
+    socket.source,
     replayData.state.result,
   );
 
@@ -448,6 +478,23 @@ const handleHandshake = async (
     return handleDatabaseGameHandshake(ctx, socket, message);
   }
 
+  // Live means a started game that still plays. The GameState of a waiting
+  // lobby already says "playing", and so does the GameState of a cancelled
+  // one, so the session decides.
+  const isLiveGame =
+    (session.status === "ready" || session.status === "in-progress") &&
+    !session.cancelled &&
+    session.gameState.status === "playing";
+  const isReplay = session.gameState.status === "finished";
+  if (!isLiveGame && !isReplay) {
+    send(ctx, {
+      type: "eval-handshake-rejected",
+      code: "GAME_NOT_FOUND",
+      message: "Game is not in progress",
+    });
+    return;
+  }
+
   // Find an official eval bot
   const evalBotResult = findEvalBot(
     variant,
@@ -470,7 +517,6 @@ const handleHandshake = async (
   // Check if this is a bot game (reuse existing BGS) or human vs human
   const { host, joiner } = session.players;
   const isBotGame = !!host.botCompositeId || !!joiner.botCompositeId;
-  const isLiveGame = session.gameState.status === "playing";
 
   if (isBotGame && isLiveGame) {
     // Bot game: Reuse the existing bot game BGS
@@ -547,7 +593,6 @@ const handleHandshake = async (
 
   // Human vs human or past game replay
   // Per spec: Replay uses unique ID per viewer (ephemeral), live human vs human uses gameId (shared)
-  const isReplay = session.gameState.status === "finished";
   const bgsId = isReplay ? `${gameId}_${nanoid()}` : gameId;
 
   // Check for shared BGS (human vs human live games)
@@ -598,6 +643,7 @@ const handleHandshake = async (
   }
 
   // Start new BGS initialization
+  if (rejectIfPoolFull(ctx, socket.source)) return;
   send(ctx, { type: "eval-handshake-accepted" });
   send(ctx, {
     type: "eval-pending",
@@ -633,6 +679,7 @@ const handleHandshake = async (
     gameId,
     config,
     moves,
+    socket.source,
     isReplay ? session.gameState.result : undefined,
   );
 
@@ -881,6 +928,7 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
       const gameId = c.req.param("gameId");
       // The route pattern always sets it; hono's types do not know that here.
       if (!gameId) throw new Error("eval socket route without a game id");
+      const source = clientIpKey(c.req.raw.headers);
 
       return {
         onOpen(_event: Event, ws: WSContext) {
@@ -891,6 +939,7 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
             gameId,
             bgsId: null,
             botCompositeId: null,
+            source,
           };
 
           mapSocketContext(ws, socketId);

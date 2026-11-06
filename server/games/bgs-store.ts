@@ -67,6 +67,20 @@ export interface PendingBgsRequest {
 export type BgsStatus = "initializing" | "ready" | "ended";
 
 /**
+ * Who a session counts against in the pool.
+ * - official-game: an official bot's seat in a game. Never limited per owner,
+ *   and the only owner that can use the reserve.
+ * - community-game: a seat of a bot from a client without the official token,
+ *   counted per bot client.
+ * - eval: an eval bar session (live shared or replay), counted per source
+ *   address of the viewer that opened it.
+ */
+export type BgsOwner =
+  | { kind: "official-game" }
+  | { kind: "community-game"; clientId: string }
+  | { kind: "eval"; source: string };
+
+/**
  * A Bot Game Session tracks state for one game/eval session with a bot.
  */
 export interface BotGameSession {
@@ -74,6 +88,8 @@ export interface BotGameSession {
   bgsId: string;
   /** The bot handling this session (clientId:botId) */
   botCompositeId: string;
+  /** Who this session counts against in the pool */
+  owner: BgsOwner;
   /** Associated game ID (if this is a game session) */
   gameId: string;
   /** Game configuration */
@@ -100,7 +116,88 @@ export interface BotGameSession {
 const sessions = new Map<string, BotGameSession>();
 
 /** Maximum number of concurrent BGS (matches Deep Wallwars limit) */
-const MAX_SESSIONS = 256;
+export const MAX_SESSIONS = 256;
+
+/**
+ * Sessions only official games can use. Community and eval sessions together
+ * stop at MAX_SESSIONS - OFFICIAL_GAME_RESERVE, so nobody without the official
+ * token can keep an official bot game from starting.
+ */
+export const OFFICIAL_GAME_RESERVE = 64;
+
+/**
+ * Per-owner limits. 16 per community client keeps the at most 10 anonymous
+ * clients (custom-bot-store.ts) under the non-reserved share by themselves.
+ */
+export const MAX_SESSIONS_PER_COMMUNITY_CLIENT = 16;
+export const MAX_SESSIONS_PER_EVAL_SOURCE = 8;
+
+const ownerKey = (owner: BgsOwner): string | null => {
+  switch (owner.kind) {
+    case "official-game":
+      return null;
+    case "community-game":
+      return `client:${owner.clientId}`;
+    case "eval":
+      return `source:${owner.source}`;
+  }
+};
+
+const ownerLimit = (owner: BgsOwner): number => {
+  switch (owner.kind) {
+    case "official-game":
+      return MAX_SESSIONS;
+    case "community-game":
+      return MAX_SESSIONS_PER_COMMUNITY_CLIENT;
+    case "eval":
+      return MAX_SESSIONS_PER_EVAL_SOURCE;
+  }
+};
+
+/**
+ * What a session is for: a bot's seat in a game, or an eval bar opened from a
+ * source address.
+ */
+export type BgsPurpose = { kind: "game" } | { kind: "eval"; source: string };
+
+/** Who a session for this purpose on this bot counts against. */
+export const bgsOwnerFor = (
+  purpose: BgsPurpose,
+  bot: { clientId: string; isOfficial: boolean },
+): BgsOwner => {
+  if (purpose.kind === "eval") return purpose;
+  return bot.isOfficial
+    ? { kind: "official-game" }
+    : { kind: "community-game", clientId: bot.clientId };
+};
+
+export type CreateBgsResult =
+  | { ok: true; session: BotGameSession }
+  | { ok: false; reason: "duplicate-id" | "at-capacity" | "over-quota" };
+
+/**
+ * Why the pool refuses a new session for this owner, or null if it has room.
+ * createBgs enforces it; a route asks it first to refuse with a clear reason.
+ * The counts come from the sessions map itself (at most MAX_SESSIONS entries),
+ * so endBgs stays the only removal and no counter can drift.
+ */
+export const bgsPoolRefusal = (
+  owner: BgsOwner,
+): "at-capacity" | "over-quota" | null => {
+  if (sessions.size >= MAX_SESSIONS) return "at-capacity";
+  const key = ownerKey(owner);
+  if (key === null) return null;
+  let unreserved = 0;
+  let ownCount = 0;
+  for (const session of sessions.values()) {
+    if (session.owner.kind === "official-game") continue;
+    unreserved++;
+    if (ownerKey(session.owner) === key) ownCount++;
+  }
+  if (unreserved >= MAX_SESSIONS - OFFICIAL_GAME_RESERVE) return "at-capacity";
+  if (ownCount >= ownerLimit(owner)) return "over-quota";
+  return null;
+};
 
 // ============================================================================
 // Session Lifecycle
@@ -114,34 +211,36 @@ const MAX_SESSIONS = 256;
  * @param botCompositeId - Bot composite ID (clientId:botId)
  * @param gameId - Associated game ID
  * @param config - Game configuration
- * @returns The created session, or null if at capacity
+ * @param owner - Who the session counts against in the pool
  */
 export const createBgs = (
   bgsId: string,
   botCompositeId: string,
   gameId: string,
   config: BgsConfig,
-): BotGameSession | null => {
-  // Check capacity
-  if (sessions.size >= MAX_SESSIONS) {
-    console.warn("[bgs-store] at capacity, cannot create BGS", {
-      bgsId,
-      currentCount: sessions.size,
-      maxSessions: MAX_SESSIONS,
-    });
-    return null;
-  }
-
-  // Check for duplicate
+  owner: BgsOwner,
+): CreateBgsResult => {
   if (sessions.has(bgsId)) {
     console.warn("[bgs-store] BGS already exists", { bgsId });
-    return null;
+    return { ok: false, reason: "duplicate-id" };
+  }
+
+  const refusal = bgsPoolRefusal(owner);
+  if (refusal) {
+    console.warn("[bgs-store] pool refused BGS", {
+      bgsId,
+      reason: refusal,
+      owner,
+      currentCount: sessions.size,
+    });
+    return { ok: false, reason: refusal };
   }
 
   const now = Date.now();
   const session: BotGameSession = {
     bgsId,
     botCompositeId,
+    owner,
     gameId,
     config,
     status: "initializing",
@@ -158,9 +257,10 @@ export const createBgs = (
     botCompositeId,
     gameId,
     variant: config.variant,
+    owner: owner.kind,
   });
 
-  return session;
+  return { ok: true, session };
 };
 
 /**
@@ -493,13 +593,6 @@ export const getBgsForGame = (gameId: string): BotGameSession | undefined => {
  */
 export const getBgsCount = (): number => {
   return sessions.size;
-};
-
-/**
- * Check if we're at capacity.
- */
-export const isAtCapacity = (): boolean => {
-  return sessions.size >= MAX_SESSIONS;
 };
 
 // ============================================================================

@@ -48,6 +48,7 @@ import {
   unregisterClient,
   getClient,
   getClientForBot,
+  getBotByCompositeId,
   getActiveGamesForClient,
   removeActiveGame,
   isAtAnonymousClientLimit,
@@ -69,7 +70,9 @@ import {
   setPendingRequest,
   clearPendingRequest,
   endAllBgsForBot,
+  bgsOwnerFor,
   type BgsHistoryEntry,
+  type BgsPurpose,
 } from "../games/bgs-store";
 
 import { persistCompletedGame } from "../games/persistence";
@@ -1055,13 +1058,15 @@ const incrementUnexpectedMessage = (socket: BotSocket): void => {
  * produces both: they mean opposite things. A duplicate id is self-inflicted -
  * the caller's own end step left the session behind - and retrying it is futile.
  * At capacity is load, and retrying may work. That distinction is exactly what
- * the follow-up fix is gated on.
+ * the follow-up fix is gated on. Over quota is the owner's own share of the
+ * pool (bgs-store.ts): retrying works only after one of its sessions ends.
  */
 export type BgsStartFailureReason =
   | "client-not-found"
   | "no-connection"
   | "duplicate-id"
   | "at-capacity"
+  | "over-quota"
   | "timeout"
   | "engine-refused"
   | "client-disconnected";
@@ -1091,9 +1096,11 @@ export const startBgsSession = async (
   bgsId: string,
   gameId: string,
   config: BgsConfig,
+  purpose: BgsPurpose,
 ): Promise<{ success: boolean }> => {
   const client = getClientForBot(compositeId);
-  if (!client) {
+  const bot = getBotByCompositeId(compositeId);
+  if (!client || !bot) {
     throw new BgsStartFailure(
       "client-not-found",
       `Bot client not found: ${compositeId}`,
@@ -1109,21 +1116,18 @@ export const startBgsSession = async (
     );
   }
 
-  // Create BGS. Ask which of the two failures it was BEFORE calling, because
-  // createBgs returns the same null for both and the answer stops existing the
-  // moment it succeeds.
-  const idAlreadyTaken = getBgs(bgsId) !== undefined;
-  const bgs = createBgs(bgsId, compositeId, gameId, config);
-  if (!bgs) {
-    throw idAlreadyTaken
-      ? new BgsStartFailure(
-          "duplicate-id",
-          `Failed to create BGS - duplicate ID: ${bgsId}`,
-        )
-      : new BgsStartFailure(
-          "at-capacity",
-          "Failed to create BGS - at capacity",
-        );
+  const created = createBgs(
+    bgsId,
+    compositeId,
+    gameId,
+    config,
+    bgsOwnerFor(purpose, bot),
+  );
+  if (!created.ok) {
+    throw new BgsStartFailure(
+      created.reason,
+      `Failed to create BGS ${bgsId}: ${created.reason}`,
+    );
   }
 
   // Track BGS on client

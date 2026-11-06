@@ -43,7 +43,8 @@ import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
 import { eq } from "drizzle-orm";
 import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
-import { sendMatchStatus } from "./game-socket";
+import { endGameEngineSessions, sendMatchStatus } from "./game-socket";
+import { bgsOwnerFor, bgsPoolRefusal } from "../games/bgs-store";
 import {
   getRandomShowcaseGames,
   getReplayGame,
@@ -290,6 +291,7 @@ export const gamesRoute = new Hono()
       const { id } = c.req.param();
       const parsed = c.req.valid("json");
       const session = cancelGameSession({ id, token: parsed.token });
+      endGameEngineSessions(id);
       if (session.matchType === "matchmaking") {
         broadcastLobbyUpdate();
       }
@@ -669,6 +671,27 @@ export const botsRoute = new Hono()
           return c.json(
             { error: "That bot cannot play this position right now" },
             409,
+          );
+        }
+
+        // The engine session starts when the host connects; ask the pool now
+        // so a full pool refuses the game with a reason instead of a forfeit.
+        const poolRefusal = bgsPoolRefusal(bgsOwnerFor({ kind: "game" }, bot));
+        if (poolRefusal === "over-quota") {
+          return c.json(
+            {
+              error:
+                "That bot is playing all the games it can. Try again later.",
+            },
+            429,
+          );
+        }
+        if (poolRefusal === "at-capacity") {
+          return c.json(
+            {
+              error: "The bots are busy right now. Try again in a few minutes.",
+            },
+            503,
           );
         }
 

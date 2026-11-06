@@ -222,7 +222,7 @@ const keepalive = async (): Promise<void> => {
 };
 
 async function start(id: string): Promise<void> {
-  await startBgsSession(BOT_ID, id, id, config);
+  await startBgsSession(BOT_ID, id, id, config, { kind: "game" });
   expect(getBgs(id)?.status).toBe("ready");
   expect(engine.sessions.has(id)).toBe(true);
 }
@@ -363,7 +363,9 @@ describe("real BGS request deadlines with client FIFO", () => {
       }
       expect(getBgs(id)).toBeUndefined();
 
-      const replacement = startBgsSession(BOT_ID, id, id, config);
+      const replacement = startBgsSession(BOT_ID, id, id, config, {
+        kind: "game",
+      });
       if (delay >= timeoutMs) {
         engine.release("end_game_session", {
           type: "end_game_session",
@@ -440,7 +442,9 @@ describe("real BGS request deadlines with client FIFO", () => {
       expect(Date.now() - endSentAt).toBe(delay);
       expect(Date.now() - drainStartedAt).toBe(delay * 2);
 
-      const replacement = startBgsSession(BOT_ID, id, id, config);
+      const replacement = startBgsSession(BOT_ID, id, id, config, {
+        kind: "game",
+      });
       if (delay >= timeoutMs) {
         engine.release("end_game_session", {
           type: "end_game_session",
@@ -510,7 +514,9 @@ const createBotGame = async (): Promise<string> => {
   );
   playWallTurn(session.id, 1, 0);
   playWallTurn(session.id, 2, 1);
-  await startBgsSession(BOT_ID, session.id, session.id, config);
+  await startBgsSession(BOT_ID, session.id, session.id, config, {
+    kind: "game",
+  });
   createdGameIds.push(session.id);
   return session.id;
 };

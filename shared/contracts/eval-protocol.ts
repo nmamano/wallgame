@@ -72,6 +72,7 @@ export type EvalHandshakeRejectedCode =
   | "RATED_PLAYER"
   | "UNSUPPORTED_VARIANT"
   | "GAME_NOT_FOUND"
+  | "LIMIT_REACHED"
   | "INTERNAL_ERROR";
 
 /** Handshake was rejected */
