@@ -110,7 +110,8 @@ export const changedProblem = (changed, lastPly, events) => {
 
 /**
  * The span of the video that shows the change, in seconds of the full
- * video, or null for "all". It starts CLIP_LEAD_IN before the earliest
+ * video, or null for the whole video: "all", a clip that would start in
+ * the intro, or one longer than half the video. It starts CLIP_LEAD_IN before the earliest
  * changed beat and ends with the last one. A ply is its move and all its
  * events (an explain's build-up comes before its move), and ends with
  * them, or at the next move when it has none; a beat is its own events
@@ -166,10 +167,21 @@ export const changedSpan = (timeline, changed, duration, events) => {
   }
   if (!starts.length) return null;
   // To a tenth of a second, outward, so no frame of the change is lost.
-  return {
+  const span = {
     from: Math.floor(Math.max(0, Math.min(...starts) - CLIP_LEAD_IN) * 10) / 10,
     to: Math.ceil(Math.min(duration, Math.max(...ends)) * 10) / 10,
   };
+  /*
+    The whole video, not a clip, when the clip would start in the intro
+    (before ply 0's move lands) or run over half the video (Nil, 2026-11-06,
+    on BIn's clip of 0.4-29.7 s of 44.7 s: "what you sent is not a full
+    video. start is missing and end is missing"; Wall Game Director's rule).
+    A clip that cut the intro or most of the video reads as a broken video.
+  */
+  const firstMove = timeline.moves.find((m) => m.ply === 0);
+  if (firstMove && span.from < firstMove.at) return null;
+  if (span.to - span.from > duration / 2) return null;
+  return span;
 };
 
 /**

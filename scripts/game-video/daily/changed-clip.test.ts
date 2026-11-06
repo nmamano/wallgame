@@ -191,6 +191,41 @@ describe("a revision's clip (Nil, 2026-11-01, C54)", () => {
     ).toBeNull();
   });
 
+  test("the whole video when the clip would start in the intro or run over half of it (BIn, Nil 2026-11-06)", () => {
+    // BIn's timeline (2026-11-06): ply 0 lands at 2.47 s after the intro.
+    const moves = Array.from({ length: 45 }, (_, ply) => ({
+      ply,
+      at: 2.47 + ply * 0.9,
+    }));
+    const bin = { moves, events: [] };
+    const plies = (list: number[]) => ({ plies: list, beats: [], end: false });
+    // Plies 0-38, BIn's Revise: its clip ran 0.4-29.7 s and cut the intro.
+    expect(
+      changedSpan(
+        bin,
+        plies(Array.from({ length: 39 }, (_, p) => p)),
+        44.7,
+        [],
+      ),
+    ).toBeNull();
+    // Ply 0 alone: its lead-in reaches into the intro.
+    expect(changedSpan(bin, plies([0]), 44.7, [])).toBeNull();
+    // Plies 10-35: past the intro, but 23.4 s of 44.7 s.
+    expect(
+      changedSpan(
+        bin,
+        plies(Array.from({ length: 26 }, (_, p) => p + 10)),
+        44.7,
+        [],
+      ),
+    ).toBeNull();
+    // One ply past the intro: a clip.
+    expect(changedSpan(bin, plies([20]), 44.7, [])).toEqual({
+      from: 18.4,
+      to: 21.4,
+    });
+  });
+
   test("the clip is cut once, frame-exact, next to the video", () => {
     const dir = mkdtempSync(join(tmpdir(), "changed-clip-"));
     const video = join(dir, "v.mp4");
