@@ -66,20 +66,24 @@ echo "✅✅ No pushed commit holds an ignored path."
 # This is a SUBSET, not a substitute. A green hook still does not mean green CI -
 # the integration suite has not run yet at this point.
 
-echo "🔍🔍 Running Prettier check..."
-bun run format:check
-
+# The checks read the tree and none depends on another, so they run at the
+# same time (task dcfd6114, 2026-11-06): one after another they took about
+# 5 minutes, long enough for GitHub to drop the idle SSH connection of the
+# push. Each check has its own log; only the log of a failed check is shown,
+# and any failure stops the push. The wall time is now about that of ESLint,
+# the longest check.
+#
 # Not `bun run lint`: that one passes --fix, so it would REPAIR a violation and
 # report success, leaving the unfixed version to be the thing that was pushed.
-# `lint:check` is the checking form, and it is what CI runs too.
-echo "🔎🔎 Running ESLint..."
-bun run lint:check
-
-echo "🧩🧩 Typechecking six projects (server+shared, tests, scripts, harness, frontend tests, bot client)..."
-bun run typecheck
-
-echo "🧪🧪 Running the Docker-free unit tests (tests/game)..."
-bun test tests/game/
+# `lint:check` is the checking form, and it is what CI runs too. `typecheck`
+# covers six projects (server+shared, tests, scripts, harness, frontend tests,
+# bot client), also at the same time.
+set -- \
+  "Prettier" "bun run format:check" \
+  "ESLint" "bun run lint:check" \
+  "Typecheck" "bun run typecheck" \
+  "Unit tests (tests/game)" "bun test tests/game/" \
+  "Build" "bun run build"
 
 # scripts/game-video tests: CI runs them, and until 2026-11-04 nothing ran
 # them before a push. They need no Docker, but they take about 70 s on
@@ -100,11 +104,11 @@ elif ! command -v ffmpeg >/dev/null 2>&1; then
 elif ! node --input-type=module -e 'process.exit(import.meta.main ? 0 : 1)' >/dev/null 2>&1; then
   echo "⚠️⚠️ Skipping the scripts/game-video tests: they need Node 22.18 or later. CI runs them."
 else
-  echo "🎬🎬 Running the scripts/game-video tests (the push changes that code)..."
-  bun test --parallel=4 scripts/game-video
+  echo "🎬🎬 The push changes scripts/game-video code, so its tests run too."
+  set -- "$@" "scripts/game-video tests" "bun test --parallel=4 scripts/game-video"
 fi
 
-echo "🔍🔍 Checking build..."
-bun run build
+echo "🔎🔎 Running the checks at the same time (each has its own log; only a failed check shows it)..."
+sh scripts/run-parallel.sh "$@"
 
 echo "✅✅ All checks passed – push allowed."
