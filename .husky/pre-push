@@ -97,6 +97,13 @@ set -- \
 # A machine that cannot run them (no ffmpeg, or a Node older than 22.18, as
 # on the 4090 desktop) skips them with the reason, and CI runs them; see
 # scripts/game-video/README.md.
+#
+# Here each test gets 30 s, not bun's default 5 s. These tests start child
+# processes, and in this hook they share the CPU with the other checks: on
+# 2026-11-06 a good push failed when 3 of them went over 5 s (auntie-2 load
+# about 10), and alone two of them took more than 1.5 s at load 6. In this
+# group the suite ends before ESLint, so the longer limit adds no wall time.
+# A real hang still fails, only later. CI keeps the 5 s default.
 if ! printf '%s\n' "$changed" | grep -qE '^((scripts/game-video|shared|server/db)/|frontend/src/lib/player-colors|official-custom-bot-client/src/config-schema)'; then
   echo "🎬🎬 Skipping the scripts/game-video tests: the push does not change that code."
 elif ! command -v ffmpeg >/dev/null 2>&1; then
@@ -105,7 +112,7 @@ elif ! node --input-type=module -e 'process.exit(import.meta.main ? 0 : 1)' >/de
   echo "⚠️⚠️ Skipping the scripts/game-video tests: they need Node 22.18 or later. CI runs them."
 else
   echo "🎬🎬 The push changes scripts/game-video code, so its tests run too."
-  set -- "$@" "scripts/game-video tests" "bun test --parallel=4 scripts/game-video"
+  set -- "$@" "scripts/game-video tests" "bun test --parallel=4 --timeout=30000 scripts/game-video"
 fi
 
 echo "🔎🔎 Running the checks at the same time (each has its own log; only a failed check shows it)..."
