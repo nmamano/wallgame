@@ -847,4 +847,27 @@ describe("bot connection lifecycle", () => {
     intruder.drop();
     victim.drop();
   }, 30000);
+  it("T10: an official clientId stays reserved for the token after its grace ends", async () => {
+    const clientId = "lc-official-expired";
+    const compositeId = `${clientId}:b`;
+    const official = { officialToken: TEST_OFFICIAL_TOKEN };
+
+    const bot1 = await openAutoBot(clientId, ["b"], official);
+    bot1.drop();
+    // Past the grace: the registration is gone.
+    await sleep(TEST_GRACE_MS + 500);
+    expect(await listBotIds("standard")).not.toContain(compositeId);
+
+    const { bot: intruder, reply } = await connectAutoBot(clientId, ["b"], {});
+    expect(reply.type).toBe("attach-rejected");
+    if (reply.type === "attach-rejected") {
+      expect(reply.code).toBe("INVALID_OFFICIAL_TOKEN");
+    }
+    intruder.drop();
+    expect(await listBotIds("standard")).not.toContain(compositeId);
+
+    const bot2 = await openAutoBot(clientId, ["b"], official);
+    expect(await listBotIds("standard")).toContain(compositeId);
+    bot2.drop();
+  }, 30000);
 });

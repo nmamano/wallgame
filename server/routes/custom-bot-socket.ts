@@ -97,6 +97,14 @@ const isOfficialToken = (token: string): boolean => {
   return timingSafeEqual(digest(token), digest(OFFICIAL_BOT_TOKEN));
 };
 
+/**
+ * Every clientId that has attached with the official token since the server
+ * started. Such an id stays reserved for the token after its registration is
+ * gone (the grace ended, e.g. the bot client was down for a restart), so
+ * nobody can take its bot ids while it is away.
+ */
+const officialClientIds = new Set<string>();
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -545,25 +553,26 @@ const handleAttach = (
     return false;
   }
 
-  // A re-attach takes over the client's registration and its live games, so
-  // it must prove it is the same client. The tokens were all checked above, so
-  // a bot that carries one carries the valid official token.
+  // An attach with an existing clientId takes over the client's registration
+  // and its live games, so it must prove it is the same client. The tokens
+  // were all checked above, so a bot that carries one carries the valid
+  // official token.
+  const carriesOfficialToken = message.bots.some(
+    (bot) => bot.officialToken !== undefined,
+  );
+  if (carriesOfficialToken) {
+    officialClientIds.add(message.clientId);
+  } else if (officialClientIds.has(message.clientId)) {
+    // An official client attaches with its token, every time, also after its
+    // registration is gone.
+    sendAttachRejected(
+      ctx,
+      "INVALID_OFFICIAL_TOKEN",
+      "This clientId serves official bots; an attach needs the official token.",
+    );
+    return false;
+  }
   if (existingClient) {
-    const carriesOfficialToken = message.bots.some(
-      (bot) => bot.officialToken !== undefined,
-    );
-    const holdsOfficialBot = [...existingClient.bots.values()].some(
-      (bot) => bot.isOfficial,
-    );
-    if (holdsOfficialBot && !carriesOfficialToken) {
-      // An official client re-attaches with its token, every time.
-      sendAttachRejected(
-        ctx,
-        "INVALID_OFFICIAL_TOKEN",
-        "This clientId serves official bots; a re-attach needs the official token.",
-      );
-      return false;
-    }
     if (!carriesOfficialToken && clientIdToContext.has(message.clientId)) {
       // Any other client has no credential, so it can only take over a
       // registration whose connection is already gone (the disconnect grace).

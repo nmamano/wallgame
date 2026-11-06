@@ -51,8 +51,9 @@ Key characteristics:
 - A single bot client can serve multiple bots.
 - Clients are identified by a `clientId` (an arbitrary string chosen by the client, without `:`).
 - A connection that attaches with a `clientId` already in use takes over that client only if it proves it is the same client:
-  - If the client serves official bots, the new attach must carry the valid official token. Then it force-disconnects the old connection ("latest connection wins") and all messages from the old connection are treated as stale. This handles the common crash-restart scenario gracefully.
+  - If the client serves official bots, the new attach must carry the valid official token. Then it force-disconnects the old connection ("latest connection wins") and all messages from the old connection are treated as stale. This handles the common crash-restart scenario gracefully. A `clientId` that once attached with the official token needs the token on every later attach, also after its registration is gone (until the server restarts).
   - Otherwise the new attach is accepted only when the old connection is already closed (the disconnect grace). While the old connection is open it is rejected with `CLIENT_ID_IN_USE`.
+  - Warning for community bot authors: a non-official client has no credential. During its disconnect grace, anyone who knows its `clientId` can attach with it and take over its bots and their games. The `clientId` is public: it is the part before `:` in each listed bot id.
 - The server maintains a FIFO queue of requests per client; only one request is active at a time.
 
 ## Protocol Model (Request/Response)
