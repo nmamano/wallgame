@@ -401,13 +401,38 @@ const main = async () => {
   const cache = `${home}/${CAPTURE_CACHE}`;
   step("check");
 
+  // This job's own folders on the 4090: its job folder from the send on and,
+  // once desktop-run starts it, its unit folder, whose tmp/ can hold a GB.
+  // Every end of the job deletes them, success or failure, for a full
+  // render, a preview, a quick look and a lint alike: by 2026-11-06 failed
+  // jobs had left 7.1 GB in 30 unit folders (board task f240d1e4). Only the
+  // names this job made or desktop-run gave it, never a pattern.
+  const remoteFolders = [dir];
+  /** Delete this job's folders on the 4090; `keepDir` keeps the job folder. */
+  const cleanRemote = async ({ keepDir = false } = {}) => {
+    const folders = remoteFolders.filter((f) => !(keepDir && f === dir));
+    const gone = await ssh(`rm -rf ${folders.join(" ")}`);
+    if (gone.code !== 0) {
+      console.error(
+        `WARNING: could not delete this job's folders on the 4090 (${folders.join(" ")}): ${tail(gone.stderr)}`,
+      );
+    }
+  };
+  /** fail(), once this job's folders on the 4090 are gone. */
+  const failCleaned = async (message, options) => {
+    await cleanRemote(options);
+    fail(message);
+  };
+
   console.log("[render] sending the job to the 4090");
   const sent = await run(
     "ssh",
     [...options, host, `mkdir -p ${dir} && cat > ${dir}/edl.json`],
     edlPath,
   );
-  if (sent.code !== 0) fail(`could not send the job: ${tail(sent.stderr)}`);
+  if (sent.code !== 0) {
+    await failCleaned(`could not send the job: ${tail(sent.stderr)}`);
+  }
   step("send");
 
   console.log("[render] starting the render on the 4090");
@@ -437,16 +462,20 @@ const main = async () => {
   ]);
   const unit = DESKTOP_JOB.exec(desktop.stdout)?.[1];
   if (desktop.code !== 0 || !unit) {
-    fail(
+    await failCleaned(
       `desktop-run did not start the render: ${tail(desktop.stderr || desktop.stdout)}`,
     );
   }
   const jobs = `${home}/jobs/${unit}`;
+  remoteFolders.push(jobs);
   step("start");
 
-  // The app's deadline arrives as SIGTERM. Stop the remote render with it.
+  // The app's deadline arrives as SIGTERM. Stop the remote render with it,
+  // then delete the job's folders.
   process.on("SIGTERM", () => {
-    void ssh(`systemctl --user stop job-${unit}`).then(() => process.exit(1));
+    void ssh(`systemctl --user stop job-${unit}`)
+      .then(() => cleanRemote())
+      .then(() => process.exit(1));
   });
 
   console.log(
@@ -486,15 +515,21 @@ const main = async () => {
   mkdirSync(resultDir, { recursive: true });
   const resultLocal = join(resultDir, "result.line");
   const logLocal = join(resultDir, "render.log");
+  // A failed render's log comes back too: the 4090's folder is deleted below.
   let result = null;
-  if (exit === 0) {
-    const fetched = await scpBack(
-      [`${dir}/result.line`, `${dir}/render.log`],
-      resultDir,
+  const fetched = await scpBack(
+    exit === 0
+      ? [`${dir}/result.line`, `${dir}/render.log`]
+      : [`${dir}/render.log`],
+    resultDir,
+  );
+  if (fetched.code !== 0) {
+    console.error(
+      `WARNING: could not copy the render log back; this job's folders on the 4090 are deleted anyway: ${tail(fetched.stderr)}`,
     );
-    if (fetched.code === 0 && existsSync(resultLocal)) {
-      result = parseResult(readFileSync(resultLocal, "utf8"));
-    }
+  }
+  if (exit === 0 && fetched.code === 0 && existsSync(resultLocal)) {
+    result = parseResult(readFileSync(resultLocal, "utf8"));
   }
   if (existsSync(logLocal)) renameSync(logLocal, `${base}-render.log`);
   rmSync(resultDir, { recursive: true, force: true });
@@ -505,19 +540,19 @@ const main = async () => {
       fullFromCache && exit === 4
         ? "; if the capture cannot be used, render again live (one view of the game)"
         : "";
-    fail(
+    await failCleaned(
       `the 4090 render failed (exit ${exit}): ${tail(why.stdout) || "no RESULT line"}${hint}`,
     );
   }
 
   if (lint) {
     if (!Array.isArray(result.lint?.faults)) {
-      fail(
+      await failCleaned(
         "the 4090 gave no lint: the render kit may be older than --lint, so sync it",
       );
     }
     step("fetch");
-    await ssh(`rm -rf ${dir} ${jobs}`);
+    await cleanRemote();
     step("cleanup");
     timings.total = Math.round((Date.now() - started) / 100) / 10;
     console.log(
@@ -531,7 +566,7 @@ const main = async () => {
 
   // A quick look is never a video to post, so it must say what it is.
   if ((result.draft === true) !== draft) {
-    fail(
+    await failCleaned(
       draft
         ? "the 4090 gave a full render, not a quick look: the render kit may be older than --draft, so sync it"
         : "the 4090 gave a quick look (RESULT.draft), not the render this job asked for",
@@ -546,7 +581,9 @@ const main = async () => {
       result.fromCache !== true ||
       result.edlSha256 !== null)
   ) {
-    fail(`the 4090 render is not the preview of plies ${plies} from the cache`);
+    await failCleaned(
+      `the 4090 render is not the preview of plies ${plies} from the cache`,
+    );
   }
   // A renderer older than --from-cache ignores it and captures live: a
   // view happened. RESULT still comes back, so that the app can count the
@@ -565,7 +602,7 @@ const main = async () => {
     !mp4Only &&
     (!SHEET_NAME.test(sheetName) || result.sheet.png !== `${dir}/${sheetName}`)
   ) {
-    fail(`the render gave no contact sheet in ${dir}`);
+    await failCleaned(`the render gave no contact sheet in ${dir}`);
   }
 
   console.log(
@@ -585,12 +622,15 @@ const main = async () => {
   );
   if (copied.code !== 0) {
     rmSync(fetchDir, { recursive: true, force: true });
-    fail(
-      `could not copy the video back after ${COPY_ATTEMPTS} tries; it stays on the 4090: ${tail(copied.stderr)}`,
+    // The render worked: its video stays in the job folder for a copy by
+    // hand. The unit folder (the large tmp/) still goes.
+    await failCleaned(
+      `could not copy the video back after ${COPY_ATTEMPTS} tries; it stays on the 4090 in ${dir}: ${tail(copied.stderr)}`,
+      { keepDir: true },
     );
   }
   /** Move one fetched file to `local`, checked against the 4090's hash. */
-  const take = (name, local, want) => {
+  const take = async (name, local, want) => {
     const scratch = join(fetchDir, name);
     const bytes = readFileSync(scratch);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -599,19 +639,20 @@ const main = async () => {
       (want.bytes !== undefined && bytes.length !== want.bytes)
     ) {
       rmSync(fetchDir, { recursive: true, force: true });
-      fail(
-        `the copy of ${name} does not match the 4090's file (${bytes.length} bytes, ${sha256.slice(0, 12)} vs ${String(want.sha256).slice(0, 12)}); it stays on the 4090`,
+      await failCleaned(
+        `the copy of ${name} does not match the 4090's file (${bytes.length} bytes, ${sha256.slice(0, 12)} vs ${String(want.sha256).slice(0, 12)}); it stays on the 4090 in ${dir}`,
+        { keepDir: true },
       );
     }
     renameSync(scratch, local);
     return sha256;
   };
-  const sha256 = take("out.mp4", out, result);
+  const sha256 = await take("out.mp4", out, result);
   const sheetPng = `${out}-sheet.png`;
-  if (!mp4Only) take(sheetName, sheetPng, result.sheet);
+  if (!mp4Only) await take(sheetName, sheetPng, result.sheet);
   rmSync(fetchDir, { recursive: true, force: true });
   step("fetch");
-  await ssh(`rm -rf ${dir} ${jobs}`);
+  await cleanRemote();
   step("cleanup");
   timings.total = Math.round((Date.now() - started) / 100) / 10;
   console.log(
