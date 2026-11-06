@@ -136,3 +136,72 @@ describe("a frame that is JSON but not a message", () => {
     });
   }
 });
+
+/**
+ * The real entrypoint, as its own process: the backstop in server/index.ts
+ * must keep a running server alive, and must not keep alive a server that
+ * never started.
+ */
+describe("the server process", () => {
+  const indexPath = new URL("../server/index.ts", import.meta.url).pathname;
+
+  /** Starts server/index.ts on `port`. */
+  const spawnServer = (port: number) =>
+    Bun.spawn(["bun", indexPath], {
+      env: {
+        ...process.env,
+        PORT: String(port),
+        // Skips the built frontend, which a test checkout does not have.
+        FRONTEND_URL: "http://localhost:5173",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+  /** Resolves with the exit code, or "running" after `ms`. */
+  const exitWithin = (child: ReturnType<typeof spawnServer>, ms: number) =>
+    Promise.race([child.exited, Bun.sleep(ms).then(() => "running" as const)]);
+
+  it("exits with an error when its port is taken", async () => {
+    const taken = Bun.serve({ fetch: () => new Response("taken"), port: 0 });
+    const child = spawnServer(taken.port!);
+    try {
+      const result = await exitWithin(child, 15_000);
+      expect(result).not.toBe("running");
+      expect(result).not.toBe(0);
+    } finally {
+      child.kill();
+      await taken.stop(true);
+    }
+  }, 20_000);
+
+  it("keeps serving after a null frame on the eval socket", async () => {
+    const probe = Bun.serve({ fetch: () => new Response(), port: 0 });
+    const port = probe.port!;
+    await probe.stop(true);
+    const child = spawnServer(port);
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) {
+        up = await fetch(`http://localhost:${port}/api/games/live`)
+          .then((res) => res.status === 200)
+          .catch(() => false);
+        if (!up) await Bun.sleep(100);
+      }
+      expect(up).toBe(true);
+
+      const ws = new WebSocket(`ws://localhost:${port}/ws/eval/someGame1`);
+      await new Promise((resolve) => ws.on("open", resolve));
+      ws.send("null");
+      await Bun.sleep(300);
+      ws.close();
+
+      expect(await exitWithin(child, 0)).toBe("running");
+      expect(
+        (await fetch(`http://localhost:${port}/api/games/live`)).status,
+      ).toBe(200);
+    } finally {
+      child.kill();
+    }
+  }, 20_000);
+});
