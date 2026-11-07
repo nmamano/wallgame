@@ -187,11 +187,9 @@ describe("Random Start contracts", () => {
     expect(parsed.config.randomStart).toBe(true);
   });
 
-  it("accepts an arbitrary supplied Standard position without changing its coordinates", () => {
+  it("drops a written starting position from a game to create", () => {
     const initialState = buildStandardInitialState(8, 8);
     initialState.pawns.p1.cat = [3, 5];
-    initialState.pawns.p2.mouse = [6, 1];
-    initialState.walls.push({ cell: [4, 2], orientation: "vertical" });
 
     const parsed = createGameSchema.parse({
       config: {
@@ -202,10 +200,8 @@ describe("Random Start contracts", () => {
       },
     });
 
-    expect("variantConfig" in parsed.config).toBe(true);
-    if (!("variantConfig" in parsed.config))
-      throw new Error("missing position");
-    expect(parsed.config.variantConfig).toEqual(initialState);
+    expect("initialState" in parsed.config).toBe(false);
+    expect("variantConfig" in parsed.config).toBe(false);
   });
 
   it("accepts enabled Classic and rejects undersized Animal Cycle", () => {

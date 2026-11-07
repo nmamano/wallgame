@@ -81,22 +81,6 @@ const classicInitialStateSchema = z.object({
   turn: setupTurnSchema,
 });
 
-const animalCycleInitialStateSchema = z.object({
-  pawns: z.object({
-    p1: z.object({ cat: cellSchema, elephant: cellSchema }),
-    p2: z.object({ mouse: cellSchema, dog: cellSchema }),
-  }),
-  walls: boundedArray(neutralWallSchema, MAX_WALLS_ON_A_BOARD),
-  turn: setupTurnSchema.optional(),
-});
-
-const suppliedStandardInitialStateSchema = standardInitialStateSchema.extend({
-  turn: setupTurnSchema.optional(),
-});
-const suppliedClassicInitialStateSchema = classicInitialStateSchema.extend({
-  turn: setupTurnSchema.optional(),
-});
-
 export const authoredPositionConfigSchema = z
   .discriminatedUnion("variant", [
     z.object({
@@ -333,46 +317,26 @@ const currentCreateConfigSchema = z.object({
   randomStart: z.boolean(),
   boardWidth: z.number().int().min(3).max(20),
   boardHeight: z.number().int().min(3).max(20),
-  initialState: z
-    .union([
-      suppliedStandardInitialStateSchema,
-      suppliedClassicInitialStateSchema,
-      animalCycleInitialStateSchema,
-    ])
-    .optional(),
+  // No written starting position: a game made here, rated or not, starts from
+  // the layout the rules generate. A body that sends one has it stripped like
+  // any other unknown key. A written position is played only against a bot
+  // (POST /api/bots/play), checked by authoredPositionConfigSchema.
 });
 
 export const createGameSchema = z.object({
-  config: currentCreateConfigSchema
-    .superRefine((config, ctx) => {
-      if (
-        Math.min(config.boardWidth, config.boardHeight) <
-        minimumBoardSideFor(config)
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["randomStart"],
-          message:
-            "Animal Cycle Random Start requires both board dimensions to be at least 4.",
-        });
-      }
-      if (!config.initialState) return;
-      const pawns = config.initialState.pawns;
-      const matchesVariant =
-        (config.variant === "standard" && "mouse" in pawns.p1) ||
-        (config.variant === "classic" && "home" in pawns.p1) ||
-        (config.variant === "animal-cycle" && "dog" in pawns.p1);
-      if (!matchesVariant) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["initialState"],
-          message: `initialState does not match ${config.variant}`,
-        });
-      }
-    })
-    .transform(({ initialState, ...config }) =>
-      initialState ? { ...config, variantConfig: initialState } : config,
-    ),
+  config: currentCreateConfigSchema.superRefine((config, ctx) => {
+    if (
+      Math.min(config.boardWidth, config.boardHeight) <
+      minimumBoardSideFor(config)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["randomStart"],
+        message:
+          "Animal Cycle Random Start requires both board dimensions to be at least 4.",
+      });
+    }
+  }),
   matchType: z.enum(matchTypeValues).default("friend"),
   hostDisplayName: z.string().max(50).optional(),
   hostAppearance: appearanceSchema,

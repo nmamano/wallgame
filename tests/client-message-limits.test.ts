@@ -12,7 +12,7 @@ import { clientMessageSchema } from "../shared/contracts/websocket-messages";
 import {
   BOARD_SIDE_MAX,
   MAX_WALLS_ON_A_BOARD,
-  createGameSchema,
+  createBotGameDirectSchema,
 } from "../shared/contracts/games";
 import { ACTIONS_PER_TURN } from "../shared/domain/game-utils";
 import { buildStandardInitialState } from "../shared/domain/standard-setup";
@@ -53,13 +53,14 @@ describe("the actions of a submitted move", () => {
   });
 });
 
-/** A game to create on the largest board, with the largest time control. */
+/**
+ * A bot game from a written position on the largest board: the only request
+ * that carries a list of walls.
+ */
 const gameToCreate = (walls: unknown[]) => ({
+  botId: "client:bot",
   config: {
-    timeControl: { initialSeconds: 3_600, incrementSeconds: 60 },
     variant: "standard",
-    randomStart: false,
-    rated: false,
     boardWidth: BOARD_SIDE_MAX,
     boardHeight: BOARD_SIDE_MAX,
     initialState: {
@@ -68,7 +69,6 @@ const gameToCreate = (walls: unknown[]) => ({
       turn: { playerId: 1, actionsTaken: [] },
     },
   },
-  matchType: "friend",
 });
 
 /**
@@ -82,10 +82,12 @@ const allIssues = (issues: readonly z.core.$ZodIssue[]): z.core.$ZodIssue[] =>
       : [issue],
   );
 
-describe("the walls of a game to create", () => {
+describe("the walls of a bot game from a written position", () => {
   it("accepts a legal custom setup, so the body above is a real one", () => {
     const wall = { cell: [0, 0], orientation: "vertical" };
-    expect(createGameSchema.safeParse(gameToCreate([wall])).success).toBe(true);
+    expect(
+      createBotGameDirectSchema.safeParse(gameToCreate([wall])).success,
+    ).toBe(true);
   });
 
   it("caps them at every wall slot of the largest board", () => {
@@ -93,7 +95,7 @@ describe("the walls of a game to create", () => {
   });
 
   it("refuses more walls than the largest board has slots, before it reads any wall", () => {
-    const result = createGameSchema.safeParse(
+    const result = createBotGameDirectSchema.safeParse(
       gameToCreate(Array.from({ length: 100_000 }, () => 0)),
     );
     expect(result.success).toBe(false);
@@ -194,12 +196,13 @@ describe("one request body", () => {
     for (let row = 0; row < BOARD_SIDE_MAX; row++) {
       for (let col = 0; col < BOARD_SIDE_MAX - 1; col++) {
         walls.push({ cell: [row, col], orientation: "vertical" });
-        walls.push({ cell: [col, row], orientation: "horizontal" });
+        // A horizontal wall sits above its cell, so row 0 has none.
+        walls.push({ cell: [col + 1, row], orientation: "horizontal" });
       }
     }
     expect(walls).toHaveLength(MAX_WALLS_ON_A_BOARD);
     const body = gameToCreate(walls);
-    expect(createGameSchema.safeParse(body).success).toBe(true);
+    expect(createBotGameDirectSchema.safeParse(body).success).toBe(true);
     expect(JSON.stringify(body).length).toBeLessThan(maxBodyBytes);
   });
 
