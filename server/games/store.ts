@@ -219,11 +219,36 @@ export interface GameCreationResult {
   hostSocketToken: string;
 }
 
-const refreshSeatCredential = (player: SessionPlayer) => {
+// Callback to be invoked when a seat's credentials rotate (set by
+// game-socket.ts, which closes the sockets that hold the old socketToken).
+type SeatRotatedCallback = (
+  sessionId: string,
+  role: SessionPlayer["role"],
+) => void;
+let onSeatRotatedCallback: SeatRotatedCallback | null = null;
+
+/**
+ * Register the callback that revokes a rotated seat's open sockets.
+ * Called by game-socket.ts on startup.
+ */
+export const registerSeatRotatedCallback = (
+  callback: SeatRotatedCallback,
+): void => {
+  onSeatRotatedCallback = callback;
+};
+
+/**
+ * Give a seat new credentials, for an owner who opens the game again without
+ * the current ones (a new tab or device). This is the only place a seat's
+ * socketToken changes, so it is also where every socket on the old one stops
+ * being that seat (board task b3661f40): the callback closes them at once.
+ */
+const refreshSeatCredential = (session: GameSession, player: SessionPlayer) => {
   player.token = nanoid();
   player.socketToken = nanoid();
   player.connected = false;
   player.lastSeenAt = Date.now();
+  onSeatRotatedCallback?.(session.id, player.role);
 };
 
 /**
@@ -1345,7 +1370,7 @@ export const joinGameSession = (args: {
 
   // Seat already claimed. Allow reissue only if the authenticated user owns it.
   if (args.authUserId && joiner.authUserId === args.authUserId) {
-    refreshSeatCredential(joiner);
+    refreshSeatCredential(session, joiner);
     session.updatedAt = Date.now();
     return {
       kind: "player",
@@ -1462,12 +1487,12 @@ export const resolveGameAccess = (args: {
   const matchByAuth = (): SessionPlayer | null => {
     if (!args.authUserId) return null;
     if (session.players.host.authUserId === args.authUserId) {
-      refreshSeatCredential(session.players.host);
+      refreshSeatCredential(session, session.players.host);
       session.updatedAt = now;
       return session.players.host;
     }
     if (session.players.joiner.authUserId === args.authUserId) {
-      refreshSeatCredential(session.players.joiner);
+      refreshSeatCredential(session, session.players.joiner);
       session.updatedAt = now;
       return session.players.joiner;
     }

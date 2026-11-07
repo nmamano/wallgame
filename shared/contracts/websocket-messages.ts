@@ -291,3 +291,10 @@ export type LiveGamesServerMessage =
  * applications.
  */
 export const GAME_SOCKET_GONE_CLOSE_CODE = 4404;
+
+/**
+ * The close code of a player socket whose seat was opened again elsewhere (a
+ * new tab or device got new credentials). Its socketToken is no longer valid,
+ * so the client stops reconnecting on it.
+ */
+export const SEAT_MOVED_CLOSE_CODE = 4409;

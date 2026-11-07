@@ -12,7 +12,10 @@ import type {
   ChatChannel,
   ChatErrorCode,
 } from "../../../shared/contracts/websocket-messages";
-import { GAME_SOCKET_GONE_CLOSE_CODE } from "../../../shared/contracts/websocket-messages";
+import {
+  GAME_SOCKET_GONE_CLOSE_CODE,
+  SEAT_MOVED_CLOSE_CODE,
+} from "../../../shared/contracts/websocket-messages";
 import type {
   ControllerActionKind,
   ActionRequestPayload,
@@ -28,8 +31,16 @@ import type {
  *
  * "gone" is final: the server no longer holds this game (it closed the socket
  * with GAME_SOCKET_GONE_CLOSE_CODE), so no reconnect can bring it back.
+ *
+ * "moved" is final too: this seat was opened in another tab or device, which
+ * got new credentials (SEAT_MOVED_CLOSE_CODE), so this socket's token is dead.
  */
-export type TransportState = "connecting" | "open" | "reconnecting" | "gone";
+export type TransportState =
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "gone"
+  | "moved";
 
 export interface GameClientHandlers {
   onTransportState?: (state: TransportState) => void;
@@ -250,6 +261,12 @@ export class GameClient {
         // The game is gone from the server (for example, a restart dropped
         // it). Retrying would only repeat this refusal forever.
         this.handlers.onTransportState?.("gone");
+        return;
+      }
+      if (event.code === SEAT_MOVED_CLOSE_CODE) {
+        // Another tab or device holds the seat now; a retry with this token
+        // would only be refused.
+        this.handlers.onTransportState?.("moved");
         return;
       }
       this.scheduleReconnect();

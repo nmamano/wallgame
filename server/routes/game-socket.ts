@@ -35,6 +35,7 @@ import {
   assignSpectatorGuestName,
   releaseSpectatorGuestName,
   registerTimeoutCallback,
+  registerSeatRotatedCallback,
 } from "../games/store";
 import {
   NEW_GAMES_PAUSED_MESSAGE,
@@ -60,6 +61,7 @@ import type {
 import {
   clientMessageSchema,
   GAME_SOCKET_GONE_CLOSE_CODE,
+  SEAT_MOVED_CLOSE_CODE,
 } from "../../shared/contracts/websocket-messages";
 import { giveTimePayloadSchema } from "../../shared/contracts/controller-actions";
 import type {
@@ -1389,6 +1391,40 @@ const handleTimeoutFromTimer = async (sessionId: string): Promise<void> => {
 
 // Register the timeout callback so timers can trigger broadcasts
 registerTimeoutCallback(handleTimeoutFromTimer);
+
+/**
+ * Close every socket of a seat that no longer holds its current socketToken
+ * (the store just rotated the seat's credentials). Every role-based path -
+ * offers, chat, rematch credentials - trusts a player socket's role, so a
+ * socket in sessionSockets must always hold its seat's current token (board
+ * task b3661f40). The entry leaves the registry now, before its close event,
+ * so no send can reach it in between; its onClose then finds no entry.
+ */
+const revokeStaleSeatSockets = (sessionId: string, role: "host" | "joiner") => {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+  const currentToken = getSession(sessionId).players[role].socketToken;
+  for (const entry of [...sockets]) {
+    if (entry.role !== role || entry.socketToken === currentToken) continue;
+    removeSocket(entry);
+    clearRateLimitEntry(entry.id);
+    recordSocketConnect(sessionId, { role: "player", outcome: "closed" });
+    console.info("[ws] closed a socket whose seat was opened elsewhere", {
+      sessionId,
+      role,
+    });
+    try {
+      entry.ctx.close(SEAT_MOVED_CLOSE_CODE, "Seat opened elsewhere");
+    } catch (error) {
+      console.error("Failed to close a stale seat socket", {
+        error,
+        sessionId,
+      });
+    }
+  }
+};
+
+registerSeatRotatedCallback(revokeStaleSeatSockets);
 
 const handleMove = async (
   socket: SessionSocket,

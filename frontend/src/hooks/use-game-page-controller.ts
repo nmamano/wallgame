@@ -3564,7 +3564,9 @@ export function useGamePageController(gameId: string) {
   const actionStatusText = isReconnecting
     ? transportState === "gone"
       ? "This game is no longer available."
-      : "Reconnecting to the server..."
+      : transportState === "moved"
+        ? "This game was opened in another tab or device."
+        : "Reconnecting to the server..."
     : (actionError ??
       (selectedPawn
         ? `Selected ${selectedPawn.type} (${cellToStandardNotation(selectedPawn.cell, rows)})`

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { GameClient, type TransportState } from "./game-client";
-import { GAME_SOCKET_GONE_CLOSE_CODE } from "../../../shared/contracts/websocket-messages";
+import {
+  GAME_SOCKET_GONE_CLOSE_CODE,
+  SEAT_MOVED_CLOSE_CODE,
+} from "../../../shared/contracts/websocket-messages";
 
 /**
  * Lifecycle tests for board 97f9d99c.
@@ -259,5 +262,30 @@ describe("GameClient and a game the server no longer holds", () => {
     expect(states.at(-1)).toBe("gone");
     expect(pendingTimeouts).toHaveLength(0);
     expect(FakeSocket.instances).toHaveLength(2);
+  });
+});
+
+describe("GameClient and a seat opened in another tab or device", () => {
+  it("stops reconnecting and reports moved on the seat-moved close code", () => {
+    // No access request either: a GET without the current token would rotate
+    // the seat back, and two such tabs would take it from each other in turn.
+    const realFetch = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = (() => {
+      requests += 1;
+      return Promise.reject(new Error("no request expected"));
+    }) as unknown as typeof fetch;
+    try {
+      const { states } = newClient();
+      FakeSocket.instances[0].emitOpen();
+      FakeSocket.instances[0].emitClose(SEAT_MOVED_CLOSE_CODE);
+
+      expect(states).toEqual(["connecting", "open", "moved"]);
+      expect(pendingTimeouts).toHaveLength(0);
+      expect(FakeSocket.instances).toHaveLength(1);
+      expect(requests).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
