@@ -9,6 +9,8 @@
  *   node scripts/game-video/daily/crew.mjs <command> [options]
  *
  * Every production command names its item with --item <id> (v-<day>-<n>).
+ * A flag the command does not take, or a stray word, stops it before it
+ * does anything (COMMAND_FLAGS).
  *
  *   status [--item ID]             every item in work, by state, with the
  *                                  counts; with --item, that one item
@@ -318,6 +320,7 @@ import { copyLines } from "./copy.mjs";
 import { quoteLines } from "./quote.mjs";
 import { noStoryLine } from "./post-instagram.mjs";
 import { lintReport, lintStops } from "./lint.mjs";
+import { flagFaults, parseFlagLine } from "./flags.mjs";
 import * as tools from "./tools.mjs";
 import {
   currentScriptReview,
@@ -402,16 +405,82 @@ const rules = () => {
 const STORYBOARD_TIMEOUT_MS = 120_000;
 const APP_NAME = "game-video";
 
+/**
+ * The flags each command takes (flags.mjs: a plain name takes a value, "!"
+ * is a switch, "*" may repeat). Every command also takes GLOBAL_FLAGS.
+ * crew.mjs refuses any other flag before the command runs (task 8a9ea73f),
+ * and a command that reads a flag its line does not name stops as a bug,
+ * so this table cannot fall behind the code without a loud error.
+ */
+export const COMMAND_FLAGS = {
+  status: "item",
+  sounds: "",
+  facts: "report top",
+  pick: "report rank game style from caption! title!",
+  vet: "item video reviewer verdict notes notes-file",
+  asks: "again! item",
+  copy: "item file copy-version",
+  render: "item wait! force! live!",
+  preview: "item plies edl* draft!",
+  direct: "item edl claim-risk-ok no-lint! changed what",
+  lint: "item edl claim-risk-ok",
+  queue: "review-target",
+  post: "item confirm-not-posted",
+  tiktok: "by lost!",
+  slot: "by now!",
+  hold: "item why by release!",
+  "approve-fixed": "item ask by",
+  drop: "item why",
+  storyboard: "item edl",
+  ship: "to",
+  sheet: "item",
+  check: "item sheet verdicts",
+  feedback: "last",
+  log: "dry-run!",
+  "auth-check": "platform",
+  scan: "item preview video every",
+  strip: "item preview video from seconds fps",
+  crop: "item preview video at box cell radius",
+  audio: "item preview video from seconds",
+  fullcheck: "item preview video",
+  "loudness-ab": "item preview video target",
+  script: "item edl out",
+  "script-review-prompt": "item script edl",
+  "script-review": "item script notes-file reviewer verdict",
+  "script-unchanged": "item by why",
+  "script-fix": "item script by why",
+  "vet-prompt": "item",
+};
+/** The app's address and the director docs: for tests and other boxes. */
+export const GLOBAL_FLAGS = "app docs";
+
 const argv = process.argv.slice(2);
 const command = argv[0];
+const commandFlags = parseFlagLine(
+  `${COMMAND_FLAGS[command] ?? ""} ${GLOBAL_FLAGS}`,
+);
+/** Stop on a read of a flag the command's line does not name: a bug. */
+const declared = (name) => {
+  if (!commandFlags.has(name)) {
+    throw new Error(
+      `crew.mjs bug: ${command} reads --${name}, which COMMAND_FLAGS.${command} does not name`,
+    );
+  }
+};
 const flag = (name) => {
+  declared(name);
   const at = argv.indexOf(`--${name}`);
   return at === -1 ? undefined : argv[at + 1];
 };
-const has = (name) => argv.includes(`--${name}`);
+const has = (name) => {
+  declared(name);
+  return argv.includes(`--${name}`);
+};
 /** Every value of a flag that may repeat, in order. */
-const flagsAll = (name) =>
-  argv.flatMap((a, i) => (a === `--${name}` ? [argv[i + 1]] : []));
+const flagsAll = (name) => {
+  declared(name);
+  return argv.flatMap((a, i) => (a === `--${name}` ? [argv[i + 1]] : []));
+};
 
 const die = (message) => {
   console.error(message);
@@ -1132,7 +1201,7 @@ const commands = {
     const path = flag("edl") ?? die("direct needs --edl <edl.json>");
     const edl = JSON.parse(readFileSync(path, "utf8"));
     const claimRiskOk = flag("claim-risk-ok")?.split(",") ?? [];
-    const noLint = process.argv.includes("--no-lint");
+    const noLint = has("no-lint");
     const changedText = flag("changed");
     const what = flag("what");
     if ((changedText == null) !== (what == null)) {
@@ -1718,7 +1787,12 @@ const commands = {
   },
 };
 
+/** The commands' names, for the test that COMMAND_FLAGS names each one. */
+export const COMMAND_NAMES = Object.keys(commands);
+
 if (isMain(import.meta)) {
   if (!commands[command]) die(`commands: ${Object.keys(commands).join(", ")}`);
+  const faults = flagFaults(command, argv.slice(1), commandFlags);
+  if (faults.length > 0) die(faults.join("\n"));
   await commands[command]();
 }
