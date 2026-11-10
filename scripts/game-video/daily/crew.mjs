@@ -44,7 +44,7 @@
  *                                  sound with a high claim risk is listed
  *                                  last, and `direct` refuses it
  *   direct --item ID --edl F [--claim-risk-ok K,K] [--no-lint]
- *          [--changed PLIES --what "<one line>"]
+ *          [--what "<one line>"]
  *                                  the director's edit decision list for the
  *                                  item's game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending.
@@ -58,16 +58,11 @@
  *                                  Nil asks for one). --no-lint stores
  *                                  without the lint, only when the 4090
  *                                  cannot lint. A finished item goes back to
- *                                  draft. After Nil's Revise, --changed
- *                                  and --what are needed (Nil, 2026-11-01,
- *                                  C54): his next ask shows only the clip
- *                                  of what changed. PLIES, with commas: a
- *                                  ply with all its beats ("20"), one beat
- *                                  of a ply by its asset, kind or sound
- *                                  ("20:resign-flag"), "end" (the end
- *                                  card); or "all" for the whole video.
- *                                  --what: one line, e.g. "both of bro's
- *                                  pawns wave flags"
+ *                                  draft. After Nil's Revise, --what is
+ *                                  needed: one line, e.g. "both of bro's
+ *                                  pawns wave flags", that his next ask
+ *                                  shows above the WHOLE video (Nil,
+ *                                  2026-11-07: "full games only")
  *   lint --item ID [--edl F] [--claim-risk-ok K,K]
  *                                  every fault of the item's list (or of F)
  *                                  at once, with ply and second: the app's
@@ -338,7 +333,6 @@ import {
 } from "./script.mjs";
 import { timelineOf } from "./strips.mjs";
 import { heldWords } from "./review-asks.mjs";
-import { changedLabel, parseChanged } from "./changed-clip.mjs";
 
 const OFFICE = "http://localhost:4000";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -422,7 +416,7 @@ export const COMMAND_FLAGS = {
   copy: "item file copy-version",
   render: "item wait! force! live!",
   preview: "item plies edl* draft!",
-  direct: "item edl claim-risk-ok no-lint! changed what",
+  direct: "item edl claim-risk-ok no-lint! what",
   lint: "item edl claim-risk-ok",
   queue: "review-target",
   post: "item confirm-not-posted",
@@ -1202,19 +1196,7 @@ const commands = {
     const edl = JSON.parse(readFileSync(path, "utf8"));
     const claimRiskOk = flag("claim-risk-ok")?.split(",") ?? [];
     const noLint = has("no-lint");
-    const changedText = flag("changed");
     const what = flag("what");
-    if ((changedText == null) !== (what == null)) {
-      die("direct takes --changed and --what together");
-    }
-    let changed = null;
-    if (changedText != null) {
-      try {
-        changed = { ...parseChanged(changedText), what };
-      } catch (err) {
-        die(err.message);
-      }
-    }
     // R1: a list that cannot render is never stored.
     const linted = noLint ? null : await lintOf(id, edl, claimRiskOk);
     if (linted && lintStops(linted).length) {
@@ -1224,7 +1206,7 @@ const commands = {
       item: id,
       edl,
       claimRiskOk,
-      ...(changed ? { changed } : {}),
+      ...(what != null ? { what } : {}),
       ...(linted ? { lint: linted.lintId } : { noLint: true }),
     });
     console.log(await itemSummary(id));
@@ -1777,7 +1759,7 @@ const commands = {
         ...revises.map((r) => `  - ${r.at}: ${JSON.stringify(r.notes ?? "")}`),
         ...(c.reviews.at(-1)?.action === "revise" && c.edl?.changed
           ? [
-              `- CHANGED (the Director, on direct): ${JSON.stringify(c.edl.changed.what)}, ${changedLabel(c.edl.changed)}. Nil's ask shows him only a clip of that moment, so check the WHOLE video: a fault anywhere fails it (Wall Game PM, 2026-11-01, C54).`,
+              `- CHANGED (the Director, on direct): ${JSON.stringify(c.edl.changed.what)}. Check the WHOLE video: a fault anywhere fails it.`,
             ]
           : []),
         `- NOTES: ${join(scratch, "notes.txt")} (write your findings here)`,

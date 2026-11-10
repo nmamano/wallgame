@@ -1392,8 +1392,6 @@ const withAsks = () => {
       nextSlot: NEXT_SLOT,
       log: { warn: () => undefined },
       now: () => new Date(clock.at),
-      cut: (video: string, span: { from: number; to: number }) =>
-        `${video}#${span.from}-${span.to}`,
     });
   return { ...base, office, records, told, sync, clock };
 };
@@ -1715,7 +1713,7 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     );
   });
 
-  test("after a Revise, the ask shows only the clip of what changed, and says what and where (C54)", async () => {
+  test("after a Revise, the ask shows the whole video and the Director's line of what changed (9cd93aa0)", async () => {
     const { store, office, sync, dir } = withAsks();
     await sync();
     const [askId] = office.openIds();
@@ -1726,63 +1724,25 @@ describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
     });
     await sync();
     rerender(store, dir, "the flags render", "finished");
-    // As direct --changed 20 --what ... stores it, and the render's timeline.
-    const file = join(store.dirs.items, `${ID}.json`);
-    const it = JSON.parse(readFileSync(file, "utf8")) as {
-      edl: Record<string, unknown>;
-      render: { video: Record<string, unknown> } & Record<string, unknown>;
-    };
-    it.edl.changed = {
-      plies: [20],
-      beats: [],
-      end: false,
-      what: "both of bro's pawns wave flags",
-    };
-    it.render.video.durationSeconds = 41.867;
-    it.render.timeline = {
-      moves: [
-        { ply: 19, at: 25.23 },
-        { ply: 20, at: 28.6 },
-      ],
-      events: [{ index: 0, ply: 20, start: 34.23, end: 36.8 }],
-      sounds: [],
-    };
-    writeFileSync(file, JSON.stringify(it));
-    expect((await sync()).opened).toEqual([ID]);
-    const body = office.bodies.at(-1)!;
-    const video = String(it.render.video.path);
-    expect(body.readFiles).toEqual([`${video}#26.6-41.9`]);
-    const lines = String(body.text).split("\n");
-    expect(lines[0]).toStartWith("Revision after your Revise of ");
-    expect(lines.slice(1, 5)).toEqual([
-      "> what if both pawns wave the flag?",
-      "Changed: both of bro's pawns wave flags, 26.6-41.9 s. The clip shows only that moment.",
-      "The rest of the video passed the vet.",
-      "Post this video?",
-    ]);
-  });
-
-  test("after a Revise with --changed all, or with no timeline, the ask shows the whole video", async () => {
-    const { store, office, sync, dir } = withAsks();
-    await sync();
-    const [askId] = office.openIds();
-    office.answer(askId, {
-      outcome: "replied",
-      by: "Nil",
-      answer: "Revise: a new caption",
-    });
-    await sync();
-    rerender(store, dir, "the caption render", "finished");
+    // As direct --what ... stores it.
     const file = join(store.dirs.items, `${ID}.json`);
     const it = JSON.parse(readFileSync(file, "utf8")) as {
       edl: Record<string, unknown>;
       render: { video: { path: string } };
     };
-    it.edl.changed = { plies: "all", what: "the caption" };
+    it.edl.changed = { what: "both of bro's pawns wave flags" };
     writeFileSync(file, JSON.stringify(it));
     expect((await sync()).opened).toEqual([ID]);
-    expect(office.bodies.at(-1)!.readFiles).toEqual([it.render.video.path]);
-    expect(String(office.bodies.at(-1)!.text)).not.toContain("Changed:");
+    const body = office.bodies.at(-1)!;
+    // Nil, 2026-11-07: "full games only".
+    expect(body.readFiles).toEqual([it.render.video.path]);
+    const lines = String(body.text).split("\n");
+    expect(lines[0]).toStartWith("Revision after your Revise of ");
+    expect(lines.slice(1, 4)).toEqual([
+      "> what if both pawns wave the flag?",
+      "Changed: both of bro's pawns wave flags.",
+      "Post this video?",
+    ]);
   });
 
   test("an ask for a new video says which ask it replaces when the old one was withdrawn unanswered", async () => {

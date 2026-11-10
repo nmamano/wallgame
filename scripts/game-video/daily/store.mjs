@@ -1000,8 +1000,8 @@ export const openStore = (dataDir) => {
      * its render captures live while the 4090's capture has none.
      * @param {string} id
      * @param {{ edl: any, text: string, changed?: any, summary: unknown[], needsPawnArt: boolean }} list
-     *   `changed`: after Nil's Revise, what the list changed
-     *   (changed-clip.mjs), else null
+     *   `changed`: after Nil's Revise, { what }: one line of what the
+     *   list changed, which his next ask shows; else null
      */
     direct(id, { edl, text, changed = null, summary, needsPawnArt }) {
       const sha = createHash("sha256").update(text).digest("hex");

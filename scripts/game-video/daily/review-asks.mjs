@@ -51,7 +51,6 @@ import { writeAtomic, StepRefused, fixedApprovalProblem } from "./store.mjs";
 import { REVIEWER_MEMBER_ID, reviewView, directorText } from "./review.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
-import { changedSpan, cutClip } from "./changed-clip.mjs";
 import {
   SLOT_ZONE,
   nextDay,
@@ -137,29 +136,16 @@ export const revisionLines = (item, previous) => {
 };
 
 /**
- * After Nil's Revise, the moment the list changed (store item.edl.changed,
- * from crew.mjs direct --changed --what) as a clip: what his ask shows
- * instead of the whole video (Nil, 2026-11-01, CASES C54: "show me only
- * the relevant snippet for the revision"). Null for a first review, for
- * "all", or when the render has no timeline: the ask shows the whole video.
+ * After Nil's Revise, the line the Director wrote on direct (--what) of
+ * what the list changed, or null. The ask still shows the whole video
+ * (Nil, 2026-11-07: "full games only").
  * @param {any} item the store item
- * @param {(video: string, span: { from: number, to: number }) => string} cut
- * @returns {{ what: string, from: number, to: number, path: string } | null}
+ * @returns {string | null}
  */
-export const revisionClip = (item, cut = cutClip) => {
-  const changed = item.edl?.changed;
-  if (item.reviews.at(-1)?.action !== "revise" || !changed) return null;
-  const { video, timeline } = item.render;
-  if (!timeline?.moves?.length || !video.durationSeconds) return null;
-  const span = changedSpan(
-    timeline,
-    changed,
-    video.durationSeconds,
-    item.edl.doc.events,
-  );
-  if (!span) return null;
-  return { what: changed.what, ...span, path: cut(video.path, span) };
-};
+export const revisionWhat = (item) =>
+  item.reviews.at(-1)?.action === "revise"
+    ? (item.edl?.changed?.what ?? null)
+    : null;
 
 /**
  * The ask's text: what Nil must decide, then what the review page shows
@@ -168,20 +154,12 @@ export const revisionClip = (item, cut = cutClip) => {
  * @param {any} item the store item
  * @param {ReturnType<typeof reviewView>["items"][number]} card
  * @param {any} [previous]
- * @param {{ what: string, from: number, to: number } | null} [change] the
- *   clip the ask shows instead of the whole video (revisionClip)
  */
-export const askPrompt = (item, card, previous, change = null) =>
-  [
+export const askPrompt = (item, card, previous) => {
+  const what = revisionWhat(item);
+  return [
     ...revisionLines(item, previous),
-    ...(change
-      ? [
-          `Changed: ${change.what}, ${change.from.toFixed(1)}-${change.to.toFixed(1)} s. The clip shows only that moment.`,
-          // True of every ask: an item is in review only after its video
-          // passed the vet (Wall Game PM, review 142).
-          "The rest of the video passed the vet.",
-        ]
-      : []),
+    ...(what ? [`Changed: ${what}.`] : []),
     "Post this video?",
     `On the video: "${item.caption}"${item.payoff?.text ? ` then "${item.payoff.text}"` : ""}`,
     `Post: ${card.caption}`,
@@ -197,6 +175,7 @@ export const askPrompt = (item, card, previous, change = null) =>
       : []),
     "Answer Approve, or Revise: / Discard: with your notes.",
   ].join("\n");
+};
 
 /**
  * Nil's words as an action: "Approve", "Revise: <notes>" or "Discard:
@@ -319,8 +298,6 @@ export const askAgain = (records, itemId) => {
  * @param {{ pacific: string, willPost: boolean, why: string | null }} deps.nextSlot
  * @param {{ warn: (m: string) => void }} [deps.log]
  * @param {() => Date} [deps.now]
- * @param {(video: string, span: { from: number, to: number }) => string} [deps.cut]
- *   cuts a revision's clip (changed-clip.mjs cutClip; tests stub it)
  * @returns {Promise<{ opened: string[], applied: string[], withdrawn: string[], told: string[], held: string[] }>}
  */
 export const syncReviewAsks = async ({
@@ -331,7 +308,6 @@ export const syncReviewAsks = async ({
   nextSlot,
   log = console,
   now = () => new Date(),
-  cut = cutClip,
 }) => {
   const out = { opened: [], applied: [], withdrawn: [], told: [], held: [] };
   const tell = async (itemId, text) => {
@@ -548,26 +524,15 @@ export const syncReviewAsks = async ({
         continue;
       }
     }
-    // After a Revise: only the clip of what changed (revisionClip). A cut
-    // that fails shows the whole video, and the Director hears why.
-    let change = null;
-    try {
-      change = revisionClip(item, cut);
-    } catch (err) {
-      await tell(
-        card.id,
-        `ASK: the clip of what changed in ${card.id} could not be cut (${err.message}); Nil's ask shows the whole video.`,
-      );
-    }
     let ask;
     try {
       ask = await office.open({
-        text: askPrompt(item, card, previous, change),
+        text: askPrompt(item, card, previous),
         member: REVIEWER_USERNAME,
         priority: ASK_PRIORITY,
         options: ASK_OPTIONS,
         ...(card.approveProblem ? {} : { recommended: "Approve" }),
-        readFiles: [change?.path ?? item.render.video.path],
+        readFiles: [item.render.video.path],
       });
     } catch (err) {
       // Never again without `member`: that ask would go to the app's owner

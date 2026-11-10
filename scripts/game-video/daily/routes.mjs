@@ -91,7 +91,6 @@ import {
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { OVERLAYS, needsNilOk, riskLevel } from "../overlays.mjs";
 import { timelineOf } from "./strips.mjs";
-import { changedProblem } from "./changed-clip.mjs";
 import { siteMove } from "../site-move.mjs";
 import { gridOf } from "./tools.mjs";
 import { lintNotes, lintRecapture, lintStops } from "./lint.mjs";
@@ -286,6 +285,24 @@ const SECRET_GROUPS = {
  * or Connect of its own, so it is live exactly when that platform is live,
  * for the same reasons (Wall Game PM, 2026-10-29).
  */
+/** The longest `--what` line: one line of an ask. */
+export const CHANGED_WHAT_MAX = 200;
+
+/**
+ * Why `what` cannot say what a revised list changed, or null: one line of
+ * at most CHANGED_WHAT_MAX characters.
+ * @param {unknown} what
+ */
+export const whatProblem = (what) => {
+  if (typeof what !== "string" || !what.trim() || what.includes("\n")) {
+    return "what is one line that says what changed";
+  }
+  if (what.length > CHANGED_WHAT_MAX) {
+    return `what is ${what.length} characters; at most ${CHANGED_WHAT_MAX}`;
+  }
+  return null;
+};
+
 const ACCOUNT_OF = { "instagram-story": "instagram" };
 const accountOf = (platform) => ACCOUNT_OF[platform] ?? platform;
 
@@ -2212,8 +2229,9 @@ export const createDaily = ({
     },
 
     /**
-     * {item, edl, claimRiskOk?}: the director's edit decision list for the
-     * item's game.
+     * {item, edl, claimRiskOk?, what?}: the director's edit decision list
+     * for the item's game; `what`, after Nil's Revise only, is one line of
+     * what the list changed.
      * edl.mjs is Worker 2's contract with the renderer; the moves come from
      * the candidate report, so a bad ply or wall is refused before the 4090
      * spends a view of the game on it.
@@ -2229,23 +2247,20 @@ export const createDaily = ({
       if (errors.length) throw new StepRefused(errors.join("; "));
       const text = listText(edl);
       const linted = lintGate(item, text, body);
-      // After Nil's Revise, the list names what it changed, so his next
-      // ask shows only that moment (Nil, 2026-11-01, CASES C54).
+      // After Nil's Revise, the list says in one line what it changed:
+      // his next ask shows that line over the whole video (Nil,
+      // 2026-11-07: "full games only").
       const revised = item.reviews.at(-1)?.action === "revise";
       if (revised) {
-        const problem = changedProblem(
-          body.changed,
-          item.candidate.movesCount - 1,
-          edl.events,
-        );
+        const problem = whatProblem(body.what);
         if (problem) {
           throw new StepRefused(
-            `${item.id} follows Nil's Revise, so its list names what changed (direct --changed <plies|end|all> --what "<one line>"): ${problem}`,
+            `${item.id} follows Nil's Revise, so direct needs --what "<one line of what changed>": ${problem}`,
           );
         }
-      } else if (body.changed) {
+      } else if (body.what != null) {
         throw new StepRefused(
-          `${item.id} has no Revise from Nil to answer: a first review shows the whole video, so direct takes no --changed`,
+          `${item.id} has no Revise from Nil to answer, so direct takes no --what`,
         );
       }
       json(
@@ -2254,7 +2269,7 @@ export const createDaily = ({
         store.direct(item.id, {
           edl,
           text,
-          changed: revised ? body.changed : null,
+          changed: revised ? { what: body.what } : null,
           needsPawnArt: linted.needsPawnArt,
           summary: [
             ...edlSummary(edl),

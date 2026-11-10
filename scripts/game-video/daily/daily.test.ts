@@ -5267,13 +5267,8 @@ describe("Nil's revision asks show only what changed (Nil, 2026-11-01, C54)", ()
         noLint: true,
         ...extra,
       });
-    const changed = {
-      plies: [22],
-      beats: [],
-      end: false,
-      what: "a new sound on 22",
-    };
-    const first = await direct({ changed });
+    const what = "a new sound on 22";
+    const first = await direct({ what });
     expect(first.status).toBe(409);
     expect(first.body.error).toContain("has no Revise from Nil to answer");
     expect((await direct({})).status).toBe(200);
@@ -5289,15 +5284,14 @@ describe("Nil's revision asks show only what changed (Nil, 2026-11-01, C54)", ()
     const bare = await direct({});
     expect(bare.status).toBe(409);
     expect(bare.body.error).toContain(
-      'direct --changed <plies|end|all> --what "<one line>"): changed is missing',
+      'direct needs --what "<one line of what changed>": what is one line',
     );
-    const past = await direct({ changed: { ...changed, plies: [999] } });
-    expect(past.status).toBe(409);
-    expect(past.body.error).toContain("the game's plies are 0 to");
-    expect((await direct({ changed })).status).toBe(200);
+    const twoLines = await direct({ what: "a\nb" });
+    expect(twoLines.status).toBe(409);
+    expect((await direct({ what })).status).toBe(200);
     const stored = JSON.parse(readFileSync(file, "utf8")) as {
       edl: { changed: unknown };
     };
-    expect(stored.edl.changed).toEqual(changed);
+    expect(stored.edl.changed).toEqual({ what });
   });
 });
