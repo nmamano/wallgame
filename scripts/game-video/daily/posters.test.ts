@@ -6,9 +6,8 @@
  * never in a URL; the one public request comes after `beforeCommit`; and a
  * failure is "not posted" only when the platform says so, else uncertain.
  */
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dryRunTransport, errorText, NotPosted, sha256 } from "./transport.mjs";
 import {
@@ -61,6 +60,21 @@ import {
 import { createDaily } from "./routes.mjs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
 
 interface Req {
   method: string;
@@ -82,7 +96,7 @@ const LINK =
   "https://wallgame.io/?utm_source=bluesky&utm_medium=social&utm_campaign=daily-video";
 const TEXT = `🎮 Red walled Blue in. ${LINK}`;
 const noSleep = () => Promise.resolve();
-const tempDir = () => mkdtempSync(join(tmpdir(), "posters-test-"));
+const tempDir = () => TEST_TMP.dir("posters-test-");
 
 /** What `run` failed with; a test fails if it did not fail. */
 const failure = async (run: Promise<unknown>): Promise<unknown> => {
@@ -1122,11 +1136,13 @@ describe("read-only auth checks", () => {
     connected: Record<string, object> = {},
   ) => {
     const transport = fakeLive(answer);
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env,
+        live: () => transport,
+      }),
+    );
     const tokenStore = openTokenStore(join(daily.store.dirs.root, "tokens"));
     for (const [p, record] of Object.entries(connected)) {
       tokenStore.write(p, record as Parameters<typeof tokenStore.write>[1]);
@@ -1293,11 +1309,13 @@ describe("GET /api/daily/tiktok-status", () => {
     } = {},
   ) => {
     const transport = fakeLive(answer(status));
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env,
+        live: () => transport,
+      }),
+    );
     const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
     if (record)
       tokens.write("tiktok", record as Parameters<typeof tokens.write>[1]);
@@ -1443,11 +1461,13 @@ describe("Nil's TikTok inbox on the app (tiktok-drafts.mjs)", () => {
             },
           },
     );
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env: ENV,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env: ENV,
+        live: () => transport,
+      }),
+    );
     openTokenStore(join(daily.store.dirs.root, "tokens")).write(
       "tiktok",
       RECORD as Parameters<ReturnType<typeof openTokenStore>["write"]>[1],
@@ -1570,11 +1590,13 @@ describe("GET /api/daily/youtube-recent", () => {
     { record = RECORD as object | null } = {},
   ) => {
     const transport = fakeLive(answer);
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env: ENV as Record<string, string>,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env: ENV as Record<string, string>,
+        live: () => transport,
+      }),
+    );
     const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
     if (record) {
       tokens.write("youtube", record as Parameters<typeof tokens.write>[1]);

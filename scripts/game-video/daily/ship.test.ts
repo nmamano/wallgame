@@ -1,13 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO } from "../render-kit.mjs";
 import {
@@ -19,6 +12,10 @@ import {
   moveRelease,
   ship,
 } from "./ship.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const git = (dir: string, ...args: string[]) => {
   const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
@@ -31,7 +28,7 @@ const git = (dir: string, ...args: string[]) => {
  * editor branch with a commit that is not on main yet.
  */
 const repos = () => {
-  const root = mkdtempSync(join(tmpdir(), "ship-test-"));
+  const root = TEST_TMP.dir("ship-test-");
   const main = join(root, "main");
   const release = join(root, "release");
   spawnSync("git", ["init", "-q", "-b", "main", main]);

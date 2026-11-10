@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, renderKitFiles } from "./render-kit.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 describe("the render kit", () => {
   const files = renderKitFiles();
@@ -37,7 +40,7 @@ describe("the render kit", () => {
   });
 
   test("follows re-exports and dynamic imports, and refuses a missing file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "render-kit-"));
+    const dir = TEST_TMP.dir("render-kit-");
     writeFileSync(join(dir, "a.mjs"), 'export { x } from "./b.mjs";\n');
     writeFileSync(join(dir, "b.mjs"), 'const c = await import("./c");\n');
     writeFileSync(join(dir, "c.ts"), "export const c = 1;\n");

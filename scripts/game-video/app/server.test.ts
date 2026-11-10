@@ -6,10 +6,12 @@
  */
 import { describe, expect, test, afterEach } from "bun:test";
 import { createServer } from "node:net";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { POSTING_SECRETS } from "../daily/routes.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const SERVER = resolve(import.meta.dir, "server.mjs");
 
@@ -47,7 +49,7 @@ const startApp = async () => {
     {
       env: testEnv({
         PORT: String(port),
-        ISOMUX_APP_DATA_DIR: mkdtempSync(join(tmpdir(), "game-video-test-")),
+        ISOMUX_APP_DATA_DIR: TEST_TMP.dir("game-video-test-"),
       }),
       stdout: "pipe",
       stderr: "pipe",

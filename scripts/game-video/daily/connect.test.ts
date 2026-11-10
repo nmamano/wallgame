@@ -3,11 +3,10 @@
  * platform's code exchange and the Meta discovery, against canned replies
  * only. Nothing here calls a platform.
  */
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openTokenStore } from "./token-store.mjs";
 import { connectPage } from "./connect-page.mjs";
@@ -29,8 +28,23 @@ import {
   missingClientSecrets,
   xRequestToken,
 } from "./connect.mjs";
+import { testTmp } from "../test-tmp";
 
-const tempDir = () => mkdtempSync(join(tmpdir(), "connect-test-"));
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
+
+const tempDir = () => TEST_TMP.dir("connect-test-");
 
 /** What `run` threw; a test fails if it did not throw. */
 const thrown = (run: () => unknown): unknown => {
@@ -738,12 +752,14 @@ describe("/daily/connect through the app", () => {
             text: "oauth_token=123-SECRET-AT&oauth_token_secret=SECRET-ATS&user_id=123&screen_name=wallgameio",
           },
     );
-    const daily = createDaily({
-      dataDir: dir,
-      env,
-      ids: IDS,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env,
+        ids: IDS,
+        live: () => transport,
+      }),
+    );
     const app = await serve(daily);
     try {
       const start = await app.call("/daily/connect/x/start", {
@@ -828,12 +844,14 @@ describe("/daily/connect through the app", () => {
         logged.push(a.map(String).join(" "));
       }),
     );
-    const daily = createDaily({
-      dataDir: dir,
-      env: ENV,
-      ids: IDS,
-      live: () => fakeLive((req) => answer(req)),
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: ENV,
+        ids: IDS,
+        live: () => fakeLive((req) => answer(req)),
+      }),
+    );
     const app = await serve(daily);
     try {
       const page = await app.call("/daily/connect");
@@ -985,12 +1003,14 @@ describe("/daily/connect through the app", () => {
   });
 
   test("a platform without its client secrets has no Connect button, and start is refused", async () => {
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env: {},
-      ids: IDS,
-      live: () => fakeLive(() => ({ status: 500 })),
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env: {},
+        ids: IDS,
+        live: () => fakeLive(() => ({ status: 500 })),
+      }),
+    );
     const app = await serve(daily);
     try {
       const page = await app.call("/daily/connect");
@@ -1010,18 +1030,20 @@ describe("/daily/connect through the app", () => {
   });
 
   test("a null id keeps the platform dry-run with a plain reason; an env var of its name has no effect", async () => {
-    const daily = createDaily({
-      dataDir: tempDir(),
-      // The secret is set, and so is an env var with the id's name.
-      env: {
-        YOUTUBE_CLIENT_ID: "from-env",
-        YOUTUBE_CLIENT_SECRET: "SECRET-YT",
-        BLUESKY_APP_PASSWORD: "SECRET-BSKY",
-        R2_ACCESS_KEY_ID: "SECRET-R2-ID",
-      },
-      ids: { ...PUBLIC_IDS, YOUTUBE_CLIENT_ID: null },
-      live: () => fakeLive(() => ({ status: 500 })),
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        // The secret is set, and so is an env var with the id's name.
+        env: {
+          YOUTUBE_CLIENT_ID: "from-env",
+          YOUTUBE_CLIENT_SECRET: "SECRET-YT",
+          BLUESKY_APP_PASSWORD: "SECRET-BSKY",
+          R2_ACCESS_KEY_ID: "SECRET-R2-ID",
+        },
+        ids: { ...PUBLIC_IDS, YOUTUBE_CLIENT_ID: null },
+        live: () => fakeLive(() => ({ status: 500 })),
+      }),
+    );
     const app = await serve(daily);
     try {
       const page = await app.call("/daily/connect");
@@ -1103,12 +1125,14 @@ describe("/daily/connect shows what the Meta token finds", () => {
     pauses: PlatformPause[] = [],
   ) => {
     const transport = fakeLive(metaReplies(pages));
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env,
-      pauses,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env,
+        pauses,
+        live: () => transport,
+      }),
+    );
     const server: Server = createServer((req, res) => {
       void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
     });

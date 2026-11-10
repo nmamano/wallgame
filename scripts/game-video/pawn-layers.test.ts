@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   existsSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import {
@@ -22,6 +20,10 @@ import {
   newComposePage,
   scrubOffSiteSkins,
 } from "./pawn-layers.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp({ processTmp: true });
 
 /** The message a promise rejects with, or null when it resolves. */
 const errorOf = async (p: Promise<unknown>) => {
@@ -219,7 +221,7 @@ describe.skipIf(!existsSync(CHROME))("composeLayers in Chromium", () => {
       fetch: () => new Response(SVG, { headers }),
     });
     const browser = await chromium.launch({ executablePath: CHROME });
-    const dir = mkdtempSync(join(tmpdir(), "pawn-layers-"));
+    const dir = TEST_TMP.dir("pawn-layers-");
     try {
       const page = await browser.newPage({
         viewport: { width: 30, height: 30 },
@@ -283,7 +285,7 @@ describe.skipIf(!existsSync(CHROME))("composeLayers in Chromium", () => {
       },
     });
     const browser = await chromium.launch({ executablePath: CHROME });
-    const dir = mkdtempSync(join(tmpdir(), "pawn-layers-"));
+    const dir = TEST_TMP.dir("pawn-layers-");
     try {
       const origin = `http://127.0.0.1:${server.port}`;
       const page = await newComposePage(browser, {

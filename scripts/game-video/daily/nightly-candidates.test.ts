@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const SCRIPT = join(import.meta.dir, "nightly-candidates.sh");
 const STAMP = "20261031T102000Z";
 
 /** Runs the script with arguments it must refuse before it reads anything. */
 const refuse = (args: string[]) => {
-  const dir = mkdtempSync(join(tmpdir(), "nightly-usage-"));
+  const dir = TEST_TMP.dir("nightly-usage-");
   const out = join(dir, "out");
   try {
     const proc = Bun.spawnSync({ cmd: ["bash", SCRIPT, out, ...args] });

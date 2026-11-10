@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   MASTER_AAC_BITRATE,
@@ -24,6 +22,10 @@ import {
   mixIntegrated,
   parseMomentary,
 } from "./mix-loudness.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const parts = (series: [number, number][]) => ({
   windows: series.map(([t, m]) => ({ t, m })),
@@ -120,7 +122,7 @@ test("a window of digital silence (M: nan) is silence, not a missing window", ()
 test("memeLoudness rebuilds the meme alone and the bed, and measures each", () => {
   // Two 1 kHz tones, so the K-weighting is the same for both: the meme is
   // 12 dB over the music bed, and a click elsewhere is part of the bed.
-  const dir = mkdtempSync(join(tmpdir(), "mix-loudness-"));
+  const dir = TEST_TMP.dir("mix-loudness-");
   const tone = (name: string, seconds: number, volume: number) => {
     const file = join(dir, `${name}.wav`);
     execFileSync("ffmpeg", [
@@ -376,7 +378,7 @@ describe("the master", () => {
   test("a quiet mix with a loud hit reaches the feed level, under the peak limit, and keeps the hit over the bed", () => {
     // A bed 26 dB under full scale and a hit 20 dB over it: the gain alone
     // would clip the hit, so the limiter must hold it.
-    const dir = mkdtempSync(join(tmpdir(), "mix-master-"));
+    const dir = TEST_TMP.dir("mix-master-");
     const tone = (name: string, seconds: number, volume: number) => {
       const file = join(dir, `${name}.wav`);
       execFileSync("ffmpeg", [

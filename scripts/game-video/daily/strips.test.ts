@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { clipSoundName } from "../overlay-clips.mjs";
 import { OVERLAYS } from "../overlays.mjs";
 import { stripPlan, timelineOf, writeStrips } from "./strips.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp({ processTmp: true });
 
 /**
  * Part of a real RESULT.timeline (VoSWbMDd, the renderer's test render of
@@ -150,7 +153,7 @@ describe("event strips", () => {
   test.skipIf(!existsSync(CHROME) || !hasFfmpeg)(
     "the strips are one PNG with a row per event",
     async () => {
-      const dir = mkdtempSync(join(tmpdir(), "strips-test-"));
+      const dir = TEST_TMP.dir("strips-test-");
       const mp4 = join(dir, "v.mp4");
       spawnSync("ffmpeg", [
         "-v",

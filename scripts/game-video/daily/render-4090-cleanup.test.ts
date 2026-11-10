@@ -19,14 +19,16 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CAPTURE_CACHE, REMOTE_JOBS } from "./render-4090.mjs";
 import { PAWN_ART_PROBE } from "../capture-cache.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const RUNNER = join(import.meta.dir, "render-4090.mjs");
 const UNIT = "20261106T000000Z-wg-video-0123456789ab";
@@ -48,7 +50,7 @@ const script = (path: string, text: string) => {
 
 /** A fake 4090 and office box for one job; `scpFails` is a regex on paths. */
 const setup = (mode: Mode, scpFails = "") => {
-  const t = mkdtempSync(join(tmpdir(), "render-cleanup-"));
+  const t = TEST_TMP.dir("render-cleanup-");
   const remote = join(t, "remote");
   const local = join(t, "local");
   const bin = join(t, "bin");
@@ -124,6 +126,7 @@ echo "started job-${UNIT}"
     HOME: local,
     PATH: `${bin}:${process.env.PATH}`,
     WALLGAME_GPU_HOST: "fakehost",
+    TMPDIR: TEST_TMP.root,
   };
   return {
     t,

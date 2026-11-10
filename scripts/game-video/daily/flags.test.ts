@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { COMMAND_FLAGS, COMMAND_NAMES, GLOBAL_FLAGS } from "./crew.mjs";
 import { flagFaults, parseFlagLine } from "./flags.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 describe("crew.mjs flags (8a9ea73f)", () => {
   const spec = parseFlagLine("item edl* wait!");
@@ -64,7 +68,7 @@ describe("crew.mjs flags (8a9ea73f)", () => {
         "--app",
         "http://127.0.0.1:9",
       ],
-      { env: { PATH: process.env.PATH! } },
+      { env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root } },
     );
     expect(run.exitCode).toBe(1);
     expect(run.stderr.toString()).toBe(

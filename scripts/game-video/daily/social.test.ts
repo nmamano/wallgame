@@ -7,8 +7,7 @@
  * first), and each platform's totals with their change over 1 and 7 days.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createFollowerHistory,
@@ -19,12 +18,16 @@ import {
   socialView,
   videoName,
 } from "./social.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const DAY = Date.parse("2026-10-30T09:00:00Z");
 
 describe("the follower history", () => {
   test("one row per platform per UTC day; the moved rows stay as they were", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "social-")), "f.jsonl");
+    const path = join(TEST_TMP.dir("social-"), "f.jsonl");
     // As moved from wallgame-social: rows with their own key order.
     const moved =
       '{"day":"2026-10-28","platform":"bluesky","followers":0,"at":"2026-10-28T04:31:25.097Z"}\n';
@@ -200,7 +203,7 @@ describe("the per-post stats", () => {
   });
 
   test("the history keeps the first numbers of each post each UTC day", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "post-stats-")), "h.jsonl");
+    const path = join(TEST_TMP.dir("post-stats-"), "h.jsonl");
     const h = createPostStatsHistory(path);
     h.record({ "x X1": n("2026-10-30", 10, 1) }, Date.parse(at("2026-10-30")));
     h.record({ "x X1": n("2026-10-30", 20, 2) }, Date.parse(at("2026-10-30")));
@@ -561,7 +564,7 @@ describe("ptMinute", () => {
 
 describe("the checkpoint numbers", () => {
   test("one row per post per checkpoint: the first read after it", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "checkpoints-")), "c.jsonl");
+    const path = join(TEST_TMP.dir("checkpoints-"), "c.jsonl");
     const cp = createPostCheckpoints(path);
     const posts = [
       { platform: "x", postId: "X1", utc: "2026-10-30T09:00:00.000Z" },

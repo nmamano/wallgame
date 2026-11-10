@@ -3,11 +3,10 @@
  * on what his page showed, every action is a feedback row and a message to
  * the director, and the review never writes the poster's states.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
@@ -49,6 +48,21 @@ import {
   reviewBatchAfter,
   syncReviewAsks,
 } from "./review-asks.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
 
 const BLOCK = [
   "X: bro thought he could just walk home 😭🙏 #wallgame",
@@ -146,7 +160,7 @@ const sha = (bytes: string) => createHash("sha256").update(bytes).digest("hex");
  * review. Its MP4 is a small file with known bytes.
  */
 const withItemInReview = (id = "v-2026-10-28-1") => {
-  const dir = mkdtempSync(join(tmpdir(), "daily-review-test-"));
+  const dir = TEST_TMP.dir("daily-review-test-");
   const store = openStore(dir);
   const path = join(store.dirs.videos, `${id}.mp4`);
   writeFileSync(path, `video of ${id}`);
@@ -863,15 +877,17 @@ describe("the review routes", () => {
   /** The app's daily routes on a port, with a recorder for messages. */
   const serve = async (dir: string, fails = false) => {
     const sent: { to: string; text: string }[] = [];
-    const daily = createDaily({
-      dataDir: dir,
-      env: {},
-      send: (to: string, text: string) => {
-        if (fails) return Promise.reject(new Error("office down"));
-        sent.push({ to, text });
-        return Promise.resolve();
-      },
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: {},
+        send: (to: string, text: string) => {
+          if (fails) return Promise.reject(new Error("office down"));
+          sent.push({ to, text });
+          return Promise.resolve();
+        },
+      }),
+    );
     stops.push(() => daily.stop());
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");

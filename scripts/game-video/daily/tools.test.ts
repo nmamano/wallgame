@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   STRIP_MOST,
@@ -23,6 +22,10 @@ import {
   strip,
   stripTimes,
 } from "./tools.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 describe("the plans", () => {
   test("a scan: a tile every S s, 7 a row", () => {
@@ -233,7 +236,7 @@ describe("crop --cell", () => {
 
 describe("the tools on a real video", () => {
   // 4 s, 30 fps, 320x568: a tone, then silence from 1.5 s to 3 s.
-  const dir = mkdtempSync(join(tmpdir(), "tools-test-"));
+  const dir = TEST_TMP.dir("tools-test-");
   const video = join(dir, "v.mp4");
   execFileSync("ffmpeg", [
     "-v",

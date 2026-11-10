@@ -25,3 +25,10 @@ auntie-2 (2026-11-04; `daily/daily.test.ts` alone takes most of it).
 imports from outside it (the list is in the hook); CI runs them on every push to main. A test here must not read a
 file that git does not track: use a tracked fixture (`daily/fixtures/`,
 `semantics/fixtures/`) or a temp dir.
+
+A test makes its temp dirs with `test-tmp.ts` (one root per test file,
+removed after the file's tests; `TEST_TMP.root` is the TMPDIR for a child
+process with its own env), and stops every app it makes. Never
+`mkdtempSync(join(tmpdir(), ...))` in a test: those dirs stayed in /tmp
+(189,061 entries on auntie-2, 2026-11-07). `bash check-test-tmp.sh` runs the
+tests with a fresh TMPDIR and fails if they leave anything in it.

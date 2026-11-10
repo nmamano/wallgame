@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   pruneCaptureCaches,
@@ -14,6 +7,10 @@ import {
   writeCaptureCache,
   PAWN_ART_PROBE,
 } from "./capture-cache.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp({ processTmp: true });
 
 const INPUTS = {
   gameId: "VoSWbMDd",
@@ -26,7 +23,7 @@ const INPUTS = {
 
 /** A capture as the renderer holds it, with real files in a work folder. */
 const fixture = () => {
-  const work = mkdtempSync(join(tmpdir(), "cache-work-"));
+  const work = TEST_TMP.dir("cache-work-");
   const file = (name: string, body: string) => {
     const path = join(work, name);
     writeFileSync(path, body);
@@ -89,7 +86,7 @@ const fixture = () => {
 describe("the capture cache", () => {
   test("gives back what was saved, with its own file paths", () => {
     const c = fixture();
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "VoSWbMDd");
+    const dir = join(TEST_TMP.dir("cache-"), "VoSWbMDd");
     writeCaptureCache(dir, c);
     const r = readCaptureCache(dir, INPUTS);
     expect(r.replay).toEqual(c.replay);
@@ -111,13 +108,13 @@ describe("the capture cache", () => {
 
   test("a cache from before the pawn art reads back with none, not refused", () => {
     const old = { ...fixture(), pawnArt: undefined };
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "VoSWbMDd");
+    const dir = join(TEST_TMP.dir("cache-"), "VoSWbMDd");
     writeCaptureCache(dir, old);
     expect(readCaptureCache(dir, INPUTS).pawnArt).toBeNull();
   });
 
   test("capture.json holds PAWN_ART_PROBE exactly when the pawn art was kept (render-4090.mjs --has-capture)", () => {
-    const root = mkdtempSync(join(tmpdir(), "cache-"));
+    const root = TEST_TMP.dir("cache-");
     const text = (c: Parameters<typeof writeCaptureCache>[1], name: string) => {
       writeCaptureCache(join(root, name), c);
       return readFileSync(join(root, name, "capture.json"), "utf8");
@@ -129,7 +126,7 @@ describe("the capture cache", () => {
   });
 
   test("refuses a render whose inputs change the pixels", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
+    const dir = join(TEST_TMP.dir("cache-"), "g");
     writeCaptureCache(dir, fixture());
     expect(() =>
       readCaptureCache(dir, { ...INPUTS, boardTheme: "default" }),
@@ -140,7 +137,7 @@ describe("the capture cache", () => {
   });
 
   test("refuses a changed or missing file, and a missing cache", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
+    const dir = join(TEST_TMP.dir("cache-"), "g");
     writeCaptureCache(dir, fixture());
     writeFileSync(join(dir, "board-0001.png"), "changed");
     expect(() => readCaptureCache(dir, INPUTS)).toThrow(
@@ -152,7 +149,7 @@ describe("the capture cache", () => {
   });
 
   test("refuses a cache written before the walls-only fix", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
+    const dir = join(TEST_TMP.dir("cache-"), "g");
     writeCaptureCache(dir, fixture());
     const metaFile = join(dir, "capture.json");
     const meta = JSON.parse(readFileSync(metaFile, "utf8")) as object;
@@ -163,7 +160,7 @@ describe("the capture cache", () => {
   });
 
   test("a second write replaces the first", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
+    const dir = join(TEST_TMP.dir("cache-"), "g");
     writeCaptureCache(dir, fixture());
     const c = fixture();
     writeCaptureCache(dir, { ...c, capturedAt: "2026-10-28T11:30:00Z" });
@@ -173,7 +170,7 @@ describe("the capture cache", () => {
   });
 
   test("pruning keeps the newest games and deletes the rest", () => {
-    const root = mkdtempSync(join(tmpdir(), "cache-"));
+    const root = TEST_TMP.dir("cache-");
     const names = ["a", "b", "c", "d"];
     names.forEach((name, i) => {
       writeCaptureCache(join(root, name), fixture());

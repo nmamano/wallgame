@@ -4,11 +4,10 @@
  * safe reasons, and the cache: an X count for 24 hours, any other result
  * for an hour.
  */
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   FOLLOWER_PLATFORMS,
@@ -25,6 +24,21 @@ import { THREADS_SCOPES, TIKTOK_SCOPES } from "./connect.mjs";
 import { createDaily } from "./routes.mjs";
 import { TIKTOK_TOKEN_URL } from "./post-tiktok.mjs";
 import { GOOGLE_TOKEN_URL } from "./post-youtube.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
 
 interface Req {
   method: string;
@@ -50,7 +64,7 @@ const fakeLive = (answer: (req: Req) => Reply) => {
   };
 };
 
-const tempDir = () => mkdtempSync(join(tmpdir(), "followers-test-"));
+const tempDir = () => TEST_TMP.dir("followers-test-");
 
 const ENV = {
   X_API_KEY: "x-key",
@@ -368,11 +382,13 @@ describe("GET /api/daily/followers", () => {
   test("reads once, keeps the result in the app's data, and answers from it inside the hour", async () => {
     const transport = fakeLive(answers);
     const dir = tempDir();
-    const daily = createDaily({
-      dataDir: dir,
-      env: ENV,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: ENV,
+        live: () => transport,
+      }),
+    );
     const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
     for (const [p, r] of Object.entries(RECORDS)) {
       tokens.write(p, r as Parameters<typeof tokens.write>[1]);
@@ -411,11 +427,13 @@ describe("GET /api/daily/followers", () => {
 
   test("after an hour every platform but X is read again; the X count is kept for 24 hours", async () => {
     const transport = fakeLive(answers);
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env: ENV,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env: ENV,
+        live: () => transport,
+      }),
+    );
     const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
     for (const [p, r] of Object.entries(RECORDS)) {
       tokens.write(p, r as Parameters<typeof tokens.write>[1]);
@@ -464,11 +482,13 @@ describe("GET /api/daily/followers", () => {
 
   test("a read where no platform gave a count is not kept: the next request reads again", async () => {
     const transport = fakeLive(() => ({ status: 503, json: null }));
-    const daily = createDaily({
-      dataDir: tempDir(),
-      env: ENV,
-      live: () => transport,
-    });
+    const daily = stopLater(
+      createDaily({
+        dataDir: tempDir(),
+        env: ENV,
+        live: () => transport,
+      }),
+    );
     const server: Server = createServer((req, res) => {
       void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
     });

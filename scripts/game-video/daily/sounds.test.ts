@@ -3,11 +3,10 @@
  * director can read, the level the page shows is the level a video plays,
  * and a choice reaches the file the direct step reads.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   MEME_SOUNDS,
@@ -35,8 +34,23 @@ import {
   dislikedSoundNotes,
   lastMoveSoundNotes,
 } from "./routes.mjs";
+import { testTmp } from "../test-tmp";
 
-const tempDir = () => mkdtempSync(join(tmpdir(), "meme-sounds-test-"));
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
+
+const tempDir = () => TEST_TMP.dir("meme-sounds-test-");
 const keys = Object.keys(MEME_SOUNDS) as (keyof typeof MEME_SOUNDS)[];
 
 describe("the sound table", () => {
@@ -354,7 +368,7 @@ describe("claim risk", () => {
 describe("the page's routes", () => {
   test("list, choose and refuse through the app", async () => {
     const dir = tempDir();
-    const daily = createDaily({ dataDir: dir, env: {} });
+    const daily = stopLater(createDaily({ dataDir: dir, env: {} }));
     const server: Server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       void daily.handle(req, res, url).then((done) => {
@@ -393,6 +407,7 @@ describe("the page's routes", () => {
       expect(missing.status).toBe(404);
     } finally {
       server.close();
+      daily.stop();
     }
   });
 });

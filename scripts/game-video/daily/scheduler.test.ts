@@ -5,16 +5,13 @@
  * for the next tick, and closes a post that a stop cut off.
  */
 import { describe, expect, test } from "bun:test";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createScheduler } from "./scheduler.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const OCT29_0900 = Date.parse("2026-10-29T16:00:00Z");
 const HOUR = 60 * 60 * 1000;
@@ -42,7 +39,7 @@ const readState = (path: string) =>
   JSON.parse(readFileSync(path, "utf8")) as State;
 
 const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
-  const dir = mkdtempSync(join(tmpdir(), "schedule-"));
+  const dir = TEST_TMP.dir("schedule-");
   const statePath = join(dir, "daily", "schedule.json");
   let t = OCT29_0900 - HOUR;
   const items: Item[] = Array.from({ length: opts.ready ?? 1 }, (_, i) => ({

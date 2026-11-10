@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CLIP_AUDIO_FILE,
@@ -31,10 +29,14 @@ import {
   spillShare,
   visibleBox,
 } from "./prepare-overlay-clip.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 /** A clip of `n` frames in a fresh repo, and the registry entry that pins it. */
 const fixture = (n = 3) => {
-  const repo = mkdtempSync(join(tmpdir(), "clip-test-"));
+  const repo = TEST_TMP.dir("clip-test-");
   const dir = join(repo, OVERLAY_CLIP_DIR, "c");
   mkdirSync(dir, { recursive: true });
   const frames = Array.from({ length: n }, (_, i) =>
@@ -108,7 +110,7 @@ describe("overlay clips", () => {
   test.skipIf(!hasFfmpeg)(
     "keys a green screen to alpha, at the asked height and fps",
     () => {
-      const tmp = mkdtempSync(join(tmpdir(), "clip-key-"));
+      const tmp = TEST_TMP.dir("clip-key-");
       try {
         // One second of a green screen with a red box in its middle.
         const input = join(tmp, "in.mp4");
@@ -186,7 +188,7 @@ describe("overlay clips", () => {
   );
 
   test("a clip with its own sound pins it, and stops on a change", () => {
-    const repo = mkdtempSync(join(tmpdir(), "clip-test-"));
+    const repo = TEST_TMP.dir("clip-test-");
     try {
       const dir = join(repo, OVERLAY_CLIP_DIR, "s");
       mkdirSync(dir, { recursive: true });

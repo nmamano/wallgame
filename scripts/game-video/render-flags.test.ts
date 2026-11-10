@@ -4,16 +4,18 @@ import { createHash } from "node:crypto";
 import {
   cpSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { Script } from "node:vm";
 import { dirname, join } from "node:path";
 import { LINT_KINDS } from "./edl.mjs";
 import { REPO, renderKitFiles } from "./render-kit.mjs";
+import { testTmp } from "./test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const RENDERER = join(import.meta.dir, "render-game-video.mjs");
 
@@ -61,7 +63,7 @@ describe("the renderer's flags", () => {
   });
 
   test("an explain stops a run with a look that would drop it, before the browser", () => {
-    const dir = mkdtempSync(join(tmpdir(), "render-explain-"));
+    const dir = TEST_TMP.dir("render-explain-");
     const edl = join(dir, "edl.json");
     writeFileSync(
       edl,
@@ -149,7 +151,7 @@ describe("make-stings.mjs --check", () => {
   test("a stings.json without a time the renderer reads is out of date", () => {
     // As on 2026-10-29: the wav there, stings.json without a time the
     // renderer reads, so that cue's time was NaN.
-    const kit = mkdtempSync(join(tmpdir(), "render-stings-"));
+    const kit = TEST_TMP.dir("render-stings-");
     mkdirSync(join(kit, "scripts/game-video"), { recursive: true });
     cpSync(
       join(import.meta.dir, "make-stings.mjs"),
@@ -194,7 +196,7 @@ describe("an EDL's meme sounds", () => {
   test("a sound with no file here stops it before the capture, by name", () => {
     // A kit with the renderer's code and no meme sound files: the state of
     // the 4090 before the kit sync brings a new gitignored sound.
-    const kit = mkdtempSync(join(tmpdir(), "render-sounds-"));
+    const kit = TEST_TMP.dir("render-sounds-");
     for (const f of renderKitFiles()) {
       mkdirSync(dirname(join(kit, f)), { recursive: true });
       cpSync(join(REPO, f), join(kit, f));

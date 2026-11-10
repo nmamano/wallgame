@@ -318,7 +318,9 @@ export const ship = async ({
   );
 
   // 2. kit
-  const log = join(tmpdir(), `kitsync-${Date.now()}.log`);
+  // One log, overwritten by each ship: it keeps the last sync's output and
+  // adds no new entry to /tmp (cb84d862: a log per ship piled up there).
+  const log = join(tmpdir(), "wallgame-kitsync.log");
   const sync = run("bash", ["scripts/game-video/sync-render-kit.sh", host]);
   writeFileSync(log, `${sync.stdout ?? ""}${sync.stderr ?? ""}`);
   if (sync.status !== 0) {

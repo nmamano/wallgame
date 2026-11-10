@@ -8,12 +8,10 @@ import { describe, expect, test } from "bun:test";
 import {
   copyFileSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copySha256 } from "./copy.mjs";
 import {
@@ -25,6 +23,10 @@ import {
   reviewState,
   isHeld,
 } from "./store.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const FIXTURES = join(import.meta.dir, "fixtures");
 
@@ -62,7 +64,7 @@ interface Item {
 }
 
 const dataDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "daily-items-test-"));
+  const dir = TEST_TMP.dir("daily-items-test-");
   mkdirSync(join(dir, "daily", "cycles"), { recursive: true });
   return dir;
 };

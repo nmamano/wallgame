@@ -10,16 +10,18 @@ import { describe, expect, test } from "bun:test";
 import {
   copyFileSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copySha256 } from "./copy.mjs";
 import { migrateV1, migrateV2, openStore, VERSION } from "./store.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const FIXTURES = join(import.meta.dir, "fixtures");
 
@@ -98,7 +100,7 @@ const newPath = (v1: Obj, path: string[]): string[][] => {
 describe("a version 1 day file becomes candidate A", () => {
   for (const day of ["2026-10-26", "2026-10-27"]) {
     test(`${day}: every field reads the same, and the old file is kept`, () => {
-      const dir = mkdtempSync(join(tmpdir(), "daily-migrate-test-"));
+      const dir = TEST_TMP.dir("daily-migrate-test-");
       const cycles = join(dir, "daily", "cycles");
       mkdirSync(cycles, { recursive: true });
       const source = join(FIXTURES, `v1-${day}.json`);
@@ -200,7 +202,7 @@ const rewritten = (path: string[]) =>
 describe("a version 2 day file gets music cue lists", () => {
   for (const day of ["2026-10-26", "2026-10-27"]) {
     test(`${day}: the one track becomes one cue, and the rest reads the same`, () => {
-      const dir = mkdtempSync(join(tmpdir(), "daily-migrate-test-"));
+      const dir = TEST_TMP.dir("daily-migrate-test-");
       const cycles = join(dir, "daily", "cycles");
       mkdirSync(cycles, { recursive: true });
       const v1 = JSON.parse(
@@ -263,7 +265,7 @@ describe("a version 2 day file gets music cue lists", () => {
   }
 
   test("the post log's rows name their tracks as a list", () => {
-    const dir = mkdtempSync(join(tmpdir(), "daily-migrate-test-"));
+    const dir = TEST_TMP.dir("daily-migrate-test-");
     const root = join(dir, "daily");
     mkdirSync(root, { recursive: true });
     const old = [

@@ -7,8 +7,6 @@
  * for 1 day), and one paid X request for all posts.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CHECKPOINTS,
@@ -28,6 +26,10 @@ import { META_ACCOUNTS_URL } from "./meta.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { THREADS_SCOPES } from "./connect.mjs";
 import { GOOGLE_TOKEN_URL } from "./post-youtube.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 interface Req {
   method: string;
@@ -277,7 +279,7 @@ const run = async (
 ) => {
   const sent: Req[] = [];
   const tokens = openTokenStore(
-    join(mkdtempSync(join(tmpdir(), "post-stats-test-")), "tokens"),
+    join(TEST_TMP.dir("post-stats-test-"), "tokens"),
   );
   for (const [p, r] of Object.entries(records)) {
     tokens.write(p, r as Parameters<typeof tokens.write>[1]);
@@ -584,7 +586,7 @@ describe("readPostStats", () => {
 
   test("Threads without its insights scope: needs reconnect, nothing asked", async () => {
     const tokens = openTokenStore(
-      join(mkdtempSync(join(tmpdir(), "post-stats-test-")), "tokens"),
+      join(TEST_TMP.dir("post-stats-test-"), "tokens"),
     );
     tokens.write("threads", {
       ...RECORDS.threads,

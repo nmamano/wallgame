@@ -3,11 +3,14 @@
  * the latest one does not wait; the TikTok post ids stay strings.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTiktokDrafts } from "./tiktok-drafts.mjs";
 import { idsAsText, tiktokPostStatus } from "./post-tiktok.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
 
 const OLD = "v_inbox_file~v2.7703619995012335647";
 const NEW = "v_inbox_file~v2.7703991087983691807";
@@ -20,7 +23,7 @@ const world = () => {
   let t = Date.parse("2026-11-03T17:00:00Z");
   const reads: string[] = [];
   const drafts = createTiktokDrafts({
-    path: join(mkdtempSync(join(tmpdir(), "tiktok-drafts-")), "d.json"),
+    path: join(TEST_TMP.dir("tiktok-drafts-"), "d.json"),
     latest: () => latest,
     readStatus: (id: string) => {
       reads.push(id);
@@ -167,7 +170,7 @@ describe("a TikTok draft waits", () => {
 });
 
 test("a damaged file throws without quoting it, and is kept", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "tiktok-drafts-"));
+  const dir = TEST_TMP.dir("tiktok-drafts-");
   const path = join(dir, "d.json");
   writeFileSync(path, '{"drafts": {"secret-looking text');
   const drafts = createTiktokDrafts({

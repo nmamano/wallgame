@@ -12,12 +12,11 @@
  * Nil's review actions and the post queue are not here: a test approves an
  * item through store.updateItem, as the review page will.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import {
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   statSync,
@@ -26,7 +25,6 @@ import {
   unlinkSync,
   rmSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -108,6 +106,21 @@ import {
 } from "./quality.mjs";
 import { FRAME, validateEdl } from "../edl.mjs";
 import { batchLines, scriptChecklist, scriptDraft } from "./script.mjs";
+import { testTmp } from "../test-tmp";
+
+/** This file's temp dirs, removed after its tests (cb84d862). */
+const TEST_TMP = testTmp();
+
+/**
+ * Every app this file's tests make, stopped after them: an app left running
+ * keeps its schedule's timer, which ticks on a removed dir (cb84d862).
+ */
+const DAILIES: { stop: () => void }[] = [];
+afterAll(() => DAILIES.forEach((d) => d.stop()));
+const stopLater = <T extends { stop: () => void }>(daily: T) => {
+  DAILIES.push(daily);
+  return daily;
+};
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -341,7 +354,7 @@ type PostResult =
 
 type Store = ReturnType<typeof openStore>;
 
-const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
+const tempDir = () => TEST_TMP.dir("daily-video-test-");
 
 const DRY = {
   x: "dry-run",
@@ -1346,18 +1359,20 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
   test("a lost reply to the final X request leaves the post uncertain", async () => {
     const { dir, store, id, video } = approvedOnDisk();
     let lose = true;
-    const daily = createDaily({
-      dataDir: dir,
-      env: {},
-      dryRunReplies: {
-        x: (req: { url: string }) => {
-          if (lose && req.url.endsWith("/2/tweets")) {
-            throw new Error("socket hang up");
-          }
-          return xDryRunReply(req);
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: {},
+        dryRunReplies: {
+          x: (req: { url: string }) => {
+            if (lose && req.url.endsWith("/2/tweets")) {
+              throw new Error("socket hang up");
+            }
+            return xDryRunReply(req);
+          },
         },
-      },
-    });
+      }),
+    );
     const post = async (confirmedNotPosted = false) =>
       (await daily.postPlatform("x", {
         item: itemOf(store, id),
@@ -1391,7 +1406,7 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
 
   test("the last guard before a public post: Nil's video and block, every line, no second post", async () => {
     const { dir, store, id, video } = approvedOnDisk();
-    const daily = createDaily({ dataDir: dir, env: {} });
+    const daily = stopLater(createDaily({ dataDir: dir, env: {} }));
     const post = (bytes: Buffer = video, platform = "bluesky") =>
       daily.postPlatform(platform, {
         item: itemOf(store, id),
@@ -1516,23 +1531,25 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
         refreshToken: "stored-refresh",
       });
       const sent: { url: string; body?: unknown }[] = [];
-      const daily = createDaily({
-        dataDir: dir,
-        // The old secret of the key's name is still in the environment.
-        env: { TIKTOK_CLIENT_KEY: "old-env-key", TIKTOK_CLIENT_SECRET: "s" },
-        live: () => ({
-          mode: "live",
-          sent,
-          request: (req: { url: string; body?: unknown }) => {
-            sent.push(req);
-            return Promise.resolve(
-              req.url === TIKTOK_TOKEN_URL
-                ? token(req)
-                : tiktokDryRunReply(req),
-            );
-          },
+      const daily = stopLater(
+        createDaily({
+          dataDir: dir,
+          // The old secret of the key's name is still in the environment.
+          env: { TIKTOK_CLIENT_KEY: "old-env-key", TIKTOK_CLIENT_SECRET: "s" },
+          live: () => ({
+            mode: "live",
+            sent,
+            request: (req: { url: string; body?: unknown }) => {
+              sent.push(req);
+              return Promise.resolve(
+                req.url === TIKTOK_TOKEN_URL
+                  ? token(req)
+                  : tiktokDryRunReply(req),
+              );
+            },
+          }),
         }),
-      });
+      );
       expect(daily.livePlatforms()).toEqual(["tiktok"]);
       const result = (await daily.postPlatform("tiktok", {
         item: itemOf(store, id),
@@ -2401,7 +2418,7 @@ describe("the render step", () => {
     const store = openStore(dir);
     const id = directItem(store);
     store.startRender(id, "job-00000001");
-    createDaily({ dataDir: dir, env: {} });
+    stopLater(createDaily({ dataDir: dir, env: {} }));
     const it = itemOf(openStore(dir), id);
     expect([it.state, stage(it)]).toEqual(["draft", "render-failed"]);
     expect(it.render?.error).toMatch(/app restarted/);
@@ -2563,6 +2580,7 @@ const serve = async (dir: string, renderer: string): Promise<string> => {
     {
       env: {
         PATH: process.env.PATH!,
+        TMPDIR: TEST_TMP.root,
         PORT: String(port),
         ISOMUX_APP_DATA_DIR: dir,
       },
@@ -2586,15 +2604,17 @@ const serveHere = async (
   budgetEveryMs?: number,
   platformsFile?: string,
 ) => {
-  const daily = createDaily({
-    dataDir: dir,
-    renderer,
-    env: { PATH: process.env.PATH! },
-    desktopStatus: [process.execPath, stubStatus(dir)],
-    backupWindow: null,
-    ...(budgetEveryMs !== undefined && { budgetEveryMs }),
-    ...(platformsFile !== undefined && { platformsFile }),
-  });
+  const daily = stopLater(
+    createDaily({
+      dataDir: dir,
+      renderer,
+      env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+      desktopStatus: [process.execPath, stubStatus(dir)],
+      backupWindow: null,
+      ...(budgetEveryMs !== undefined && { budgetEveryMs }),
+      ...(platformsFile !== undefined && { platformsFile }),
+    }),
+  );
   const server = createHttpServer((req, res) => {
     void daily
       .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
@@ -2706,7 +2726,7 @@ const crew = (base: string, ...args: string[]) => {
       "--docs",
       DOCS,
     ],
-    { env: { PATH: process.env.PATH! } },
+    { env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root } },
   );
   return {
     code: run.exitCode,
@@ -4494,7 +4514,7 @@ describe("phase 1, the script (SCRIPT.md)", () => {
           "--app",
           base,
         ],
-        { env: { PATH: process.env.PATH!, HOME: home } },
+        { env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root, HOME: home } },
       );
     expect(noDocs(join(dir, "s0.txt")).stderr.toString()).toContain(
       `briefs not found at ${repo} (main:scripts/game-video/daily/DIRECTOR.md): give --docs DIR`,
@@ -4653,9 +4673,12 @@ test("the app forgets only finished lints: a queued one keeps its record", async
 
 test("a new app start removes the previews that the last one forgot", () => {
   const dir = tempDir();
-  const old = join(createDaily({ dataDir: dir }).store.dirs.root, "previews");
+  const old = join(
+    stopLater(createDaily({ dataDir: dir })).store.dirs.root,
+    "previews",
+  );
   writeFileSync(join(old, "2026-10-26-TESTGAME1-pold.mp4"), "x");
-  createDaily({ dataDir: dir });
+  stopLater(createDaily({ dataDir: dir }));
   expect(readdirSync(old)).toEqual([]);
 });
 
@@ -4745,20 +4768,22 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     const dir = tempDir();
     const store = openStore(dir);
     const sent: { url: string; headers?: Record<string, string> }[] = [];
-    const daily = createDaily({
-      dataDir: dir,
-      env: { PATH: process.env.PATH! },
-      backupWindow: null,
-      schedule: false,
-      live: () => ({
-        mode: "live",
-        sent: [],
-        request: (req: { url: string; headers?: Record<string, string> }) => {
-          sent.push(req);
-          return Promise.resolve({ status: 200, json: { id: "1" } });
-        },
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+        backupWindow: null,
+        schedule: false,
+        live: () => ({
+          mode: "live",
+          sent: [],
+          request: (req: { url: string; headers?: Record<string, string> }) => {
+            sent.push(req);
+            return Promise.resolve({ status: 200, json: { id: "1" } });
+          },
+        }),
       }),
-    });
+    );
     const server = createHttpServer((req, res) => {
       void daily
         .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
@@ -4832,32 +4857,34 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
       }) + "\n",
     );
     const sent: string[] = [];
-    const daily = createDaily({
-      dataDir: dir,
-      env: { PATH: process.env.PATH! },
-      backupWindow: null,
-      schedule: false,
-      followerRecordMs: 3600e3,
-      live: () => ({
-        mode: "live",
-        sent,
-        request: (req: { url: string }) => {
-          sent.push(req.url);
-          return Promise.resolve(
-            req.url.includes("app.bsky.feed.getPosts")
-              ? {
-                  status: 200,
-                  json: {
-                    posts: [
-                      { uri, likeCount: 4, replyCount: 1, repostCount: 0 },
-                    ],
-                  },
-                }
-              : { status: 404, json: null },
-          );
-        },
+    const daily = stopLater(
+      createDaily({
+        dataDir: dir,
+        env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+        backupWindow: null,
+        schedule: false,
+        followerRecordMs: 3600e3,
+        live: () => ({
+          mode: "live",
+          sent,
+          request: (req: { url: string }) => {
+            sent.push(req.url);
+            return Promise.resolve(
+              req.url.includes("app.bsky.feed.getPosts")
+                ? {
+                    status: 200,
+                    json: {
+                      posts: [
+                        { uri, likeCount: 4, replyCount: 1, repostCount: 0 },
+                      ],
+                    },
+                  }
+                : { status: 404, json: null },
+            );
+          },
+        }),
       }),
-    });
+    );
     stops.push(() => daily.stop());
     const rows = join(store.dirs.root, "post-checkpoints.jsonl");
     for (let i = 0; i < 100 && !existsSync(rows); i++) {
