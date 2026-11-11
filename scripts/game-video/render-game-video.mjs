@@ -645,6 +645,11 @@ const PACE_OVERRIDE = arg("seconds-per-move");
 const ASPECT = arg("aspect", "fit");
 /** Output frame rate. */
 const FPS = 30;
+/**
+ * How long the ending's bar and its ring read before a GG card that would
+ * cover the ringed pawn comes in, from the impact (task 99b4d1a1).
+ */
+const GG_RING_ALONE_SECONDS = 1.5;
 /** The soundtrack is always on. Capture shake follows the recorded result. */
 const AUDIO = true;
 /**
@@ -8095,13 +8100,49 @@ const renderStyle = async (styleName) => {
             `finish sound ${sounds.finish.name} at ${deathCard.start.toFixed(2)} s, as the ${deathCard.ev.asset} card opens`,
           );
         }
-        const endingFrames = Math.round(timing.seconds * FPS);
+        /*
+          A GG card that would cover the bar's ringed pawn comes in later:
+          the ending's clock stops on its last frame before the card for
+          `cardWait` frames, so the ring and the bar read alone for
+          GG_RING_ALONE_SECONDS from the impact (X5F, 2026-11-09: the card
+          hid the ringed cat on b3 for 4.4 s of the bar's 4.85 s). A pawn
+          beside the card keeps the ending as it was. The ring keeps its
+          own clock.
+        */
+        const cardWait =
+          style.ending === "gg" &&
+          ringOf &&
+          (await stage.evaluate(
+            ([e, at]) => window.__ggCardCovers(e, at),
+            [ending(timing.cardIn), cellAt(ringOf.cell)],
+          ))
+            ? Math.max(
+                0,
+                Math.round(
+                  (GG_RING_ALONE_SECONDS - (timing.cardFrom - timing.impact)) *
+                    FPS,
+                ),
+              )
+            : 0;
+        const cardFrame = Math.floor(timing.cardFrom * FPS);
+        if (cardWait > 0) {
+          log(
+            `GG card in ${(cardWait / FPS).toFixed(2)} s later: it covers the ringed pawn`,
+          );
+        }
+        const endingClock = (i) =>
+          (i < cardFrame
+            ? i
+            : i < cardFrame + cardWait
+              ? cardFrame - 1
+              : i - cardWait) / FPS;
+        const endingFrames = Math.round(timing.seconds * FPS) + cardWait;
         for (let i = 0; i < endingFrames; i += 1) {
           if (bar && i === impactFrame) openOverlay(bar);
           await emit(
             playState(ply, {
-              ending: ending(i / FPS),
-              credit: creditAt(i / FPS),
+              ending: ending(endingClock(i)),
+              credit: creditAt(endingClock(i)),
               ...(i >= impactFrame && barRing((i - impactFrame) / FPS)),
             }),
             1 / FPS,
@@ -8162,7 +8203,9 @@ const renderStyle = async (styleName) => {
                   cta: timing.seconds + i / FPS,
                 },
                 credit: creditAt(timing.seconds),
-                ...barRing(timing.seconds - timing.impact + i / FPS),
+                ...barRing(
+                  timing.seconds - timing.impact + (cardWait + i) / FPS,
+                ),
               }),
               1 / FPS,
               { kind: "ending-hold", ply: plyIndex },
@@ -8173,7 +8216,7 @@ const renderStyle = async (styleName) => {
             playState(ply, {
               ending: ending(timing.seconds),
               credit: creditAt(timing.seconds),
-              ...barRing(timing.seconds - timing.impact),
+              ...barRing(timing.seconds - timing.impact + cardWait / FPS),
             }),
             holdSeconds,
             { kind: "ending-hold", ply: plyIndex },

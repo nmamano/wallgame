@@ -1586,7 +1586,14 @@
       const CTA_BREATH = 1.08;
       window.__ENDINGS = {
         replay: { seconds: 2.0, impact: 1.4, hold: 1.3, flash: 0 },
-        gg: { seconds: 1.0, impact: 0, hold: 1.6, flash: 0.18, cardIn: 0.95 },
+        gg: {
+          seconds: 1.0,
+          impact: 0,
+          hold: 1.6,
+          flash: 0.18,
+          cardFrom: 0.55,
+          cardIn: 0.95,
+        },
         ko: { seconds: 1.0, impact: 0, hold: 1.5, flash: 0.12 },
       };
       /*
@@ -1649,6 +1656,35 @@
           card.style.visibility = visibility;
           card.style.transform = transform;
         }
+      };
+
+      /** The GG card's words for ending `e`: the winner and how. */
+      const fillGgCard = (e) => {
+        $("ggAv").src = e.winner.portrait;
+        $("ggName").textContent = e.winner.name;
+        $("ggName").style.color = e.winner.hex;
+        $("ggHow").textContent = e.how;
+        fitName($("ggName"));
+        fitName($("ggCta"));
+      };
+
+      /**
+       * Whether the GG card, at rest over ending `e`, covers the centre of
+       * the board cell `at` ({x, y} in the board image, 0..1, as
+       * paintCellFx places a cell). Measured, with the card's own words:
+       * its height depends on them. The renderer holds the card back while
+       * the bar's ring reads when it does (X5F, 2026-11-09: the card hid
+       * the ringed cat on b3 for 4.4 s of the bar's 4.85 s).
+       */
+      window.__ggCardCovers = (e, at) => {
+        fillGgCard(e);
+        return cardAtRest(() => {
+          const wrap = $("boardWrap").getBoundingClientRect();
+          const r = $("ggCard").getBoundingClientRect();
+          const x = wrap.left + at.x * wrap.width;
+          const y = wrap.top + at.y * wrap.width;
+          return x > r.left && x < r.right && y > r.top && y < r.bottom;
+        });
       };
 
       const fitName = (el) => {
@@ -3911,8 +3947,10 @@
           boardFilter(
             "grayscale(" + g + ") brightness(" + (1 - 0.55 * g) + ")",
           );
-          if (t >= 0.55) {
-            const p = easeOut3(span(t, 0.55, window.__ENDINGS.gg.cardIn));
+          if (t >= window.__ENDINGS.gg.cardFrom) {
+            const p = easeOut3(
+              span(t, window.__ENDINGS.gg.cardFrom, window.__ENDINGS.gg.cardIn),
+            );
             show($("ggCard"), true);
             $("ggCard").style.opacity = p;
             // One call to action at the end, the card's, which pops: the
@@ -3924,12 +3962,7 @@
             // may take the band below it (Wall Game Director, 2026-10-29).
             $("ggCard").style.transform =
               "translate(-50%, -50%) scale(" + (0.92 + 0.08 * p) + ")";
-            $("ggAv").src = e.winner.portrait;
-            $("ggName").textContent = e.winner.name;
-            $("ggName").style.color = e.winner.hex;
-            $("ggHow").textContent = e.how;
-            fitName($("ggName"));
-            fitName($("ggCta"));
+            fillGgCard(e);
             // The call to action pops as the card lands: it swells and
             // glows once (Nil, 2026-10-31: "make it pop"). Then, while the
             // ending holds (`e.cta`, the clock that runs on; Nil,
