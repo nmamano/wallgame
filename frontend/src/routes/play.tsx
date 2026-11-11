@@ -11,8 +11,8 @@ import type {
   GameConfiguration,
   TimeControlPreset,
   Variant,
-  GameSnapshot,
 } from "../../../shared/domain/game-types";
+import type { LobbyGame } from "../../../shared/contracts/games";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { BoardSizePicker } from "@/components/game-setup/board-size-picker";
 import { Switch } from "@/components/ui/switch";
@@ -206,7 +206,7 @@ function GameSetup() {
 
   // --- Matchmaking games (lobby WebSocket) ---
 
-  const [matchmakingGames, setMatchmakingGames] = useState<GameSnapshot[]>([]);
+  const [matchmakingGames, setMatchmakingGames] = useState<LobbyGame[]>([]);
   const [isLoadingGames, setIsLoadingGames] = useState(true);
   const lobbySocketRef = useRef<WebSocket | null>(null);
   const [isJoiningGame, setIsJoiningGame] = useState<string | null>(null);
@@ -249,7 +249,7 @@ function GameSetup() {
           try {
             const msg = JSON.parse(event.data) as {
               type: string;
-              games?: GameSnapshot[];
+              games?: LobbyGame[];
             };
             if (msg.type === "games" && msg.games) {
               setMatchmakingGames(msg.games);

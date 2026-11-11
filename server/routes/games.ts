@@ -12,6 +12,7 @@ import {
   resolveGameAccess,
   resolveSessionForToken,
   listMatchmakingGames,
+  countWaitingMatchmakingGames,
   listLiveGames,
   countGamesInFlight,
   setBotCompositeId,
@@ -20,6 +21,7 @@ import {
 import { NewGamesPausedError, readDrainState } from "../games/drain";
 import {
   createGameSchema,
+  MAX_WAITING_MATCHMAKING_GAMES_PER_REQUESTER,
   joinGameSchema,
   readySchema,
   getGameSessionQuerySchema,
@@ -102,7 +104,34 @@ const resolveSeatDisplayName = async (
   return (await getDisplayNameForAuthUser(authUserId)) ?? requested;
 };
 
+/**
+ * Who asks, for a per-requester limit: the account when signed in, else the
+ * client network (an IPv6 /64). The anonymous id is chosen by the client, so
+ * it cannot be a limit key. Guests behind one address (a school, an office)
+ * share the limit.
+ */
+const requesterKey = (userId: string | undefined, headers: Headers): string =>
+  userId ? `account:${userId}` : `source:${clientNetworkKey(headers)}`;
+
+/**
+ * Lobby updates go out at most once per window, trailing: the first change
+ * starts the timer, and the list is read when it fires, so the latest state
+ * always goes out. Every create, join and cancel asks for one, and each sends
+ * the whole list to every lobby viewer, so a burst must not cost one full
+ * frame per request (c1facd32).
+ */
+const LOBBY_BROADCAST_WINDOW_MS = 250;
+let lobbyBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const broadcastLobbyUpdate = () => {
+  if (lobbyBroadcastTimer) return;
+  lobbyBroadcastTimer = setTimeout(() => {
+    lobbyBroadcastTimer = null;
+    sendLobbyList();
+  }, LOBBY_BROADCAST_WINDOW_MS);
+};
+
+const sendLobbyList = () => {
   const games = listMatchmakingGames();
   const message = JSON.stringify({ type: "games", games });
   lobbyConnections.forEach((ws) => {
@@ -216,6 +245,21 @@ export const gamesRoute = new Hono()
         if (parsed.config.rated && !user?.id) {
           return c.json({ error: "Log in to create a rated game." }, 403);
         }
+        // Every create sends the whole lobby to every viewer, so one
+        // requester may keep only a few games waiting there (c1facd32).
+        const requester = requesterKey(user?.id, c.req.raw.headers);
+        if (
+          parsed.matchType === "matchmaking" &&
+          countWaitingMatchmakingGames(requester) >=
+            MAX_WAITING_MATCHMAKING_GAMES_PER_REQUESTER
+        ) {
+          return c.json(
+            {
+              error: `You already have ${MAX_WAITING_MATCHMAKING_GAMES_PER_REQUESTER} games waiting for an opponent. Cancel one first.`,
+            },
+            429,
+          );
+        }
         console.log(
           "[games] POST /api/games body:",
           JSON.stringify(parsed, null, 2),
@@ -248,6 +292,7 @@ export const gamesRoute = new Hono()
           hostAnonymousId: parsed.anonymousId,
           hostElo,
           joinerConfig,
+          requester,
         });
 
         console.info("[games] created session", {
@@ -675,13 +720,7 @@ export const botsRoute = new Hono()
           );
         }
 
-        // Who asks: the account when signed in, else the client network (an
-        // IPv6 /64). The anonymous id is chosen by the client, so it cannot be
-        // a limit key. Guests behind one address (a school, an office) share
-        // the limit.
-        const requester = user?.id
-          ? `account:${user.id}`
-          : `source:${clientNetworkKey(c.req.raw.headers)}`;
+        const requester = requesterKey(user?.id, c.req.raw.headers);
 
         // The engine session starts when the host connects; ask the pool now
         // so a full pool refuses the game with a reason instead of a forfeit.

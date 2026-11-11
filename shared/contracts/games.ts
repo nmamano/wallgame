@@ -5,6 +5,7 @@ import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
 import { isValidTimeZone } from "../domain/past-games";
 import type { PastGamesActivityDay } from "../domain/past-games";
 import type {
+  GameConfiguration,
   GameSnapshot,
   PlayerId,
   Variant,
@@ -403,8 +404,21 @@ export const getGameSessionQuerySchema = z.object({
 });
 
 // Response types
+/**
+ * One waiting matchmaking game as the lobby lists it: the game's snapshot
+ * without its starting layout, which the lobby never shows. Every create,
+ * join and cancel sends the whole list to every lobby viewer, so a row stays
+ * small (c1facd32).
+ */
+export type LobbyGame = Omit<GameSnapshot, "config"> & {
+  config: Omit<GameConfiguration, "variantConfig">;
+};
+
+/** The most matchmaking games one requester can have waiting at once. */
+export const MAX_WAITING_MATCHMAKING_GAMES_PER_REQUESTER = 3;
+
 export interface MatchmakingGamesResponse {
-  games: GameSnapshot[];
+  games: LobbyGame[];
 }
 
 export type JoinGameResponse =

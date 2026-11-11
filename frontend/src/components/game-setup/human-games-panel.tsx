@@ -8,10 +8,10 @@ import {
 } from "@/components/ui/table";
 import { RefreshCw } from "lucide-react";
 import type {
-  GameSnapshot,
   TimeControlConfig,
   TimeControlPreset,
 } from "../../../../shared/domain/game-types";
+import type { LobbyGame } from "../../../../shared/contracts/games";
 import { variantDisplayName } from "../../../../shared/domain/game-types";
 import { formatTimeControl as formatTimeControlUtil } from "../../../../shared/domain/game-utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -24,9 +24,9 @@ interface GameMatchStatus {
   allMatch: boolean;
 }
 
-export interface GameWithMatchStatus extends GameSnapshot {
+export type GameWithMatchStatus = LobbyGame & {
   matchStatus: GameMatchStatus;
-}
+};
 
 function formatTimeControl(timeControl: TimeControlConfig): string {
   if (timeControl.preset) {

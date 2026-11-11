@@ -29,6 +29,7 @@ import type {
   GameCreateResponse,
   GameSessionDetails,
   JoinGameResponse,
+  LobbyGame,
   MatchmakingGamesResponse,
   PlayerConfigType,
   ReadyGameResponse,
@@ -298,7 +299,7 @@ export const abortGameSession = async (args: {
 };
 
 // Fetch list of available matchmaking games
-export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
+export const fetchMatchmakingGames = async (): Promise<LobbyGame[]> => {
   const data = await handleResponse<MatchmakingGamesResponse>(
     api.games.matchmaking.$get(),
   );

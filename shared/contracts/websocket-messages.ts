@@ -257,14 +257,14 @@ export interface LobbyClientMessage {
  * Used for broadcasting matchmaking game list updates.
  */
 export type LobbyServerMessage =
-  | { type: "games"; games: GameSnapshot[] }
+  | { type: "games"; games: LobbyGame[] }
   | { type: "pong"; timestamp: number };
 
 // ============================================================================
 // Live Games WebSocket Messages (for /ws/live-games)
 // ============================================================================
 
-import type { LiveGameSummary } from "./games";
+import type { LiveGameSummary, LobbyGame } from "./games";
 
 /**
  * Messages sent from client to server over the live-games WebSocket connection.

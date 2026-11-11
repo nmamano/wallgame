@@ -30,6 +30,7 @@ import type {
 import type {
   GameAccessWaitingReason,
   LiveGameSummary,
+  LobbyGame,
 } from "../../shared/contracts/games";
 import { applyRatingsForFinishedGame } from "../db/rating-write";
 import { Outcome } from "./rating-system";
@@ -152,6 +153,13 @@ export interface GameSession {
    * so crediting it as the original puzzle would be wrong.
    */
   puzzleId?: string;
+  /**
+   * Who created the game through POST /api/games: the account when signed in,
+   * else the client network (the e768fdb5 requester key). Counts the waiting
+   * matchmaking games of one requester (c1facd32). Absent on a bot game and
+   * on a rematch, which never wait in the lobby.
+   */
+  requester?: string;
   status: SessionStatus;
   matchType: MatchType;
   cancelled: boolean;
@@ -1236,6 +1244,8 @@ export const createGameSession = (args: {
   };
   /** Server-resolved saved-puzzle id; see `GameSession.puzzleId` (S-ID). */
   puzzleId?: string;
+  /** See `GameSession.requester`. */
+  requester?: string;
 }): GameCreationResult => {
   const completeConfig = buildCompleteConfig(args.config);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
@@ -1272,6 +1282,7 @@ export const createGameSession = (args: {
     updatedAt: now,
     config: completeConfig,
     puzzleId: args.puzzleId,
+    requester: args.requester,
     status: joinerReady ? "ready" : "waiting",
     matchType: args.matchType,
     cancelled: false,
@@ -1629,26 +1640,38 @@ export const listSessions = (): GameSnapshot[] => {
 };
 
 // List only matchmaking games that are waiting for players
-export const listMatchmakingGames = (): GameSnapshot[] => {
-  return [...sessions.values()]
-    .filter(
-      (session) =>
-        session.matchType === "matchmaking" &&
-        session.status === "waiting" &&
-        !session.cancelled,
-    )
-    .map((session) => ({
-      id: session.id,
-      puzzleId: session.puzzleId,
-      status: session.status,
-      config: session.config,
-      matchType: session.matchType,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-      players: buildPlayerSummaries(session),
-      matchScore: buildMatchScoreSnapshot(session),
-    }));
+const isWaitingInLobby = (session: GameSession): boolean =>
+  session.matchType === "matchmaking" &&
+  session.status === "waiting" &&
+  !session.cancelled;
+
+export const listMatchmakingGames = (): LobbyGame[] => {
+  return [...sessions.values()].filter(isWaitingInLobby).map((session) => ({
+    id: session.id,
+    puzzleId: session.puzzleId,
+    status: session.status,
+    // Field-picked, so the starting layout never reaches the lobby.
+    config: {
+      variant: session.config.variant,
+      randomStart: session.config.randomStart,
+      timeControl: session.config.timeControl,
+      rated: session.config.rated,
+      boardWidth: session.config.boardWidth,
+      boardHeight: session.config.boardHeight,
+    },
+    matchType: session.matchType,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    players: buildPlayerSummaries(session),
+    matchScore: buildMatchScoreSnapshot(session),
+  }));
 };
+
+/** How many matchmaking games this requester has waiting in the lobby. */
+export const countWaitingMatchmakingGames = (requester: string): number =>
+  [...sessions.values()].filter(
+    (session) => session.requester === requester && isWaitingInLobby(session),
+  ).length;
 
 // ============================================================================
 // Spectator Tracking
