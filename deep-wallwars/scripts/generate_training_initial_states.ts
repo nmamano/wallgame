@@ -65,34 +65,66 @@ const sampleDimensions = (
   return [inclusiveInteger(rng, 8, 12), inclusiveInteger(rng, 8, 10), "random"];
 };
 
+/** The draws that fix a training game's rules and board, without the costly initial state. */
+export type TrainingGameSetup = Omit<
+  TrainingInitialStateRecord,
+  "initialState" | "replacementOfGameIndex" | "replacementAttempt" | "replacementIdentity"
+>;
+
+const trainingVariants: readonly RulesVariant[] = ["standard", "classic", "animal-cycle"];
+
+const checkSampleRange = (seed: number, games: number, startGame: number) => {
+  if (!Number.isSafeInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
+  if (!Number.isSafeInteger(games) || games < 1) throw new Error("games must be a positive integer");
+  if (!Number.isSafeInteger(startGame) || startGame < 1) throw new Error("startGame must be positive");
+};
+
+/** Returns the setup and the game's rng, positioned for the initial-state draw. */
+const drawTrainingGameSetup = (seed: number, gameIndex: number) => {
+  const gameSeed = trainingGameSeed(seed, gameIndex);
+  const rng = makeTrainingRng(gameSeed);
+  const variant = trainingVariants[Math.floor(rng() * trainingVariants.length)];
+  const [boardWidth, boardHeight, dimensionMode] = sampleDimensions(variant, rng);
+  const startMode: TrainingGameSetup["startMode"] = rng() < 0.5 ? "random" : "traditional";
+  const setup: TrainingGameSetup = {
+    gameIndex,
+    seed,
+    gameSeed,
+    variant,
+    boardWidth,
+    boardHeight,
+    dimensionMode,
+    startMode,
+  };
+  return { setup, rng };
+};
+
+export const sampleTrainingGameSetups = (
+  seed: number,
+  games: number,
+  startGame = 1,
+): TrainingGameSetup[] => {
+  checkSampleRange(seed, games, startGame);
+  return Array.from({ length: games }, (_, offset) => drawTrainingGameSetup(seed, startGame + offset).setup);
+};
+
 export const sampleTrainingInitialStates = (
   seed: number,
   games: number,
   startGame = 1,
 ): TrainingInitialStateRecord[] => {
-  if (!Number.isSafeInteger(seed) || seed < 0) throw new Error("seed must be a non-negative integer");
-  if (!Number.isSafeInteger(games) || games < 1) throw new Error("games must be a positive integer");
-  if (!Number.isSafeInteger(startGame) || startGame < 1) throw new Error("startGame must be positive");
-
-  const variants: RulesVariant[] = ["standard", "classic", "animal-cycle"];
+  checkSampleRange(seed, games, startGame);
   return Array.from({ length: games }, (_, offset) => {
-    const gameIndex = startGame + offset;
-    const gameSeed = trainingGameSeed(seed, gameIndex);
-    const rng = makeTrainingRng(gameSeed);
-    const variant = variants[Math.floor(rng() * variants.length)];
-    const [boardWidth, boardHeight, dimensionMode] = sampleDimensions(variant, rng);
-    const randomStart = rng() < 0.5;
+    const { setup, rng } = drawTrainingGameSetup(seed, startGame + offset);
     return {
-      gameIndex,
-      seed,
-      gameSeed,
-      variant,
-      boardWidth,
-      boardHeight,
-      dimensionMode,
-      startMode: randomStart ? "random" : "traditional",
+      ...setup,
       initialState: buildOrdinaryInitialState(
-        { variant, randomStart, boardWidth, boardHeight },
+        {
+          variant: setup.variant,
+          randomStart: setup.startMode === "random",
+          boardWidth: setup.boardWidth,
+          boardHeight: setup.boardHeight,
+        },
         rng,
       ),
     };

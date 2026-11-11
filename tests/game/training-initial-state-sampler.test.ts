@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   makeTrainingRng,
   sampleReplacementInitialState,
+  sampleTrainingGameSetups,
   sampleTrainingInitialStates,
   trainingGameSeed,
 } from "../../deep-wallwars/scripts/generate_training_initial_states";
@@ -52,6 +53,9 @@ describe("training initial-state sampler", () => {
     const seed = 730_117;
     const actual = sampleTrainingInitialStates(seed, 200);
     expect(actual).toEqual(sampleTrainingInitialStates(seed, 200));
+    // The distribution test reads these setups, so they must be the
+    // sampler's own draws.
+    expect(actual).toMatchObject(sampleTrainingGameSetups(seed, 200));
 
     for (const record of actual) {
       const rng = makeTrainingRng(trainingGameSeed(seed, record.gameIndex));
@@ -102,7 +106,9 @@ describe("training initial-state sampler", () => {
   });
 
   it("covers the requested distribution without treating balance as correctness", () => {
-    const records = sampleTrainingInitialStates(730_117, 6_000);
+    // Setups only: the initial states cost about 1.5 ms each and this test
+    // does not read them.
+    const records = sampleTrainingGameSetups(730_117, 6_000);
     for (const variant of ["standard", "classic", "animal-cycle"] as const) {
       const share =
         records.filter((record) => record.variant === variant).length /
@@ -147,7 +153,7 @@ describe("training initial-state sampler", () => {
         (record) => record.boardHeight >= 7 && record.boardHeight <= 10,
       ),
     ).toBeTrue();
-  }, 20_000);
+  });
 
   it("keeps omitted-rng calls on Math.random", () => {
     const original = Math.random;
