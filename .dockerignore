@@ -15,3 +15,14 @@
 .dockerignore
 .env
 Dockerfile
+
+# Private and local files that .gitignore keeps out of the repo. Production
+# builds from a clean `git archive`, which never holds them; these lines keep
+# them out of a manual `docker build .` from a working tree too (c1facd32).
+/ops-private
+/tmp
+/logs
+**/.cache
+**/.env*
+/.wallgame-bot-heartbeat
+/frontend/public/replays
