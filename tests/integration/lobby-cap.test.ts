@@ -52,10 +52,18 @@ const config = {
 };
 
 /** A guest create from one client address. */
-const createGame = async (source: string, matchType = "matchmaking") => {
+const createGame = async (
+  source: string,
+  matchType = "matchmaking",
+  userId?: string,
+) => {
   const response = await fetch(`${baseUrl}/api/games`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-forwarded-for": source },
+    headers: {
+      "content-type": "application/json",
+      "x-forwarded-for": source,
+      ...(userId ? { "x-test-user-id": userId } : {}),
+    },
     body: JSON.stringify({ config, matchType }),
   });
   return {
@@ -135,6 +143,18 @@ describe("the matchmaking lobby", () => {
 
     await cancel(waiting[0]);
     expect((await createGame(source)).status).toBe(201);
+  });
+
+  it("holds for a signed-in account that sends its creates at once", async () => {
+    // A signed-in create reads the database before it creates the game; the
+    // count must not run before those reads, or all 5 would count 0.
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) =>
+        createGame(`198.18.0.${n}`, "matchmaking", "lobby-cap-account"),
+      ),
+    );
+    const statuses = results.map((result) => result.status).sort();
+    expect(statuses).toEqual([201, 201, 201, 429, 429]);
   });
 
   it("counts an IPv6 client by its /64", async () => {

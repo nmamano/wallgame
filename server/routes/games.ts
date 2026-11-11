@@ -245,6 +245,30 @@ export const gamesRoute = new Hono()
         if (parsed.config.rated && !user?.id) {
           return c.json({ error: "Log in to create a rated game." }, 403);
         }
+        console.log(
+          "[games] POST /api/games body:",
+          JSON.stringify(parsed, null, 2),
+        );
+
+        // Every await comes before the cap check: the check and
+        // createGameSession must run as one synchronous step, or parallel
+        // creates would all count the same waiting games.
+        const hostElo = user?.id
+          ? await getGlobalRatingForAuthUser(user.id)
+          : undefined;
+        const hostDisplayName = await resolveSeatDisplayName(
+          user?.id,
+          parsed.hostDisplayName,
+        );
+
+        // Map the joinerConfig type from schema to store type
+        const joinerConfig = parsed.joinerConfig
+          ? {
+              type: parsed.joinerConfig.type as PlayerConfigType,
+              displayName: parsed.joinerConfig.displayName,
+            }
+          : undefined;
+
         // Every create sends the whole lobby to every viewer, so one
         // requester may keep only a few games waiting there (c1facd32).
         const requester = requesterKey(user?.id, c.req.raw.headers);
@@ -260,32 +284,11 @@ export const gamesRoute = new Hono()
             429,
           );
         }
-        console.log(
-          "[games] POST /api/games body:",
-          JSON.stringify(parsed, null, 2),
-        );
-
-        // Look up ELO if user is authenticated
-        let hostElo: number | undefined;
-        if (user?.id) {
-          hostElo = await getGlobalRatingForAuthUser(user.id);
-        }
-
-        // Map the joinerConfig type from schema to store type
-        const joinerConfig = parsed.joinerConfig
-          ? {
-              type: parsed.joinerConfig.type as PlayerConfigType,
-              displayName: parsed.joinerConfig.displayName,
-            }
-          : undefined;
 
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: parsed.config,
           matchType: parsed.matchType,
-          hostDisplayName: await resolveSeatDisplayName(
-            user?.id,
-            parsed.hostDisplayName,
-          ),
+          hostDisplayName,
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: parsed.hostIsPlayer1,
           hostAuthUserId: user?.id,
