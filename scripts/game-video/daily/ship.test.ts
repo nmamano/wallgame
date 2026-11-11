@@ -13,12 +13,17 @@ import {
   ship,
 } from "./ship.mjs";
 import { testTmp } from "../test-tmp";
+import { gitEnv } from "../git-env.mjs";
 
 /** This file's temp dirs, removed after its tests (cb84d862). */
 const TEST_TMP = testTmp();
 
 const git = (dir: string, ...args: string[]) => {
-  const r = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  // Never the repository a hook's GIT_DIR names (task 8d8bf577).
+  const r = spawnSync("git", ["-C", dir, ...args], {
+    encoding: "utf8",
+    env: gitEnv(),
+  });
   if (r.status !== 0) throw new Error(r.stderr);
   return r.stdout.trim();
 };
@@ -31,7 +36,7 @@ const repos = () => {
   const root = TEST_TMP.dir("ship-test-");
   const main = join(root, "main");
   const release = join(root, "release");
-  spawnSync("git", ["init", "-q", "-b", "main", main]);
+  spawnSync("git", ["init", "-q", "-b", "main", main], { env: gitEnv() });
   git(main, "config", "user.email", "t@t");
   git(main, "config", "user.name", "t");
   const commit = (text: string) => {
@@ -193,8 +198,9 @@ describe("ship", () => {
     // The trailing "/": .gitignore names these as folders ("/assets/stings/"),
     // and git cannot know that a missing path is a folder.
     const ignored = (path: string) =>
-      spawnSync("git", ["-C", REPO, "check-ignore", "-q", `${path}/`])
-        .status === 0;
+      spawnSync("git", ["-C", REPO, "check-ignore", "-q", `${path}/`], {
+        env: gitEnv(),
+      }).status === 0;
     const files = kitFiles(
       REPO,
       KIT_DATA.filter((p) => existsSync(join(REPO, p)) || !ignored(p)),

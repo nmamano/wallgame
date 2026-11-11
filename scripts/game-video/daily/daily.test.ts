@@ -107,6 +107,7 @@ import {
 import { FRAME, validateEdl } from "../edl.mjs";
 import { batchLines, scriptChecklist, scriptDraft } from "./script.mjs";
 import { testTmp } from "../test-tmp";
+import { gitEnv } from "../git-env.mjs";
 
 /** This file's temp dirs, removed after its tests (cb84d862). */
 const TEST_TMP = testTmp();
@@ -4519,17 +4520,21 @@ describe("phase 1, the script (SCRIPT.md)", () => {
     expect(noDocs(join(dir, "s0.txt")).stderr.toString()).toContain(
       `briefs not found at ${repo} (main:scripts/game-video/daily/DIRECTOR.md): give --docs DIR`,
     );
+    // Never the repository a hook's GIT_DIR names (task 8d8bf577).
     const git = (...args: string[]) =>
-      Bun.spawnSync([
-        "git",
-        "-C",
-        repo,
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@t",
-        ...args,
-      ]);
+      Bun.spawnSync(
+        [
+          "git",
+          "-C",
+          repo,
+          "-c",
+          "user.name=t",
+          "-c",
+          "user.email=t@t",
+          ...args,
+        ],
+        { env: gitEnv() },
+      );
     // A DIRECTOR.md that does not name the caption style the posts carry
     // stops the script before it is written.
     writeDocs(docs, "# Directing\n\nStyle version: `older-style`\n");

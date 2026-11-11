@@ -292,6 +292,7 @@
  * has them committed, or from --docs DIR.
  */
 import { isMain } from "../is-main.mjs";
+import { gitEnv } from "../git-env.mjs";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -369,7 +370,8 @@ const brief = (name) => {
     const show = spawnSync(
       "git",
       ["-C", DOCS_REPO, "show", `main:${DAILY_DIR}/${name}`],
-      { encoding: "utf8" },
+      // DOCS_REPO, never a hook's GIT_DIR (task 8d8bf577).
+      { encoding: "utf8", env: gitEnv() },
     );
     if (show.status !== 0) {
       die(

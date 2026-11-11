@@ -51,6 +51,7 @@ const itemsOf = (state) =>
     ]),
   );
 import { REPO, KIT_ENTRIES, renderKitFiles } from "../render-kit.mjs";
+import { gitEnv } from "../git-env.mjs";
 
 /**
  * The kit's files that are not code: what sync-render-kit.sh copies besides
@@ -121,7 +122,11 @@ export const checksums = (files, repo = REPO) =>
 const gitIn =
   (repo) =>
   (...args) =>
-    spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+    spawnSync("git", ["-C", repo, ...args], {
+      encoding: "utf8",
+      // The checkout -C names, never a hook's GIT_DIR (task 8d8bf577).
+      env: gitEnv(),
+    });
 
 /**
  * Where the checkout at `repo` would move for `to`, or why it must not. Only
