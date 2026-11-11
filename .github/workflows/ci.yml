@@ -59,8 +59,17 @@ jobs:
       # PATH on purpose - it refuses the scratch copy under tmp/, which gets
       # cleaned. Without it every render settles as "error" and 8 assertions
       # fail. The runner stopped shipping ffmpeg, so install it here.
+      #
+      # The step normally takes about 20 s, but it hung 3 times between
+      # 2026-11-06 and 2026-11-07, once up to the 30-min job limit (board task
+      # 53eee603). The step timeout makes a hang fail in 3 min. The apt options
+      # make a stalled download retry instead of waiting with no end.
       - name: Install the engine's C++ dependency and ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y nlohmann-json3-dev ffmpeg
+        timeout-minutes: 3
+        run: |
+          APT_NET="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          sudo apt-get $APT_NET update
+          sudo apt-get $APT_NET install -y nlohmann-json3-dev ffmpeg
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
