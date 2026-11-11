@@ -43,7 +43,7 @@ import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import { getSession } from "../games/store";
 import { getReplayGameReadonly } from "../db/game-queries";
 import { findEvalBot } from "../games/custom-bot-store";
-import { clientIpKey } from "./anonymous-write-limiter";
+import { clientNetworkKey } from "./anonymous-write-limiter";
 import {
   getBgs,
   endBgs,
@@ -928,7 +928,9 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
       const gameId = c.req.param("gameId");
       // The route pattern always sets it; hono's types do not know that here.
       if (!gameId) throw new Error("eval socket route without a game id");
-      const source = clientIpKey(c.req.raw.headers);
+      // The client's network, as for official bot games (e768fdb5): one IPv6
+      // host holds a whole /64, so a full address would not count it once.
+      const source = clientNetworkKey(c.req.raw.headers);
 
       return {
         onOpen(_event: Event, ws: WSContext) {

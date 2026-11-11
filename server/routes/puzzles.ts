@@ -24,7 +24,7 @@ import {
 } from "../../shared/contracts/puzzles";
 import {
   createAnonymousWriteLimiter,
-  clientIpKey,
+  clientNetworkKey,
 } from "./anonymous-write-limiter";
 
 /**
@@ -165,7 +165,8 @@ export const puzzlesRoute = new Hono()
       const user = c.get("user");
       try {
         if (!user) {
-          const key = clientIpKey(c.req.raw.headers);
+          // The client network: one IPv6 host holds a whole /64 (131c9a60).
+          const key = clientNetworkKey(c.req.raw.headers);
           if (!anonymousCompletionLimiter.tryConsume(key)) {
             return c.json({ error: "Too many requests" }, 429);
           }

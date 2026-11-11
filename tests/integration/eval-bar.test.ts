@@ -1486,6 +1486,24 @@ describe("eval bar integration tests", () => {
       const rejected = await refused.waitForMessage("eval-handshake-rejected");
       expect(rejected.code).toBe("LIMIT_REACHED");
       expect(bgsStore.getBgs(limited.gameId)).toBeUndefined();
+      // An IPv6 source counts by its /64, so another address of the same
+      // host shares that limit.
+      for (let i = 0; i < bgsStore.MAX_SESSIONS_PER_EVAL_SOURCE; i++) {
+        const fillerId = `eval-life-filler-v6-${i}`;
+        const created = bgsStore.createBgs(
+          fillerId,
+          compositeId,
+          fillerId,
+          bgsConfig,
+          { kind: "eval", source: "2001:db8:1:2::/64" },
+        );
+        expect(created.ok).toBe(true);
+        fillerIds.push(fillerId);
+      }
+      const sameNetwork = await handshake(limited.gameId, "2001:db8:1:2::abcd");
+      expect(
+        (await sameNetwork.waitForMessage("eval-handshake-rejected")).code,
+      ).toBe("LIMIT_REACHED");
       await openSharedEval(limited.gameId, "10.0.0.6");
       limited.hostSocket.ws.send(JSON.stringify({ type: "resign" }));
       await waitForNoSessions(limited.gameId);

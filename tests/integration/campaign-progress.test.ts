@@ -82,12 +82,13 @@ async function seedUser(displayName: string): Promise<number> {
   return user.userId;
 }
 
-const complete = (levelId: string, authUserId?: string) =>
+const complete = (levelId: string, authUserId?: string, source?: string) =>
   app.request("/api/campaign/complete", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(authUserId ? { "x-test-user-id": authUserId } : {}),
+      ...(source ? { "x-forwarded-for": source } : {}),
     },
     body: JSON.stringify({ levelId }),
   });
@@ -136,6 +137,20 @@ describe("recording a campaign completion", () => {
 
     const rows = await db.select().from(campaignLevelCompletionsTable);
     expect(rows).toHaveLength(2);
+  });
+
+  it("counts anonymous completions from one IPv6 /64 against one limit", async () => {
+    // 30 an hour per client network; every address here is in one /64.
+    for (let i = 1; i <= 30; i++) {
+      const response = await complete(LEVEL_A, undefined, `2001:db8:5:5::${i}`);
+      expect(response.status).toBe(200);
+    }
+    expect(
+      (await complete(LEVEL_A, undefined, "2001:db8:5:5::ffff")).status,
+    ).toBe(429);
+    expect((await complete(LEVEL_A, undefined, "2001:db8:5:6::1")).status).toBe(
+      200,
+    );
   });
 
   it("is idempotent for a logged-in player", async () => {
