@@ -55,3 +55,7 @@ ops-private/
 /scripts/game-video/daily/IMPLEMENT.md
 /scripts/game-video/daily/VET-BRIEF.md
 /scripts/game-video/meme-list.md
+
+# Claude Code local settings: per-machine paths and allow rules, which may one
+# day hold a secret. Never pushed (board task 616e2025).
+**/.claude/settings.local.json
