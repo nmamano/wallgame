@@ -44,6 +44,16 @@ FROM base
 # Copy built application
 COPY --from=build /app /app
 
+# Run as an unprivileged user. /app stays owned by root, so the app can read
+# its code and frontend build but cannot change them. Not the image's own
+# "bun" user: Docker does not remap user ids, and uid 1000 is the first login
+# user on a typical Linux host, often with sudo. Pick a uid with no account on
+# the host.
+RUN groupadd --system --gid 10001 wallgame && \
+    useradd --system --uid 10001 --gid 10001 --no-create-home \
+      --home-dir /nonexistent --shell /usr/sbin/nologin wallgame
+USER 10001:10001
+
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
 CMD [ "bun", "run", "start" ]
