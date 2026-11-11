@@ -69,6 +69,13 @@ export interface SessionPlayer {
   elo?: number; // Looked up from DB based on authenticated user
   configType?: PlayerConfigType; // How this player seat was configured
   botCompositeId?: string; // Bot composite ID (clientId:botId) for proactive bot protocol v2
+  /**
+   * On a bot seat: who asked for the game, "account:<user id>" when signed in,
+   * else "source:<address key>". The engine pool limits official bot games in
+   * progress per requester (bgs-store.ts). Set with botCompositeId, and the
+   * seat spread in createRematchSession carries it to a rematch.
+   */
+  botRequester?: string;
 }
 
 export interface RematchSeatCredentials {
@@ -259,11 +266,13 @@ export const setBotCompositeId = (
   sessionId: string,
   role: "host" | "joiner",
   compositeId: string,
+  requester: string,
 ): void => {
   const session = ensureSession(sessionId);
   const player =
     role === "host" ? session.players.host : session.players.joiner;
   player.botCompositeId = compositeId;
+  player.botRequester = requester;
   player.configType = "bot";
   // Learning that a seat is a bot CHANGES WHICH DEADLINE THE GAME IS ON, so it
   // is a state change like a connect or a move and asks the same question they

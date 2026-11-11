@@ -68,15 +68,16 @@ export type BgsStatus = "initializing" | "ready" | "ended";
 
 /**
  * Who a session counts against in the pool.
- * - official-game: an official bot's seat in a game. Never limited per owner,
- *   and the only owner that can use the reserve.
+ * - official-game: an official bot's seat in a game, counted per requester
+ *   (the account or address that asked for the game). The only owner that can
+ *   use the reserve.
  * - community-game: a seat of a bot from a client without the official token,
  *   counted per bot client.
  * - eval: an eval bar session (live shared or replay), counted per source
  *   address of the viewer that opened it.
  */
 export type BgsOwner =
-  | { kind: "official-game" }
+  | { kind: "official-game"; requester: string }
   | { kind: "community-game"; clientId: string }
   | { kind: "eval"; source: string };
 
@@ -131,11 +132,17 @@ export const OFFICIAL_GAME_RESERVE = 64;
  */
 export const MAX_SESSIONS_PER_COMMUNITY_CLIENT = 16;
 export const MAX_SESSIONS_PER_EVAL_SOURCE = 8;
+/**
+ * 8 = the most official sessions open at once for ALL players together in the
+ * production logs of 2026-11-07..11, so no real player there would have been
+ * refused. Filling the pool then takes 32 accounts or addresses.
+ */
+export const MAX_OFFICIAL_GAMES_PER_REQUESTER = 8;
 
-const ownerKey = (owner: BgsOwner): string | null => {
+const ownerKey = (owner: BgsOwner): string => {
   switch (owner.kind) {
     case "official-game":
-      return null;
+      return `requester:${owner.requester}`;
     case "community-game":
       return `client:${owner.clientId}`;
     case "eval":
@@ -146,7 +153,7 @@ const ownerKey = (owner: BgsOwner): string | null => {
 const ownerLimit = (owner: BgsOwner): number => {
   switch (owner.kind) {
     case "official-game":
-      return MAX_SESSIONS;
+      return MAX_OFFICIAL_GAMES_PER_REQUESTER;
     case "community-game":
       return MAX_SESSIONS_PER_COMMUNITY_CLIENT;
     case "eval":
@@ -158,7 +165,9 @@ const ownerLimit = (owner: BgsOwner): number => {
  * What a session is for: a bot's seat in a game, or an eval bar opened from a
  * source address.
  */
-export type BgsPurpose = { kind: "game" } | { kind: "eval"; source: string };
+export type BgsPurpose =
+  | { kind: "game"; requester: string }
+  | { kind: "eval"; source: string };
 
 /** Who a session for this purpose on this bot counts against. */
 export const bgsOwnerFor = (
@@ -167,7 +176,7 @@ export const bgsOwnerFor = (
 ): BgsOwner => {
   if (purpose.kind === "eval") return purpose;
   return bot.isOfficial
-    ? { kind: "official-game" }
+    ? { kind: "official-game", requester: purpose.requester }
     : { kind: "community-game", clientId: bot.clientId };
 };
 
@@ -186,15 +195,18 @@ export const bgsPoolRefusal = (
 ): "at-capacity" | "over-quota" | null => {
   if (sessions.size >= MAX_SESSIONS) return "at-capacity";
   const key = ownerKey(owner);
-  if (key === null) return null;
   let unreserved = 0;
   let ownCount = 0;
   for (const session of sessions.values()) {
-    if (session.owner.kind === "official-game") continue;
-    unreserved++;
+    if (session.owner.kind !== "official-game") unreserved++;
     if (ownerKey(session.owner) === key) ownCount++;
   }
-  if (unreserved >= MAX_SESSIONS - OFFICIAL_GAME_RESERVE) return "at-capacity";
+  if (
+    owner.kind !== "official-game" &&
+    unreserved >= MAX_SESSIONS - OFFICIAL_GAME_RESERVE
+  ) {
+    return "at-capacity";
+  }
   if (ownCount >= ownerLimit(owner)) return "over-quota";
   return null;
 };

@@ -989,4 +989,56 @@ describe("bot connection lifecycle", () => {
     community.drop();
     official.drop();
   }, 60000);
+
+  it("T14: one requester is held to its official games in progress; another requester still starts one", async () => {
+    // Past the grace: the clients of the earlier tests are gone.
+    await sleep(TEST_GRACE_MS + 500);
+    const limit = 8; // MAX_OFFICIAL_GAMES_PER_REQUESTER (bgs-store.ts)
+    const compositeId = "lc-req-official:b";
+    const official = await openAutoBot("lc-req-official", ["b"], {
+      officialToken: TEST_OFFICIAL_TOKEN,
+    });
+    const humans: HumanSocket[] = [];
+    const starts = () =>
+      official.transcript.filter((m) => m.type === "start_game_session").length;
+
+    // One signed-in requester; each host connect starts the game's session.
+    for (let i = 0; i < limit; i++) {
+      const { status, body } = await playVsBot(
+        "user-req-a",
+        compositeId,
+        gameConfig,
+        true,
+      );
+      expect(status).toBe(201);
+      const play = body as PlayVsBotResponse;
+      const human = await openHumanSocket(
+        "user-req-a",
+        play.gameId,
+        play.socketToken,
+      );
+      humans.push(human);
+      await human.waitForState((s) => s.state.status === "playing");
+    }
+    await official.waitFor(() => starts() === limit);
+
+    const refused = await playVsBot(
+      "user-req-a",
+      compositeId,
+      gameConfig,
+      true,
+    );
+    expect(refused.status).toBe(429);
+    expect((refused.body as { error: string }).error).toContain(
+      "too many bot games",
+    );
+
+    const other = await startGameWithOneRound("user-req-b", compositeId);
+    humans.push(other);
+    expect(starts()).toBe(limit + 1);
+    expect(latestState(other).status).toBe("playing");
+
+    for (const human of humans) human.close();
+    official.drop();
+  }, 60000);
 });

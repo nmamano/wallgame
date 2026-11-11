@@ -208,7 +208,12 @@ describe("a game whose player walked away", () => {
 
   it("ignores a bot seat, which has its own disconnect grace", () => {
     const session = startedSession(UNLIMITED);
-    setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+    setBotCompositeId(
+      session.id,
+      "joiner",
+      "client-1:superhuman",
+      "source:test",
+    );
     setConnected(session, "host", true);
 
     // The bot seat never opens a game socket, so it reads as disconnected -
@@ -361,7 +366,12 @@ describe("a game nobody is moving in", () => {
    */
   it("charges a bot that owns the turn, never the human waiting on it", () => {
     const session = startedSession(UNLIMITED);
-    setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+    setBotCompositeId(
+      session.id,
+      "joiner",
+      "client-1:superhuman",
+      "source:test",
+    );
     setConnected(session, "host", true);
     playMoves(session.id, 3);
 
@@ -371,7 +381,12 @@ describe("a game nobody is moving in", () => {
 
   it("charges the human in a bot game when the human owns the turn", () => {
     const session = startedSession(UNLIMITED);
-    setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+    setBotCompositeId(
+      session.id,
+      "joiner",
+      "client-1:superhuman",
+      "source:test",
+    );
     setConnected(session, "host", true);
     playMoves(session.id, 2);
 
@@ -459,7 +474,12 @@ describe("a game nobody ever opened", () => {
     // no re-arm the game is still on the five-minute band here and survives.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
 
       timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS - 1);
       expect(isLive(session.id)).toBe(true);
@@ -536,7 +556,12 @@ describe("a game nobody ever opened", () => {
     // a puzzle mid-thought.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       expect(getSession(session.id).gameState.moveCount).toBe(0);
 
@@ -616,7 +641,12 @@ describe("a bot game whose human seat left", () => {
   it("ends sixty seconds after the human disconnects, charging the absent seat", () => {
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       playMoves(session.id, 2);
       setConnected(session, "host", false);
@@ -654,7 +684,12 @@ describe("a bot game whose human seat left", () => {
     // no longer be the proof the comment claims.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       playMoves(session.id, 2);
       setConnected(session, "host", false);
@@ -702,7 +737,12 @@ describe("a bot game whose human seat left", () => {
     // consulted; the game belongs to the idle policy at thirty minutes.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
 
       timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
@@ -717,7 +757,12 @@ describe("a bot game whose human seat left", () => {
     // ends it inside the window and the silence is the assertion.
     withFakeTimers(() => {
       const session = startedSession(LONG_TIMED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       playMoves(session.id, 2);
       setConnected(session, "host", false);
@@ -940,7 +985,12 @@ describe("the idle timeout ending a game", () => {
     // band wins.
     withFakeTimers(() => {
       const session = startedSession(LONG_TIMED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       setConnected(session, "host", false);
 
@@ -955,7 +1005,12 @@ describe("the idle timeout ending a game", () => {
   it("lets a bot lose rather than the human waiting on it", () => {
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setBotCompositeId(
+        session.id,
+        "joiner",
+        "client-1:superhuman",
+        "source:test",
+      );
       setConnected(session, "host", true);
       playMoves(session.id, 3);
       expect(getSession(session.id).gameState.turn).toBe(2);

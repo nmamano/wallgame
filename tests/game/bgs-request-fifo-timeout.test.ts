@@ -222,7 +222,10 @@ const keepalive = async (): Promise<void> => {
 };
 
 async function start(id: string): Promise<void> {
-  await startBgsSession(BOT_ID, id, id, config, { kind: "game" });
+  await startBgsSession(BOT_ID, id, id, config, {
+    kind: "game",
+    requester: "source:test",
+  });
   expect(getBgs(id)?.status).toBe("ready");
   expect(engine.sessions.has(id)).toBe(true);
 }
@@ -365,6 +368,7 @@ describe("real BGS request deadlines with client FIFO", () => {
 
       const replacement = startBgsSession(BOT_ID, id, id, config, {
         kind: "game",
+        requester: "source:test",
       });
       if (delay >= timeoutMs) {
         engine.release("end_game_session", {
@@ -444,6 +448,7 @@ describe("real BGS request deadlines with client FIFO", () => {
 
       const replacement = startBgsSession(BOT_ID, id, id, config, {
         kind: "game",
+        requester: "source:test",
       });
       if (delay >= timeoutMs) {
         engine.release("end_game_session", {
@@ -505,7 +510,7 @@ const createBotGame = async (): Promise<string> => {
   });
   session.players.joiner.ready = true;
   session.status = "ready";
-  setBotCompositeId(session.id, "joiner", BOT_ID);
+  setBotCompositeId(session.id, "joiner", BOT_ID, "source:test");
   addActiveGame(
     BOT_ID,
     session.id,
@@ -516,6 +521,7 @@ const createBotGame = async (): Promise<string> => {
   playWallTurn(session.id, 2, 1);
   await startBgsSession(BOT_ID, session.id, session.id, config, {
     kind: "game",
+    requester: "source:test",
   });
   createdGameIds.push(session.id);
   return session.id;

@@ -354,7 +354,7 @@ describe("lead-in game BGS initialization (S-P1)", () => {
       hostIsPlayer1: launch.humanIsPlayer1,
       joinerConfig: { type: "bot", displayName: "PuzzleBot" },
     });
-    store.setBotCompositeId(session.id, "joiner", compositeId);
+    store.setBotCompositeId(session.id, "joiner", compositeId, "source:test");
     session.players.joiner.ready = true;
     session.status = "ready";
     store.applyPlayerMove({

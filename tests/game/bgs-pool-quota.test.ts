@@ -5,6 +5,7 @@ import {
   createBgs,
   endBgs,
   getBgsCount,
+  MAX_OFFICIAL_GAMES_PER_REQUESTER,
   MAX_SESSIONS,
   MAX_SESSIONS_PER_COMMUNITY_CLIENT,
   MAX_SESSIONS_PER_EVAL_SOURCE,
@@ -32,7 +33,16 @@ const create = (owner: BgsOwner) => {
   return createBgs(id, "client:bot", id, config, owner);
 };
 
-const official: BgsOwner = { kind: "official-game" };
+const officialFor = (requester: string): BgsOwner => ({
+  kind: "official-game",
+  requester,
+});
+const official = officialFor("account:a");
+/** The i-th official game, spread so no requester reaches its limit. */
+const officialSpread = (i: number): BgsOwner =>
+  officialFor(
+    `source:10.1.${Math.floor(i / MAX_OFFICIAL_GAMES_PER_REQUESTER)}.1`,
+  );
 const community = (clientId: string): BgsOwner => ({
   kind: "community-game",
   clientId,
@@ -93,17 +103,35 @@ describe("engine session pool", () => {
     expect(bgsPoolRefusal(evalFrom("10.9.9.9"))).toBe("at-capacity");
 
     for (let i = 0; i < OFFICIAL_GAME_RESERVE; i++) {
-      expect(create(official).ok).toBe(true);
+      expect(create(officialSpread(i)).ok).toBe(true);
     }
     expect(getBgsCount()).toBe(MAX_SESSIONS);
-    expect(create(official)).toEqual({ ok: false, reason: "at-capacity" });
+    expect(create(officialFor("account:fresh"))).toEqual({
+      ok: false,
+      reason: "at-capacity",
+    });
   });
 
   it("lets official games use the free part of the whole pool", () => {
     for (let i = 0; i < MAX_SESSIONS; i++) {
-      expect(create(official).ok).toBe(true);
+      expect(create(officialSpread(i)).ok).toBe(true);
     }
-    expect(create(official)).toEqual({ ok: false, reason: "at-capacity" });
+    expect(create(officialFor("account:fresh"))).toEqual({
+      ok: false,
+      reason: "at-capacity",
+    });
+  });
+
+  it("limits official games per requester; another requester still starts one", () => {
+    for (let i = 0; i < MAX_OFFICIAL_GAMES_PER_REQUESTER; i++) {
+      expect(create(officialFor("source:10.0.0.1")).ok).toBe(true);
+    }
+    expect(create(officialFor("source:10.0.0.1"))).toEqual({
+      ok: false,
+      reason: "over-quota",
+    });
+    expect(create(officialFor("source:10.0.0.2")).ok).toBe(true);
+    expect(create(officialFor("account:a")).ok).toBe(true);
   });
 
   it("refuses a duplicate id as its own reason", () => {

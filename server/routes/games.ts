@@ -45,6 +45,7 @@ import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { endGameEngineSessions, sendMatchStatus } from "./game-socket";
 import { bgsOwnerFor, bgsPoolRefusal } from "../games/bgs-store";
+import { clientNetworkKey } from "./anonymous-write-limiter";
 import {
   getRandomShowcaseGames,
   getReplayGame,
@@ -674,14 +675,25 @@ export const botsRoute = new Hono()
           );
         }
 
+        // Who asks: the account when signed in, else the client network (an
+        // IPv6 /64). The anonymous id is chosen by the client, so it cannot be
+        // a limit key. Guests behind one address (a school, an office) share
+        // the limit.
+        const requester = user?.id
+          ? `account:${user.id}`
+          : `source:${clientNetworkKey(c.req.raw.headers)}`;
+
         // The engine session starts when the host connects; ask the pool now
         // so a full pool refuses the game with a reason instead of a forfeit.
-        const poolRefusal = bgsPoolRefusal(bgsOwnerFor({ kind: "game" }, bot));
+        const poolOwner = bgsOwnerFor({ kind: "game", requester }, bot);
+        const poolRefusal = bgsPoolRefusal(poolOwner);
         if (poolRefusal === "over-quota") {
           return c.json(
             {
               error:
-                "That bot is playing all the games it can. Try again later.",
+                poolOwner.kind === "official-game"
+                  ? "You have too many bot games in progress. Finish or resign one and try again."
+                  : "That bot is playing all the games it can. Try again later.",
             },
             429,
           );
@@ -732,7 +744,7 @@ export const botsRoute = new Hono()
         session.players.joiner.appearance = joinerAppearance;
 
         // Set bot composite ID on joiner seat
-        setBotCompositeId(session.id, "joiner", parsed.botId);
+        setBotCompositeId(session.id, "joiner", parsed.botId, requester);
 
         // Mark joiner as ready (bot is always ready)
         session.players.joiner.ready = true;

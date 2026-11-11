@@ -86,6 +86,7 @@ import {
   clearBgsResetting,
   getResetPromise,
   type BgsHistoryEntry,
+  type BgsPurpose,
 } from "../games/bgs-store";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
 import {
@@ -152,6 +153,24 @@ export const endGameEngineSessions = (sessionId: string): void => {
 // ============================================================================
 
 /**
+ * The pool purpose of a bot seat's session: the game's requester decides whose
+ * share an official bot game counts against. setBotCompositeId requires the
+ * requester, so a bot seat without one is a bug. Callers ask inside their
+ * start-failure path, so it ends as a logged failed start, like any other.
+ */
+const gamePurpose = (
+  session: GameSession,
+  botCompositeId: string,
+): BgsPurpose => {
+  const { host, joiner } = session.players;
+  const seat = host.botCompositeId === botCompositeId ? host : joiner;
+  if (seat.botRequester === undefined) {
+    throw new Error(`Bot seat of game ${session.id} has no requester`);
+  }
+  return { kind: "game", requester: seat.botRequester };
+};
+
+/**
  * Build BgsConfig from a game session.
  * Extracts variant, board dimensions, and initial state.
  */
@@ -176,9 +195,13 @@ const startBotGameSession = async (
   const config = buildBgsConfig(session);
 
   try {
-    await startBgsSession(botCompositeId, bgsId, session.id, config, {
-      kind: "game",
-    });
+    await startBgsSession(
+      botCompositeId,
+      bgsId,
+      session.id,
+      config,
+      gamePurpose(session, botCompositeId),
+    );
     logLine("[ws] BGS started for bot game", {
       gameId: session.id,
       bgsId,
@@ -723,9 +746,13 @@ const rebuildPass = async (
   // Start a new BGS with the same ID
   const config = buildBgsConfig(session);
   try {
-    await startBgsSession(botCompositeId, bgsId, sessionId, config, {
-      kind: "game",
-    });
+    await startBgsSession(
+      botCompositeId,
+      bgsId,
+      sessionId,
+      config,
+      gamePurpose(session, botCompositeId),
+    );
   } catch (error) {
     if (superseded()) {
       console.info("[ws] takeback BGS start cancelled by newer reset", {

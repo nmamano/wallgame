@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createAnonymousWriteLimiter,
   clientIpKey,
+  clientNetworkKey,
 } from "../../server/routes/anonymous-write-limiter";
 
 /**
@@ -123,5 +124,30 @@ describe("client ip key", () => {
       false,
       false,
     ]);
+  });
+});
+
+describe("client network key", () => {
+  const keyOf = (address: string) =>
+    clientNetworkKey(new Headers({ "x-forwarded-for": address }));
+
+  it("keeps an IPv4 address as is", () => {
+    expect(keyOf("198.51.100.9")).toBe("198.51.100.9");
+    expect(keyOf("::ffff:198.51.100.9")).toBe("198.51.100.9");
+  });
+
+  it("gives every address of one IPv6 /64 the same key", () => {
+    expect(keyOf("2001:db8:85a3:12::1")).toBe("2001:db8:85a3:12::/64");
+    expect(keyOf("2001:db8:85a3:12:ffff:1:2:3")).toBe("2001:db8:85a3:12::/64");
+    expect(keyOf("2001:0DB8:85A3:0012:0000:0000:0000:0042")).toBe(
+      "2001:db8:85a3:12::/64",
+    );
+    expect(keyOf("2001:db8:85a3:13::1")).toBe("2001:db8:85a3:13::/64");
+    expect(keyOf("2001:db8::1")).toBe("2001:db8:0:0::/64");
+  });
+
+  it("passes a value that is not an address through, and keeps the blank bucket", () => {
+    expect(keyOf("not:an:address::x")).toBe("not:an:address::x");
+    expect(clientNetworkKey(new Headers())).toBe("unknown");
   });
 });
