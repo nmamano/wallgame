@@ -4,45 +4,22 @@ set -e
 # Make sure Bun is on PATH (Windows + Git Bash)
 export PATH="$HOME/.bun/bin:$PATH"
 
-# ----- No ignored path in a pushed commit -----
-# Some files stay on this machine only: .gitignore lists them. A commit made
-# before a path was ignored still holds it, so a push of an old branch (or a
-# merge or plain rebase of one) would publish it again. This happened on
-# 2026-10-30, when private docs left the unpushed history: every branch made
-# before that still held them. So each pushed commit's whole tree is checked
-# against the CURRENT .gitignore. About 6 s for 200 commits.
-#
-# POSIX sh: husky runs this file with `sh -e`, whatever the line on top says.
-zero=0000000000000000000000000000000000000000
-changed="" # every path the pushed commits change, for the game-video gate below
-while read -r local_ref local_sha remote_ref remote_sha; do
-  [ "$local_sha" = "$zero" ] && continue # a branch deletion pushes no commit
-  # A new branch, or a remote tip this clone does not have: check all that
-  # origin/main does not have.
-  base=refs/remotes/origin/main
-  if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
-    base=$remote_sha
-  fi
-  if ! commits=$(git rev-list --reverse "$base..$local_sha"); then
-    echo "❌❌ Push refused: cannot list the commits of $local_ref ($base..$local_sha)."
-    exit 1
-  fi
-  # A diff that fails (no common base) counts as a game-video change.
-  changed="$changed
-$(git diff --name-only "$base...$local_sha" || echo scripts/game-video/)"
-  for commit in $commits; do
-    ignored=$(git ls-tree -r --name-only "$commit" | git check-ignore --no-index --stdin || true)
-    if [ -n "$ignored" ]; then
-      echo "❌❌ Push refused: $local_ref -> $remote_ref holds files that .gitignore keeps local."
-      echo "Commit $(git log -1 --format='%h %s' "$commit") has:"
-      echo "$ignored" | sed 's/^/  /'
-      echo "Move the branch's own commits onto main without them, for example"
-      echo "'git rebase --onto main <old base> <branch>' or cherry-pick."
-      exit 1
-    fi
-  done
-done
-echo "✅✅ No pushed commit holds an ignored path."
+# ----- The pushed commits -----
+# No new ignored path and no personal email in a pushed commit; the reasons are
+# in the script. It prints the paths the push changes, for the game-video gate
+# below. POSIX sh: husky runs this file with `sh -e`, whatever the line on top
+# says, so a refusal there stops the push here.
+changed=$(sh scripts/check-pushed-commits.sh)
+echo "✅✅ No pushed commit holds a new ignored path or a personal email."
+
+# ----- No link to this repository in the checks -----
+# git exports GIT_DIR to a hook (and from a linked worktree GIT_INDEX_FILE and
+# others), and those variables beat -C and cwd. On 2026-11-11 a test's fixture
+# git commands, run by this hook from a linked worktree, wrote into the real
+# repository (task 8d8bf577). The checks below read the files, not the
+# repository, so they run without these variables. The list is git's own.
+# shellcheck disable=SC2046 # one word per variable name
+unset $(git rev-parse --local-env-vars)
 
 # These are the SAME commands .github/workflows/ci.yml runs, deliberately. A
 # local gate that only approximates the remote one drifts from it, and then a
