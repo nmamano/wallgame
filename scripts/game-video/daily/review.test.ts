@@ -43,6 +43,7 @@ import {
   APP_NAME,
   ASK_OPTIONS,
   askAgain,
+  asSentence,
   openAskRecords,
   parseAnswer,
   reviewBatchAfter,
@@ -1463,6 +1464,14 @@ const rerender = (
 };
 
 describe("Nil's review asks (review-asks.mjs; Nil, 2026-10-31)", () => {
+  test("a Changed line ends with one period, whatever --what ends with (review 158 N2)", () => {
+    expect(asSentence("both pawns wave flags")).toBe("both pawns wave flags.");
+    expect(asSentence("both pawns wave flags.")).toBe("both pawns wave flags.");
+    expect(asSentence("the cat waits...")).toBe("the cat waits...");
+    expect(asSentence("what if both wave?")).toBe("what if both wave?");
+    expect(asSentence("gg!")).toBe("gg!");
+  });
+
   test("his words read as one action, or as none", () => {
     expect(parseAnswer("Approve")).toEqual({ action: "approve", notes: "" });
     expect(parseAnswer("approve - nice")).toEqual({

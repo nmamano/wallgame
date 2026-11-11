@@ -148,6 +148,13 @@ export const revisionWhat = (item) =>
     : null;
 
 /**
+ * `text` as a sentence: a period at the end unless it already ends with
+ * one, "!" or "?" (review 158 N2: "Changed: x.." read as a typo).
+ * @param {string} text
+ */
+export const asSentence = (text) => (/[.!?]$/.test(text) ? text : `${text}.`);
+
+/**
  * The ask's text: what Nil must decide, then what the review page shows
  * him. `card` is one item of reviewView; `previous` is the item's last ask
  * record, if any (revisionLines).
@@ -159,7 +166,7 @@ export const askPrompt = (item, card, previous) => {
   const what = revisionWhat(item);
   return [
     ...revisionLines(item, previous),
-    ...(what ? [`Changed: ${what}.`] : []),
+    ...(what ? [`Changed: ${asSentence(what)}`] : []),
     "Post this video?",
     `On the video: "${item.caption}"${item.payoff?.text ? ` then "${item.payoff.text}"` : ""}`,
     `Post: ${card.caption}`,
