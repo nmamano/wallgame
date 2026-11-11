@@ -454,3 +454,29 @@ its energy is at 105-175 Hz, its spectral centroid is 400 Hz, and it falls
 (centroid 3.0 kHz) and falls 20 dB in 1.04 s. Its true peak is high for its
 loudness, so memeGain plays it at about -24 LUFS, near boom-3's -23; a
 limiter would cost a drum hit its attack, so the preview is used as is.
+
+## yoshi, Yoshi's eating sound (2026-11-11)
+
+Nil, 2026-11-09 17:16 UTC (to the Director): "one sound effect you can use:
+yoshi eating sound when the cat catches a mouse". Nil, 2026-11-10: "only in
+some videos. not all. just for variety". Task 3d294817. Three candidates for
+Nil's ear on `/daily/sounds`, all found 2026-11-11 on myinstants.com. Views
+are the counts on that site on that day. Each file is the upload as
+fetched, with no cut. None is a voice.
+
+| Key     | What it is                                     | Length | Views   | sha256 (first 12) | Source page                                                          |
+| ------- | ---------------------------------------------- | ------ | ------- | ----------------- | -------------------------------------------------------------------- |
+| yoshi-1 | "yoshi tongue", the most played Yoshi clip     | 0.2 s  | 147,948 | 1fb16b14b768      | https://www.myinstants.com/en/instant/yoshi-tongue/                  |
+| yoshi-2 | "yoshi swallow sound snes", a tongue then gulp | 0.6 s  | 797     | 2415d275aba9      | https://www.myinstants.com/en/instant/yoshi-swallow-sound-snes-3617/ |
+| yoshi-3 | "yoshi tongue sound snes", the tongue only     | 0.4 s  | 2,431   | 7ecae57dff85      | https://www.myinstants.com/en/instant/yoshi-tongue-sound-snes-54168/ |
+
+Claim risk: HIGH for all three. They are Super Mario World game audio
+(Nintendo). Nil's own pick is his OK (task 3d294817); `direct` still
+refuses each one unless the Director accepts it on purpose.
+
+Agents cannot hear, so this is measured, not heard (2026-11-11, RMS per
+25-50 ms on the mono mix). yoshi-1 is one burst near -20 dB for 0.2 s,
+then silence. yoshi-2 has two parts: a burst for 0.15 s, a gap near -44 dB
+for 0.1 s, then a second burst for 0.25 s, and silence at its end: the
+tongue and the gulp. yoshi-3 is one quiet burst near -32 dB that runs to
+the upload's end. memeGain brings all three to the same level.

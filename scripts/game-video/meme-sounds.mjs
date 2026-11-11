@@ -149,6 +149,12 @@ export const MEME_SOUNDS = {
   // uploader recorded, CC0 on freesound.org (meme-sounds.md), measured
   // 2026-11-06.
   "bonk-1": { lufs: -14.2, truePeak: -0.3 },
+  // Yoshi's eating sound, for a cat that catches a mouse, in some videos
+  // only, for variety (Nil, 2026-11-09 and 2026-11-10). Nintendo game
+  // audio from myinstants.com (meme-sounds.md), measured 2026-11-11.
+  "yoshi-1": { lufs: -22.4, truePeak: -8.9 },
+  "yoshi-2": { lufs: -25.8, truePeak: -10.1 },
+  "yoshi-3": { lufs: -33.8, truePeak: -25.9 },
 };
 
 /**
@@ -214,6 +220,8 @@ export const MEME_FAMILIES = {
   scream: "a scream of fear: a strong threat (a woman, a man)",
   nooo: "a dramatic nooo: the lead is lost",
   bonk: "a detour: the walk bumps longer",
+  yoshi:
+    "a cat eats the mouse: Yoshi's tongue and gulp (Nil's pick; some captures only, for variety)",
 };
 
 /**
@@ -233,7 +241,8 @@ export const MEME_FAMILIES = {
  * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh-1 (a sting),
  * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
  * audience off screen, as ooh), and gasp and scream (no word,
- * as scared-2), and bonk-1 (a drum hit). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * as scared-2), bonk-1 (a drum hit), and yoshi (game sound effects, no
+ * word). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
  * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
@@ -305,6 +314,12 @@ export const MEME_SOURCE_NOTES = {
   "getout-1": "medium claim risk: a GTA roleplay streamer, not Breaking Bad",
   "ambulance-1": "medium claim risk: a small company's 2018 ad",
   "clang-1": "low claim risk: no known owner",
+  "yoshi-1":
+    "high claim risk: Super Mario World game audio (Nintendo); Nil's own pick",
+  "yoshi-2":
+    "high claim risk: Super Mario World game audio (Nintendo); Nil's own pick",
+  "yoshi-3":
+    "high claim risk: Super Mario World game audio (Nintendo); Nil's own pick",
   "whistle-1":
     'low claim risk, unheard: a "Morricone-inspired" tune, so a claim if it quotes a film theme; a 3.5 s cut of a 42 s whistle, not used until Nil hears it',
 };

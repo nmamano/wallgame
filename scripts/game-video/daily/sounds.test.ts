@@ -325,6 +325,9 @@ describe("claim risk", () => {
       "win-2",
       "wow-1",
       "wow-2",
+      "yoshi-1",
+      "yoshi-2",
+      "yoshi-3",
     ]);
     expect(claimRisk("shotgun-1")).toBe(MEME_SOURCE_NOTES["shotgun-1"]);
     expect(claimRisk("boom-2")).toBeNull();
