@@ -1,9 +1,4 @@
 {
-  "env": {
-    "XDG_CACHE_HOME": ".cache",
-    "npm_config_cache": ".cache/npm",
-    "BUN_INSTALL_CACHE_DIR": ".cache/bun"
-  },
   "permissions": {
     "allow": [
       "WebFetch(domain:registry.npmjs.org)",
