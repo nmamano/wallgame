@@ -2352,6 +2352,34 @@ describe("a platform pause", () => {
     expect(reasons.facebook).toEqual([]);
   });
 
+  test("the shipped Facebook pause leaves Instagram and its Story live", () => {
+    // Every key of the three Meta platforms: all three are live without it.
+    const live = {
+      ...meta,
+      R2_ACCOUNT_ID: "a",
+      R2_ACCESS_KEY_ID: "k",
+      R2_SECRET_ACCESS_KEY: "s",
+    };
+    const inside = {
+      pauses: PLATFORM_PAUSES,
+      now: Date.parse("2026-12-01T00:00:00Z"),
+    };
+    expect(postingModes(live)).toEqual({
+      ...DRY,
+      instagram: "live",
+      "instagram-story": "live",
+      facebook: "live",
+    });
+    expect(postingModes(live, new Set(), inside)).toEqual({
+      ...DRY,
+      instagram: "live",
+      "instagram-story": "live",
+      facebook: "dry-run",
+    });
+    const [reason] = modeReasons(live, new Set(), inside).facebook;
+    expect(reason).toStartWith("paused until 2027-11-12T00:00:00Z: ");
+  });
+
   test("each shipped pause names a platform and a window that parses", () => {
     for (const p of PLATFORM_PAUSES) {
       expect(PLATFORMS).toContain(p.platform);

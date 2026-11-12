@@ -321,9 +321,16 @@ export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
  * @type {PlatformPause[]}
  */
 export const PLATFORM_PAUSES = [
-  // The Facebook test (2026-11-03 to 11-17) is lifted (Wall Game PM,
-  // 2026-11-03): the Instagram->Facebook share needs a personal profile in
-  // the Accounts Center, so there is no test and no pause.
+  // Wall Game Growth, 2026-11-12 (Growth Lead and Wall Game PM agreed): a
+  // pause, not a removal. The Page, META_SYSTEM_USER_TOKEN and
+  // post-facebook.mjs stay; delete this entry to post to Facebook again.
+  // Instagram and its Story keep posting live.
+  {
+    platform: "facebook",
+    from: "2026-11-12T00:00:00Z",
+    until: "2027-11-12T00:00:00Z",
+    why: "1 view in 45 Facebook Page Reels over 3 weeks (post stats, 2026-11-12); Growth paused it",
+  },
 ];
 
 /** The reasons of the pauses of platform `p` at time `now` (ms). */
