@@ -22,6 +22,7 @@ import {
 import {
   checkSentence,
   factsOf,
+  paceLine,
   renderTable,
   writeSentences,
 } from "./sentences";
@@ -1191,6 +1192,23 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(l.pace.longestQuiet).toEqual({ from: 0, to: 23 });
     // A pick with an early start (v-2026-11-05-9): the first at ply 6.
     expect(fixtureLabels("l2fZ3oxY").pace.moments[0]).toBe(6);
+  });
+
+  test("paceLine: the words the Director reads, with and without a seen check", () => {
+    const pace = { moments: [4, 9], longestQuiet: { from: 10, to: 30 } };
+    expect(paceLine(pace, null)).toBe(
+      "Pace: 2 board moments; the first at 3. (ply 4); the longest quiet run plies 10-30 (21 plies)",
+    );
+    const seen = [
+      { ply: 4, seen: false, reason: "" },
+      { ply: 9, seen: true, reason: "" },
+    ];
+    expect(paceLine(pace, seen)).toBe(
+      "Pace: 2 board moments; the first at 3. (ply 4); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
+    );
+    expect(
+      paceLine({ moments: [], longestQuiet: { from: 0, to: 9 } }, null),
+    ).toBe("Pace: no board moment; the longest quiet run plies 0-9 (10 plies)");
   });
 
   test("paceOf: the opening and the middle count as quiet runs", () => {

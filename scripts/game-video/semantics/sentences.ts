@@ -744,10 +744,9 @@ export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
   const first = pace.moments[0];
   const q = pace.longestQuiet;
   const parts = [
-    `${pace.moments.length} board moments`,
     first === undefined
-      ? "none"
-      : `the first at ${siteMove(first)} (ply ${first})`,
+      ? "no board moment"
+      : `${pace.moments.length} board moments; the first at ${siteMove(first)} (ply ${first})`,
     q === null
       ? "no quiet run"
       : `the longest quiet run plies ${q.from}-${q.to} (${q.to - q.from + 1} plies)`,
