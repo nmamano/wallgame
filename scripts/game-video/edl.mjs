@@ -201,7 +201,14 @@
  *             `seconds` (default 1.0) with no sound, so the viewer waits
  *             for the move; the move lands inside it and the camera goes
  *             back out while it lands (Nil, 2026-11-01: "with
- *             anticipation and slow zoom maybe").
+ *             anticipation and slow zoom maybe"). With an overlay at
+ *             "build" on its ply, the push lasts while that overlay shows
+ *             (at least `seconds`), then the camera goes fully back out
+ *             (BUILD_OUT_SECONDS) BEFORE the move lands, so the move lands
+ *             on the whole board (Wall Game Director, 2026-11-13: gs-math
+ *             on the human's cat, then the save's walls on the full board).
+ *             `frame` is the push's target (the human's cat for gs-math),
+ *             not always the move's cells.
  *     plant   the setup of a later callback: on the ply that places
  *             `wall`, as its move lands, that wall glows for 0.8 s, with
  *             no word, so the viewer has seen it once.
@@ -252,7 +259,9 @@
  *             callback) `at` may time it inside the explain (Nil,
  *             2026-11-01: a clip "at the time the move is played ...
  *             then one of the others after while it's showing the new
- *             distance path"): "land" opens it as the move lands, and the
+ *             distance path"): "build" opens it as the build-up push starts
+ *             (the ply's explain needs a `buildUp`) and the move waits
+ *             until it closes; "land" opens it as the move lands, and the
  *             new walk waits until it closes; "walk" opens it as the new
  *             walk is fully drawn and its number shows, and the walk
  *             stays up until it closes. One of each a
@@ -574,7 +583,7 @@ export const EVENT_KINDS = [
 ];
 
 /** When an overlay on an explain's ply opens (`at`): see the header. */
-export const OVERLAY_ATS = ["land", "walk"];
+export const OVERLAY_ATS = ["build", "land", "walk"];
 
 /** The fields each kind takes, besides ply, kind and sound. */
 const KIND_FIELDS = {
@@ -646,6 +655,8 @@ export const fastForwardTag = (secondsPerMove) =>
 export const DEFAULT_ZOOM_SCALE = 1.5;
 /** How long an explain's build-up zoom pushes in, by default. */
 export const DEFAULT_BUILD_UP_SECONDS = 1.0;
+/** How long the camera takes to go back out after a build-up that carries an overlay at "build", before the move lands. */
+export const BUILD_OUT_SECONDS = 0.4;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
 /**
  * The longest video that a story can carry (Instagram, 2026-10-29: a Story
@@ -1465,9 +1476,16 @@ export const validateEdl = (raw) => {
   // callback, and one overlay for each time.
   for (const o of filled.filter((x) => x.kind === "overlay" && x.at)) {
     const explain = filled.find((x) => x.kind === "explain" && x.ply === o.ply);
+    const moment = { build: "build-up", land: "landing", walk: "new walk" }[
+      o.at
+    ];
     if (!explain || explain.callback) {
       fail(
-        `the ${o.asset} overlay on ply ${o.ply} opens at its explain's ${o.at === "land" ? "landing" : "new walk"}, but ply ${o.ply} has ${explain ? "a callback" : "no explain"}`,
+        `the ${o.asset} overlay on ply ${o.ply} opens at its explain's ${moment}, but ply ${o.ply} has ${explain ? "a callback" : "no explain"}`,
+      );
+    } else if (o.at === "build" && !explain.buildUp) {
+      fail(
+        `the ${o.asset} overlay on ply ${o.ply} opens at its explain's build-up, but that explain has no buildUp`,
       );
     }
     if (

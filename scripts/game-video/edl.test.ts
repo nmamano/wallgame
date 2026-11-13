@@ -305,7 +305,7 @@ describe("the moment kinds", () => {
       ]),
     ).toContain("events[0]: a callback has no buildUp (its move lands first)");
     expect(errors([{ ...shock, at: "later" }])).toContain(
-      'events[0]: at must be one of land, walk (inside its ply\'s explain), got "later"',
+      'events[0]: at must be one of build, land, walk (inside its ply\'s explain), got "later"',
     );
     expect(errors([shock])).toContain(
       "the reactor-shock overlay on ply 12 opens at its explain's new walk, but ply 12 has no explain",
@@ -313,6 +313,39 @@ describe("the moment kinds", () => {
     expect(errors([explain, shock, { ...shock, seat: "red" }])).toContain(
       'ply 12 has two overlays at "walk"; one of each',
     );
+  });
+
+  test('an overlay at "build" opens in the build-up, so its explain needs a buildUp (Wall Game Director, 2026-11-13)', () => {
+    const explain = { ply: 12, kind: "explain", hunter: "blue" };
+    const chalk = {
+      ply: 12,
+      kind: "overlay",
+      form: "cover",
+      asset: "gs-math",
+      sound: "scratch-1",
+      seconds: 1.5,
+      at: "build",
+    };
+    const edl = accept({
+      ...base,
+      events: [{ ...explain, buildUp: { frame: ["h5"] } }, chalk],
+    });
+    expect(edl.events[1]).toMatchObject({ at: "build", seconds: 1.5 });
+    const errors = (events: object[]) =>
+      (validateEdl({ ...base, events }).errors ?? []) as string[];
+    expect(errors([explain, chalk])).toContain(
+      "the gs-math overlay on ply 12 opens at its explain's build-up, but that explain has no buildUp",
+    );
+    expect(errors([chalk])).toContain(
+      "the gs-math overlay on ply 12 opens at its explain's build-up, but ply 12 has no explain",
+    );
+    expect(
+      errors([
+        { ...explain, buildUp: { frame: ["h5"] } },
+        chalk,
+        { ...chalk, asset: "gs-fire", seconds: undefined },
+      ]),
+    ).toContain('ply 12 has two overlays at "build"; one of each');
   });
 
   test("an evaluation strip lists one value a position, each -1..1, and is off when absent", () => {

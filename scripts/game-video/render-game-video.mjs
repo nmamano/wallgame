@@ -105,6 +105,7 @@ import {
   TEXT_AREA,
   underButtons,
   parsePlyWindow,
+  BUILD_OUT_SECONDS,
 } from "./edl.mjs";
 import {
   firstBlockedStep,
@@ -7070,10 +7071,28 @@ const renderStyle = async (styleName) => {
           report: (kind, m) => fault(kind, plyIndex, m),
         })
       : null;
+    /*
+      An overlay at "build" (Wall Game Director, 2026-11-13: gs-math on
+      the human's cat) opens as the push starts; the push stretches over
+      the time it shows (at least buildUp.seconds), and the camera goes
+      fully back out (BUILD_OUT_SECONDS) before the move lands, so the move
+      lands on the whole board.
+    */
+    const buildOverlays = build ? explainOverlays(plyIndex, "build") : [];
     if (build) {
-      const push = Math.round(ev.buildUp.seconds * FPS);
-      for (let i = 0; i < push; i += 1) {
-        const x = (i + 1) / push;
+      buildOverlays.forEach(openOverlay);
+      const buildLive = buildOverlays.length ? liveOverlay() : null;
+      const push = Math.max(
+        Math.round(ev.buildUp.seconds * FPS),
+        buildLive?.end == null
+          ? 0
+          : Math.ceil((buildLive.end - elapsed) * FPS - 1e-6),
+      );
+      const out = buildOverlays.length
+        ? Math.round(BUILD_OUT_SECONDS * FPS)
+        : 0;
+      for (let i = 0; i < push + out; i += 1) {
+        const x = i < push ? (i + 1) / push : 1 - (i + 1 - push) / out;
         const scale = 1 + (build.scale - 1) * x * x * (3 - 2 * x);
         await emit(
           playState(ply - 1, {
@@ -7089,9 +7108,12 @@ const renderStyle = async (styleName) => {
         );
       }
     }
+    // With an overlay at "build" the camera is already out.
+    const landIn = buildOverlays.length ? null : build;
     // 2. The move lands; its walls and its pawns' steps glow. An overlay
     // at "land" opens with it, and the new walk waits until it closes;
-    // the build-up's camera goes back out meanwhile.
+    // the build-up's camera goes back out meanwhile (unless it is out
+    // already: an overlay at "build").
     land(plyIndex);
     const landed = elapsed;
     explainOverlays(plyIndex, "land").forEach(openOverlay);
@@ -7105,12 +7127,12 @@ const renderStyle = async (styleName) => {
         : Math.ceil((landLive.end - elapsed) * FPS - 1e-6),
     );
     for (let i = 0; i < landFrames; i += 1) {
-      const out = build
+      const out = landIn
         ? {
             zoom: {
-              ...build,
+              ...landIn,
               scale:
-                1 + (build.scale - 1) * (1 - easeOut((i + 1) / landFrames)),
+                1 + (landIn.scale - 1) * (1 - easeOut((i + 1) / landFrames)),
             },
           }
         : {};
