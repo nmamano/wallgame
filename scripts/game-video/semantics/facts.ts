@@ -75,6 +75,12 @@ export interface EngineData {
 export interface HuntChange extends Hunt {
   before: number;
   after: number;
+  /**
+   * The walk after the move's pawn steps alone, on the walls before the
+   * move: what the steps do apart from the move's walls (2_S7mz__ ply 1, a
+   * cat step 6 -> 5 that the mover's own wall makes 6 -> 7).
+   */
+  afterSteps: number;
   /** Standard notation of both pawns, before and after the move. */
   hunterFrom: string;
   hunterTo: string;
@@ -214,6 +220,21 @@ const walksAfter = (state: GameState, notation: string): number[] | null => {
   } catch {
     return null;
   }
+};
+
+/** Each hunt's walk after the pawn steps of `notation` alone in `state`. */
+const stepWalks = (state: GameState, notation: string): number[] => {
+  const move = moveFromStandardNotation(notation, state.config.boardHeight);
+  const actions = move.actions.filter((a) => a.type !== "wall");
+  if (actions.length === 0) return huntWalks(state);
+  return huntWalks(
+    state.applyGameAction({
+      kind: "move",
+      move: { ...move, actions },
+      playerId: state.turn,
+      timestamp: 0,
+    }),
+  );
 };
 
 /** A cat this close reaches its prey in one turn of two steps. */
@@ -453,6 +474,7 @@ export const gameFacts = (
       };
     }
     const ended = after.status === "finished" && before.status !== "finished";
+    const afterSteps = stepWalks(before, notation);
     return {
       ply,
       moveNumber: siteMoveNumber(ply),
@@ -464,6 +486,7 @@ export const gameFacts = (
         ...hunt,
         before: replay.tracks[i].walks[ply],
         after: replay.tracks[i].walks[ply + 1],
+        afterSteps: afterSteps[i],
         hunterFrom: replay.tracks[i].hunterCells[ply],
         hunterTo: replay.tracks[i].hunterCells[ply + 1],
         targetFrom: replay.tracks[i].targetCells[ply],

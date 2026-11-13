@@ -61,6 +61,7 @@ const hunt = (
   target: { player: hunter === 1 ? 2 : 1, type: "mouse" },
   before,
   after,
+  afterSteps: after,
   hunterFrom: "a1",
   hunterTo: "a2",
   targetFrom: "h8",
@@ -348,6 +349,25 @@ describe("huh (C43)", () => {
     expect(labels([{ w1: [8, 6], w2: [2, 2] }]).plies[0].tags).not.toContain(
       "huh",
     );
+  });
+
+  test("a cat step onto its own mouse is read alone, apart from the move's walls (2_S7mz__ ply 1)", () => {
+    // P1's cat steps a1 -> b2, onto P1's mouse, with a wall of its own.
+    const ontoMouse = (afterSteps: number) => {
+      const facts = gameOf([{ w1: [6, 9], w2: [8, 8], walls: [">d6"] }]);
+      const [cat, mouse] = facts.plies[0].hunts;
+      Object.assign(cat, { hunterTo: "b2", afterSteps });
+      Object.assign(mouse, { targetFrom: "b2", targetTo: "b2" });
+      return labelGame(facts).plies[0].huh;
+    };
+    // The step alone makes the walk longer (6 -> 7): a real huh.
+    expect(ontoMouse(7)).toEqual({
+      kind: "cat-on-own-mouse",
+      walk: 8,
+      shown: true,
+    });
+    // The step alone makes it shorter (6 -> 5); only the wall makes it 9.
+    expect(ontoMouse(5)).toBeUndefined();
   });
 
   test("walls that change no counter are no huh (C45, X-TQBFZA ply 11)", () => {
@@ -673,12 +693,16 @@ describe("a box-in sentence says the box", () => {
   });
 });
 
-/** A stored game with the engine's scores of 2026-10-29, labelled. */
-const fixtureLabels = (gameId: string) => {
-  const fixture = JSON.parse(
+/** A stored game with its engine's scores (the date is in its note). */
+const loadFixture = (gameId: string) =>
+  JSON.parse(
     readFileSync(new URL(`fixtures/${gameId}.json`, import.meta.url), "utf8"),
   ) as { game: SemanticGame; engine: EngineData };
-  return labelGame(gameFacts(fixture.game, fixture.engine));
+
+/** A stored game, labelled. */
+const fixtureLabels = (gameId: string) => {
+  const { game, engine } = loadFixture(gameId);
+  return labelGame(gameFacts(game, engine));
 };
 
 describe("the stored result over the replay's", () => {
@@ -1230,6 +1254,17 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
   test("l2fZ3oxY: the first cat step onto its own mouse (the setup's path) is no huh", () => {
     // a7 -> b7, walk 6 -> 5; the engine's best move makes the same step.
     expect(fixtureLabels("l2fZ3oxY").plies[0].huh).toBeUndefined();
+  });
+
+  test("2_S7mz__ 1: a cat step onto its own mouse with the mover's own wall is no huh", () => {
+    // >d6.Cg6: the step alone is 6 -> 5; the wall >d6 makes the move 6 -> 7.
+    const { game, engine } = loadFixture("2_S7mz__");
+    const facts = gameFacts(game, engine);
+    const cat = facts.plies[1].hunts.find(
+      (h) => h.hunter.player === 2 && h.hunter.type === "cat",
+    )!;
+    expect([cat.before, cat.afterSteps, cat.after]).toEqual([6, 5, 7]);
+    expect(labelGame(facts).plies[1].huh).toBeUndefined();
   });
 
   test("qbh10ebA: a cat that passes its own mouse on its way to the prey is no huh", () => {

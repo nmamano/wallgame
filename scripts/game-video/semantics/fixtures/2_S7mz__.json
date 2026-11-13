@@ -1,0 +1,123 @@
+{
+  "note": "Stored game 2_S7mz__ with its engine scores (dw-transformer, 2026-11-12); a regression fixture by game id and ply only.",
+  "game": {
+    "gameId": "2_S7mz__",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [2, 0],
+          "mouse": [2, 1]
+        },
+        "p2": {
+          "cat": [2, 7],
+          "mouse": [2, 6]
+        }
+      },
+      "walls": [
+        {
+          "cell": [1, 1],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [1, 6],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [6, 3],
+          "orientation": "vertical"
+        }
+      ]
+    },
+    "moves": [
+      "Cc6",
+      ">d6.Cg6",
+      ">f6.^g5",
+      ">f8.^c5",
+      "Cd5",
+      ">d5.^d4",
+      ">f7.>g6",
+      ">c5.Cg7",
+      "^a5.^b5",
+      "^d6.Ch7",
+      "Cc6",
+      "Ch5",
+      "Cc8",
+      "Cf5",
+      "Ce8",
+      "Ce6",
+      "Cf8.Mb7",
+      "Cd7",
+      "Ma8",
+      "Cb7",
+      ">b7.^a7",
+      "Cb6.>c8",
+      "Mc8",
+      "Cc7",
+      "Md7",
+      "Cd7"
+    ],
+    "seats": [
+      {
+        "playerOrder": 1,
+        "kind": "guest",
+        "name": "Guest Wombat"
+      },
+      {
+        "playerOrder": 2,
+        "kind": "official bot",
+        "name": "Superhuman Bot"
+      }
+    ],
+    "result": {
+      "winner": 2,
+      "reason": "capture"
+    }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.5173289775848389, 0.5050972104072571, 0.5475652813911438,
+      0.40091049671173096, 0.2085084170103073, -0.1335216611623764,
+      0.10241982340812683, -0.46434834599494934, -0.5031777024269104,
+      -0.5127546787261963, -0.5794353485107422, -0.5369371771812439,
+      -0.5740774273872375, -0.603982150554657, -0.6842430830001831,
+      -0.6388160586357117, -0.6736754179000854, -0.7127987742424011,
+      -0.7942363619804382, -0.794967770576477, -0.8827083110809326,
+      -0.833226203918457, -0.870793342590332, -0.9311367869377136,
+      -0.9884692430496216, -0.9999693036079407, -0.9999385476112366
+    ],
+    "bestMoves": [
+      "Cc6",
+      ">d6.Cg6",
+      ">c8.>c7",
+      ">f8.^c5",
+      ">c8.^g6",
+      ">d5.^d4",
+      ">c7.>c6",
+      ">c5.Cg7",
+      "Cd7",
+      "^d6.Ch7",
+      ">f5.Cd6",
+      "Ch5",
+      "Cc7.>f5",
+      "Cf5",
+      ">e5.^f5",
+      "Ce6",
+      ">e6.^e6",
+      "Cd7",
+      ">c7.^d7",
+      "Cb7",
+      ">a7.^b6",
+      "Cb6.>c8",
+      "^f5.Cf7",
+      "Cc7",
+      "Mb8.Cf7",
+      "Cd7",
+      "Me7"
+    ],
+    "finalFromResult": false
+  }
+}

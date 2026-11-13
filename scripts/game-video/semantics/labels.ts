@@ -88,7 +88,10 @@ export type Tag =
  *   mouse's square"). Not when the cat's step makes its own walk shorter:
  *   the cat only passes its mouse's cell on its way (qbh10ebA ply 21, a
  *   2 -> 18 wall; a first step where the setup puts the mouse on the cat's
- *   path, l2fZ3oxY ply 0; Director, 2026-11-05).
+ *   path, l2fZ3oxY ply 0; Director, 2026-11-05). The step is read alone,
+ *   on the walls before the move, so a wall of the mover's in the same
+ *   move does not make it a huh (2_S7mz__ ply 1, Cg6 6 -> 5 with >d6;
+ *   Nil, 2026-11-13).
  * `walk` is the closest such walk (for mouse-into-reach, after the move).
  * Walls that change no counter are no huh (C45, X-TQBFZA ply 11: Nil "didn't
  * make sense"): the board shows nothing odd.
@@ -517,7 +520,7 @@ const huhOf = (f: PlyFacts): Huh | null => {
     mouse &&
     cat.hunterTo === mouse.targetTo &&
     cat.hunterFrom !== mouse.targetFrom &&
-    cat.after >= cat.before
+    cat.afterSteps >= cat.before
   )
     return { kind: "cat-on-own-mouse", walk: mouse.after, shown: true };
   return null;
