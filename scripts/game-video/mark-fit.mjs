@@ -88,3 +88,26 @@ export const pawnUnderName = (paint, pawns, grid) => {
       ) > TOUCH_CELLS,
   );
 };
+
+/**
+ * Whether an opening name's letters (nameBox, at rest size) meet any of
+ * `dots`: points {x, y} drawn as round dots `rx` wide and `ry` high from
+ * their centre (fractions of the board). The opening names keep off the
+ * opening walks' dots, so the other side's dots never show between the
+ * letters (render vet N9 on wYcrCoxU, 2026-11-13).
+ * @param {{ text: string, x: number, y: number, size: number }} paint
+ * @param {{ x: number, y: number }[]} dots
+ * @param {number} letterWidth
+ * @param {number} rx
+ * @param {number} ry
+ */
+export const nameMeetsDots = (paint, dots, letterWidth, rx, ry) => {
+  const box = nameBox(paint, letterWidth);
+  return dots.some(
+    (d) =>
+      d.x + rx > box.x &&
+      d.x - rx < box.x + box.w &&
+      d.y + ry > box.y &&
+      d.y - ry < box.y + box.h,
+  );
+};

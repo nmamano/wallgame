@@ -1687,6 +1687,68 @@
         });
       };
 
+      /**
+       * Where the GG card goes so it leaves the bar's ringed pawn clear
+       * (task 87da8cb3; Wall Game Director, 2026-11-13: the ring on
+       * wYcrCoxU's g5 read only 1.35 s): `box` is the ring's box in the
+       * board image (0..1). From full size down, by GG_FIT_STEP, the card
+       * slides up, down, left or right of the ring, the least far, staying
+       * GG_FIT_EDGE inside the board. It shrinks no lower than GG_FIT_MIN
+       * (Wall Game Director, 2026-11-13: 85%; a card a little smaller than
+       * the badge stays readable, and the ring is what the bar points at).
+       * Returns { dx, dy } (its move, in boards) and `scale`, or null: no
+       * place clears the ring.
+       */
+      const GG_FIT_STEP = 0.05;
+      const GG_FIT_MIN = 0.85;
+      const GG_FIT_EDGE = 0.02;
+      window.__ggCardFit = (e, box) => {
+        fillGgCard(e);
+        return cardAtRest(() => {
+          const wrap = $("boardWrap").getBoundingClientRect();
+          const W = wrap.width;
+          const r = $("ggCard").getBoundingClientRect();
+          const cx = r.left - wrap.left + r.width / 2;
+          const cy = r.top - wrap.top + r.height / 2;
+          const b = {
+            x0: box.x0 * W,
+            y0: box.y0 * W,
+            x1: box.x1 * W,
+            y1: box.y1 * W,
+          };
+          const m = GG_FIT_EDGE * W;
+          for (let s = 1; s >= GG_FIT_MIN - 1e-9; s -= GG_FIT_STEP) {
+            const hw = (r.width * s) / 2;
+            const hh = (r.height * s) / 2;
+            const ways = [
+              { x: cx, y: Math.min(cy, b.y0 - m - hh) },
+              { x: cx, y: Math.max(cy, b.y1 + m + hh) },
+              { x: Math.min(cx, b.x0 - m - hw), y: cy },
+              { x: Math.max(cx, b.x1 + m + hw), y: cy },
+            ].filter(
+              (p) =>
+                p.x - hw >= m - 1e-6 &&
+                p.x + hw <= W - m + 1e-6 &&
+                p.y - hh >= m - 1e-6 &&
+                p.y + hh <= W - m + 1e-6,
+            );
+            if (ways.length > 0) {
+              const best = ways.reduce((a, c) =>
+                Math.hypot(c.x - cx, c.y - cy) < Math.hypot(a.x - cx, a.y - cy)
+                  ? c
+                  : a,
+              );
+              return {
+                dx: (best.x - cx) / W,
+                dy: (best.y - cy) / W,
+                scale: Math.round(s * 100) / 100,
+              };
+            }
+          }
+          return null;
+        });
+      };
+
       const fitName = (el) => {
         el.style.fontSize = "";
         let size = parseFloat(getComputedStyle(el).fontSize);
@@ -2483,7 +2545,23 @@
               k(n.y) +
               ") scale(" +
               grow.toFixed(3) +
-              ')"><text x="0" y="0" text-anchor="middle" font-family="TikTok Sans, DejaVu Sans, sans-serif" font-weight="900" font-size="' +
+              ')">' +
+              // No free side (render-game-video.mjs openingNames): a dark
+              // plate under the letters hides the walk's dots there.
+              (n.plate
+                ? '<rect x="' +
+                  (-(n.plate * 1000) / 2 - size * 0.18).toFixed(1) +
+                  '" y="' +
+                  (-size * 1.02).toFixed(1) +
+                  '" width="' +
+                  (n.plate * 1000 + size * 0.36).toFixed(1) +
+                  '" height="' +
+                  (size * 1.3).toFixed(1) +
+                  '" rx="' +
+                  (size * 0.25).toFixed(1) +
+                  '" fill="#0b0f1c" fill-opacity="0.92"/>'
+                : "") +
+              '<text x="0" y="0" text-anchor="middle" font-family="TikTok Sans, DejaVu Sans, sans-serif" font-weight="900" font-size="' +
               size.toFixed(1) +
               '" fill="' +
               n.hex +
@@ -3960,8 +4038,18 @@
             $("stripSite").style.opacity = 1 - p;
             // It grows in where it rests, never sliding: the ending's bar
             // may take the band below it (Wall Game Director, 2026-10-29).
+            // Moved off the bar's ringed pawn (__ggCardFit), it grows in
+            // where it rests then.
+            const fit = e.cardFit ?? { dx: 0, dy: 0, scale: 1 };
+            const board = $("boardWrap").offsetWidth;
             $("ggCard").style.transform =
-              "translate(-50%, -50%) scale(" + (0.92 + 0.08 * p) + ")";
+              "translate(calc(-50% + " +
+              fit.dx * board +
+              "px), calc(-50% + " +
+              fit.dy * board +
+              "px)) scale(" +
+              fit.scale * (0.92 + 0.08 * p) +
+              ")";
             fillGgCard(e);
             // The call to action pops as the card lands: it swells and
             // glows once (Nil, 2026-10-31: "make it pop"). Then, while the

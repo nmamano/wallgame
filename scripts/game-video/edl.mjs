@@ -553,6 +553,8 @@ export const LINT_KINDS = {
   "zoom-scale": "note",
   "stamp-flat": "note",
   "walk-number-crowded": "note",
+  "gg-card-moved": "note",
+  "gg-card-waits": "note",
 };
 /**
  * The stopping kinds that are a fault of the game's capture, not of the

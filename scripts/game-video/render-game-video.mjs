@@ -214,6 +214,7 @@ import {
   cutByEdge,
   depthInto as boxDepth,
   pawnUnderName,
+  nameMeetsDots,
 } from "./mark-fit.mjs";
 import { pageArrows, routeNear } from "./page-arrows.mjs";
 import {
@@ -651,6 +652,12 @@ const FPS = 30;
  * cover the ringed pawn comes in, from the impact (task 99b4d1a1).
  */
 const GG_RING_ALONE_SECONDS = 1.5;
+/**
+ * How far the bar's ring reaches from its pawn's cell centre, in cells
+ * (stage.html #cellRing: 6% out of the cell, and its glow): the GG card
+ * keeps off that box (task 87da8cb3).
+ */
+const GG_RING_REACH = 0.62;
 /** The soundtrack is always on. Capture shake follows the recorded result. */
 const AUDIO = true;
 /**
@@ -3650,34 +3657,90 @@ const NAME_LETTER_WIDTH = 0.62;
 const NAME_POP_SECONDS = 0.18;
 const NAME_POP_PEAK = 1.35;
 const NAME_FADE_SECONDS = 0.3;
+/** A walk dot's reach from its centre, in cells (a dot is about a sixth). */
+const NAME_DOT_RADIUS = 0.17;
+/** A pawn's reach from its cell's centre, in cells, for a name's side. */
+const NAME_PAWN_RADIUS = 0.42;
 /**
  * Each opening walk's name as stage.html paints it (paintNames): its text
  * and colour, and its baseline's centre and letter size as fractions of the
  * board image. `from`: the second of the opening it shows at.
  */
-const openingNames = (plan, nameOf, hexOf, buttons) =>
-  plan.map((w) => {
+const openingNames = (plan, nameOf, hexOf, buttons) => {
+  // What a name keeps off: every opening walk's dots, and the pawns of the
+  // start position (render vet N9 on wYcrCoxU, 2026-11-13: the red walk's
+  // dots showed between the letters of "Human").
+  const dots = plan.flatMap((w) => w.points);
+  const pawns = boardPawns(REPLAYED.states[START_PLY].pawns).map((p) =>
+    cellAt(p.cell),
+  );
+  return plan.map((w) => {
     const [row, col] = w.cells[0];
     const size = NAME_SIZE * GRID.pitchY;
     const text = nameOf(w.player);
-    const half = (NAME_POP_PEAK * NAME_LETTER_WIDTH * size * text.length) / 2;
-    const y = w.nameBelow
-      ? GRID.y(row + 1) + NAME_GAP * GRID.pitchY + size * 0.8
-      : GRID.y(row) - NAME_GAP * GRID.pitchY;
+    const rest = (NAME_LETTER_WIDTH * size * text.length) / 2;
+    const half = NAME_POP_PEAK * rest;
+    const cat = cellAt([row, col]);
     // Its right end keeps off the apps' buttons where its line meets them.
-    const right =
+    const rightAt = (y) =>
       buttons && y > buttons.y0 && y - size < buttons.y1
         ? Math.min(1 - NAME_EDGE, buttons.x0)
         : 1 - NAME_EDGE;
-    const x = Math.min(
-      right - half,
-      Math.max(NAME_EDGE + half, GRID.x(col + 0.5)),
+    const fits = (x, y) =>
+      x - half >= NAME_EDGE - 1e-9 &&
+      x + half <= rightAt(y) + 1e-9 &&
+      y - NAME_POP_PEAK * size >= 0;
+    const centred = (y) => ({
+      x: Math.min(rightAt(y) - half, Math.max(NAME_EDGE + half, cat.x)),
+      y,
+    });
+    const above =
+      row > 0 ? centred(GRID.y(row) - NAME_GAP * GRID.pitchY) : null;
+    const below = centred(
+      GRID.y(row + 1) + NAME_GAP * GRID.pitchY + size * 0.8,
     );
+    // Beside it on its own row, so it still reads as that cat's name.
+    const besideY = cat.y + size * 0.4;
+    const gapX = NAME_GAP * GRID.pitchX;
+    const right = { x: GRID.x(col + 1) + gapX + rest, y: besideY };
+    const left = { x: GRID.x(col) - gapX - rest, y: besideY };
+    const first = w.nameBelow || !above ? below : above;
+    const sides = [first, first === below ? above : below, right, left].filter(
+      (p) => p && fits(p.x, p.y),
+    );
+    const paintAt = (p) => ({
+      text,
+      hex: hexOf(w.player),
+      x: p.x,
+      y: p.y,
+      size,
+      peak: NAME_POP_PEAK,
+    });
+    const free = sides.find(
+      (p) =>
+        !nameMeetsDots(
+          paintAt(p),
+          dots,
+          NAME_LETTER_WIDTH,
+          NAME_DOT_RADIUS * GRID.pitchX,
+          NAME_DOT_RADIUS * GRID.pitchY,
+        ) &&
+        !nameMeetsDots(
+          paintAt(p),
+          pawns.filter((q) => q.x !== cat.x || q.y !== cat.y),
+          NAME_LETTER_WIDTH,
+          NAME_PAWN_RADIUS * GRID.pitchX,
+          NAME_PAWN_RADIUS * GRID.pitchY,
+        ),
+    );
+    // No free side: the first side, on a dark plate that hides the dots
+    // under it while the name shows (about 2 s).
     return {
       from: w.start,
-      paint: { text, hex: hexOf(w.player), x, y, size, peak: NAME_POP_PEAK },
+      paint: free ? paintAt(free) : { ...paintAt(first), plate: 2 * rest },
     };
   });
+};
 const PATHS = new Map();
 for (const ev of EVENTS.filter((e) => e.kind === "path")) {
   const [row, col] = [
@@ -7845,6 +7908,11 @@ const renderStyle = async (styleName) => {
   const names = wallz
     ? openingNames(INTRO_PLAN, dailyName, (id) => side(id).hex, buttonsOnBoard)
     : [];
+  for (const { paint } of names) {
+    log(
+      `opening name "${paint.text}" at ${cellUnder(paint.x, paint.y - paint.size / 2)}${paint.plate ? ", on a dark plate: every side meets a walk's dots" : ""}`,
+    );
+  }
   // A name covers no pawn (Wall Game Director, 2026-11-05, from VR1's
   // review 150 N2): its letters' box against each pawn the page drew.
   for (const { paint } of names) {
@@ -8088,9 +8156,13 @@ const renderStyle = async (styleName) => {
         const timing = endingTimings[style.ending];
         const impactFrame = Math.round(timing.impact * FPS);
         const how = `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`;
+        // Where the GG card rests off the bar's ringed pawn, or null
+        // (stage.html __ggCardFit; set below).
+        let cardFit = null;
         const ending = (t) => ({
           kind: style.ending,
           t,
+          ...(cardFit ? { cardFit } : {}),
           at: cellAt(
             cellOfPly(plyIndex) ?? [GRID.rows / 2 - 0.5, GRID.cols / 2 - 0.5],
           ),
@@ -8123,21 +8195,52 @@ const renderStyle = async (styleName) => {
           );
         }
         /*
-          A GG card that would cover the bar's ringed pawn comes in later:
-          the ending's clock stops on its last frame before the card for
-          `cardWait` frames, so the ring and the bar read alone for
-          GG_RING_ALONE_SECONDS from the impact (X5F, 2026-11-09: the card
-          hid the ringed cat on b3 for 4.4 s of the bar's 4.85 s). A pawn
-          beside the card keeps the ending as it was. The ring keeps its
-          own clock.
+          A GG card that would cover the bar's ringed pawn moves off it: it
+          slides away from the ring and shrinks as far as it must
+          (stage.html __ggCardFit; task 87da8cb3, Wall Game Director,
+          2026-11-13: on wYcrCoxU the ring on g5 read only 1.35 s), so the
+          ring and the bar show for the whole ending. Where no place clears
+          the ring, the card comes in later: the ending's clock stops on its
+          last frame before the card for `cardWait` frames, so the ring and
+          the bar read alone for GG_RING_ALONE_SECONDS from the impact (X5F,
+          2026-11-09: the card hid the ringed cat on b3 for 4.4 s of the
+          bar's 4.85 s). A pawn beside the card keeps the ending as it was.
+          The ring keeps its own clock.
         */
-        const cardWait =
+        const covers =
           style.ending === "gg" &&
           ringOf &&
           (await stage.evaluate(
             ([e, at]) => window.__ggCardCovers(e, at),
             [ending(timing.cardIn), cellAt(ringOf.cell)],
-          ))
+          ));
+        if (covers) {
+          const at = cellAt(ringOf.cell);
+          const rx = GG_RING_REACH * GRID.pitchX;
+          const ry = GG_RING_REACH * GRID.pitchY;
+          cardFit = await stage.evaluate(
+            ([e, box]) => window.__ggCardFit(e, box),
+            [
+              ending(timing.cardIn),
+              { x0: at.x - rx, y0: at.y - ry, x1: at.x + rx, y1: at.y + ry },
+            ],
+          );
+          if (cardFit) {
+            fault(
+              "gg-card-moved",
+              plyIndex,
+              `the GG card moves off the ringed ${bar.ring}: ${cardFit.scale < 1 ? `${Math.round(cardFit.scale * 100)}% of its size, ` : ""}${Math.abs(cardFit.dy) >= Math.abs(cardFit.dx) ? (cardFit.dy < 0 ? "up" : "down") : cardFit.dx < 0 ? "left" : "right"} ${(Math.hypot(cardFit.dx, cardFit.dy) / GRID.pitchX).toFixed(1)} cells`,
+            );
+          } else {
+            fault(
+              "gg-card-waits",
+              plyIndex,
+              `the GG card covers the ringed ${bar.ring} at every place down to its smallest size: it comes in ${GG_RING_ALONE_SECONDS} s after the impact`,
+            );
+          }
+        }
+        const cardWait =
+          covers && !cardFit
             ? Math.max(
                 0,
                 Math.round(

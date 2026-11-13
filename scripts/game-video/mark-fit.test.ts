@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { cutByEdge, nameBox, pawnUnderName } from "./mark-fit.mjs";
+import {
+  cutByEdge,
+  nameBox,
+  nameMeetsDots,
+  pawnUnderName,
+} from "./mark-fit.mjs";
 
 // An 8x8 board: one cell's pitch is 1/8 of the board.
 const PITCH = 1 / 8;
@@ -67,5 +72,28 @@ describe("cutByEdge (mark-cut)", () => {
     expect(cutByEdge({ x: -0.01, y: 0.4, w: 0.1, h: 0.1 })).toBe(true);
     expect(cutByEdge({ x: 0.4, y: -0.01, w: 0.1, h: 0.1 })).toBe(true);
     expect(cutByEdge({ x: 0.4, y: 0.95, w: 0.1, h: 0.06 })).toBe(true);
+  });
+});
+
+describe("nameMeetsDots (an opening name keeps off the walks' dots)", () => {
+  const R = 0.17 * PITCH;
+  // "Human" under a cat on a8 (wYcrCoxU, 2026-11-13): its baseline just
+  // over row 7's middle, its letters across a7 and b7.
+  const under = { ...human(0, 1), x: 0.1, y: 1 * PITCH + 0.5 * PITCH };
+
+  test("a walk along the name's row meets it", () => {
+    const row7 = [1, 2, 3].map((col) => centre(col, 1));
+    expect(nameMeetsDots(under, row7, GRID.letterWidth, R, R)).toBe(true);
+  });
+
+  test("a walk two rows away does not", () => {
+    const row5 = [0, 1, 2, 3].map((col) => centre(col, 3));
+    expect(nameMeetsDots(under, row5, GRID.letterWidth, R, R)).toBe(false);
+  });
+
+  test("a dot whose edge only nears the letters' box does not", () => {
+    const box = nameBox(under, GRID.letterWidth);
+    const dot = { x: box.x + box.w + R + 0.001, y: box.y + box.h / 2 };
+    expect(nameMeetsDots(under, [dot], GRID.letterWidth, R, R)).toBe(false);
   });
 });
