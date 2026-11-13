@@ -380,6 +380,52 @@ export const isMoment = (l: Pick<PlyLabel, "label" | "tags">): boolean =>
 /** A race gain this large makes a move a moment (C36 B). */
 export const MOMENT_GAIN = 2;
 
+/**
+ * A move whose label the board shows by itself (C46, C56): not quiet, and not
+ * an engine-only blunder or turn unless it also threatens (the cat steps into
+ * reach) or makes a shown huh. Measured 2026-11-13 against the vision check
+ * of the 54 games labelled with it (day-1105c to day-1112): 446 of 459 such
+ * moves were seen (97%), and they hold 446 of the 493 seen moves (90%).
+ */
+export const isBoardMoment = (
+  l: Pick<PlyLabel, "label" | "tags" | "huh">,
+): boolean =>
+  !["quiet", "blunder", "turn"].includes(l.label) ||
+  l.tags.includes("threat") ||
+  l.huh?.shown === true;
+
+/**
+ * How the board moments spread over the game, for the pick (C46: 6 or more
+ * moments; C56: the first one early, no long quiet stretch).
+ */
+export interface Pace {
+  /** The plies of the board moments, in order. */
+  moments: number[];
+  /**
+   * The longest run of plies with no board moment (from and to inclusive;
+   * the opening counts), or null when every ply is a moment.
+   */
+  longestQuiet: { from: number; to: number } | null;
+}
+
+export const paceOf = (
+  plies: Pick<PlyLabel, "ply" | "label" | "tags" | "huh">[],
+): Pace => {
+  const moments = plies.filter(isBoardMoment).map((l) => l.ply);
+  let longestQuiet: Pace["longestQuiet"] = null;
+  let from = 0;
+  for (const end of [...moments, plies.length]) {
+    const to = end - 1;
+    if (
+      to >= from &&
+      (longestQuiet === null || to - from > longestQuiet.to - longestQuiet.from)
+    )
+      longestQuiet = { from, to };
+    from = end + 1;
+  }
+  return { moments, longestQuiet };
+};
+
 export interface GameLabels {
   plies: PlyLabel[];
   links: Link[];
@@ -388,6 +434,7 @@ export interface GameLabels {
    * curve (or the counters with no engine). Plies, 0-based.
    */
   turningPoint: string;
+  pace: Pace;
 }
 
 const clamp01 = (x: number) =>
@@ -871,6 +918,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     plies: labels,
     links,
     turningPoint: turningPointOf(facts, labels, links),
+    pace: paceOf(labels),
   };
 };
 

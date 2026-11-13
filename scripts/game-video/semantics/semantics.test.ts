@@ -12,9 +12,11 @@ import { siteMoveNumber } from "../site-move.mjs";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import {
   countersShow,
+  isBoardMoment,
   isMoment,
   labelGame,
   movesToCatch,
+  paceOf,
   raceWords,
 } from "./labels";
 import {
@@ -1177,6 +1179,34 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(l.links.filter((k) => k.kind === "sealed-capture")).toEqual([]);
     // A seal whose wall changes a walk by 10 stays (PnGQWON1 ply 20).
     expect(fixtureLabels("PnGQWON1").plies[20].label).toBe("trap-closes");
+  });
+
+  test("C56 BInRtf1_: ply 28 is no moment, and the first board moment is ply 24", () => {
+    const l = fixtureLabels("BInRtf1_");
+    // (a) A +2 detour is no moment, whatever the engine says.
+    expect(isMoment(l.plies[28])).toBe(false);
+    expect(isBoardMoment(l.plies[28])).toBe(false);
+    // (c) "the excessive 4x at the beginning": 24 plies show nothing.
+    expect(l.pace.moments[0]).toBe(24);
+    expect(l.pace.longestQuiet).toEqual({ from: 0, to: 23 });
+    // A pick with an early start (v-2026-11-05-9): the first at ply 6.
+    expect(fixtureLabels("l2fZ3oxY").pace.moments[0]).toBe(6);
+  });
+
+  test("paceOf: the opening and the middle count as quiet runs", () => {
+    const at = (ply: number, label: "quiet" | "threat" | "blunder") => ({
+      ply,
+      label,
+      tags: [],
+    });
+    const plies = Array.from({ length: 25 }, (_, i) =>
+      at(i, [3, 5, 20].includes(i) ? "threat" : i === 10 ? "blunder" : "quiet"),
+    );
+    expect(paceOf(plies)).toEqual({
+      moments: [3, 5, 20],
+      longestQuiet: { from: 6, to: 19 },
+    });
+    expect(paceOf(plies.slice(0, 3)).longestQuiet).toEqual({ from: 0, to: 2 });
   });
 
   test("l2fZ3oxY: the first cat step onto its own mouse (the setup's path) is no huh", () => {

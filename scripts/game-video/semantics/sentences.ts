@@ -45,7 +45,13 @@ import {
   type HuntChange,
   type PlyFacts,
 } from "./facts";
-import { isMoment, raceWords, type GameLabels, type Link } from "./labels";
+import {
+  isMoment,
+  raceWords,
+  type GameLabels,
+  type Link,
+  type Pace,
+} from "./labels";
 import type { PlySeen } from "./vision";
 import { siteMove, siteMoveNumber } from "../site-move.mjs";
 
@@ -730,6 +736,31 @@ export const writeSentences = (
 
 /* ------------------------------------------------------------- the table -- */
 
+/**
+ * The pace in one line (C46, C56): the board moments, the first one, the
+ * longest quiet run; with a vision check, the seen moves too.
+ */
+export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
+  const first = pace.moments[0];
+  const q = pace.longestQuiet;
+  const parts = [
+    `${pace.moments.length} board moments`,
+    first === undefined
+      ? "none"
+      : `the first at ${siteMove(first)} (ply ${first})`,
+    q === null
+      ? "no quiet run"
+      : `the longest quiet run plies ${q.from}-${q.to} (${q.to - q.from + 1} plies)`,
+  ];
+  if (seen) {
+    const yes = seen.filter((x) => x.seen).map((x) => x.ply);
+    parts.push(
+      `seen ${yes.length} of ${seen.length} checked${yes.length ? `, the first seen at ply ${Math.min(...yes)}` : ""}`,
+    );
+  }
+  return `Pace: ${parts.join("; ")}`;
+};
+
 const seenCell = (x: PlySeen | undefined) =>
   x === undefined ? "?" : `${x.seen ? "seen" : "NOT seen"}: ${x.reason}`;
 
@@ -744,6 +775,8 @@ export const renderTable = (s: GameSemantics): string => {
     `# ${game.gameId} - ${game.variant} ${game.boardWidth}x${game.boardHeight}, ${names[1]} (P1) vs ${names[2]} (P2), ${game.moves.length} plies (the site's move list ends at ${siteMove(game.moves.length - 1)}), ${result}`,
     "",
     `Turning point: ${s.labels.turningPoint}`,
+    "",
+    paceLine(s.labels.pace, s.seen),
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = wallgame.io's move list (N. first player, N... second player); ply = 0-based turn`,
     "",

@@ -41,7 +41,12 @@ import {
 } from "../engine-eval";
 import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
-import { renderTable, writeSentences, type GameSemantics } from "./sentences";
+import {
+  paceLine,
+  renderTable,
+  writeSentences,
+  type GameSemantics,
+} from "./sentences";
 import { checkSeen, shootTiles } from "./vision";
 
 interface Args {
@@ -219,6 +224,7 @@ const main = async () => {
     console.log(
       `${game.gameId}: ${[...counts].map(([l, n]) => `${l} ${n}`).join(", ")}${engine ? "" : " (no engine data)"}`,
     );
+    console.log(`  ${paceLine(labels.pace, semantics.seen)}`);
   }
 };
 
