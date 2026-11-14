@@ -480,3 +480,30 @@ then silence. yoshi-2 has two parts: a burst for 0.15 s, a gap near -44 dB
 for 0.1 s, then a second burst for 0.25 s, and silence at its end: the
 tongue and the gulp. yoshi-3 is one quiet burst near -32 dB that runs to
 the upload's end. memeGain brings all three to the same level.
+
+## gameover-1, a second finish sound for a loser (2026-11-14)
+
+Director Rewriter, meme list step 2 cycle 5 (director repo 4b81802): a
+finish-slot sound for a loser that had a turn against it, or made a save,
+and still lost, next to horn-1 and violin-1 (both a high claim risk). New
+family gameover. Not a voice. The page shows "Creative Commons 0" and says
+how the sound was made (the renderer read it on 2026-11-14): "8-bit like
+sound for when the player dies, or anything bad happens. Made with
+BeepBox." The input is Freesound's HQ preview mp3 (3.2 s, sha256
+eba7856834cfa47adccd298332c3919ece0ff039fc54562e8280c553f4790616); the
+tune ends at 1.99 s and the rest is digital silence, so our cut keeps
+0-2.02 s.
+
+| Key        | Freesound title       | Length | Uploader | Why it is safe                                                                           | Claim risk | Source page                                         |
+| ---------- | --------------------- | ------ | -------- | ---------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------- |
+| gameover-1 | Videogame Death Sound | 2.0 s  | Fupicat  | CC0; "8-bit like sound ... Made with BeepBox." (the page, 3,364 downloads on 2026-11-14) | LOW        | https://freesound.org/people/Fupicat/sounds/475347/ |
+
+| Key        | Made from        | Length | Command (ffmpeg, from the downloaded preview)                       |
+| ---------- | ---------------- | ------ | ------------------------------------------------------------------- |
+| gameover-1 | Freesound 475347 | 2.0 s  | `-af "atrim=0:2.02,asetpts=PTS-STARTPTS" -c:a libmp3lame -b:a 128k` |
+
+Agents cannot hear, so this is measured, not heard (2026-11-14, RMS per
+0.1 s on the mono file). The tune holds near -16 to -13 dB from 0 to
+1.75 s, falls to about -27 dB for its last note (1.78-1.96 s), and is
+silent from 2.02 s. Measured with make-sound-reel.mjs --measure: -17.1
+LUFS momentary max, -7.3 dBTP, so memeGain plays it at -21 LUFS.

@@ -155,6 +155,12 @@ export const MEME_SOUNDS = {
   "yoshi-1": { lufs: -22.4, truePeak: -8.9 },
   "yoshi-2": { lufs: -25.8, truePeak: -10.1 },
   "yoshi-3": { lufs: -33.8, truePeak: -25.9 },
+  // A second finish sound for a loser that had a turn against it or made a
+  // save and still lost, next to horn-1 and violin-1 (Director Rewriter,
+  // meme list step 2 cycle 5, director repo 4b81802): an 8-bit death tune
+  // the uploader made in BeepBox, CC0 on freesound.org (meme-sounds.md),
+  // our cut, measured 2026-11-14.
+  "gameover-1": { lufs: -17.1, truePeak: -7.3 },
 };
 
 /**
@@ -222,6 +228,8 @@ export const MEME_FAMILIES = {
   bonk: "a detour: the walk bumps longer",
   yoshi:
     "a cat eats the mouse: Yoshi's tongue and gulp (Nil's pick; some captures only, for variety)",
+  gameover:
+    "the finish: a loser that turned it round or saved, and still lost (an 8-bit game-over tune)",
 };
 
 /**
@@ -241,8 +249,8 @@ export const MEME_FAMILIES = {
  * cycle 2 effects slam, tada, tick, wind, whoosh, hit, uhoh-1 (a sting),
  * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
  * audience off screen, as ooh), and gasp and scream (no word,
- * as scared-2), bonk-1 (a drum hit), and yoshi (game sound effects, no
- * word). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * as scared-2), bonk-1 (a drum hit), yoshi (game sound effects, no
+ * word), and gameover-1 (an 8-bit tune). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
  * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
@@ -350,6 +358,10 @@ export const OUR_CUTS = {
     measured: "one long scream to 6.3 s: -10 dB past 1.70 s, a 0.3 s fade",
   },
   "gasp-2": { end: "file-end", measured: "the upload ends at 1.02 s" },
+  "gameover-1": {
+    end: "silence",
+    measured: "-43 dB at 1.98 s, digital silence from 2.02 s to the end",
+  },
   "crowdlaugh-2": { end: "silence", measured: "-43 dB past 10.75 s" },
   "uhoh-1": { end: "silence", measured: "the cut is at -46 dB by 2.4 s" },
   "fightbell-1": {
