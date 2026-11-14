@@ -94,6 +94,7 @@ import {
   PLATFORM_PAUSES,
   postingModes,
   createDaily,
+  lastSlotOfPost,
 } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
@@ -2386,6 +2387,64 @@ describe("a platform pause", () => {
       expect(Date.parse(p.from)).toBeLessThan(Date.parse(p.until));
       expect(p.why.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("the slot of a platform's last live post (lastSlotOfPost)", () => {
+  const items: Record<string, { posting: { slotAt: string } }> = {
+    "v-2026-11-13-1": { posting: { slotAt: "2026-11-13T23:00:00.000Z" } },
+    "v-2026-11-12-1": { posting: { slotAt: "2026-11-12T17:00:00.000Z" } },
+  };
+  const itemOf = (id: string) => items[id] ?? null;
+  const row = (utc: string, platform: string, itemId: string) => ({
+    utc,
+    platform,
+    itemId,
+  });
+
+  test("the newest row's item gives its SLOT instant, not the post time", () => {
+    const rows = [
+      row("2026-11-13T23:00:41.120Z", "x", "v-2026-11-13-1"),
+      row("2026-11-12T17:00:30.000Z", "x", "v-2026-11-12-1"),
+      row("2026-11-14T05:00:20.000Z", "bluesky", "v-2026-11-14-1"),
+    ];
+    expect(lastSlotOfPost(rows, "x", itemOf)).toBe("2026-11-13T23:00:00.000Z");
+  });
+
+  test("no row of the platform: null; an item that is gone: the post time", () => {
+    expect(lastSlotOfPost([], "x", itemOf)).toBeNull();
+    expect(
+      lastSlotOfPost(
+        [row("2026-11-14T05:00:20.000Z", "bluesky", "v-2026-11-14-1")],
+        "x",
+        itemOf,
+      ),
+    ).toBeNull();
+    expect(
+      lastSlotOfPost(
+        [row("2026-11-14T05:00:20.000Z", "x", "v-gone")],
+        "x",
+        itemOf,
+      ),
+    ).toBe("2026-11-14T05:00:20.000Z");
+  });
+
+  test("a dry-run X row does not count: it is in the other file", () => {
+    const daily = stopLater(createDaily({ dataDir: tempDir(), env: {} }));
+    const line = (r: object) => JSON.stringify(r) + "\n";
+    writeFileSync(
+      daily.store.postLog.live,
+      line(row("2026-11-12T17:00:30.000Z", "x", "v-2026-11-12-1")),
+    );
+    writeFileSync(
+      daily.store.postLog.dryRun,
+      line(row("2026-11-13T23:00:41.120Z", "x", "v-2026-11-13-1")),
+    );
+    // What routes.mjs lastLiveSlotAt reads.
+    const live = readPostLog(daily.store.postLog.live) as ReturnType<
+      typeof row
+    >[];
+    expect(lastSlotOfPost(live, "x", itemOf)).toBe("2026-11-12T17:00:00.000Z");
   });
 });
 

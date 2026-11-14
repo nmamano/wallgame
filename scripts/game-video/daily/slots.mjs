@@ -61,6 +61,34 @@ for (const [platform, { times }] of Object.entries(PLATFORM_SLOTS)) {
 }
 
 /**
+ * The platforms with a least time between two live posts, as {platform:
+ * {name, hours}}. A slot sooner than that after the slot of the platform's
+ * last live post leaves the slot's platform set as not applicable: no
+ * failure, no retry and no catch-up. Counted between SLOT instants, not post
+ * times: a post is logged some seconds or minutes after its slot, so the
+ * slot exactly `hours` later must still post. X: Nil, 2026-11-14 ("X is not
+ * getting any traction ... lower the frequency there to 1 every 2 days").
+ * @type {Record<string, { name: string, hours: number }>}
+ */
+export const PLATFORM_GAPS = { x: { name: "X", hours: 48 } };
+
+/**
+ * Why `platform` does not post at the slot `slotAt` because of its gap
+ * (PLATFORM_GAPS), or null. `lastSlotAt` is the slot instant of its last
+ * live post, or null when it has none. A slot fired by hand counts the same.
+ * @param {string} platform
+ * @param {string} slotAt
+ * @param {string | null} lastSlotAt
+ */
+export const notYetDue = (platform, slotAt, lastSlotAt) => {
+  const gap = PLATFORM_GAPS[platform];
+  if (!gap || lastSlotAt === null) return null;
+  const due = Date.parse(lastSlotAt) + gap.hours * 60 * 60 * 1000;
+  if (Date.parse(slotAt) >= due) return null;
+  return `${gap.name} posts once per ${gap.hours} h; its last live post was at the slot ${lastSlotAt}, so the next is due at ${new Date(due).toISOString()}`;
+};
+
+/**
  * Why `platform` does not post at this slot (PLATFORM_SLOTS), or null. A
  * late slot keeps its own slot time, so a late 09:00 slot still posts.
  * @param {string} platform

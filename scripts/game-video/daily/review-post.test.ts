@@ -124,6 +124,10 @@ const world = (live: string[]) => {
   // Error is a read that fails.
   let youtubeUploads: Upload[] | Error = [];
   let youtubeReads = 0;
+  // routes.mjs lastLiveSlotAt: the slot of each platform's last live post;
+  // an Error is a read that throws (a damaged post log).
+  let lastSlots: Record<string, string | Error> = {};
+  const gapReads: string[] = [];
   const store = {
     item: (id: string) => structuredClone(items.get(id)) ?? null,
     items: ({ states }: { states?: string[] } = {}) =>
@@ -180,6 +184,12 @@ const world = (live: string[]) => {
         ? Promise.reject(tiktokWhy)
         : Promise.resolve(tiktokWhy);
     },
+    lastLiveSlotAt: (platform: string) => {
+      gapReads.push(platform);
+      const last = lastSlots[platform];
+      if (last instanceof Error) throw last;
+      return last ?? null;
+    },
     youtubeRecent: () => {
       youtubeReads++;
       return youtubeUploads instanceof Error
@@ -206,6 +216,9 @@ const world = (live: string[]) => {
     tiktokReads: () => tiktokReads,
     setYoutube: (v: Upload[] | Error) => (youtubeUploads = v),
     youtubeReads: () => youtubeReads,
+    setLastSlot: (platform: string, at: string | Error) =>
+      (lastSlots = { ...lastSlots, [platform]: at }),
+    gapReads,
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
       (reasons = { ...reasons, ...r }),
@@ -438,6 +451,96 @@ describe("post(itemId)", () => {
       expect((await w2.retry("v-2026-10-28-1")).kind).toBe("posted");
       expect(w2.logged).toEqual(["x"]);
     }
+  });
+
+  test("X posts once per 48 h, counted from the slot of its last live post: the slot 48 h later posts, the one 6 h before waits", async () => {
+    // The last live X post: the 15:00 PT slot of 2026-11-13 (23:00 UTC).
+    const last = "2026-11-13T23:00:00.000Z";
+    const at = (slotAt: string, firedBy?: string) => ({
+      slotAt,
+      ...(firedBy ? { firedBy } : {}),
+    });
+    const why =
+      "X posts once per 48 h; its last live post was at the slot 2026-11-13T23:00:00.000Z, so the next is due at 2026-11-15T23:00:00.000Z";
+    for (const slot of [
+      at("2026-11-15T17:00:00.000Z"), // 42 h: 09:00 PT
+      at("2026-11-14T05:00:00.000Z"), // 6 h
+      at("2026-11-15T22:59:59.999Z", "Wall Game Growth"), // by hand, 1 ms short
+    ]) {
+      const w = world(["x", "bluesky"]);
+      w.setLastSlot("x", last);
+      expect(await w.post(slot)).toMatchObject({
+        kind: "posted",
+        platforms: ["bluesky"],
+        notApplicable: { x: why },
+      });
+      expect(w.logged).toEqual(["bluesky"]);
+      expect(w.get().posts).not.toHaveProperty("x");
+    }
+
+    // No catch-up: a retry of another failure never tries X for the item,
+    // even once X is due.
+    const w = world(["x", "bluesky"]);
+    w.setLastSlot("x", last);
+    w.replies.bluesky = () => ({
+      ok: false,
+      uncertain: false,
+      mode: "live",
+      at: "t",
+      error: "bluesky: HTTP 503",
+    });
+    expect(await w.post(at("2026-11-15T17:00:00.000Z"))).toMatchObject({
+      kind: "post-failed",
+      platforms: ["bluesky"],
+      notApplicable: { x: why },
+    });
+    delete w.replies.bluesky;
+    w.setLastSlot("x", "2026-11-01T00:00:00.000Z");
+    expect((await w.retry("v-2026-10-28-1")).kind).toBe("posted");
+    expect(w.logged).toEqual(["bluesky"]);
+
+    for (const slot of [
+      at("2026-11-15T23:00:00.000Z"), // exactly 48 h: 15:00 PT
+      at("2026-11-16T05:00:00.000Z"), // later
+      at("2026-11-15T23:00:00.000Z", "Wall Game Growth"), // by hand
+    ]) {
+      const w = world(["x", "bluesky"]);
+      w.setLastSlot("x", last);
+      expect(await w.post(slot)).toMatchObject({
+        kind: "posted",
+        platforms: ["x", "bluesky"],
+      });
+      expect(w.get().posting).not.toHaveProperty("notApplicable");
+      expect(w.logged).toEqual(["x", "bluesky"]);
+      // One read of the post log per slot.
+      expect(w.gapReads).toEqual(["x"]);
+    }
+  });
+
+  test("X with no live post yet posts; X alone and waiting leaves the item approved; a failed read holds X alone", async () => {
+    const fresh = world(["x"]);
+    expect(await fresh.post(SLOT)).toMatchObject({
+      kind: "posted",
+      platforms: ["x"],
+    });
+
+    const alone = world(["x"]);
+    alone.setLastSlot("x", "2026-10-29T10:00:00.000Z");
+    expect(await alone.post(SLOT)).toMatchObject({ kind: "none-applies" });
+    expect(alone.get().state).toBe("approved");
+
+    const broken = world(["x", "bluesky"]);
+    broken.setLastSlot("x", new Error("post-log.jsonl: bad JSON"));
+    expect(await broken.post(SLOT)).toMatchObject({
+      kind: "posted",
+      platforms: ["bluesky"],
+      notApplicable: { x: "last X post unknown: post-log.jsonl: bad JSON" },
+    });
+
+    // X not live: the post log is not read.
+    const off = world(["bluesky"]);
+    await off.post(SLOT);
+    expect(off.gapReads).toEqual([]);
   });
 
   test("a TikTok retry is gated as a slot: a draft that waits now, or an unknown status, holds TikTok; the other platforms go on", async () => {

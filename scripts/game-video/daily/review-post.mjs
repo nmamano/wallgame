@@ -11,10 +11,11 @@
  *   goes live later never gets an old item (Wall Game PM, 2026-10-28).
  * - A platform that does not apply to the video (an Instagram Story of a
  *   video over 60 s), does not post at this slot (slots.mjs
- *   PLATFORM_SLOTS), or is TikTok while a draft waits in Nil's inbox
- *   (tiktok-drafts.mjs) leaves the set at slot time, with its reason in
+ *   PLATFORM_SLOTS), is TikTok while a draft waits in Nil's inbox
+ *   (tiktok-drafts.mjs), or is not due yet (slots.mjs PLATFORM_GAPS: X at
+ *   most once per 48 h) leaves the set at slot time, with its reason in
  *   posting.notApplicable: no failure and no retry (Wall Game Director and
- *   Wall Game Growth, 2026-10-29, 2026-10-31 and 2026-11-03).
+ *   Wall Game Growth, 2026-10-29, 2026-10-31, 2026-11-03 and 2026-11-14).
  * - A retry is by hand (Growth): it posts only the platforms of the set that
  *   did not post. A platform whose last attempt may have made the post
  *   (pending: the app stopped during its final request; uncertain: no clear
@@ -32,7 +33,7 @@ import { StepRefused, blockedMusic } from "./store.mjs";
 import { copySha256, postTexts } from "./copy.mjs";
 import { errorText, sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
-import { notInSlot } from "./slots.mjs";
+import { PLATFORM_GAPS, notInSlot, notYetDue } from "./slots.mjs";
 
 /**
  * Why a platform does not apply to an item's video, or null. Nil wants every
@@ -51,7 +52,7 @@ const NOT_APPLICABLE = {
 /**
  * {platform: reason} of the platforms that do not apply to the video, do
  * not post at this slot (slots.mjs PLATFORM_SLOTS), or wait (`waits`, the
- * slot's {platform: reason}: TikTok while a draft waits).
+ * slot's {platform: reason}: TikTok while a draft waits, X before its gap).
  */
 const notApplicableTo = (item, video, platforms, slot, waits) =>
   Object.fromEntries(
@@ -87,6 +88,9 @@ const liveOf = (reasons) =>
  * @param {() => Promise<string | null>} deps.tiktokWaiting why a slot sends
  *   no TikTok draft now (tiktok-drafts.mjs waiting), or null; read once per
  *   slot, inside the post lock
+ * @param {(platform: string) => string | null} deps.lastLiveSlotAt the slot
+ *   instant of the platform's last live post (the post log), or null when it
+ *   has none; read once per slot, inside the post lock
  * @param {() => Promise<{ id: string, title: string | null,
  *   uploadStatus: string | null, processingStatus: string | null }[]>}
  *   deps.youtubeRecent the channel's last uploads in every state
@@ -100,6 +104,7 @@ export const createItemPoster = ({
   postPlatform,
   logPost,
   tiktokWaiting,
+  lastLiveSlotAt,
   youtubeRecent,
   now = () => Date.now(),
 }) => {
@@ -114,6 +119,27 @@ export const createItemPoster = ({
   const tiktokHeld = () =>
     tiktokWaiting().catch(
       (err) => `draft status unknown: ${String(err?.message ?? err)}`,
+    );
+
+  /**
+   * The slot's {platform: reason} of the live platforms of PLATFORM_GAPS
+   * that are not due yet. A fault of the read (a damaged post log) holds
+   * that platform alone, like TikTok's.
+   */
+  const gapHeld = (platforms, slotAt) =>
+    Object.fromEntries(
+      Object.keys(PLATFORM_GAPS)
+        .filter((p) => platforms.includes(p))
+        .map((p) => {
+          try {
+            return [p, notYetDue(p, slotAt, lastLiveSlotAt(p))];
+          } catch (err) {
+            return [
+              p,
+              `last ${PLATFORM_GAPS[p].name} post unknown: ${String(err?.message ?? err)}`,
+            ];
+          }
+        }),
     );
 
   /** Why the item may not post as approved, or null. */
@@ -271,11 +297,13 @@ export const createItemPoster = ({
     if (!platforms.length) return { kind: "no-live" };
     const refused = [];
     const passed = [];
-    // TikTok's read of the latest draft, once, when an item may be taken.
+    // TikTok's read of the latest draft and the gaps' read of the post log,
+    // once, when an item may be taken.
     let waits = null;
     for (const queued of store.approvedQueue()) {
       waits ??= {
         tiktok: platforms.includes("tiktok") ? await tiktokHeld() : null,
+        ...gapHeld(platforms, slotAt),
       };
       let video = null;
       try {

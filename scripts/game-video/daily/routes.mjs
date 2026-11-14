@@ -1592,6 +1592,10 @@ export const createDaily = ({
     return result;
   };
 
+  /** The slot instant of `platform`'s last live post (lastSlotOfPost). */
+  const lastLiveSlotAt = (platform) =>
+    lastSlotOfPost(readPostLog(store.postLog.live), platform, store.item);
+
   /** Append the post-log row of a platform that posted (logRow). */
   const logPost = (item, platform, result) =>
     appendFileSync(
@@ -1687,6 +1691,7 @@ export const createDaily = ({
     postPlatform,
     logPost,
     tiktokWaiting: tiktokDrafts.waiting,
+    lastLiveSlotAt,
     // An async wrapper: a scope refusal is a failed read, as is a 4xx.
     youtubeRecent: async () => youtubeRecentNow(),
   });
@@ -3233,6 +3238,24 @@ export const lastMoveSoundNotes = (edl, movesCount) => {
  * posted, effect/sound variant, swing size, approver. The variant includes the
  * ending since 2026-10-26, and the next render reads it to rotate them.
  */
+/**
+ * The slot instant of `platform`'s newest row in `rows` (the LIVE post log;
+ * a dry run writes to the other file, so it never counts): the slot that
+ * took that row's item. A row whose item is gone counts at its post time,
+ * which is later than its slot (slots.mjs PLATFORM_GAPS). Null when the
+ * platform has no row.
+ * @param {{ utc: string, platform: string, itemId: string }[]} rows
+ * @param {string} platform
+ * @param {(id: string) => any} itemOf
+ * @returns {string | null}
+ */
+export const lastSlotOfPost = (rows, platform, itemOf) => {
+  const mine = rows.filter((r) => r.platform === platform);
+  if (!mine.length) return null;
+  const last = mine.reduce((a, b) => (b.utc > a.utc ? b : a));
+  return itemOf(last.itemId)?.posting?.slotAt ?? last.utc;
+};
+
 export const logRow = (item, platform, result) => ({
   utc: result.at,
   // The UTC day of the post (before the review queue: the cycle's day).
