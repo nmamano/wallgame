@@ -3243,7 +3243,9 @@ export const lastMoveSoundNotes = (edl, movesCount) => {
  * a dry run writes to the other file, so it never counts): the slot that
  * took that row's item. A row whose item is gone counts at its post time,
  * which is later than its slot (slots.mjs PLATFORM_GAPS). Null when the
- * platform has no row.
+ * platform has no row. A retry by hand that posts the item hours after its
+ * slot still counts from that slot (Wall Game PM, 2026-11-14: SLOT
+ * instants), so two posts can be closer than the gap by the retry's delay.
  * @param {{ utc: string, platform: string, itemId: string }[]} rows
  * @param {string} platform
  * @param {(id: string) => any} itemOf
@@ -3252,7 +3254,9 @@ export const lastMoveSoundNotes = (edl, movesCount) => {
 export const lastSlotOfPost = (rows, platform, itemOf) => {
   const mine = rows.filter((r) => r.platform === platform);
   if (!mine.length) return null;
-  const last = mine.reduce((a, b) => (b.utc > a.utc ? b : a));
+  const last = mine.reduce((a, b) =>
+    Date.parse(b.utc) > Date.parse(a.utc) ? b : a,
+  );
   return itemOf(last.itemId)?.posting?.slotAt ?? last.utc;
 };
 
