@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type {
+  Cell,
+  CustomSetupStandardInitialState,
+} from "../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
+import { walkDots } from "../../shared/domain/walk-animation";
 import {
   firstBlockedStep,
   huntPath,
   huntWalks,
   huntsFor,
-  pawnCellsOn,
   preyTypeOf,
   replayDistances,
+  videoWalk,
 } from "./race-replay";
 
 // 4x4, player 2 to move. P1's cat [0,0] is 3 steps from P2's mouse [0,3]
@@ -78,10 +84,9 @@ describe("huntPath", () => {
     expect(path).toHaveLength(4);
     // Not through P2's cat on [0,1]: down first.
     expect(path[1]).toEqual([1, 0]);
-    expect(pawnCellsOn(states[0].pawns, path)).toEqual([]);
   });
 
-  test("names the pawns a walk cannot avoid, the hunter and target left out", () => {
+  test("a walk through another pawn dots that pawn's cell in the video", () => {
     // The top row is the only 3-step walk, and P2's cat stands on [0,1].
     const setup: CustomSetupStandardInitialState = {
       ...corridor,
@@ -107,7 +112,55 @@ describe("huntPath", () => {
       [0, 2],
       [0, 3],
     ]);
-    expect(pawnCellsOn(states[0].pawns, path)).toEqual([1]);
+    // The first cell after the hunter holds P2's cat. The video draws a
+    // dot on it, so the walk shows from the hunter, not from that cat
+    // (Nil, 2026-11-15, C68). A cell is 0.25 of the 4x4 board.
+    const cell = 0.25;
+    const cellAt = ([r, c]: Cell) => ({
+      x: (c + 0.5) * cell,
+      y: (r + 0.5) * cell,
+    });
+    const dots = walkDots({ ...videoWalk(path, cellAt), drawn: 1 }, cell);
+    const inCell = ([r, c]: Cell) =>
+      dots.filter(
+        (d) =>
+          Math.abs(d.x - cellAt([r, c]).x) < cell / 2 &&
+          Math.abs(d.y - cellAt([r, c]).y) < cell / 2,
+      ).length;
+    expect(inCell([0, 1])).toBeGreaterThan(0);
+    expect(inCell([0, 2])).toBeGreaterThan(0);
+    // The hunter and its target keep their cells clear.
+    expect(inCell([0, 0])).toBe(0);
+    expect(inCell([0, 3])).toBe(0);
+  });
+
+  test("the page paints the walk dots over the pawns", () => {
+    // stage.html: the board image holds the pawns, and the pawn effects sit
+    // beside it; none of them sets a z-index, so the path layer, after
+    // them in the board's camera, paints over them.
+    const html = readFileSync(join(import.meta.dir, "stage.html"), "utf8");
+    const at = (id: string) => {
+      const i = html.indexOf(`id="${id}"`);
+      expect(i).toBeGreaterThan(-1);
+      return i;
+    };
+    for (const under of ["boardImg", "boardPrev", "captureFx", "pawnFx"]) {
+      expect(at(under)).toBeLessThan(at("pathSvg"));
+    }
+    const css = html.slice(0, html.indexOf("</style>"));
+    for (const id of [
+      "boardCam",
+      "boardImg",
+      "boardPrev",
+      "captureFx",
+      "pawnFx",
+      "pathSvg",
+    ]) {
+      const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) =>
+        m[1].split(",").some((sel) => new RegExp(`#${id}\\b`).test(sel)),
+      );
+      for (const m of rules) expect(m[2]).not.toContain("z-index");
+    }
   });
 
   test("has the length of the engine's walk in every position of a game", () => {

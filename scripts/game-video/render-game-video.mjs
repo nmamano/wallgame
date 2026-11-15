@@ -111,10 +111,10 @@ import {
   firstBlockedStep,
   huntPath,
   huntsFor,
-  pawnCellsOn,
   preyTypeOf,
   raceFromWalks,
   replayDistances,
+  videoWalk,
   walksOn,
 } from "./race-replay.ts";
 import {
@@ -3560,15 +3560,10 @@ const walkPaint = (path) => {
 };
 /**
  * A walk (huntPath) as the page draws it: its cells' centres on the board
- * image, and `holes`, the centres of the cells on it where another pawn
- * stands: the walk draws no dot there (Wall Game Director, 2026-10-29: a
- * walk that teaches "cat -> the other mouse" must not dot the other cat).
+ * image, with a dot on every cell, over any pawn on it (race-replay.ts
+ * videoWalk; Nil, 2026-11-15).
  */
-const drawnWalk = (pawns, walk) => ({
-  cells: walk,
-  points: walk.map(([r, c]) => cellAt([r, c])),
-  holes: pawnCellsOn(pawns, walk).map((i) => cellAt(walk[i])),
-});
+const drawnWalk = (walk) => videoWalk(walk, cellAt);
 /**
  * How far into the blocked step a cut walk's line goes, as a part of the
  * step: its last dot stays clear of the wall (a dot's radius is about a
@@ -3628,7 +3623,7 @@ const INTRO_WALKS =
             boardPawns(start.pawns).some(
               (p) => p.cell[0] === row - 1 && Math.abs(p.cell[1] - col) <= 1,
             );
-          return { player, ...drawnWalk(start.pawns, walk), nameBelow };
+          return { player, ...drawnWalk(walk), nameBelow };
         });
       })()
     : [];
@@ -3769,8 +3764,7 @@ for (const ev of EVENTS.filter((e) => e.kind === "path")) {
     await browser.close();
     process.exit(2);
   }
-  const walk = (state) =>
-    drawnWalk(state.pawns, huntPath(state.grid, state.pawns, hunt));
+  const walk = (state) => drawnWalk(huntPath(state.grid, state.pawns, hunt));
   PATHS.set(ev, {
     player: hunt.hunter.player,
     walks: [
@@ -3844,7 +3838,7 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && !e.callback)) {
         `the explain on ply ${ev.ply}: ${colours[player]}'s walk after ${k} plies has ${walk.length - 1} steps, and the race counter says ${RACE_DISTANCES[k][player]}`,
       );
     }
-    return drawnWalk(state.pawns, walk);
+    return drawnWalk(walk);
   };
   const before = REPLAYED.states[k0];
   const after = REPLAYED.states[k1];
@@ -4057,7 +4051,7 @@ for (const ev of EVENTS.filter((e) => e.kind === "explain" && e.callback)) {
     term,
     wallPly,
     without,
-    walks: walks.map((w) => drawnWalk(state.pawns, w)),
+    walks: walks.map((w) => drawnWalk(w)),
     steps,
     // Both sides' counts without the wall: the counter shows them while
     // the wall is gone, so the frame never says two things.
@@ -6896,7 +6890,7 @@ const renderStyle = async (styleName) => {
       return {
         path: {
           cell: GRID.pitchX,
-          lines: walks.map(({ cells, points, holes, cut }, k) => {
+          lines: walks.map(({ cells, points, cut }, k) => {
             const last = k === walks.length - 1;
             const from = last ? lastFrom : 0;
             const fadeAt = last ? seconds - WALK_FADE_SECONDS : lastFrom;
@@ -6904,7 +6898,6 @@ const renderStyle = async (styleName) => {
               hex: side(player).hex,
               cells,
               points,
-              holes,
               cut,
               steps: points.length - 1,
               drawn: span01((t - from) / walkDrawSeconds(points)),
@@ -7079,7 +7072,6 @@ const renderStyle = async (styleName) => {
       hex,
       cells: walk.cells,
       points: walk.points,
-      holes: walk.holes,
       steps: walk.points.length - 1,
       drawn,
       alpha,
@@ -7323,7 +7315,6 @@ const renderStyle = async (styleName) => {
       hex,
       cells: walk.cells,
       points: walk.points,
-      holes: walk.holes,
       steps: walk.points.length - 1,
       drawn,
       alpha,
@@ -7982,7 +7973,6 @@ const renderStyle = async (styleName) => {
             hex: side(w.player).hex,
             cells: w.cells,
             points: w.points,
-            holes: w.holes,
             steps: w.points.length - 1,
             drawn: span01((t - w.start) / w.draw),
             alpha: 1 - span01((t - w.fadeAt) / WALK_FADE_SECONDS),

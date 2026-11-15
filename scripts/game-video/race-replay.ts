@@ -138,17 +138,21 @@ export const firstBlockedStep = (grid: Grid, cells: Cell[]): number =>
     );
 
 /**
- * The cells of a walk (huntPath) that another pawn stands on: the walk
- * draws no dot there.
+ * A walk (huntPath) as the videos draw it: its cells, and their centres
+ * from `cellAt`. It has no holes: shared/domain/walk-animation.ts walkDots
+ * puts a dot on every cell between the hunter and its target, also where
+ * another pawn stands, and the page paints the dots over the pawns (Nil,
+ * 2026-11-15: a walk that skips the first cell "looks like the dots start
+ * from that other pawn"). The site's game page keeps its holes
+ * (frontend walk-layer.tsx).
  */
-export const pawnCellsOn = (pawns: GamePawns, path: Cell[]): number[] => {
-  const cells = new Set(
-    boardPawns(pawns).map((p) => `${p.cell[0]},${p.cell[1]}`),
-  );
-  return path.flatMap((c, i) =>
-    i > 0 && i < path.length - 1 && cells.has(`${c[0]},${c[1]}`) ? [i] : [],
-  );
-};
+export const videoWalk = <P>(
+  path: Cell[],
+  cellAt: (cell: Cell) => P,
+): { cells: Cell[]; points: P[] } => ({
+  cells: path,
+  points: path.map(cellAt),
+});
 
 /** Each player's shortest walk over their own hunts. */
 export const raceFromWalks = (
