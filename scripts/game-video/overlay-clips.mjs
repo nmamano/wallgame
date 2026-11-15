@@ -226,6 +226,43 @@ export const clipCoverage = (files, width, height, cols = COVERAGE_COLUMNS) => {
 };
 
 /**
+ * The area of the union of `boxes` inside `within`, each place counted
+ * once: holes can overlap (a capture's cat and mouse art on one cell,
+ * Video Reviewer 1, review 168 N1). Strips between the boxes' left and
+ * right edges, each with its boxes' merged spans.
+ * @param {{ x0: number, y0: number, x1: number, y1: number }[]} boxes
+ * @param {{ x0: number, y0: number, x1: number, y1: number }} within
+ */
+export const unionArea = (boxes, within) => {
+  const parts = boxes.flatMap((b) => {
+    const x0 = Math.max(b.x0, within.x0);
+    const x1 = Math.min(b.x1, within.x1);
+    const y0 = Math.max(b.y0, within.y0);
+    const y1 = Math.min(b.y1, within.y1);
+    return x1 > x0 && y1 > y0 ? [{ x0, x1, y0, y1 }] : [];
+  });
+  const xs = [...new Set(parts.flatMap((b) => [b.x0, b.x1]))].sort(
+    (a, b) => a - b,
+  );
+  let area = 0;
+  for (let i = 0; i + 1 < xs.length; i += 1) {
+    const spans = parts
+      .filter((b) => b.x0 <= xs[i] && b.x1 >= xs[i + 1])
+      .map((b) => [b.y0, b.y1])
+      .sort((a, b) => a[0] - b[0]);
+    let covered = 0;
+    let end = -Infinity;
+    for (const [y0, y1] of spans) {
+      if (y1 <= end) continue;
+      covered += y1 - Math.max(y0, end);
+      end = y1;
+    }
+    area += covered * (xs[i + 1] - xs[i]);
+  }
+  return area;
+};
+
+/**
  * How much of `box` (in the clip, 0..1) one frame's grid covers: the mean
  * alpha of the grid cells it overlaps, each weighted by the share of it
  * inside the box, as 0..1. The parts of a grid cell inside `holes` (boxes
@@ -257,16 +294,13 @@ export const coverOver = (grid, cols, rows, box, holes = []) => {
       const left = Math.max(c, x0);
       const right = Math.min(c + 1, x1);
       const whole = (right - left) * (bottom - top);
-      // The holes do not overlap (one round each pawn), so their parts
-      // add up.
-      const clear = cut.reduce(
-        (a, h) =>
-          a +
-          Math.max(0, Math.min(right, h.x1) - Math.max(left, h.x0)) *
-            Math.max(0, Math.min(bottom, h.y1) - Math.max(top, h.y0)),
-        0,
-      );
-      sum += grid[r * cols + c] * Math.max(0, whole - clear);
+      const clear = unionArea(cut, {
+        x0: left,
+        y0: top,
+        x1: right,
+        y1: bottom,
+      });
+      sum += grid[r * cols + c] * (whole - clear);
       area += whole;
     }
   }

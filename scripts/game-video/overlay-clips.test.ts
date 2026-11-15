@@ -20,6 +20,7 @@ import {
   coverOver,
   cutOutHoles,
   loadClip,
+  unionArea,
   sha256,
 } from "./overlay-clips.mjs";
 import {
@@ -352,6 +353,32 @@ describe("overlay clips", () => {
     // Half of a box in the hole: half of it is covered.
     const half = { x0: 0.275 - 0.1, y0: 0.3, x1: 0.275 + 0.1, y1: 0.45 };
     expect(coverOver(grid, 4, 4, half, holes)).toBeCloseTo(0.5);
+  });
+
+  test("two holes that overlap clear their shared part once", () => {
+    // A capture's cat and mouse art on one cell overlap (Video Reviewer
+    // 1, review 168 N1): the box is half in both, so half of it is clear.
+    const grid = new Uint8Array(16).fill(255);
+    const box = { x0: 0, y0: 0, x1: 0.2, y1: 0.2 };
+    const left = { x0: 0, y0: 0, x1: 0.1, y1: 0.2 };
+    expect(coverOver(grid, 4, 4, box, [left, left])).toBeCloseTo(0.5);
+    expect(
+      unionArea(
+        [
+          { x0: 0, y0: 0, x1: 2, y1: 2 },
+          { x0: 1, y0: 1, x1: 3, y1: 3 },
+        ],
+        { x0: 0, y0: 0, x1: 10, y1: 10 },
+      ),
+    ).toBeCloseTo(7);
+    expect(
+      unionArea([{ x0: 0, y0: 0, x1: 2, y1: 2 }], {
+        x0: 1,
+        y0: 1,
+        x1: 5,
+        y1: 5,
+      }),
+    ).toBeCloseTo(1);
   });
 });
 
