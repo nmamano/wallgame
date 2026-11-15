@@ -113,6 +113,11 @@
  *            `place`. Its bars are measured as a cover's are (coverOver):
  *            on a pawn, its own one too, or on a thing in play, the render
  *            stops. The board cuts what passes its edge.
+ *   cutOut   true: a cover whose art is cut out round every pawn the
+ *            frame shows (overlay-clips.mjs cutOutHoles), so no line of it
+ *            is drawn on a pawn; its hide check measures through the same
+ *            holes (Wall Game Director, 2026-11-15: gs-math zooms onto the
+ *            human's cat, and a pawn 1 cell away stood under its chalk).
  *   tail     false: a picture tied to a pawn has no tail; it takes the
  *            place nearest the pawn all the same, and its ring says who
  *            emotes it (Nil, 2026-11-01, CASES C45: "the arrows/triangles
@@ -351,6 +356,7 @@ const SCREAM_OUTLINE = [
  *   pawn?: true,
  *   pieces?: string[],
  *   around?: { window: { x0: number, y0: number, x1: number, y1: number }, cells: number },
+ *   cutOut?: true,
  *   places?: ("board" | "margin" | "caption")[],
  *   tint?: "grey",
  *   nilOk?: string | null,
@@ -953,6 +959,7 @@ export const OVERLAYS = {
   "gs-math": {
     form: "cover",
     draw: "sequence",
+    cutOut: true,
     text: "none",
     seconds: 2.533,
     sequence: {

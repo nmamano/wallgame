@@ -3173,6 +3173,58 @@
           el.innerHTML = "<div>" + esc(o.text) + "</div>";
         } else if (o.draw === "sequence" && o.form === "cover") {
           el.innerHTML = '<img src="' + esc(o.src) + '" />';
+          // A cut-out cover (overlays.mjs `cutOut`): its art is masked out
+          // of each hole, the pawns' boxes in the board (0..1), fully clear
+          // inside the box and soft for `feather` outside it.
+          // render-game-video.mjs coverHides measures the same holes.
+          const holes = o.holes ?? [];
+          if (holes.length > 0) {
+            const fx = (o.feather / p.w) * 1000;
+            const fy = (o.feather / p.h) * 1000;
+            const rects = holes
+              .map((b) => {
+                const x = ((b.x0 - p.x) / p.w) * 1000 - fx;
+                const y = ((b.y0 - p.y) / p.h) * 1000 - fy;
+                const w = ((b.x1 - b.x0) / p.w) * 1000 + 2 * fx;
+                const h = ((b.y1 - b.y0) / p.h) * 1000 + 2 * fy;
+                return (
+                  "<rect x='" +
+                  x.toFixed(1) +
+                  "' y='" +
+                  y.toFixed(1) +
+                  "' width='" +
+                  w.toFixed(1) +
+                  "' height='" +
+                  h.toFixed(1) +
+                  "' rx='" +
+                  fx.toFixed(1) +
+                  "' fill='black'/>"
+                );
+              })
+              .join("");
+            const svg =
+              "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 1000' preserveAspectRatio='none'>" +
+              "<defs><filter id='s' filterUnits='userSpaceOnUse' x='-200' y='-200' width='1400' height='1400'>" +
+              "<feGaussianBlur stdDeviation='" +
+              (fx / 3).toFixed(2) +
+              " " +
+              (fy / 3).toFixed(2) +
+              "'/></filter>" +
+              "<mask id='m' maskUnits='userSpaceOnUse' x='0' y='0' width='1000' height='1000'>" +
+              "<rect width='1000' height='1000' fill='white'/><g filter='url(#s)'>" +
+              rects +
+              "</g></mask></defs>" +
+              "<rect width='1000' height='1000' fill='white' mask='url(#m)'/></svg>";
+            const img = el.firstChild;
+            const url =
+              'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
+            img.style.webkitMaskImage = url;
+            img.style.maskImage = url;
+            img.style.webkitMaskSize = "100% 100%";
+            img.style.maskSize = "100% 100%";
+            img.style.webkitMaskRepeat = "no-repeat";
+            img.style.maskRepeat = "no-repeat";
+          }
         } else if (o.draw === "sequence") {
           // Its place's edges: "bottom-right" stands it on the bottom and
           // pushes it right, toward the board's rim, not into the middle;

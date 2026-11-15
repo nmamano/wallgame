@@ -16,7 +16,9 @@ import {
   clipCoverage,
   clipFrameIndex,
   clipManifestText,
+  CUT_OUT_MARGIN,
   coverOver,
+  cutOutHoles,
   loadClip,
   sha256,
 } from "./overlay-clips.mjs";
@@ -328,6 +330,28 @@ describe("overlay clips", () => {
     );
     expect(coverOver(grid, 2, 1, { x0: 0, y0: 0, x1: 0.5, y1: 1 })).toBe(1);
     expect(coverOver(grid, 2, 1, { x0: 1.2, y0: 0, x1: 1.5, y1: 1 })).toBe(0);
+  });
+
+  test("a cut-out cover hides nothing of a pawn inside its hole", () => {
+    // An opaque 4x4 clip over a board it fills; a pawn in the middle of
+    // one cell of a 4-cell board (Wall Game Director, 2026-11-15: gs-math
+    // over the mouse on b5, 1 cell from the cat the camera pushed onto).
+    const grid = new Uint8Array(16).fill(255);
+    const pawn = { x0: 0.3, y0: 0.3, x1: 0.45, y1: 0.45 };
+    expect(coverOver(grid, 4, 4, pawn)).toBe(1);
+    const holes = cutOutHoles([pawn], { x: 0.25, y: 0.25 }, 1);
+    expect(coverOver(grid, 4, 4, pawn, holes)).toBe(0);
+    // The hole reaches CUT_OUT_MARGIN of a pitch past the pawn, more under
+    // a zoom, and no further: a box beside it is still covered.
+    expect(holes[0].x0).toBeCloseTo(0.3 - CUT_OUT_MARGIN * 0.25);
+    expect(cutOutHoles([pawn], { x: 0.25, y: 0.25 }, 2)[0].x1).toBeCloseTo(
+      0.45 + CUT_OUT_MARGIN * 0.5,
+    );
+    const beside = { x0: 0.6, y0: 0.3, x1: 0.75, y1: 0.45 };
+    expect(coverOver(grid, 4, 4, beside, holes)).toBe(1);
+    // Half of a box in the hole: half of it is covered.
+    const half = { x0: 0.275 - 0.1, y0: 0.3, x1: 0.275 + 0.1, y1: 0.45 };
+    expect(coverOver(grid, 4, 4, half, holes)).toBeCloseTo(0.5);
   });
 });
 

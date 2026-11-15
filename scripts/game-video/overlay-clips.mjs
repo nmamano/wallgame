@@ -228,30 +228,76 @@ export const clipCoverage = (files, width, height, cols = COVERAGE_COLUMNS) => {
 /**
  * How much of `box` (in the clip, 0..1) one frame's grid covers: the mean
  * alpha of the grid cells it overlaps, each weighted by the share of it
- * inside the box, as 0..1.
+ * inside the box, as 0..1. The parts of a grid cell inside `holes` (boxes
+ * in the clip that the stage cuts out of it, cutOutHoles) count as clear.
  * @param {Uint8Array} grid
  * @param {number} cols
  * @param {number} rows
  * @param {{ x0: number, y0: number, x1: number, y1: number }} box
+ * @param {{ x0: number, y0: number, x1: number, y1: number }[]} [holes]
  */
-export const coverOver = (grid, cols, rows, box) => {
+export const coverOver = (grid, cols, rows, box, holes = []) => {
   const x0 = Math.max(0, box.x0 * cols);
   const x1 = Math.min(cols, box.x1 * cols);
   const y0 = Math.max(0, box.y0 * rows);
   const y1 = Math.min(rows, box.y1 * rows);
   if (x1 <= x0 || y1 <= y0) return 0;
+  const cut = holes.map((h) => ({
+    x0: h.x0 * cols,
+    x1: h.x1 * cols,
+    y0: h.y0 * rows,
+    y1: h.y1 * rows,
+  }));
   let sum = 0;
   let area = 0;
   for (let r = Math.floor(y0); r < Math.ceil(y1); r += 1) {
-    const h = Math.min(r + 1, y1) - Math.max(r, y0);
+    const top = Math.max(r, y0);
+    const bottom = Math.min(r + 1, y1);
     for (let c = Math.floor(x0); c < Math.ceil(x1); c += 1) {
-      const w = Math.min(c + 1, x1) - Math.max(c, x0);
-      sum += grid[r * cols + c] * w * h;
-      area += w * h;
+      const left = Math.max(c, x0);
+      const right = Math.min(c + 1, x1);
+      const whole = (right - left) * (bottom - top);
+      // The holes do not overlap (one round each pawn), so their parts
+      // add up.
+      const clear = cut.reduce(
+        (a, h) =>
+          a +
+          Math.max(0, Math.min(right, h.x1) - Math.max(left, h.x0)) *
+            Math.max(0, Math.min(bottom, h.y1) - Math.max(top, h.y0)),
+        0,
+      );
+      sum += grid[r * cols + c] * Math.max(0, whole - clear);
+      area += whole;
     }
   }
   return sum / area / 255;
 };
+
+/**
+ * How far a cut-out cover's hole reaches past a pawn's drawn box, and how
+ * wide its soft edge is past that, each as a share of a cell's pitch
+ * (overlays.mjs `cutOut`). The hole is fully clear out to the margin, so
+ * coverHides measures the hard box and the stage blurs only outside it.
+ */
+export const CUT_OUT_MARGIN = 0.1;
+export const CUT_OUT_FEATHER = 0.12;
+
+/**
+ * The holes a cut-out cover (overlays.mjs `cutOut`) has on one frame: each
+ * pawn's box on screen (in the board, 0..1), grown by CUT_OUT_MARGIN of a
+ * cell's pitch, so no line of its art is drawn on a pawn (Wall Game
+ * Director, 2026-11-15: gs-math zooms onto a cat with a pawn 1 cell away).
+ * @param {{ x0: number, y0: number, x1: number, y1: number }[]} pawns
+ * @param {{ x: number, y: number }} pitch a cell's pitch in the board, 0..1
+ * @param {number} scale the camera's zoom on the frame
+ */
+export const cutOutHoles = (pawns, pitch, scale) =>
+  pawns.map((b) => ({
+    x0: b.x0 - CUT_OUT_MARGIN * pitch.x * scale,
+    y0: b.y0 - CUT_OUT_MARGIN * pitch.y * scale,
+    x1: b.x1 + CUT_OUT_MARGIN * pitch.x * scale,
+    y1: b.y1 + CUT_OUT_MARGIN * pitch.y * scale,
+  }));
 
 /**
  * A box in the board (0..1) as a share of a clip drawn in the box `full`

@@ -174,12 +174,14 @@ import {
 } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, isVoice, levelGain, memeGain } from "./meme-sounds.mjs";
 import {
+  CUT_OUT_FEATHER,
   boardToCover,
   boardToPlace,
   clipCoverage,
   clipFrameIndex,
   clipSoundName,
   coverOver,
+  cutOutHoles,
   loadClip,
 } from "./overlay-clips.mjs";
 import {
@@ -5134,6 +5136,18 @@ const renderStyle = async (styleName) => {
             ],
           }
         : {}),
+      // A cut-out cover draws none of its art on a pawn: the stage masks
+      // these boxes out of it, and coverHides measures through them.
+      ...(w.asset.cutOut
+        ? {
+            holes: cutOutHoles(
+              pawnBoxes(state),
+              { x: GRID.pitchX, y: GRID.pitchY },
+              state.zoom?.scale ?? 1,
+            ),
+            feather: CUT_OUT_FEATHER * GRID.pitchX * (state.zoom?.scale ?? 1),
+          }
+        : {}),
       ...(w.asset.draw === "compare"
         ? {
             hex: side(facts.player).hex,
@@ -5477,8 +5491,9 @@ const renderStyle = async (styleName) => {
     for (const f of w.frames) {
       const grid =
         grids[clipFrameIndex(f.at - w.start, facts.fps, grids.length)];
+      const holes = (f.o.holes ?? []).map(inClip);
       for (const b of [...inPlay(f.state), ...pawnBoxes(f.state)]) {
-        const share = coverOver(grid, cols, rows, inClip(b));
+        const share = coverOver(grid, cols, rows, inClip(b), holes);
         if (share > COVER_HIDE_SHARE && (!worst || share > worst.share)) {
           worst = { share, what: b.what, at: f.at };
         }
