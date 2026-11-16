@@ -1254,7 +1254,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
         { moments: [3, 8], longestQuiet: null, leadChanges: [3, 8] },
         null,
       ),
-    ).toContain("the race lead changes 2 times (ply 3, 8)");
+    ).toContain("the race lead changes 2 times (plies 3, 8)");
   });
 
   test("C69: the race lead on the board moments: wYcrCoxU once, ygV6K_tM 3 times", () => {

@@ -750,7 +750,9 @@ export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
       : `${pace.moments.length} board ${pace.moments.length === 1 ? "moment" : "moments"}; the first at ${siteMove(first)} (ply ${first})`,
     pace.leadChanges.length === 0
       ? "the race lead never changes"
-      : `the race lead changes ${pace.leadChanges.length === 1 ? "once" : `${pace.leadChanges.length} times`} (ply ${pace.leadChanges.join(", ")})`,
+      : pace.leadChanges.length === 1
+        ? `the race lead changes once (ply ${pace.leadChanges[0]})`
+        : `the race lead changes ${pace.leadChanges.length} times (plies ${pace.leadChanges.join(", ")})`,
     q === null
       ? "no quiet run"
       : `the longest quiet run plies ${q.from}-${q.to} (${q.to - q.from + 1} plies)`,
