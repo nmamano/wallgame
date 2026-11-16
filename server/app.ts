@@ -28,6 +28,10 @@ import { registerCanonicalHostRedirect } from "./routes/canonical-host";
 /** The largest websocket frame the server reads; a longer one closes the socket. */
 export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
 
+/** Where wallgame.io/go sends a viewer of a daily video: home, tagged. */
+export const VIDEO_CTA_TARGET =
+  "/?utm_source=video&utm_medium=cta&utm_campaign=video-cta";
+
 /** The largest request body the server reads; a longer one gets a 413. */
 export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
@@ -56,6 +60,13 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   app.get("/blog/*", (c) => {
     return c.redirect("https://nilmamano.com/blog/category/wallgame", 301);
   });
+
+  // The call to action in the daily videos (task 08d6e4ff, 2026-11-16). The
+  // videos keep it, so this route stays. 302: the target may change later.
+  // /go/ too; a query on either is dropped, so the tags are always these.
+  for (const path of ["/go", "/go/"]) {
+    app.get(path, (c) => c.redirect(VIDEO_CTA_TARGET, 302));
+  }
 
   // Must precede the catch-alls at the bottom, which would otherwise answer
   // both of these with the SPA shell and a 200.
