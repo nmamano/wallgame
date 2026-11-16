@@ -409,12 +409,28 @@ export interface Pace {
    * the opening counts), or null when every ply is a moment.
    */
   longestQuiet: { from: number; to: number } | null;
+  /**
+   * The board moments after which the walk-only race (raceWinner, the
+   * counters) has a different winner than after the board moment before
+   * it (C69, Nil 2026-11-15 on wYcrCoxU: one save, then a quick catch, is
+   * "not interesting enough"). A moment with no race is skipped.
+   */
+  leadChanges: number[];
 }
 
 export const paceOf = (
-  plies: Pick<PlyLabel, "ply" | "label" | "tags" | "huh">[],
+  plies: Pick<PlyLabel, "ply" | "label" | "tags" | "huh" | "race">[],
 ): Pace => {
-  const moments = plies.filter(isBoardMoment).map((l) => l.ply);
+  const board = plies.filter(isBoardMoment);
+  const moments = board.map((l) => l.ply);
+  const leadChanges: number[] = [];
+  let lead: PlayerId | null = null;
+  for (const l of board) {
+    const now = raceWinner(l.race.after);
+    if (now === null) continue;
+    if (lead !== null && now !== lead) leadChanges.push(l.ply);
+    lead = now;
+  }
   let longestQuiet: Pace["longestQuiet"] = null;
   let from = 0;
   for (const end of [...moments, plies.length]) {
@@ -426,7 +442,7 @@ export const paceOf = (
       longestQuiet = { from, to };
     from = end + 1;
   }
-  return { moments, longestQuiet };
+  return { moments, longestQuiet, leadChanges };
 };
 
 export interface GameLabels {

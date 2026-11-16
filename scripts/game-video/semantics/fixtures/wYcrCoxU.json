@@ -1,0 +1,112 @@
+{
+  "note": "Stored game wYcrCoxU with its engine scores (dw-transformer, 2026-11-13); a regression fixture by game id and ply only.",
+  "game": {
+    "gameId": "wYcrCoxU",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [0, 0],
+          "mouse": [2, 0]
+        },
+        "p2": {
+          "cat": [0, 7],
+          "mouse": [2, 7]
+        }
+      },
+      "walls": [
+        {
+          "cell": [2, 1],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [2, 5],
+          "orientation": "vertical"
+        },
+        {
+          "cell": [7, 3],
+          "orientation": "vertical"
+        }
+      ]
+    },
+    "moves": [
+      "Cc8",
+      ">f5.^f4",
+      "Ce8",
+      "^g6.^h6",
+      "Ce6",
+      "Cg7",
+      "Ce4",
+      "Ce7",
+      "Cg4",
+      ">g4.^g4",
+      "Ch3",
+      "^h5.Cd7",
+      "Ch5",
+      "Cb7",
+      ">a7.^b6",
+      "Ca8",
+      ">b5.^a7",
+      "^e2.Cb8",
+      "Cg6",
+      "Mg5",
+      "Cg5.>g5"
+    ],
+    "seats": [
+      {
+        "playerOrder": 1,
+        "kind": "guest",
+        "name": "Guest Wallaby"
+      },
+      {
+        "playerOrder": 2,
+        "kind": "official bot",
+        "name": "Normal Bot"
+      }
+    ],
+    "result": {
+      "winner": 1,
+      "reason": "capture"
+    }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.4498594403266907, 0.491679310798645, 0.5294917821884155,
+      0.24831070005893707, 0.3931754231452942, -0.5463730692863464,
+      0.3359794318675995, -0.5102692246437073, 0.7994019985198975,
+      0.9244428277015686, 0.9233028292655945, 0.9363206624984741,
+      0.9474369883537292, 0.9499378204345703, 0.9344273209571838,
+      0.9603967070579529, 0.955427348613739, 0.9623239040374756,
+      0.976729154586792, 0.9912804365158081, 0.9998185634613037,
+      0.999997079372406
+    ],
+    "bestMoves": [
+      "Cc8",
+      ">f5.^f4",
+      "^g5.^h5",
+      "^g6.^h6",
+      ">b8.>b7",
+      "^d4.^e4",
+      ">b8.>b7",
+      ">e4.^e3",
+      "Cg4",
+      ">g4.^g4",
+      "Ch3",
+      "^h5.Cd7",
+      "Ch5",
+      "Cb7",
+      "^a6.^b6",
+      "^a5.^b5",
+      "^a7.Cg5",
+      ">g8.Cb8",
+      "Cg6",
+      "Mg6.Cc8",
+      "Cg5",
+      ">c8"
+    ],
+    "finalFromResult": false
+  }
+}

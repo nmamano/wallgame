@@ -1219,27 +1219,66 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
   });
 
   test("paceLine: the words the Director reads, with and without a seen check", () => {
-    const pace = { moments: [4, 9], longestQuiet: { from: 10, to: 30 } };
+    const pace = {
+      moments: [4, 9],
+      longestQuiet: { from: 10, to: 30 },
+      leadChanges: [9],
+    };
     expect(paceLine(pace, null)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the longest quiet run plies 10-30 (21 plies)",
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the longest quiet run plies 10-30 (21 plies)",
     );
     const seen = [
       { ply: 4, seen: false, reason: "" },
       { ply: 9, seen: true, reason: "" },
     ];
     expect(paceLine(pace, seen)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
     );
     expect(
-      paceLine({ moments: [], longestQuiet: { from: 0, to: 9 } }, null),
-    ).toBe("Pace: no board moment; the longest quiet run plies 0-9 (10 plies)");
+      paceLine(
+        { moments: [], longestQuiet: { from: 0, to: 9 }, leadChanges: [] },
+        null,
+      ),
+    ).toBe(
+      "Pace: no board moment; the race lead never changes; the longest quiet run plies 0-9 (10 plies)",
+    );
+    // One moment is singular (task b5d80200); 2+ changes are counted.
+    expect(
+      paceLine(
+        { moments: [7], longestQuiet: null, leadChanges: [] },
+        null,
+      ).startsWith("Pace: 1 board moment; the first at 4... (ply 7)"),
+    ).toBe(true);
+    expect(
+      paceLine(
+        { moments: [3, 8], longestQuiet: null, leadChanges: [3, 8] },
+        null,
+      ),
+    ).toContain("the race lead changes 2 times (ply 3, 8)");
+  });
+
+  test("C69: the race lead on the board moments: wYcrCoxU once, ygV6K_tM 3 times", () => {
+    // Nil discarded wYc (2026-11-15): "the game is not interesting enough".
+    // One save (16), then the catch: the lead changes once.
+    expect(fixtureLabels("wYcrCoxU").pace.leadChanges).toEqual([16]);
+    // A trade: bro's save at 11, the bot's walls at 16, bro's trap at 25.
+    expect(fixtureLabels("ygV6K_tM").pace.leadChanges).toEqual([11, 16, 25]);
   });
 
   test("paceOf: the opening and the middle count as quiet runs", () => {
+    // P1 wins the walk-only race after every ply but 5 (and 10, no moment).
+    const race = (lead: PlayerId) => ({
+      before: { walks: { 1: 6, 2: 6 }, toMove: 1 as PlayerId },
+      after: {
+        walks: { 1: lead === 1 ? 4 : 8, 2: lead === 1 ? 8 : 4 },
+        toMove: 1 as PlayerId,
+      },
+    });
     const at = (ply: number, label: "quiet" | "threat" | "blunder") => ({
       ply,
       label,
       tags: [],
+      race: race([5, 10].includes(ply) ? 2 : 1),
     });
     const plies = Array.from({ length: 25 }, (_, i) =>
       at(i, [3, 5, 20].includes(i) ? "threat" : i === 10 ? "blunder" : "quiet"),
@@ -1247,6 +1286,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(paceOf(plies)).toEqual({
       moments: [3, 5, 20],
       longestQuiet: { from: 6, to: 19 },
+      leadChanges: [5, 20],
     });
     expect(paceOf(plies.slice(0, 3)).longestQuiet).toEqual({ from: 0, to: 2 });
   });
