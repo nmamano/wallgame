@@ -7,6 +7,8 @@
  * render, warns, or is a note); its notes are {kind, ply, at, message}.
  *
  * A lint record (GET /api/daily/lint): {state: queued|running|done|failed,
+ * capture: "live" (the capture-only job captured the game) | "cached" |
+ * null (not asked),
  * errors: [the app's checks], warnings: [the app's warnings], skipped: why the renderer did not lint (no
  * capture yet) | null, lint: {faults, notes, counts} | null, timings,
  * error}. These helpers are the one reading of it, for the app and crew.
@@ -56,6 +58,15 @@ export const lintReport = (rec) => {
       .join(", ") || "none";
   return [
     `lint: ${stops.length ? `${stops.length} fault(s) stop the list` : "nothing stops the list"}${!stops.length && lintRecapture(rec).length ? "; its render captures the game live (one view)" : ""}${rec.skipped ? ` (the renderer did not lint: ${rec.skipped})` : ""}`,
+    ...(rec.capture === "live"
+      ? [
+          "  the 4090 captured the game live (one view, counted) and saved the capture: the first render reads it",
+        ]
+      : rec.capture === "cached"
+        ? [
+            "  the 4090 had the game's capture already: no live capture, no view",
+          ]
+        : []),
     ...rec.errors.map((e) => `  STOP ${e}`),
     ...(rec.lint?.faults ?? [])
       .filter((f) => f.stops && !recaptures(f))

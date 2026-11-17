@@ -255,7 +255,7 @@ const USAGE =
   "  plumbing, for the app rather than for a person:\n" +
   "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
   "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint] [--draft]";
+  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint [--capture]] [--draft]";
 
 /**
  * Every flag the renderer takes: "value" (--name VALUE) or "switch". The
@@ -271,6 +271,7 @@ const FLAGS = {
   "board-theme": "value",
   browser: "value",
   cache: "value",
+  capture: "switch",
   draft: "switch",
   edl: "value",
   encoder: "value",
@@ -332,6 +333,21 @@ const flag = (name) => argv.includes(`--${listed(name)}`);
  */
 const LINT = flag("lint");
 /**
+ * With --lint: capture the game live first (one view of the real game),
+ * save the capture to the cache, then lint from it. The daily app's
+ * capture-only job (crew.mjs lint --capture, Wall Game PM, 2026-11-17),
+ * which counts the view: the Director gets the full lint of a new game
+ * before its first render, and nothing is shot. RESULT.captureSaved says
+ * whether the capture reached the cache.
+ */
+const CAPTURE_LINT = flag("capture");
+if (CAPTURE_LINT && (!LINT || flag("from-cache") || !flag("edl"))) {
+  console.error(
+    "--capture captures live for a lint: give --lint and --edl, not --from-cache",
+  );
+  process.exit(2);
+}
+/**
  * A draft (R2, Wall Game Director, 2026-10-29: quick tries of timing and
  * story): the same composition, sound and seconds, shot at DRAFT_FPS and
  * DRAFT_SCALE of the frame's size, and not checked frame by frame against
@@ -342,8 +358,10 @@ const DRAFT_FPS = 15;
 const DRAFT_SCALE = 0.5;
 // A lint reads the capture, so it never costs a view (Video Editor (daily
 // app), 2026-10-29).
-if (LINT && !flag("from-cache")) {
-  console.error("--lint reads the capture cache: add --from-cache");
+if (LINT && !flag("from-cache") && !CAPTURE_LINT) {
+  console.error(
+    "--lint reads the capture cache: add --from-cache (or --capture to capture live first: one view)",
+  );
   process.exit(2);
 }
 if (flag("help")) {
@@ -1562,6 +1580,8 @@ const CAPTURE_INPUTS = {
 const GAME_CACHE = join(CACHE_DIR, GAME_ID);
 /** The cached capture with --from-cache; null when the page is captured live. */
 let cached = null;
+/** Whether the game's capture is in the cache now: read from it, or saved. */
+let captureSaved = false;
 if (FROM_CACHE) {
   try {
     cached = readCaptureCache(GAME_CACHE, CAPTURE_INPUTS);
@@ -2500,6 +2520,7 @@ if (cached) {
         wallSpots,
         pawnArt,
       });
+      captureSaved = true;
       log(`capture saved to the cache: ${GAME_CACHE}`);
       const pruned = pruneCaptureCaches(CACHE_DIR, CACHE_KEEP);
       if (pruned.length > 0) log(`cache: removed ${pruned.join(", ")}`);
@@ -8744,6 +8765,9 @@ const renderStyle = async (styleName) => {
     const events = EDL?.events ?? [];
     log(`lint: ${faults.length} fault(s), ${videoSeconds.toFixed(1)} s`);
     return {
+      // As a render's RESULT.fromCache: false after a live capture (--capture).
+      fromCache: Boolean(cached),
+      captureSaved: Boolean(cached) || captureSaved,
       lint: {
         faults,
         notes,

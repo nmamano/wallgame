@@ -63,7 +63,7 @@
  *                                  pawns wave flags", that his next ask
  *                                  shows above the WHOLE video (Nil,
  *                                  2026-11-07: "full games only")
- *   lint --item ID [--edl F] [--claim-risk-ok K,K]
+ *   lint --item ID [--edl F] [--claim-risk-ok K,K] [--capture [--force]]
  *                                  every fault of the item's list (or of F)
  *                                  at once, with ply and second: the app's
  *                                  checks and the renderer's, composed from
@@ -71,7 +71,15 @@
  *                                  2 s there, no view). STOP stops the list;
  *                                  WARN and NOTE are for you to read. Exits
  *                                  1 when something stops it. A game with
- *                                  no capture yet gets the app's checks
+ *                                  no capture yet gets the app's checks,
+ *                                  unless --capture: the capture-only job
+ *                                  captures the game live on the 4090 (one
+ *                                  view, counted as a live render's: a
+ *                                  second one the same UTC day needs
+ *                                  --force), saves the capture and lints
+ *                                  from it. Nothing is shot, so nothing
+ *                                  enters review; the first render then
+ *                                  reads the capture (no view)
  *   render --item ID [--wait] [--force] [--live]
  *                                  a 4090 render of the item's list; --wait
  *                                  polls until it ends. When the 4090 has the
@@ -419,7 +427,7 @@ export const COMMAND_FLAGS = {
   render: "item wait! force! live!",
   preview: "item plies edl* draft!",
   direct: "item edl claim-risk-ok no-lint! what",
-  lint: "item edl claim-risk-ok",
+  lint: "item edl claim-risk-ok capture! force!",
   queue: "review-target",
   post: "item confirm-not-posted",
   tiktok: "by lost!",
@@ -525,9 +533,13 @@ const app = async (method, path, body) => {
  * the app, wait, print the report and give the record. A list the app
  * refuses outright (not a list, another game) dies with why.
  */
-const lintOf = async (item, edl, claimRiskOk) => {
-  const rec = await lintRecord(item, edl, claimRiskOk, (line) =>
-    console.log(line),
+const lintOf = async (item, edl, claimRiskOk, live = {}) => {
+  const rec = await lintRecord(
+    item,
+    edl,
+    claimRiskOk,
+    (line) => console.log(line),
+    live,
   );
   if (rec.state === "failed") {
     die(
@@ -541,13 +553,22 @@ const lintOf = async (item, edl, claimRiskOk) => {
 /**
  * Queue a lint of `edl` (or the item's stored list) and wait for its end:
  * the record, done or failed. `say` gets each wait reason once. A list the
- * app refuses outright dies with why.
+ * app refuses outright dies with why. `capture` (and `force`) ask for the
+ * capture-only job when the 4090 has no capture of the game: one view.
  */
-const lintRecord = async (item, edl, claimRiskOk, say) => {
+const lintRecord = async (
+  item,
+  edl,
+  claimRiskOk,
+  say,
+  { capture = false, force = false } = {},
+) => {
   const posted = await appTry("POST", "/api/daily/lint", {
     item,
     ...(edl !== undefined && { edl }),
     claimRiskOk,
+    ...(capture && { capture: true }),
+    ...(force && { force: true }),
   });
   if (!posted.ok) {
     die(
@@ -1217,10 +1238,14 @@ const commands = {
   async lint() {
     const id = itemFlag();
     const path = flag("edl");
+    if (has("force") && !has("capture")) {
+      die("--force goes with --capture: a lint from the capture adds no view");
+    }
     const rec = await lintOf(
       id,
       path ? JSON.parse(readFileSync(path, "utf8")) : undefined,
       flag("claim-risk-ok")?.split(",") ?? [],
+      { capture: has("capture"), force: has("force") },
     );
     if (lintStops(rec).length) process.exitCode = 1;
   },

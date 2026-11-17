@@ -954,8 +954,10 @@ export const createDaily = ({
       mkdirSync(work, { recursive: true });
       const edlPath = join(work, "edl.json");
       writeFileSync(edlPath, rec.edlText);
+      const live = rec.capture === "live";
       const { result, error } = await runAdapter(jobId, [
         "--lint",
+        ...(live ? ["--capture"] : []),
         "--edl",
         edlPath,
         "--job-id",
@@ -969,6 +971,19 @@ export const createDaily = ({
         Object.assign(rec, {
           state: "failed",
           error: "the render step gave no lint",
+        });
+      } else if (
+        live &&
+        (result.fromCache !== false || result.captureSaved !== true)
+      ) {
+        // The view was counted when the job was queued; without a saved
+        // capture the first render captures live again.
+        Object.assign(rec, {
+          state: "failed",
+          error:
+            result.fromCache !== false
+              ? "the lint read a capture, not a live one: the 4090 kit may be older than --capture, so sync it"
+              : "the 4090 captured the game live (one view, counted) but did not save the capture: its render log says why",
         });
       } else {
         Object.assign(rec, {
@@ -2595,10 +2610,16 @@ export const createDaily = ({
     },
 
     /**
-     * {item, edl?, claimRiskOk?}: lint the list (or the item's stored one):
-     * the app's checks now, the renderer's from the capture in the queue.
-     * {lintId}; GET /api/daily/lint?id= gives the record. A game with no
-     * capture yet gets only the app's checks (skipped says so).
+     * {item, edl?, claimRiskOk?, capture?, force?}: lint the list (or the
+     * item's stored one): the app's checks now, the renderer's from the
+     * capture in the queue. {lintId}; GET /api/daily/lint?id= gives the
+     * record. A game with no capture yet gets only the app's checks
+     * (skipped says so), unless `capture`: the capture-only job (Wall Game
+     * PM, 2026-11-17) counts one view (store.countCaptureView, `force` as a
+     * render's), then the 4090 captures the game live, saves the capture
+     * and lints from it, with no shoot, so nothing enters review. With the
+     * capture there already, `capture` is a plain lint (no view). The
+     * record's `capture` says which: "live", "cached" or null (not asked).
      */
     "POST /api/daily/lint": async (req, res) => {
       const body = await readJson(req);
@@ -2615,28 +2636,34 @@ export const createDaily = ({
       lintCount += 1;
       const lintId = `${item.id}-${item.gameId}-l${Date.now().toString(36)}${lintCount}`;
       const text = listText(edl);
+      const live = body.capture === true && !capture.cached;
+      if (live) {
+        store.countCaptureView(item.id, lintId, { force: body.force === true });
+      }
+      const linted = capture.cached || live;
       lints.set(lintId, {
         itemId: item.id,
         key: sha256(text),
-        state: capture.cached ? "queued" : "done",
+        state: linted ? "queued" : "done",
+        capture: body.capture === true ? (live ? "live" : "cached") : null,
         errors,
         warnings: repeatNotes(item, edl),
-        skipped: capture.cached
+        skipped: linted
           ? null
-          : `the 4090 has no capture of game ${edl.gameId} yet; the first render checks the list before its shoot pass`,
+          : `the 4090 has no capture of game ${edl.gameId} yet; the first render checks the list before its shoot pass (or lint --capture captures it now: one view)`,
         lint: null,
         timings: null,
         error: null,
         edlText: text,
       });
       pruneLints();
-      if (capture.cached) {
+      if (linted) {
         queue.push({
           itemId: item.id,
           jobId: lintId,
           kind: "lint",
           gameId: item.gameId,
-          live: false,
+          live,
         });
         pump();
       }
@@ -2655,6 +2682,7 @@ export const createDaily = ({
         lintId: id,
         itemId: rec.itemId,
         state: rec.state,
+        capture: rec.capture,
         progress: progress.get(id) ?? null,
         errors: rec.errors,
         warnings: rec.warnings,

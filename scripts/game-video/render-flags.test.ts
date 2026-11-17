@@ -118,6 +118,21 @@ describe("the lint (--lint)", () => {
     expect(r.stderr).toContain("--lint reads the capture cache");
   });
 
+  test("--capture is only the capture-only job's live lint: never with --from-cache, never alone", () => {
+    // Each a refusal before the browser: no view.
+    for (const args of [
+      ["--edl", "x.json", "--lint", "--capture", "--from-cache"],
+      ["--edl", "x.json", "--capture"],
+      ["--game", "x", "--lint", "--capture"],
+    ]) {
+      const r = run(...args);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(
+        "--capture captures live for a lint: give --lint and --edl, not --from-cache",
+      );
+    }
+  });
+
   test("every kind the renderer reports is in edl.mjs LINT_KINDS, and none is dead", () => {
     // fault("kind", ...) and frameZoom's report("kind", ...) on every path,
     // so read the source, not a run.

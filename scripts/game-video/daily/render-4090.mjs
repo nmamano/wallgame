@@ -98,6 +98,15 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --lint --edl <edl.json> --job-id <id>
  *
+ * A CAPTURE-ONLY JOB (--lint --capture, Wall Game PM, 2026-11-17) captures
+ * the game live first (one view, which the app counts before it queues the
+ * job), saves the capture on the 4090, then lints from it: still no image
+ * and no MP4, so nothing can enter review. RESULT adds fromCache (false)
+ * and captureSaved, which the app checks:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --lint --capture --edl <edl.json> --job-id <id>
+ *
  * The app also asks how many workers the other users' jobs on the 4090 take
  * (desktop-run's meta files), to keep the budget for all jobs together.
  * This prints the sum, or fails when a job has no meta file:
@@ -288,6 +297,8 @@ const main = async () => {
   const hasCapture = arg("has-capture");
   const threadsOf = arg("threads-of");
   const lint = process.argv.includes("--lint");
+  // A lint that captures the game live first: one view of the game.
+  const captureLint = process.argv.includes("--capture");
   const draft = process.argv.includes("--draft");
   const workers = Number(arg("workers") ?? WORKERS);
   const host = process.env.WALLGAME_GPU_HOST;
@@ -297,7 +308,7 @@ const main = async () => {
     (!edlPath || !jobId || (!out && !lint))
   ) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--draft] [--workers N], or --lint --edl <edl.json> --job-id <id>, or --has-capture <gameId>, or --threads-of <job id>,...",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO] [--draft] [--workers N], or --lint [--capture] --edl <edl.json> --job-id <id>, or --has-capture <gameId>, or --threads-of <job id>,...",
     );
   }
   if (!Number.isInteger(workers) || workers < 1 || workers > BUDGET.perJob) {
@@ -377,6 +388,8 @@ const main = async () => {
       "--lint reads the cache and makes no video: no --plies, --from-cache or --out",
     );
   }
+  if (captureLint && !lint)
+    fail("--capture captures live for a lint: add --lint");
   // A live capture is one view of the game: never for a quick look.
   if (draft && !span && !fullFromCache) {
     fail("--draft reads the capture: give --plies or --from-cache");
@@ -387,7 +400,7 @@ const main = async () => {
   // The app asked already (--has-capture), but this adapter also runs by
   // hand, and without the capture the renderer would fail after desktop-run
   // started it.
-  const needsCapture = Boolean(span || fullFromCache || lint);
+  const needsCapture = Boolean(span || fullFromCache || (lint && !captureLint));
   const gameId = needsCapture
     ? JSON.parse(readFileSync(edlPath, "utf8")).gameId
     : null;
@@ -457,7 +470,11 @@ const main = async () => {
     cache,
     ...(span ? ["--from-cache", "--plies", plies] : []),
     ...(fullFromCache ? ["--from-cache"] : []),
-    ...(lint ? ["--from-cache", "--lint"] : []),
+    ...(lint
+      ? captureLint
+        ? ["--lint", "--capture"]
+        : ["--from-cache", "--lint"]
+      : []),
     ...(draft ? ["--draft"] : []),
   ]);
   const unit = DESKTOP_JOB.exec(desktop.stdout)?.[1];
@@ -562,6 +579,10 @@ const main = async () => {
     console.log(
       `RESULT ${JSON.stringify({
         lint: result.lint,
+        ...(captureLint && {
+          fromCache: result.fromCache,
+          captureSaved: result.captureSaved,
+        }),
         timings: { ...timings, workers, renderer: result.timings ?? null },
       })}`,
     );

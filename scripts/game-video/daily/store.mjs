@@ -1084,6 +1084,37 @@ export const openStore = (dataDir) => {
       );
     },
 
+    /**
+     * A capture-only job (crew.mjs lint --capture): the 4090 captures the
+     * item's game live for a lint and saves the capture, so the first
+     * render reads it. Its one view is counted here, under the same rule
+     * as a live render's: a second live capture of the game the same UTC
+     * day needs `force`. Only before the item's first video: a rendered
+     * item's game has its capture. The item itself does not change, but
+     * for the event.
+     */
+    countCaptureView(id, lintId, { force = false } = {}) {
+      return updateItem(
+        id,
+        ["draft"],
+        (item) => {
+          expectStage(
+            item,
+            ["picked", "directed", "render-failed"],
+            "a capture-only job",
+          );
+          const before = viewsToday(item.gameId);
+          if (before > 0 && !force) {
+            refuse(
+              `${item.gameId} was already captured live ${before} time(s) today, and each live capture adds one view to the real game; pass force to capture it again`,
+            );
+          }
+          countView(item.gameId);
+        },
+        `live capture for the lint ${lintId} (one view of the game)`,
+      );
+    },
+
     /** The render's result; only for the item's current render. */
     finishRender(id, jobId, outcome) {
       return updateItem(

@@ -3900,7 +3900,11 @@ if (process.argv.includes("--lint")) {
   const lint = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {
     faults: [], notes: [],
     counts: { seconds: 30, events: {}, overlays: {}, sounds: {} } };
-  console.log("RESULT " + JSON.stringify({ lint, timings: { check: 0.3,
+  // A capture-only job (--capture) captures live; "no-save" loses the capture.
+  const live = process.argv.includes("--capture")
+    ? { fromCache: false, captureSaved: !existsSync(__dirname + "/no-save") }
+    : {};
+  console.log("RESULT " + JSON.stringify({ lint, ...live, timings: { check: 0.3,
     total: 2.1, workers: 1, renderer: { compose: 1.3, total: 1.6 } } }));
   process.exit(0);
 }
@@ -4256,6 +4260,76 @@ test("the lint: every fault at once, and a list that cannot render is never stor
   expect(JSON.stringify(await fetchItem(base, id))).toContain(
     "NOT LINTED (direct --no-lint)",
   );
+}, 30_000);
+
+test("a capture-only job: one counted view, the full lint, no video (Wall Game PM, 2026-11-17)", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  const base = await serve(dir, stub);
+  const id = (await call(base, "/api/daily/pick", { report: REPORT })).body.id;
+  const ending = (await dailyState(base)).suggestedEnding;
+  const good = join(dir, "good.json");
+  writeFileSync(good, JSON.stringify({ ...EDL, ending }));
+  const args = () => readFileSync(join(dir, "last-lint-args"), "utf8");
+  writeFileSync(join(dir, "no-capture"), "");
+
+  // No capture and no --capture: only the app's checks, as before.
+  const plain = crew(base, "lint", "--item", id, "--edl", good);
+  expect(plain.out).toContain("(or lint --capture captures it now: one view)");
+  expect(existsSync(join(dir, "last-lint-args"))).toBe(false);
+
+  // --capture: the 4090 captures live and lints; the view is counted on
+  // the item, which does not change otherwise (no list, no render).
+  const first = crew(base, "lint", "--item", id, "--edl", good, "--capture");
+  expect(first.code).toBe(0);
+  expect(first.out).toContain(
+    "the 4090 captured the game live (one view, counted) and saved the capture",
+  );
+  expect(first.out).toContain("lint: nothing stops the list");
+  expect(args()).toContain("--lint --capture --edl");
+  const item = await fetchItem(base, id);
+  expect(item.edl).toBeNull();
+  expect(item.render).toBeNull();
+  expect(item.events.at(-1)?.what).toMatch(
+    /^live capture for the lint .* \(one view of the game\)$/,
+  );
+
+  // A second live view of the game the same UTC day needs --force.
+  const again = crew(base, "lint", "--item", id, "--edl", good, "--capture");
+  expect(again.code).toBe(1);
+  expect(again.err).toContain(
+    "TESTGAME1 was already captured live 1 time(s) today",
+  );
+  expect(crew(base, "lint", "--item", id, "--force").err).toContain(
+    "--force goes with --capture",
+  );
+
+  // A capture that the 4090 did not save fails the job (its view counted).
+  writeFileSync(join(dir, "no-save"), "");
+  const lost = crew(
+    base,
+    "lint",
+    "--item",
+    id,
+    "--edl",
+    good,
+    "--capture",
+    "--force",
+  );
+  expect(lost.code).toBe(1);
+  expect(lost.err).toContain(
+    "captured the game live (one view, counted) but did not save the capture",
+  );
+
+  // With the capture there, --capture is a plain lint: no live capture.
+  unlinkSync(join(dir, "no-capture"));
+  const cached = crew(base, "lint", "--item", id, "--edl", good, "--capture");
+  expect(cached.code).toBe(0);
+  expect(cached.out).toContain(
+    "the 4090 had the game's capture already: no live capture, no view",
+  );
+  expect(args()).not.toContain("--capture");
 }, 30_000);
 
 test("the 4090's budget: jobs wait on WAIT, then run two at a time", async () => {
