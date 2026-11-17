@@ -36,7 +36,7 @@ import {
   memeLevel,
 } from "../meme-sounds.mjs";
 import { DEFAULT_SLOT_SOUNDS, eventSoundKeys } from "../edl.mjs";
-import { writeAtomic, StepRefused } from "./store.mjs";
+import { currentVet, writeAtomic, StepRefused } from "./store.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MEME_DIR = resolve(HERE, "../../../assets/meme-sounds");
@@ -311,21 +311,29 @@ const eventSounds = (edl) => [
 ];
 
 /**
- * The last REPEAT_WINDOW videos made (in review, approved or posted),
- * newest render first, with their event sounds; not the item itself.
+ * Whether the item's video is made: approved and after, or finished with
+ * its current video's vet passed. Not "in review": that also waits for
+ * Wall Game Growth's copy block, and a lint in that gap (yZ, 2026-11-17
+ * 10:18 UTC: vetted 10:16, copy 10:19) took an older video instead
+ * (board task a826774b). A test render or a preview is never an item's
+ * vetted video.
+ */
+const videoMade = (it) =>
+  MADE_STATES.includes(it.state) ||
+  (it.state === "finished" && currentVet(it)?.verdict === "pass");
+
+/**
+ * The last REPEAT_WINDOW videos made (videoMade), newest render first, with
+ * their event sounds; never the item itself.
  * @param {any[]} items store.items()
- * @param {string} exceptId the item being directed
- * @param {(item: any) => boolean} inReview
+ * @param {string} exceptId the item being directed or linted
  * @returns {{ id: string, sounds: string[] }[]}
  */
-export const recentVideoSounds = (items, exceptId, inReview) =>
+export const recentVideoSounds = (items, exceptId) =>
   items
     .filter(
       (it) =>
-        it.id !== exceptId &&
-        it.edl &&
-        it.render?.finishedAt &&
-        (MADE_STATES.includes(it.state) || inReview(it)),
+        it.id !== exceptId && it.edl && it.render?.finishedAt && videoMade(it),
     )
     .sort((a, b) => (a.render.finishedAt < b.render.finishedAt ? 1 : -1))
     .slice(0, REPEAT_WINDOW)

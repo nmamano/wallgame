@@ -246,10 +246,13 @@ describe("sound repeats across videos (Nil, CASES C33)", () => {
     finishedAt: string,
     sounds: string[],
     state = "approved",
+    // The vets of a finished item: [the vetted video, its verdict].
+    vets: [string, string][] = [],
   ) => ({
     id,
     state,
-    render: { finishedAt },
+    render: { finishedAt, video: { sha256: `${id}-video` } },
+    vets: vets.map(([videoSha256, verdict]) => ({ videoSha256, verdict })),
     edl: {
       doc: {
         finishSound: "trombone-1",
@@ -260,31 +263,46 @@ describe("sound repeats across videos (Nil, CASES C33)", () => {
   const items = [
     made("v-1", "2026-10-31T10:00:00Z", ["boom-3", "laugh-2"]),
     made("v-2", "2026-10-31T11:00:00Z", ["boom-3", "airhorn-1"], "posted"),
-    made("v-3", "2026-10-31T12:00:00Z", ["boom-3", "ooh-1"], "finished"),
+    // Finished and vetted, with no copy block yet: made (a826774b).
+    made("v-3", "2026-10-31T12:00:00Z", ["boom-3", "ooh-1"], "finished", [
+      ["v-3-video", "pass"],
+    ]),
     made("v-4", "2026-10-31T13:00:00Z", ["scared-1"], "draft"),
     made("v-5", "2026-10-31T14:00:00Z", ["airhorn-1"]),
     made("v-6", "2026-10-31T15:00:00Z", ["scared-1"], "discarded"),
+    // Finished, but its vet failed, or passed an earlier video: not made.
+    made("v-7", "2026-10-31T16:00:00Z", ["scared-1"], "finished", [
+      ["v-7-video", "fail"],
+    ]),
+    made("v-8", "2026-10-31T17:00:00Z", ["scared-1"], "finished", [
+      ["v-8-old-video", "pass"],
+    ]),
   ];
-  const inReview = (it: { id: string }) => it.id === "v-3";
   const list = (sounds: string[]) => ({
     events: sounds.map((sound) => ({ sound })),
   });
 
-  test("the last 3 made, newest first: in review, approved or posted, not the item itself", () => {
-    expect(recentVideoSounds(items, "v-5", inReview).map((r) => r.id)).toEqual([
+  test("the last 3 made, newest first: vetted, approved or posted, not the item itself", () => {
+    expect(recentVideoSounds(items, "v-5").map((r) => r.id)).toEqual([
       "v-3",
       "v-2",
       "v-1",
     ]);
-    expect(recentVideoSounds(items, "v-9", inReview).map((r) => r.id)).toEqual([
+    expect(recentVideoSounds(items, "v-9").map((r) => r.id)).toEqual([
       "v-5",
       "v-3",
       "v-2",
     ]);
+    // The linted item never counts, even vetted.
+    expect(recentVideoSounds(items, "v-3").map((r) => r.id)).toEqual([
+      "v-5",
+      "v-2",
+      "v-1",
+    ]);
   });
 
   test("a sound in 2 of the last 3 warns; laugh-2 or scared-1 warns in any of the last 2; the slots never", () => {
-    const recent = recentVideoSounds(items, "v-9", inReview);
+    const recent = recentVideoSounds(items, "v-9");
     const notes = soundRepeatNotes(
       list(["airhorn-1", "ooh-1", "trombone-1", "laugh-2"]),
       recent,
@@ -298,7 +316,7 @@ describe("sound repeats across videos (Nil, CASES C33)", () => {
     );
     // laugh-2 only in v-1: older than the last 2, so no warning above;
     // with v-1 among the last 2, it warns.
-    const older = recentVideoSounds(items.slice(0, 2), "v-9", inReview);
+    const older = recentVideoSounds(items.slice(0, 2), "v-9");
     expect(soundRepeatNotes(list(["laugh-2"]), older)).toEqual([
       "WARNING: laugh-2 is an overused sound, and it is in 1 of the last 2 videos (v-1): Nil hears the repeat (C33); pick another sound",
     ]);

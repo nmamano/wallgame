@@ -1918,14 +1918,7 @@ export const createDaily = ({
   };
   /** The list's sound repeats over the last videos made (sounds.mjs). */
   const repeatNotes = (item, edl) =>
-    soundRepeatNotes(
-      edl,
-      recentVideoSounds(
-        store.items(),
-        item.id,
-        (it) => reviewState(it) === "in-review",
-      ),
-    );
+    soundRepeatNotes(edl, recentVideoSounds(store.items(), item.id));
 
   const listChecks = (item, rawEdl, claimRiskOk) => {
     const checked = validateEdl(rawEdl);
