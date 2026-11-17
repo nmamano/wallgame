@@ -23,6 +23,7 @@ import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 import { registerEvalSocketRoute } from "./routes/eval-socket";
 import { registerSeoRoutes } from "./routes/seo";
 import { registerHtmlShell, type HtmlShell } from "./routes/html-shell";
+import { CSP_HEADER, contentSecurityPolicy } from "./content-security-policy";
 import { registerCanonicalHostRedirect } from "./routes/canonical-host";
 
 /** The largest websocket frame the server reads; a longer one closes the socket. */
@@ -52,6 +53,19 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   // the logger, which claims nothing, so a 301 is still logged like any other
   // request.
   registerCanonicalHostRedirect(app);
+
+  // Every HTML response carries the page policy (task 3c8fd31c): the shell
+  // and the static index.html alike. Without a shell this process serves no
+  // page (development: vite does).
+  if (htmlShell) {
+    const policy = contentSecurityPolicy(htmlShell.inlineScriptHashes);
+    app.use(async (c, next) => {
+      await next();
+      if (c.res.headers.get("Content-Type")?.startsWith("text/html")) {
+        c.res.headers.set(CSP_HEADER, policy);
+      }
+    });
+  }
 
   // Redirect blog to external site
   app.get("/blog", (c) => {

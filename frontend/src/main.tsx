@@ -1,3 +1,5 @@
+// First: a module below parses a schema while it loads (zod-jitless.ts).
+import "./lib/zod-jitless";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";

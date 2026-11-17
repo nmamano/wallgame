@@ -29,6 +29,11 @@ export default defineConfig({
     },
   },
   resolve: {
+    // One Zod in the bundle. shared/ resolves "zod" from the repo root and
+    // the app from frontend/, so without this the bundle held two copies, and
+    // main.tsx's zodConfig({ jitless: true }) reached only one of them: the
+    // other still probed eval under the page policy (task 3c8fd31c).
+    dedupe: ["zod"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
       // See comment in tsconfig.json

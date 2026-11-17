@@ -14,6 +14,7 @@
  * second one.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import { SITE_ORIGIN } from "./seo";
@@ -72,6 +73,21 @@ interface Slot {
 export interface HtmlShell {
   pieces: string[];
   values: { value: SlotValue; escape: (value: string) => string }[];
+  /**
+   * The CSP source ('sha256-...') of each inline script, which no route
+   * rewrites, so one hash holds for every page (content-security-policy.ts).
+   */
+  inlineScriptHashes: string[];
+}
+
+/** The CSP hash source of each <script> with no src attribute. */
+function inlineScriptHashes(template: string): string[] {
+  return [
+    ...template.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g),
+  ].map(
+    ([, body]) =>
+      `'sha256-${createHash("sha256").update(body).digest("base64")}'`,
+  );
 }
 
 /**
@@ -223,6 +239,7 @@ export function parseHtmlShell(template: string): HtmlShell {
   return {
     pieces,
     values: slots.map(({ value, escape }) => ({ value, escape })),
+    inlineScriptHashes: inlineScriptHashes(template),
   };
 }
 
