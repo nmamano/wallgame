@@ -416,11 +416,37 @@ export interface Pace {
    * "not interesting enough"). A moment with no race is skipped.
    */
   leadChanges: number[];
+  /**
+   * The move that adds the most steps to the other side's walk, as the
+   * counter shows it (race walks), ties to the earlier, a capture
+   * excluded; null when no move adds a step (C73, Nil 2026-11-18 on
+   * qKeMIIRp: "The biggest emitional piont is when red distance goes from
+   * 3 to 13", ply 12, not the +6 at 19).
+   */
+  biggestJump: {
+    ply: number;
+    mover: PlayerId;
+    before: number;
+    after: number;
+  } | null;
 }
 
 export const paceOf = (
-  plies: Pick<PlyLabel, "ply" | "label" | "tags" | "huh" | "race">[],
+  plies: Pick<PlyLabel, "ply" | "mover" | "label" | "tags" | "huh" | "race">[],
 ): Pace => {
+  let biggestJump: Pace["biggestJump"] = null;
+  for (const l of plies) {
+    if (l.label === "capture") continue;
+    const other: PlayerId = l.mover === 1 ? 2 : 1;
+    const before = l.race.before.walks[other];
+    const after = l.race.after.walks[other];
+    if (before === null || after === null || after <= before) continue;
+    if (
+      biggestJump === null ||
+      after - before > biggestJump.after - biggestJump.before
+    )
+      biggestJump = { ply: l.ply, mover: l.mover, before, after };
+  }
   const board = plies.filter(isBoardMoment);
   const moments = board.map((l) => l.ply);
   const leadChanges: number[] = [];
@@ -442,7 +468,7 @@ export const paceOf = (
       longestQuiet = { from, to };
     from = end + 1;
   }
-  return { moments, longestQuiet, leadChanges };
+  return { moments, longestQuiet, leadChanges, biggestJump };
 };
 
 export interface GameLabels {

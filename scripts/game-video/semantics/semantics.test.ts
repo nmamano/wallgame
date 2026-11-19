@@ -1223,35 +1223,51 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
       moments: [4, 9],
       longestQuiet: { from: 10, to: 30 },
       leadChanges: [9],
+      biggestJump: { ply: 12, mover: 1 as PlayerId, before: 3, after: 13 },
     };
     expect(paceLine(pace, null)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the longest quiet run plies 10-30 (21 plies)",
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the biggest walk jump 3 -> 13 at 7. (ply 12); the longest quiet run plies 10-30 (21 plies)",
     );
     const seen = [
       { ply: 4, seen: false, reason: "" },
       { ply: 9, seen: true, reason: "" },
     ];
     expect(paceLine(pace, seen)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the biggest walk jump 3 -> 13 at 7. (ply 12); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
     );
     expect(
       paceLine(
-        { moments: [], longestQuiet: { from: 0, to: 9 }, leadChanges: [] },
+        {
+          moments: [],
+          longestQuiet: { from: 0, to: 9 },
+          leadChanges: [],
+          biggestJump: null,
+        },
         null,
       ),
     ).toBe(
-      "Pace: no board moment; the race lead never changes; the longest quiet run plies 0-9 (10 plies)",
+      "Pace: no board moment; the race lead never changes; no walk jump; the longest quiet run plies 0-9 (10 plies)",
     );
     // One moment is singular (task b5d80200); 2+ changes are counted.
     expect(
       paceLine(
-        { moments: [7], longestQuiet: null, leadChanges: [] },
+        {
+          moments: [7],
+          longestQuiet: null,
+          leadChanges: [],
+          biggestJump: null,
+        },
         null,
       ).startsWith("Pace: 1 board moment; the first at 4... (ply 7)"),
     ).toBe(true);
     expect(
       paceLine(
-        { moments: [3, 8], longestQuiet: null, leadChanges: [3, 8] },
+        {
+          moments: [3, 8],
+          longestQuiet: null,
+          leadChanges: [3, 8],
+          biggestJump: null,
+        },
         null,
       ),
     ).toContain("the race lead changes 2 times (plies 3, 8)");
@@ -1265,6 +1281,17 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     expect(fixtureLabels("ygV6K_tM").pace.leadChanges).toEqual([11, 16, 25]);
   });
 
+  test("C73 qKeMIIRp: the biggest walk jump is bro's ^c7 at 12 (3 -> 13), not the bot's +6 at 19", () => {
+    const l = fixtureLabels("qKeMIIRp");
+    expect(l.pace.biggestJump).toEqual({
+      ply: 12,
+      mover: 1,
+      before: 3,
+      after: 13,
+    });
+    expect(l.plies[19].label).toBe("punish");
+  });
+
   test("paceOf: the opening and the middle count as quiet runs", () => {
     // P1 wins the walk-only race after every ply but 5 (and 10, no moment).
     const race = (lead: PlayerId) => ({
@@ -1276,6 +1303,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     });
     const at = (ply: number, label: "quiet" | "threat" | "blunder") => ({
       ply,
+      mover: (ply % 2 === 0 ? 1 : 2) as PlayerId,
       label,
       tags: [],
       race: race([5, 10].includes(ply) ? 2 : 1),
@@ -1287,6 +1315,8 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
       moments: [3, 5, 20],
       longestQuiet: { from: 6, to: 19 },
       leadChanges: [5, 20],
+      // P1's walls at ply 0 make P2's walk 6 -> 8; later +2s tie, the earlier wins.
+      biggestJump: { ply: 0, mover: 1, before: 6, after: 8 },
     });
     expect(paceOf(plies.slice(0, 3)).longestQuiet).toEqual({ from: 0, to: 2 });
   });

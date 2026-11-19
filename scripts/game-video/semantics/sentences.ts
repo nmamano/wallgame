@@ -737,9 +737,9 @@ export const writeSentences = (
 /* ------------------------------------------------------------- the table -- */
 
 /**
- * The pace in one line (C46, C56, C69): the board moments, the first one,
- * the race lead changes, the longest quiet run; with a vision check, the
- * seen moves too.
+ * The pace in one line (C46, C56, C69, C73): the board moments, the first
+ * one, the race lead changes, the biggest walk jump, the longest quiet
+ * run; with a vision check, the seen moves too.
  */
 export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
   const first = pace.moments[0];
@@ -753,6 +753,9 @@ export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
       : pace.leadChanges.length === 1
         ? `the race lead changes once (ply ${pace.leadChanges[0]})`
         : `the race lead changes ${pace.leadChanges.length} times (plies ${pace.leadChanges.join(", ")})`,
+    pace.biggestJump === null
+      ? "no walk jump"
+      : `the biggest walk jump ${pace.biggestJump.before} -> ${pace.biggestJump.after} at ${siteMove(pace.biggestJump.ply)} (ply ${pace.biggestJump.ply})`,
     q === null
       ? "no quiet run"
       : `the longest quiet run plies ${q.from}-${q.to} (${q.to - q.from + 1} plies)`,
