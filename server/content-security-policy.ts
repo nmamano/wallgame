@@ -24,10 +24,11 @@
  */
 
 /**
- * Report-only while the policy is new: a browser reports a violation in its
- * console and still loads the resource. Phase 2 enforces the same policy.
+ * Enforced: a browser refuses what the policy does not list. The same policy
+ * ran report-only from 2026-11-17 to 2026-11-19 with 0 violations in the
+ * production console checks (phase 1).
  */
-export const CSP_HEADER = "Content-Security-Policy-Report-Only";
+export const CSP_HEADER = "Content-Security-Policy";
 
 /** The host that serves the Kinde sign-in and sign-out pages. */
 const KINDE_ORIGIN = "https://wallgame.kinde.com";

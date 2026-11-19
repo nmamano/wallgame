@@ -44,8 +44,8 @@ const get = (path: string) =>
   );
 
 describe("the page policy", () => {
-  it("is report-only for now", () => {
-    expect(CSP_HEADER).toBe("Content-Security-Policy-Report-Only");
+  it("is enforced", () => {
+    expect(CSP_HEADER).toBe("Content-Security-Policy");
   });
 
   for (const path of ["/", "/play", "/game/abc123", "/puzzles", "/ranking"]) {
@@ -54,6 +54,7 @@ describe("the page policy", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toStartWith("text/html");
       expect(res.headers.get(CSP_HEADER)).toBeTruthy();
+      expect(res.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
     });
   }
 
