@@ -215,6 +215,8 @@ import {
   mixIntegrated,
   runMaster,
   silencesOverRules,
+  soundSeconds,
+  withDucks,
 } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import {
@@ -2887,8 +2889,26 @@ const musicParts = ({ beatStartAt, musicStart, musicEndAt, bed }) => {
  * both null when no sound exists. A master outside the gate (masterFault)
  * fails the render.
  */
+/** Each sound file's length, read once (mix-loudness.mjs soundSeconds). */
+const soundLengths = new Map();
+/**
+ * The cues the mix plays: those whose file exists, each meme sound under an
+ * overlay clip's own sound ducked (mix-loudness.mjs withDucks). A render's
+ * mix and a lint's measure both take these, so they agree.
+ */
+const mixCues = (cues) =>
+  withDucks(
+    cues.filter((e) => existsSync(e.file)),
+    (file) => {
+      if (!soundLengths.has(file)) {
+        soundLengths.set(file, soundSeconds(FFMPEG, file));
+      }
+      return soundLengths.get(file);
+    },
+  );
+
 const buildAudio = ({ cues, totalSeconds, music, work }) => {
-  const present = cues.filter((e) => existsSync(e.file));
+  const present = mixCues(cues);
   const absent = cues.filter((e) => !existsSync(e.file));
   // A daily video plays exactly its list: a sound left out is a wrong
   // video, not a warning. A hand render still mixes what it has.
@@ -4715,6 +4735,7 @@ const renderStyle = async (styleName) => {
       name: sound.name,
       role,
       event,
+      ...(sound.ducksOthers ? { ducksOthers: true } : {}),
     });
   };
   /** For RESULT.timeline: the second each move lands, and each event's span. */
@@ -5012,6 +5033,8 @@ const renderStyle = async (styleName) => {
           meme: clipSoundName(ev.asset),
           file: own.path,
           gain: levelGain(own),
+          // The meme sounds still playing under it make way (withDucks).
+          ducksOthers: true,
         },
         ev,
       );
@@ -8733,7 +8756,7 @@ const renderStyle = async (styleName) => {
     try {
       lintLoudness = memeLoudness({
         ffmpeg: FFMPEG,
-        cues: cues.filter((c) => existsSync(c.file)),
+        cues: mixCues(cues),
         totalSeconds: videoSeconds,
         music: composedMusic,
       });

@@ -17,7 +17,11 @@ import { spawnSync } from "node:child_process";
 
 /**
  * @typedef {{ file: string, gain: number, at: number, rate: number,
- *             meme: string | null }} Cue
+ *             meme: string | null, ducksOthers?: boolean,
+ *             duck?: [number, number][] }} Cue
+ *   `ducksOthers`: an overlay clip's own sound, which the meme sounds still
+ *   playing under it make way for (withDucks). `duck`: the spans, in the
+ *   video's seconds, where this cue plays DUCK_DB down.
  * @typedef {{ file: string, start: number, endAt: number, bed: number,
  *             volume: number, fadeIn: number, fadeOut: number }} Music
  *   One track's part of the music: the renderer gives one per music cue.
@@ -25,6 +29,76 @@ import { spawnSync } from "node:child_process";
 
 const FORMAT =
   "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo";
+
+/*
+  An overlay clip that plays its own sound (a laughing man, a crying man)
+  is the moment's voice, and a meme sound that started before it and still
+  plays goes DUCK_DB down for the clip's time, with a DUCK_RAMP_SECONDS
+  ramp each way (board task 42f09bf8; Wall Game Director, 2026-11-18: on
+  qKe's ply 12, dundun-1 held at full level under JJJ's laugh, the laugh
+  up to 14 dB under it). Every cue is levelled alone to the same target
+  (meme-sounds.mjs), so two that overlap are equal unless one makes way.
+  WHY 20 dB. A clip's laugh is loud only at its start: measured 2026-11-19
+  on the 4090 test kit, JJJ's laugh is near -22 LUFS for 1.5 s and then
+  -28 to -37 LUFS to its end. At -10 dB dundun-1's held note sat at -32,
+  level with that tail (the laugh 4.9 dB under it at worst); at -20 it is
+  near -42, under all of it (5.1 dB at worst, about 20 dB while it is loud).
+*/
+export const DUCK_DB = -20;
+export const DUCK_RAMP_SECONDS = 0.1;
+
+/**
+ * The cues with their `duck` spans: each meme sound that starts before a
+ * `ducksOthers` cue and still plays when it starts is ducked from that
+ * start to the end of either. `secondsOf(file)` is a file's length.
+ * @param {Cue[]} cues
+ * @param {(file: string) => number} secondsOf
+ * @returns {Cue[]}
+ */
+export const withDucks = (cues, secondsOf) => {
+  const endOf = (c) => c.at + secondsOf(c.file) / c.rate;
+  const voices = cues.filter((c) => c.ducksOthers);
+  return cues.map((c) => {
+    if (c.meme === null || c.ducksOthers) return c;
+    const duck = voices
+      .filter((v) => c.at < v.at && endOf(c) > v.at)
+      .map(
+        (v) =>
+          /** @type {[number, number]} */ ([
+            v.at,
+            Math.min(endOf(c), endOf(v)),
+          ]),
+      );
+    return duck.length > 0 ? { ...c, duck } : c;
+  });
+};
+
+/**
+ * A volume expression of time that is 1 outside the spans and DUCK_DB down
+ * inside them, with a linear ramp of DUCK_RAMP_SECONDS each way.
+ * @param {[number, number][]} spans
+ */
+export const duckExpression = (spans) => {
+  const down = 1 - 10 ** (DUCK_DB / 20);
+  const r = DUCK_RAMP_SECONDS;
+  const ramp = (x) => `min(1,max(0,${x}))`;
+  return spans
+    .map(
+      ([s, e]) =>
+        `(1-${down.toFixed(4)}*${ramp(`(t-${s.toFixed(3)})/${r}`)}*${ramp(`(${e.toFixed(3)}-t)/${r}`)})`,
+    )
+    .join("*");
+};
+
+/** A sound file's length in seconds, from ffmpeg's "Duration:" line. */
+export const soundSeconds = (ffmpeg, file) => {
+  const run = spawnSync(ffmpeg, ["-hide_banner", "-i", file], {
+    encoding: "utf8",
+  });
+  const m = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(String(run.stderr));
+  if (!m) throw new Error(`ffmpeg gives no length for ${file}`);
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+};
 
 /**
  * The filter graph of the mix, before the limiter: `inputs` for ffmpeg, and
@@ -51,7 +125,10 @@ export const mixGraph = ({ cues, totalSeconds, music }) => {
       (e.rate === 1
         ? ""
         : `asetrate=${Math.round(44100 * e.rate)},aresample=44100,`) +
-      `adelay=${Math.round(Math.max(0, e.at) * 1000)}:all=1,volume=${e.gain}[a${i}]`,
+      `adelay=${Math.round(Math.max(0, e.at) * 1000)}:all=1,volume=${e.gain}` +
+      // After adelay, t is the video's time: the duck spans are in it.
+      (e.duck?.length ? `,volume='${duckExpression(e.duck)}':eval=frame` : "") +
+      `[a${i}]`,
   );
   // The effects bus. Every cue lands here.
   if (cues.length > 0) {
@@ -211,15 +288,40 @@ export const memeLoudness = ({ ffmpeg, cues, totalSeconds, music }) => {
     bedCues.length > 0 || music.length > 0
       ? measurePart(ffmpeg, mixGraph({ cues: bedCues, totalSeconds, music }))
       : null;
+  const alone = memes.map((c) =>
+    measurePart(ffmpeg, mixGraph({ cues: [c], totalSeconds, music: [] })),
+  );
   return {
-    memes: memes.map((c) =>
-      memeOverBed(
-        { key: c.meme, at: c.at },
-        measurePart(ffmpeg, mixGraph({ cues: [c], totalSeconds, music: [] })),
-        bed,
-      ),
-    ),
+    memes: memes.map((c, i) => {
+      const m = memeOverBed({ key: c.meme, at: c.at }, alone[i], bed);
+      return { ...m, under: memesUnder(i, memes, alone) };
+    }),
   };
+};
+
+/** Under this, another meme sound is not heard under one (memesUnder). */
+const UNDER_FLOOR_LUFS = -45;
+
+/**
+ * The other meme sounds heard in meme `i`'s loudest window, loudest first,
+ * each at its own level there (its ducks applied): the bed holds no meme
+ * sound, so "over silence" said nothing of them (task 42f09bf8).
+ * @param {number} i
+ * @param {Cue[]} memes
+ * @param {ReturnType<typeof parseMomentary>[]} alone  each meme measured alone
+ * @returns {{ key: string, lufs: number }[]}
+ */
+export const memesUnder = (i, memes, alone) => {
+  const loudest = alone[i].windows.reduce((a, b) => (b.m > a.m ? b : a));
+  return memes
+    .flatMap((c, j) => {
+      if (j === i) return [];
+      const w = alone[j].windows.find((x) => Math.abs(x.t - loudest.t) < 0.05);
+      return w && w.m > UNDER_FLOOR_LUFS
+        ? [{ key: c.meme ?? "", lufs: tenth(w.m) }]
+        : [];
+    })
+    .sort((a, b) => b.lufs - a.lufs);
 };
 
 /*

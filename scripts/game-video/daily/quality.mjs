@@ -60,14 +60,25 @@ export const MAX_MEME_LUFS = -18.5;
 
 /**
  * @typedef {{ key: string, at: number, loudestAt: number, memeLufs: number,
- *   bedLufs: number | null, overLU: number | null, truePeakDbtp: number }} MemeLoudness
+ *   bedLufs: number | null, overLU: number | null, truePeakDbtp: number,
+ *   under?: { key: string, lufs: number }[] }} MemeLoudness
+ *   `under`: the other meme sounds in its loudest window (mix-loudness.mjs
+ *   memesUnder); the bed holds none of them.
  */
 
 const memeLine = (m) =>
   `${m.key} at ${m.at} s: ${m.memeLufs} LUFS, ` +
   (m.overLU === null
-    ? "over silence"
+    ? m.under?.length
+      ? "the bed silent"
+      : "over silence"
     : `${m.overLU} LU over the bed (${m.bedLufs} LUFS)`) +
+  (m.under ?? [])
+    .map(
+      (u) =>
+        `, ${Math.round((m.memeLufs - u.lufs) * 10) / 10} LU over ${u.key} (${u.lufs} LUFS)`,
+    )
+    .join("") +
   `, true peak ${m.truePeakDbtp} dBTP`;
 
 /**

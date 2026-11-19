@@ -1209,6 +1209,20 @@ describe("the app's measures of a render", () => {
     );
   });
 
+  test("the line names each meme sound under a meme, with the margin over it", () => {
+    // qKe v1.4 (2026-11-18): the laugh had dundun-1 under it, and the line
+    // said only "over silence".
+    const laugh = {
+      ...meme(-21, null),
+      key: "clip-gs-jjj-laugh",
+      at: 10,
+      under: [{ key: "dundun-1", lufs: -22.5 }],
+    };
+    expect(loudnessVerdict({ memes: [laugh] }).note).toBe(
+      "clip-gs-jjj-laugh at 10 s: -21 LUFS, the bed silent, 1.5 LU over dundun-1 (-22.5 LUFS), true peak -13.4 dBTP",
+    );
+  });
+
   test("a meme sound at the old -16 level fails, however loud the bed", () => {
     // N42PHQnw (Nil: "a bit too loud"): -15.6 LUFS, 7.7 LU over its bed.
     expect(MAX_MEME_LUFS).toBe(-18.5);

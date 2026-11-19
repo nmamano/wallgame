@@ -16,9 +16,14 @@ import {
   MASTER_ENCODES,
   runMaster,
   measureMaster,
+  DUCK_DB,
+  duckExpression,
   memeLoudness,
   memeOverBed,
+  memesUnder,
   mixGraph,
+  soundSeconds,
+  withDucks,
   mixIntegrated,
   parseMomentary,
 } from "./mix-loudness.mjs";
@@ -168,6 +173,158 @@ test("memeLoudness rebuilds the meme alone and the bed, and measures each", () =
   expect(m.key).toBe("boom-1");
   expect(m.at).toBe(2);
   expect(m.overLU).toBeCloseTo(20 * Math.log10(0.2 / 0.05), 0);
+});
+
+describe("ducking under an overlay clip's own sound (42f09bf8)", () => {
+  const lengths: Record<string, number> = {
+    "/m/dundun-1.mp3": 5.1,
+    "/m/bell-1.mp3": 2,
+    "/m/boom-1.mp3": 3,
+    "/c/jjj.mp3": 3,
+    "/a/pawn.wav": 0.2,
+  };
+  const secondsOf = (file: string) => lengths[file];
+  const at = (file: string, t: number, meme: string | null) => ({
+    file,
+    gain: 1,
+    at: t,
+    rate: 1,
+    meme,
+  });
+
+  test("a meme sound that still plays as the clip starts is ducked to the end of either", () => {
+    const laugh = {
+      ...at("/c/jjj.mp3", 10, "clip-gs-jjj-laugh"),
+      ducksOthers: true,
+    };
+    const mixed = withDucks(
+      [
+        at("/m/dundun-1.mp3", 8.8, "dundun-1"), // plays to 13.9: ducked 10-13
+        at("/m/bell-1.mp3", 5, "bell-1"), // ended at 7
+        at("/m/boom-1.mp3", 11, "boom-1"), // starts after the clip: not ducked
+        at("/a/pawn.wav", 9.9, null), // a click: the bed
+        laugh,
+      ],
+      secondsOf,
+    );
+    expect(mixed.map((c) => c.duck ?? null)).toEqual([
+      [[10, 13]],
+      null,
+      null,
+      null,
+      null,
+    ]);
+    // With no clip sound, no file length is read.
+    expect(
+      withDucks([at("/m/dundun-1.mp3", 8.8, "dundun-1")], () => {
+        throw new Error("read a length");
+      })[0].duck,
+    ).toBeUndefined();
+  });
+
+  test("mixGraph turns a ducked cue down over its spans, ramped", () => {
+    const { chains } = mixGraph({
+      cues: [{ ...at("/m/dundun-1.mp3", 8.8, "dundun-1"), duck: [[10, 13]] }],
+      totalSeconds: 20,
+      music: [],
+    });
+    expect(chains[0]).toBe(
+      "[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo," +
+        `adelay=8800:all=1,volume=1,volume='${duckExpression([[10, 13]])}':eval=frame[a0]`,
+    );
+    expect(duckExpression([[10, 13]])).toBe(
+      "(1-0.9000*min(1,max(0,(t-10.000)/0.1))*min(1,max(0,(13.000-t)/0.1)))",
+    );
+  });
+
+  test("in ffmpeg, a ducked tone is DUCK_DB down under the clip, and the clip's line names it", () => {
+    const dir = TEST_TMP.dir("mix-duck-");
+    // `volume` is an ffmpeg expression of t: the voice starts quiet, as
+    // JJJ smirks before he laughs, so its loudest window is inside the duck.
+    // Near -22 LUFS, so the ducked tone (-42) is over the -45 floor.
+    const tone = (name: string, seconds: number, volume: string) => {
+      const file = join(dir, `${name}.wav`);
+      execFileSync("ffmpeg", [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        `sine=frequency=1000:duration=${seconds}:sample_rate=44100`,
+        "-af",
+        `volume='${volume}':eval=frame`,
+        "-ac",
+        "2",
+        file,
+      ]);
+      return file;
+    };
+    const held = tone("held", 4, "0.9");
+    const voice = tone("voice", 1.5, "if(lt(t,0.5),0.09,0.9)");
+    expect(soundSeconds("ffmpeg", held)).toBeCloseTo(4, 2);
+    const cues = withDucks(
+      [
+        { file: held, gain: 1, at: 0, rate: 1, meme: "dundun-1" },
+        {
+          file: voice,
+          gain: 1,
+          at: 2,
+          rate: 1,
+          meme: "clip-x",
+          ducksOthers: true,
+        },
+      ],
+      (f) => soundSeconds("ffmpeg", f),
+    );
+    expect(cues[0].duck).toEqual([[2, 3.5]]);
+    const r = memeLoudness({
+      ffmpeg: "ffmpeg",
+      cues,
+      totalSeconds: 5,
+      music: [],
+    });
+    const [heldLine, voiceLine] = r.memes;
+    // The held tone's own loudest window is before the duck, at full level;
+    // under the voice it is DUCK_DB down: the voice stands that far over it.
+    expect(voiceLine.under).toHaveLength(1);
+    expect(voiceLine.under[0].key).toBe("dundun-1");
+    const margin = voiceLine.memeLufs - voiceLine.under[0].lufs;
+    expect(Math.abs(margin + DUCK_DB)).toBeLessThan(1);
+    expect(Math.abs(heldLine.memeLufs - voiceLine.memeLufs)).toBeLessThan(0.2);
+  });
+
+  test("memesUnder lists the other memes heard in a meme's loudest window, loudest first", () => {
+    const memes = [
+      at("/c/jjj.mp3", 10, "clip-gs-jjj-laugh"),
+      at("/m/dundun-1.mp3", 8.8, "dundun-1"),
+      at("/m/boom-1.mp3", 20, "boom-1"),
+      at("/m/bell-1.mp3", 9, "bell-1"),
+      at("/m/bell-2.mp3", 9, "bell-2"),
+    ];
+    const alone = [
+      parts([
+        [10.4, -30],
+        [10.8, -21],
+      ]),
+      parts([
+        [10.4, -20],
+        [10.8, -22.5],
+      ]),
+      parts([
+        [20.4, -21],
+        [10.8, -120],
+      ]),
+      parts([[10.8, -35]]),
+      // Not heard: under the -45 floor (qKe ply 12: the laugh at -61.4
+      // in dundun-1's loudest window, 2026-11-19).
+      parts([[10.8, -61.4]]),
+    ];
+    expect(memesUnder(0, memes, alone)).toEqual([
+      { key: "dundun-1", lufs: -22.5 },
+      { key: "bell-1", lufs: -35 },
+    ]);
+  });
 });
 
 describe("mixGraph", () => {
