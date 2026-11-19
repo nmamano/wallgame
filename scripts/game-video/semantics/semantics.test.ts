@@ -1279,6 +1279,20 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     ).toContain("the race lead changes 2 times (plies 3, 8)");
   });
 
+  test("seatColorsOf: the daily look's colours, and P1/P2 for a bot-vs-bot game (no throw)", () => {
+    const { game } = loadFixture("qKeMIIRp");
+    expect(seatColorsOf(game)).toEqual({ 1: "blue", 2: "red" });
+    const bots = {
+      ...game,
+      seats: game.seats.map((x) => ({ ...x, kind: "official bot" as const })),
+    };
+    expect(seatColorsOf(bots)).toEqual({ 1: "P1", 2: "P2" });
+    const l = fixtureLabels("qKeMIIRp");
+    expect(paceLine(l.pace, null, seatColorsOf(bots))).toContain(
+      "biggest walk jump: P2 3 -> 13 at ply 12 (move 7., by P1)",
+    );
+  });
+
   test("C69: the race lead on the board moments: wYcrCoxU once, ygV6K_tM 3 times", () => {
     // Nil discarded wYc (2026-11-15): "the game is not interesting enough".
     // One save (16), then the catch: the lead changes once.
