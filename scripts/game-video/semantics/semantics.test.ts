@@ -23,6 +23,7 @@ import {
   checkSentence,
   factsOf,
   paceLine,
+  seatColorsOf,
   renderTable,
   writeSentences,
 } from "./sentences";
@@ -1219,21 +1220,23 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
   });
 
   test("paceLine: the words the Director reads, with and without a seen check", () => {
+    // The daily look: the human P1 blue, the bot P2 red (qKeMIIRp's seats).
+    const COLORS = { 1: "blue", 2: "red" } as const;
     const pace = {
       moments: [4, 9],
       longestQuiet: { from: 10, to: 30 },
       leadChanges: [9],
       biggestJump: { ply: 12, mover: 1 as PlayerId, before: 3, after: 13 },
     };
-    expect(paceLine(pace, null)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the biggest walk jump 3 -> 13 at 7. (ply 12); the longest quiet run plies 10-30 (21 plies)",
+    expect(paceLine(pace, null, COLORS)).toBe(
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); biggest walk jump: red 3 -> 13 at ply 12 (move 7., by blue); the longest quiet run plies 10-30 (21 plies)",
     );
     const seen = [
       { ply: 4, seen: false, reason: "" },
       { ply: 9, seen: true, reason: "" },
     ];
-    expect(paceLine(pace, seen)).toBe(
-      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); the biggest walk jump 3 -> 13 at 7. (ply 12); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
+    expect(paceLine(pace, seen, COLORS)).toBe(
+      "Pace: 2 board moments; the first at 3. (ply 4); the race lead changes once (ply 9); biggest walk jump: red 3 -> 13 at ply 12 (move 7., by blue); the longest quiet run plies 10-30 (21 plies); seen 1 of 2 checked, the first seen at ply 9",
     );
     expect(
       paceLine(
@@ -1244,9 +1247,10 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
           biggestJump: null,
         },
         null,
+        COLORS,
       ),
     ).toBe(
-      "Pace: no board moment; the race lead never changes; no walk jump; the longest quiet run plies 0-9 (10 plies)",
+      "Pace: no board moment; the race lead never changes; biggest walk jump: none; the longest quiet run plies 0-9 (10 plies)",
     );
     // One moment is singular (task b5d80200); 2+ changes are counted.
     expect(
@@ -1258,6 +1262,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
           biggestJump: null,
         },
         null,
+        COLORS,
       ).startsWith("Pace: 1 board moment; the first at 4... (ply 7)"),
     ).toBe(true);
     expect(
@@ -1269,6 +1274,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
           biggestJump: null,
         },
         null,
+        COLORS,
       ),
     ).toContain("the race lead changes 2 times (plies 3, 8)");
   });
@@ -1290,6 +1296,10 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
       after: 13,
     });
     expect(l.plies[19].label).toBe("punish");
+    const { game } = loadFixture("qKeMIIRp");
+    expect(paceLine(l.pace, null, seatColorsOf(game))).toContain(
+      "biggest walk jump: red 3 -> 13 at ply 12 (move 7., by blue)",
+    );
   });
 
   test("paceOf: the opening and the middle count as quiet runs", () => {

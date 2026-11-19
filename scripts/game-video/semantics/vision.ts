@@ -16,10 +16,9 @@
  * label from it: `seen` is a mark, and the Director prefers seen moments.
  */
 import type { PlayerId } from "../../../shared/domain/game-types";
-import { dailySeatColors } from "../edl.mjs";
 import { boxedRoom } from "./facts";
 import { countersShow, isMoment } from "./labels";
-import { MODEL, type GameSemantics } from "./sentences";
+import { MODEL, seatColorsOf, type GameSemantics } from "./sentences";
 
 export interface PlySeen {
   ply: number;
@@ -142,13 +141,7 @@ const tileBefore = (ply: number) =>
   ply === 0 ? "tile-start.png" : `tile-ply-${ply - 1}.png`;
 
 const prompt = (s: GameSemantics, plies: number[]): string => {
-  const isBot = (p: PlayerId) =>
-    s.facts.game.seats.find((x) => x.playerOrder === p)?.kind ===
-    "official bot";
-  const colors = dailySeatColors({ 1: isBot(1), 2: isBot(2) }) as Record<
-    PlayerId,
-    string
-  >;
+  const colors = seatColorsOf(s.facts.game);
   const seats = s.facts.game.seats
     .map(
       (x) =>

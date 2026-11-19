@@ -54,6 +54,7 @@ import {
 } from "./labels";
 import type { PlySeen } from "./vision";
 import { siteMove, siteMoveNumber } from "../site-move.mjs";
+import { dailySeatColors } from "../edl.mjs";
 
 export const MODEL = "claude-opus-5-5";
 export const MAX_WORDS = 35;
@@ -85,6 +86,15 @@ export interface GameSemantics {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const steps = (n: number) => `${n} step${n === 1 ? "" : "s"}`;
+
+/** The daily look's seat colours (edl.mjs dailySeatColors: the AI red, the human blue). */
+export const seatColorsOf = (
+  game: GameFacts["game"],
+): Record<PlayerId, "red" | "blue"> => {
+  const isBot = (p: PlayerId) =>
+    game.seats.find((x) => x.playerOrder === p)?.kind === "official bot";
+  return dailySeatColors({ 1: isBot(1), 2: isBot(2) });
+};
 
 const namesOf = (facts: GameFacts): Record<PlayerId, string> => {
   const name = (p: number) =>
@@ -741,7 +751,12 @@ export const writeSentences = (
  * one, the race lead changes, the biggest walk jump, the longest quiet
  * run; with a vision check, the seen moves too.
  */
-export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
+export const paceLine = (
+  pace: Pace,
+  seen: PlySeen[] | null,
+  colors: Record<PlayerId, "red" | "blue">,
+): string => {
+  const jump = pace.biggestJump;
   const first = pace.moments[0];
   const q = pace.longestQuiet;
   const parts = [
@@ -753,9 +768,9 @@ export const paceLine = (pace: Pace, seen: PlySeen[] | null): string => {
       : pace.leadChanges.length === 1
         ? `the race lead changes once (ply ${pace.leadChanges[0]})`
         : `the race lead changes ${pace.leadChanges.length} times (plies ${pace.leadChanges.join(", ")})`,
-    pace.biggestJump === null
-      ? "no walk jump"
-      : `the biggest walk jump ${pace.biggestJump.before} -> ${pace.biggestJump.after} at ${siteMove(pace.biggestJump.ply)} (ply ${pace.biggestJump.ply})`,
+    jump === null
+      ? "biggest walk jump: none"
+      : `biggest walk jump: ${colors[jump.mover === 1 ? 2 : 1]} ${jump.before} -> ${jump.after} at ply ${jump.ply} (move ${siteMove(jump.ply)}, by ${colors[jump.mover]})`,
     q === null
       ? "no quiet run"
       : `the longest quiet run plies ${q.from}-${q.to} (${q.to - q.from + 1} plies)`,
@@ -784,7 +799,7 @@ export const renderTable = (s: GameSemantics): string => {
     "",
     `Turning point: ${s.labels.turningPoint}`,
     "",
-    paceLine(s.labels.pace, s.seen),
+    paceLine(s.labels.pace, s.seen, seatColorsOf(s.facts.game)),
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = wallgame.io's move list (N. first player, N... second player); ply = 0-based turn`,
     "",

@@ -43,6 +43,7 @@ import { gameFacts, type EngineData, type SemanticGame } from "./facts";
 import { labelGame } from "./labels";
 import {
   paceLine,
+  seatColorsOf,
   renderTable,
   writeSentences,
   type GameSemantics,
@@ -224,7 +225,9 @@ const main = async () => {
     console.log(
       `${game.gameId}: ${[...counts].map(([l, n]) => `${l} ${n}`).join(", ")}${engine ? "" : " (no engine data)"}`,
     );
-    console.log(`  ${paceLine(labels.pace, semantics.seen)}`);
+    console.log(
+      `  ${paceLine(labels.pace, semantics.seen, seatColorsOf(game))}`,
+    );
   }
 };
 
