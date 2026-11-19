@@ -1290,9 +1290,15 @@ export const openStore = (dataDir) => {
         id,
         ["finished"],
         (item) => {
-          if (videoSha256 !== item.render.video.sha256) {
+          // Full hashes: a short sha cut to 12 characters looked the same
+          // as the current one (board task 9ee04ba4).
+          const current = item.render.video.sha256;
+          const given = String(videoSha256);
+          if (given !== current) {
             refuse(
-              `${id}'s current video is ${item.render.video.sha256.slice(0, 12)}, not ${String(videoSha256).slice(0, 12)}: review the current video`,
+              given.length < current.length && current.startsWith(given)
+                ? `${id}: vet takes the video's full sha256, not a short one: ${current}`
+                : `${id}'s current video is ${current}, not ${given}: review the current video`,
             );
           }
           if (fileSha256(item.render.video.path) !== videoSha256) {

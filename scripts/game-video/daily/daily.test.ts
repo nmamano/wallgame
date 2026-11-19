@@ -893,7 +893,13 @@ describe("the independent review of the final video (vet)", () => {
     );
     store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
     expect(() => void store.recordVet(id, pass("c".repeat(64)))).toThrow(
-      "review the current video",
+      `${id}'s current video is ${video.sha256}, not ${"c".repeat(64)}: review the current video`,
+    );
+    // A short sha of the current video: say it must be the full one.
+    expect(
+      () => void store.recordVet(id, pass(video.sha256.slice(0, 12))),
+    ).toThrow(
+      `${id}: vet takes the video's full sha256, not a short one: ${video.sha256}`,
     );
     writeFileSync(video.path, "other bytes");
     expect(() => void store.recordVet(id, pass(video.sha256))).toThrow(
