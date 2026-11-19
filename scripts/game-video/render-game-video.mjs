@@ -172,7 +172,13 @@ import {
   helpRulesFor,
   helpVariantFor,
 } from "../../shared/domain/variant-rules.ts";
-import { MEME_SOUNDS, isVoice, levelGain, memeGain } from "./meme-sounds.mjs";
+import {
+  MEME_SOUNDS,
+  isVoice,
+  leadInOf,
+  levelGain,
+  memeGain,
+} from "./meme-sounds.mjs";
 import {
   CUT_OUT_FEATHER,
   boardToCover,
@@ -4672,7 +4678,16 @@ const renderStyle = async (styleName) => {
     if ("recapture" in art)
       fault("reactor-capture", ev.ply, `the ${ev.asset}: ${art.recapture}`, 0);
   }
-  const cue = (sound, role, { at = elapsed, event = null } = {}) => {
+  /**
+   * Queue `sound` for the mix at `at` s. `leadIn` s of silence at the file's
+   * start play before `at`, so its first note is on `at` (the finish slot:
+   * meme-sounds.mjs LEAD_INS); the timeline still reports `at`.
+   */
+  const cue = (
+    sound,
+    role,
+    { at = elapsed, event = null, leadIn = 0 } = {},
+  ) => {
     // A time built from a missing value is NaN, and ffmpeg's mix refuses it
     // with no word on which sound (2026-10-29): stop here and name it.
     if (!Number.isFinite(at) || at < 0) {
@@ -4682,9 +4697,11 @@ const renderStyle = async (styleName) => {
     }
     // A site click starts before its time, so its body lands on it
     // (SITE_CLICKS); `hit` is the time the timeline reports.
-    const lead = SITE_CLICKS.has(sound.file)
-      ? bodyOnsetSeconds(sound.file) / (sound.rate ?? 1)
-      : 0;
+    const lead =
+      leadIn +
+      (SITE_CLICKS.has(sound.file)
+        ? bodyOnsetSeconds(sound.file) / (sound.rate ?? 1)
+        : 0);
     cues.push({
       file: sound.file,
       gain: sound.gain,
@@ -8203,21 +8220,27 @@ const renderStyle = async (styleName) => {
             name: dailyName(winnerId === 1 ? 2 : 1),
           },
         });
-        // The finish slot starts at the impact, or as a death card on this
-        // ply opens (overlays.mjs DEATH_CARDS).
+        // The finish slot's first note lands at the impact, or as a death
+        // card on this ply opens (overlays.mjs DEATH_CARDS): the file starts
+        // its silent lead-in early (meme-sounds.mjs LEAD_INS).
         const deathCard = overlayWindows.find(
           (w) => w.ev.ply === plyIndex && DEATH_CARDS.includes(w.asset.card),
         );
         const finishWithBar = EDL?.finishAt === "bar";
-        cue(sounds.finish, "finish", {
-          at:
-            deathCard && !finishWithBar
-              ? deathCard.start
-              : elapsed + timing.impact,
-        });
+        const finishLead = leadInOf(sounds.finish.name);
+        const finishNote =
+          deathCard && !finishWithBar
+            ? deathCard.start
+            : elapsed + timing.impact;
+        cue(sounds.finish, "finish", { at: finishNote, leadIn: finishLead });
         if (deathCard && !finishWithBar) {
           log(
             `finish sound ${sounds.finish.name} at ${deathCard.start.toFixed(2)} s, as the ${deathCard.ev.asset} card opens`,
+          );
+        }
+        if (finishLead > 0) {
+          log(
+            `finish sound ${sounds.finish.name} starts ${finishLead.toFixed(2)} s early: its silent lead-in, so its first note is at ${finishNote.toFixed(2)} s`,
           );
         }
         /*

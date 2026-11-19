@@ -427,6 +427,58 @@ export const KNOWN_FADE_OUTS = {
   "whoosh-1": "a whoosh, no voice",
 };
 
+/**
+ * The silence at the start of each clip, in seconds: how long the file stays
+ * under -45 dB before its first sound. Measured 2026-11-19 on the 4090 kit
+ * with ffmpeg silencedetect=n=-45dB:d=0.05, so a clip that is not here
+ * starts within 50 ms. The finish slot starts this much early, so its first
+ * note lands on the impact (board task 5bb4d518: trombone-1's 0.23 s added
+ * to the quiet before a finish at the bar). The event sounds keep their
+ * place: the director times them by the strips, lead-in included.
+ */
+export const LEAD_INS = {
+  "airhorn-2": 0.24,
+  "airhorn-3": 0.34,
+  "alert-1": 0.26,
+  "ambulance-1": 0.3,
+  "bell-1": 0.16,
+  "bell-2": 0.16,
+  "boom-4": 0.08,
+  "clang-1": 0.17,
+  "ding-1": 0.08,
+  "dundun-1": 0.06,
+  "fuahhh-1": 0.12,
+  "fuahhh-3": 0.1,
+  "getout-1": 0.07,
+  "horn-1": 0.49,
+  "laugh-1": 0.27,
+  "laugh-2": 0.26,
+  "laugh-3": 0.28,
+  "letsgo-1": 0.35,
+  "ooh-2": 0.38,
+  "ooh-3": 0.06,
+  "pointing-1": 0.13,
+  "pointing-2": 0.13,
+  "reveal-1": 0.2,
+  "scared-1": 0.07,
+  "scared-2": 0.23,
+  "scared-3": 0.09,
+  "scratch-3": 0.07,
+  "shotgun-3": 0.17,
+  "shotgun-4": 0.06,
+  "sting-1": 0.16,
+  "trombone-1": 0.23,
+  "trombone-3": 0.12,
+  "win-1": 0.07,
+  "win-2": 0.25,
+  "wind-1": 0.09,
+  "wow-1": 0.18,
+  "wow-2": 0.16,
+};
+
+/** Clip `key`'s silent lead-in in seconds (LEAD_INS), or 0. @type {(key: string) => number} */
+export const leadInOf = (key) => LEAD_INS[key] ?? 0;
+
 /** "boom-2" -> "boom". @type {(key: string) => string} */
 export const memeFamily = (key) => key.replace(/-\d+$/, "");
 

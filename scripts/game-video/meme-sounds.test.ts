@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   KNOWN_FADE_OUTS,
+  LEAD_INS,
   MEME_FAMILIES,
   MEME_SOUNDS,
   OUR_CUTS,
@@ -12,6 +13,15 @@ import {
 } from "./meme-sounds.mjs";
 
 describe("meme sounds", () => {
+  test("every lead-in is a known clip's, between the detector's 50 ms and 1 s", () => {
+    for (const [key, seconds] of Object.entries(LEAD_INS)) {
+      expect(key in MEME_SOUNDS).toBe(true);
+      expect(seconds).toBeGreaterThanOrEqual(0.05);
+      expect(seconds).toBeLessThan(1);
+    }
+    expect(LEAD_INS["trombone-1"]).toBe(0.23); // task 5bb4d518
+  });
+
   test("every voice family is a family of the table", () => {
     expect(VOICE_FAMILIES.filter((f) => !(f in MEME_FAMILIES))).toEqual([]);
   });
