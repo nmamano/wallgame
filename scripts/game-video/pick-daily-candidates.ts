@@ -138,7 +138,8 @@ const GAMES_SQL = `
 select coalesce(json_agg(g order by g."startedAt"), '[]'::json) from (
   select ga.game_id as "gameId", ga.variant, ga.board_width as "boardWidth",
     ga.board_height as "boardHeight", ga.moves_count as "movesCount",
-    ga.puzzle_id as "puzzleId", ga.started_at as "startedAt", ga.rated,
+    ga.puzzle_id as "puzzleId",
+    ga.puzzle_game_id as "puzzleGameId", ga.started_at as "startedAt", ga.rated,
     coalesce(gd.moves, '[]'::jsonb) as moves,
     coalesce(gd.config_parameters, '{}'::jsonb) as "configParameters",
     (select coalesce(json_agg(json_build_object(

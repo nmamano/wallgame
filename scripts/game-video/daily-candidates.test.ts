@@ -84,6 +84,7 @@ const game = (
   boardHeight: 8,
   movesCount: 30,
   puzzleId: null,
+  puzzleGameId: null,
   rated: false,
   seats: [
     { ...a, playerOrder: 1, outcomeRank: 1 },
@@ -227,6 +228,10 @@ describe("seat eligibility", () => {
     ).toBe(false);
     expect(
       gameEligibility(game(guest, officialBot, { puzzleId: "p1" })).eligible,
+    ).toBe(false);
+    expect(
+      gameEligibility(game(guest, officialBot, { puzzleGameId: "EDP5pYum" }))
+        .eligible,
     ).toBe(false);
   });
 });

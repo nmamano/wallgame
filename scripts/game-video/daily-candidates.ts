@@ -110,6 +110,9 @@ export interface StoredGameSummary {
   boardHeight: number;
   movesCount: number;
   puzzleId: string | null;
+  /** games.puzzle_game_id: the game whose position this attempt was played
+   * from (a daily video's puzzle), or null. */
+  puzzleGameId: string | null;
   /** games.rated: the game moved ratings. */
   rated: boolean;
   seats: StoredSeat[];
@@ -146,7 +149,9 @@ export const classifySeat = (seat: StoredSeat): SeatVerdict => {
 };
 
 export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
-  if (game.puzzleId !== null) {
+  // A puzzle attempt, saved or from a game position (/go/<n>), is solo
+  // practice from someone else's position, not a game to tell.
+  if (game.puzzleId !== null || game.puzzleGameId !== null) {
     return { eligible: false, reason: "puzzle attempt" };
   }
   if (game.movesCount < MIN_PLIES) {
