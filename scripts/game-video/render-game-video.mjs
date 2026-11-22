@@ -5941,6 +5941,31 @@ const renderStyle = async (styleName) => {
       log(
         `${where}: ${placeName(place)}${pawnWords}${reachWords(reach(place.scale))}${touch > 0 ? `, touches the capture picture ${touch.toFixed(2)} cell (the ending allows ${ENDING_TOUCH_CELLS})` : ""}`,
       );
+      /*
+        A death card in the caption's place covers the payoff for good: the
+        ending follows it. So the payoff must be read before the card opens
+        (TIG v-2026-11-22-3's vet: "cardio's over" showed 0.71 s, then the
+        wasted band took its place).
+      */
+      const payoffAt =
+        PAYOFF && moveTimes.findLast((m) => m.ply === PAYOFF.ply)?.at;
+      if (
+        place.where === "caption" &&
+        DEATH_CARDS.includes(w.asset.card) &&
+        payoffAt !== undefined &&
+        w.start >= payoffAt
+      ) {
+        const payoffRead = readingSeconds({}, PAYOFF.text);
+        const payoffFor = w.start - payoffAt;
+        if (payoffFor + 0.5 / FPS < payoffRead) {
+          fault(
+            "reading-time",
+            w.ev.ply,
+            `the payoff "${PAYOFF.text}" shows ${payoffFor.toFixed(2)} s before ${where} takes the caption's place for good, and it needs ${payoffRead} s to be read: hold the ply longer before the card (a zoom's holdSeconds), or start the payoff on an earlier ply`,
+            payoffAt,
+          );
+        }
+      }
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
