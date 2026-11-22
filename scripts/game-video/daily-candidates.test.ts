@@ -6,6 +6,7 @@ import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import {
+  BOT_VS_BOT_OUT,
   classifySeat,
   closeCallsOf,
   DANGER_WALK,
@@ -141,10 +142,14 @@ describe("seat eligibility", () => {
     const easy = seat({
       playerConfigType: "bot",
       displayName: "Easy Bot",
-      botId: "official:easy",
+      botId: "official:dw-beginner",
       botIsOfficial: true,
     });
-    const puzzleBot = { ...easy, displayName: "PuzzleBot" };
+    const puzzleBot = {
+      ...easy,
+      displayName: "PuzzleBot",
+      botId: "official:dw-puzzle",
+    };
     expect(gameEligibility(game(officialBot, easy))).toEqual({
       eligible: false,
       reason: "bot vs bot with Easy Bot",
@@ -155,6 +160,29 @@ describe("seat eligibility", () => {
     });
     // Against a human, Easy Bot stays in.
     expect(gameEligibility(game(guest, easy)).eligible).toBe(true);
+    // By the config's botId: a renamed Easy Bot stays out (VR1, 177 N1).
+    expect(
+      gameEligibility(game(officialBot, { ...easy, displayName: "Tiny Bot" })),
+    ).toEqual({ eligible: false, reason: "bot vs bot with Tiny Bot" });
+  });
+
+  test("BOT_VS_BOT_OUT names Easy Bot and PuzzleBot in the prod bot-client config", () => {
+    const config = configFileSchema.parse(
+      JSON.parse(
+        readFileSync(
+          new URL(
+            "../../official-custom-bot-client/transformer.prod.config.json",
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      ),
+    );
+    const names = Object.fromEntries(config.bots.map((b) => [b.botId, b.name]));
+    expect(BOT_VS_BOT_OUT.map((id) => names[id])).toEqual([
+      "Easy Bot",
+      "PuzzleBot",
+    ]);
   });
 
   test("--nil-seat keeps only games with a Nil seat", () => {

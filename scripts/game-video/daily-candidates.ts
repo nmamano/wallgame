@@ -125,10 +125,17 @@ export type SeatKind = "guest" | "nil" | "member" | "official bot";
 /**
  * The official bots that keep a bot-vs-bot game out (Wall Game Director,
  * 2026-11-22, C81, on Nil's yes): the weakest bot and the puzzle bot make
- * no game worth a video against another bot. By display name, as
- * BOT_STRENGTH. Against a human they stay in.
+ * no game worth a video against another bot. Against a human they stay in.
+ * By the bot-client config's botId (Easy Bot is dw-beginner, PuzzleBot
+ * dw-puzzle in official-custom-bot-client/transformer.prod.config.json),
+ * not by display name: a renamed bot stays out (VR1, review 177 N1). The
+ * server stores a seat's bot as "clientId:botId" (custom-bot-store.ts).
  */
-export const BOT_VS_BOT_OUT: readonly string[] = ["Easy Bot", "PuzzleBot"];
+export const BOT_VS_BOT_OUT: readonly string[] = ["dw-beginner", "dw-puzzle"];
+
+/** The bot-client config's botId of a seat's stored "clientId:botId". */
+const configBotId = (seat: StoredSeat): string | null =>
+  seat.botId === null ? null : (seat.botId.split(":").at(-1) ?? null);
 
 export type SeatVerdict =
   | { ok: true; kind: SeatKind }
@@ -198,7 +205,9 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
     seatKinds.push(verdict.kind);
   }
   if (seatKinds.every((kind) => kind === "official bot")) {
-    const out = game.seats.find((s) => BOT_VS_BOT_OUT.includes(s.displayName));
+    const out = game.seats.find((s) =>
+      BOT_VS_BOT_OUT.includes(configBotId(s) ?? ""),
+    );
     if (out) {
       return { eligible: false, reason: `bot vs bot with ${out.displayName}` };
     }
