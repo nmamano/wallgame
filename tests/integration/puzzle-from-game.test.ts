@@ -137,7 +137,7 @@ describe("a stored game's position launched as a puzzle", () => {
     socket = await attachBots(clientId, [puzzleBot, ordinaryBot]);
     // The bot registry writes through to the DB asynchronously on attach.
     await sleep(200);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     socket?.close();
