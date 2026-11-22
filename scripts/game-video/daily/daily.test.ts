@@ -65,6 +65,7 @@ import {
   copySha256,
   parseCopy,
   postTexts,
+  puzzleLink,
   trackedLink,
   YOUTUBE_LINK,
 } from "./copy.mjs";
@@ -1688,6 +1689,64 @@ describe("Growth's copy block", () => {
       `Facebook may hold only the link ${trackedLink("facebook")}`,
     ]);
     expect(problems("bluesky", `${bsky} or www.wallgame.io`)).toHaveLength(1);
+  });
+
+  test("a puzzle item's captions may carry its own puzzle link where Growth's rule allows it", () => {
+    // Nil, 2026-11-22, through Wall Game PM: Bluesky and Threads as their
+    // link, YouTube in place of the daily-video link, Instagram as plain
+    // text; never X or TikTok; Facebook is paused.
+    const puzzle = (field: string, text: string, n: number | null = 7) =>
+      copyProblems(withText(field, text), "TESTGAME1", [], n);
+    const go7 = puzzleLink(7);
+    expect(go7).toBe("https://wallgame.io/go/7");
+    expect(puzzle("bluesky", `bro missed a win 👀 ${go7}`)).toEqual([]);
+    expect(puzzle("threads", `bro missed a win 👀 ${go7}`)).toEqual([]);
+    expect(puzzle("youtubeDescription", `bro 👀 Solve it: ${go7}`)).toEqual([]);
+    expect(puzzle("instagram", "bro 👀 solve it: wallgame.io/go/7")).toEqual(
+      [],
+    );
+    // Never on X or TikTok, and not on paused Facebook.
+    expect(puzzle("x", `bro 👀 wallgame.io/go/7`)).toEqual([
+      "X must not hold a link",
+    ]);
+    expect(puzzle("tiktok", "bro 👀 wallgame.io/go/7")).toEqual([
+      "TikTok must not hold a puzzle link: the video shows it",
+    ]);
+    expect(puzzle("facebook", `bro 👀 ${go7}`)).toEqual([
+      `Facebook may hold only the link ${trackedLink("facebook")}`,
+    ]);
+    // Instagram's puzzle link is plain text: a clickable form is refused.
+    expect(puzzle("instagram", `bro 👀 ${go7}`)).toEqual([
+      "Instagram must not hold a link; only wallgame.io/go/7 as plain text",
+    ]);
+    // Another puzzle's number is refused on every platform that takes one.
+    const go8 = puzzleLink(8);
+    expect(puzzle("bluesky", `bro 👀 ${go8}`)).toEqual([
+      `Bluesky may hold only the link ${trackedLink("bluesky")} or ${go7}`,
+    ]);
+    expect(puzzle("threads", `bro 👀 ${go8}`)).toEqual([
+      `Threads may hold only the link ${trackedLink("threads")} or ${go7}`,
+    ]);
+    expect(puzzle("youtubeDescription", `bro 👀 Solve it: ${go8}`)).toEqual([
+      `YouTube description names ${go8}, but this item's puzzle is ${go7}`,
+    ]);
+    expect(puzzle("instagram", "bro 👀 wallgame.io/go/8")).toEqual([
+      `Instagram names wallgame.io/go/8, but this item's puzzle is ${go7}`,
+    ]);
+    // An item whose video ends on no puzzle takes no puzzle link at all.
+    expect(puzzle("bluesky", `bro 👀 ${go7}`, null)).toEqual([
+      `Bluesky may hold only the link ${trackedLink("bluesky")}`,
+    ]);
+    expect(
+      puzzle("youtubeDescription", `bro 👀 Solve it: ${go7}`, null),
+    ).toEqual([
+      `YouTube description names ${go7}, but this item's video ends on no puzzle`,
+    ]);
+    expect(puzzle("instagram", "bro 👀 wallgame.io/go/7", null)).toEqual([
+      "Instagram names wallgame.io/go/7, but this item's video ends on no puzzle",
+    ]);
+    // The daily block of a puzzle item still passes as it is.
+    expect(copyProblems(COPY, "TESTGAME1", [], 7)).toEqual([]);
   });
 
   test("every platform limit is checked when the block comes in", () => {

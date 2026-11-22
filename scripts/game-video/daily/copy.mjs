@@ -38,6 +38,19 @@ import { findUrls, textLimitProblems } from "./post-limits.mjs";
 export const trackedLink = (platform) =>
   `https://wallgame.io/?utm_source=${platform}&utm_medium=social&utm_campaign=daily-video`;
 
+/**
+ * A puzzle video's link (edl.mjs puzzle; shared/domain/video-puzzles.ts):
+ * Nil, 2026-11-22, through Wall Game PM: it goes in the captions where it
+ * does not cost reach. Growth's rule, for a puzzle item only: Bluesky and
+ * Threads may carry it as their link, the YouTube description may carry
+ * it in place of the daily-video link, and Instagram may carry it as plain
+ * text; X and TikTok never (the video shows it), and Facebook is paused.
+ * @param {number} n the puzzle's number
+ */
+export const puzzleLink = (n) => `https://wallgame.io/go/${n}`;
+/** Each wallgame.io/go/<n> a text names, with or without its scheme. */
+const PUZZLE_REF = /(?:https?:\/\/)?(?:www\.)?wallgame\.io\/go\/(\d+)/gi;
+
 /** Where the YouTube description sends people. */
 export const YOUTUBE_LINK = trackedLink("youtube");
 
@@ -153,12 +166,14 @@ export const parseCopy = (text) => {
 
 /**
  * Reasons a parsed block cannot post, or an empty list. `players` are the
- * game's playerNames (candidate.mjs).
+ * game's playerNames (candidate.mjs); `puzzle` is the number of the
+ * puzzle the item's video ends on (its edit list's puzzle.n), or null.
  * @param {CopyTexts} copy
  * @param {string} gameId
  * @param {string[]} [players]
+ * @param {number | null} [puzzle]
  */
-export const copyProblems = (copy, gameId, players = []) => {
+export const copyProblems = (copy, gameId, players = [], puzzle = null) => {
   const problems = textProblems(
     Object.fromEntries(
       COPY_LINES.map(([label, field]) => [label, copy[field]]),
@@ -174,9 +189,34 @@ export const copyProblems = (copy, gameId, players = []) => {
   // A URL in the text makes an X post cost $0.20 instead of $0.015 (task
   // e8d26610, Nil's decision of 2026-10-25), and X also reads bare domains.
   if (LINK.test(copy.x)) problems.push("X must not hold a link");
-  // Growth's playbook: Instagram has no link (it is not clickable there).
-  if (LINK.test(copy.instagram)) {
-    problems.push("Instagram must not hold a link");
+  // A puzzle link names this item's puzzle, on a platform that takes it.
+  const wrongPuzzle = (label, field) =>
+    [...copy[field].matchAll(PUZZLE_REF)].flatMap(([ref, n]) =>
+      puzzle === null
+        ? [`${label} names ${ref}, but this item's video ends on no puzzle`]
+        : Number(n) !== puzzle
+          ? [
+              `${label} names ${ref}, but this item's puzzle is ${puzzleLink(puzzle)}`,
+            ]
+          : [],
+    );
+  if ([...copy.tiktok.matchAll(PUZZLE_REF)].length > 0) {
+    problems.push("TikTok must not hold a puzzle link: the video shows it");
+  }
+  // Growth's playbook: Instagram has no link (it is not clickable there);
+  // a puzzle item's caption may name its puzzle as plain text.
+  const instagramBad = wrongPuzzle("Instagram", "instagram");
+  problems.push(...instagramBad);
+  const instagramRest =
+    puzzle === null
+      ? copy.instagram
+      : copy.instagram.replaceAll(`wallgame.io/go/${puzzle}`, " ");
+  if (instagramBad.length === 0 && LINK.test(instagramRest)) {
+    problems.push(
+      puzzle === null
+        ? "Instagram must not hold a link"
+        : `Instagram must not hold a link; only wallgame.io/go/${puzzle} as plain text`,
+    );
   }
   if (/#shorts\b/i.test(copy.youtubeTitle)) {
     problems.push(`YouTube title must not hold #Shorts: the app adds it`);
@@ -192,9 +232,17 @@ export const copyProblems = (copy, gameId, players = []) => {
       `YouTube description is ${bytes} bytes; YouTube takes at most ${YOUTUBE_DESCRIPTION_MAX_BYTES}`,
     );
   }
-  if (!copy.youtubeDescription.includes(YOUTUBE_LINK)) {
+  const youtubeBad = wrongPuzzle("YouTube description", "youtubeDescription");
+  problems.push(...youtubeBad);
+  if (
+    youtubeBad.length === 0 &&
+    !copy.youtubeDescription.includes(YOUTUBE_LINK) &&
+    !(puzzle !== null && copy.youtubeDescription.includes(puzzleLink(puzzle)))
+  ) {
     problems.push(
-      `YouTube description must hold the tracked link ${YOUTUBE_LINK}`,
+      puzzle === null
+        ? `YouTube description must hold the tracked link ${YOUTUBE_LINK}`
+        : `YouTube description must hold the tracked link ${YOUTUBE_LINK} or the puzzle's link ${puzzleLink(puzzle)}`,
     );
   }
   for (const [label, field] of [
@@ -208,7 +256,8 @@ export const copyProblems = (copy, gameId, players = []) => {
   // Growth Lead, 2026-10-26: Bluesky carries the tracked link; Facebook
   // and Threads start without one, and a link there is not refused. On all
   // three, a link must be the platform's tracked link, or the post log could
-  // not tell where a visit came from.
+  // not tell where a visit came from; on Bluesky and Threads, a puzzle
+  // item's link may be its puzzle's instead (puzzleLink).
   for (const [label, field] of COPY_LINES.filter(([, f]) =>
     ["facebook", "bluesky", "threads"].includes(f),
   )) {
@@ -220,8 +269,12 @@ export const copyProblems = (copy, gameId, players = []) => {
       (text, { start, end }) => text.slice(0, start) + " " + text.slice(end),
       copy[field],
     );
-    if (urls.some(({ url }) => url !== trackedLink(field)) || LINK.test(rest)) {
-      problems.push(`${label} may hold only the link ${trackedLink(field)}`);
+    const allowed = [
+      trackedLink(field),
+      ...(puzzle !== null && field !== "facebook" ? [puzzleLink(puzzle)] : []),
+    ];
+    if (urls.some(({ url }) => !allowed.includes(url)) || LINK.test(rest)) {
+      problems.push(`${label} may hold only the link ${allowed.join(" or ")}`);
     }
   }
   if (findUrls(copy.threads).length > THREADS_MAX_LINKS) {

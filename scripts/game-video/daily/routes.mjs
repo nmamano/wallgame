@@ -2322,6 +2322,8 @@ export const createDaily = ({
         copy,
         item.candidate.gameId,
         playerNames(item.candidate),
+        // A puzzle video's captions may carry its link (copy.mjs).
+        item.edl?.doc?.puzzle?.n ?? null,
       );
       if (bad.length) throw new StepRefused(bad.join("; "));
       json(
