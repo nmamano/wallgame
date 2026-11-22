@@ -94,14 +94,17 @@
  *            names wallgame.io ("play free at wallgame.io"). It replaces
  *            "wallgame.io" in the badge under the board, for the whole
  *            video, and as the GG card's last line. Absent: "wallgame.io".
- *   puzzle   optional: { ply, n, text, cta }, the puzzle ending (task
+ *   puzzle   optional: { ply, n, cta }, the puzzle ending (task
  *            a03b8f5c; Nil, 2026-11-22: "payoff then puzzle as an
  *            experiment"). The ending plays as it does, then "<< REWIND"
  *            (the flashback's look) back to the position before `ply`'s
- *            move, which holds in full colour: a ring on the cat of the
- *            side to move (the mover of `ply`), `text` in the caption's
- *            place ("find the win"; the caption's limits) and `cta` in
- *            the badge under the board. `cta` names the puzzle's link,
+ *            move, which holds in full colour with no other words: a ring
+ *            on the cat of the side to move (the mover of `ply`), the
+ *            opponent's last move as a bold arrow, "What would you do as
+ *            Red?" in the caption's place (the renderer's line, the side's
+ *            name in its colour: Nil, 2026-11-22, C80: "it's not clear
+ *            whose turn it is") and `cta` in the badge under the board.
+ *            `cta` names the puzzle's link,
  *            wallgame.io/go/<n>, where `n` is the puzzle's entry in
  *            shared/domain/video-puzzles.ts; the GG card shows no call to
  *            action then. `ply` comes before the last move. The poster
@@ -973,16 +976,12 @@ export const validateEdl = (raw) => {
   const puzzle = raw.puzzle ?? null;
   if (puzzle !== null) {
     if (typeof puzzle !== "object" || Array.isArray(puzzle)) {
-      fail("puzzle must be { ply, n, text, cta }, or absent for no puzzle");
+      fail("puzzle must be { ply, n, cta }, or absent for no puzzle");
     } else {
-      unknown(puzzle, ["ply", "n", "text", "cta"], "puzzle");
+      unknown(puzzle, ["ply", "n", "cta"], "puzzle");
       if (!isPly(puzzle.ply)) fail("puzzle.ply must be a 0-based ply");
       if (!Number.isInteger(puzzle.n) || puzzle.n < 1) {
         fail("puzzle.n must be the puzzle's number, 1 or more");
-      }
-      checkCaptionText(puzzle.text, "puzzle.text");
-      if (typeof puzzle.text === "string" && puzzle.text.trim() === "") {
-        fail("puzzle.text must not be empty");
       }
       const problem = ctaProblem(puzzle.cta);
       if (problem) {
@@ -1620,7 +1619,6 @@ export const validateEdl = (raw) => {
             puzzle: {
               ply: puzzle.ply,
               n: puzzle.n,
-              text: puzzle.text,
               cta: puzzle.cta,
             },
           }

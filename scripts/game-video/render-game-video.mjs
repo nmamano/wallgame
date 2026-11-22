@@ -4342,10 +4342,14 @@ for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
 /**
  * The puzzle ending's position (edl.mjs puzzle), or null: the board before
  * the move of its ply, the side to move (that ply's mover), the cell of
- * that side's hunter, which the hold rings, its steps to its target, and
- * the move's number as wallgame.io's move list shows it (a move is a pair
- * of plies), as the flashback's "MOVE N" (Nil, C39: show clearly that it
- * is the past).
+ * that side's hunter, which the hold rings, its steps to its target, the
+ * move's number as wallgame.io's move list shows it (a move is a pair of
+ * plies; for the lint and the log only), the hold's line, which asks the
+ * side to move by its colour's name, and the opponent's last move: the
+ * route of each pawn it moved, as the page's arrow runs (page-arrows.mjs;
+ * the corner's L for a diagonal step). Nil, 2026-11-22, C80: "it's not
+ * clear whose turn it is ... "What would you do as Red?" with Red in red
+ * ... show the "last move" visualization".
  */
 const PUZZLE = (() => {
   const p = EDL?.puzzle;
@@ -4368,6 +4372,16 @@ const PUZZLE = (() => {
     );
     process.exit(2);
   }
+  const colour = SEAT_COLORS(replay)[mover];
+  const word = colour[0].toUpperCase() + colour.slice(1);
+  const lastMove =
+    p.ply === 0
+      ? []
+      : pageArrows(
+          REPLAYED.states[p.ply - 1],
+          REPLAYED.states[p.ply],
+          replay.state.config.variant,
+        ).map((a) => ({ type: a.type, route: a.routes.at(-1) }));
   return {
     ...p,
     board: p.ply,
@@ -4375,7 +4389,10 @@ const PUZZLE = (() => {
     piece: track.hunter.type,
     cell: pawnCell(REPLAYED.states[p.ply].pawns, mover, track.hunter.type),
     steps: track.walks[p.ply],
-    label: `MOVE ${Math.ceil(history[p.ply].index / 2)}`,
+    move: Math.ceil(history[p.ply].index / 2),
+    ask: { before: "What would you do as ", word, after: "?" },
+    text: `What would you do as ${word}?`,
+    lastMove,
   };
 })();
 
@@ -4677,8 +4694,6 @@ const renderStyle = async (styleName) => {
           // The badge fits the puzzle's call to action too, which it shows
           // on the puzzle's hold.
           holdCta: PUZZLE?.cta ?? null,
-          // And the counter's middle its move's label.
-          holdLabel: PUZZLE?.label ?? null,
           evalStrip: Boolean(EDL?.evalStrip),
           ending: style.ending,
           // The widest speed tag, for the counter's middle (stage.html).
@@ -4793,6 +4808,16 @@ const renderStyle = async (styleName) => {
   if (PUZZLE) {
     const who = `${seatColors[PUZZLE.mover]} ${PUZZLE.piece}`;
     const where = termOfCell(PUZZLE.cell);
+    const before = PUZZLE.ply - 1;
+    const arrows =
+      PUZZLE.lastMove.length === 0
+        ? `no arrow: ${before < 0 ? "no move comes before it" : `ply ${before} moved no pawn`}`
+        : `the arrow of ply ${before}: ${PUZZLE.lastMove
+            .map(
+              (a) =>
+                `${seatColors[REPLAYED.movers[before]]} ${a.type} ${a.route.map(termOfCell).join(" -> ")}`,
+            )
+            .join(", ")}`;
     if (PUZZLE.steps <= PUZZLE_MIN_STEPS) {
       fault(
         "puzzle-one-turn",
@@ -4804,7 +4829,7 @@ const renderStyle = async (styleName) => {
     fault(
       "puzzle-frame",
       PUZZLE.ply,
-      `puzzle ${PUZZLE.n}: the position before ply ${PUZZLE.ply} (${PUZZLE.label.toLowerCase()}), ${seatColors[PUZZLE.mover]} to move; a ring on the ${who} on ${where}, ${PUZZLE.steps} steps from its target`,
+      `puzzle ${PUZZLE.n}: the position before ply ${PUZZLE.ply} (move ${PUZZLE.move}), ${seatColors[PUZZLE.mover]} to move ("${PUZZLE.text}"); a ring on the ${who} on ${where}, ${PUZZLE.steps} steps from its target; ${arrows}`,
       0,
     );
   }
@@ -7684,13 +7709,16 @@ const renderStyle = async (styleName) => {
    * The puzzle ending (edl.mjs puzzle), after the ending holds and its bar
    * closes: "<< REWIND" plays the board back from the last position to the
    * puzzle's, turning sepia under the flashback's VHS look, with rewind-1;
-   * then the position holds in full colour: its move's label ("MOVE 13")
-   * in the counter's middle, off the board, the puzzle's line in the caption's place, a ring on
-   * the side to move's hunter, and the puzzle's call to action in the
+   * then the position holds in full colour with no other words (no
+   * counters, no caption: Nil, 2026-11-22, C80, "remove other copy that's
+   * not relevant to the puzzle"): "What would you do as Red?" in the
+   * caption's place, the side's name in its colour, a ring on the side to
+   * move's hunter, the opponent's last move drawn as a bold arrow in its
+   * colour as the ring settles, and the puzzle's call to action in the
    * badge, popping and then breathing as the GG card's. The hold lasts
    * PUZZLE_HOLD_SECONDS, or the reading time of its words, fully shown;
    * the loop tail's flash comes after it. The counters follow the
-   * position shown. The hold has no sound of its own: the silence rules
+   * positions of the rewind. The hold has no sound of its own: the silence rules
    * leave it out (Wall Game Director, 2026-11-22).
    */
   const playPuzzle = async (ply, plyIndex) => {
@@ -7721,7 +7749,12 @@ const renderStyle = async (styleName) => {
         meta,
       );
     }
-    const words = `${PUZZLE.label} ${PUZZLE.text} ${PUZZLE.cta}`;
+    const words = `${PUZZLE.text} ${PUZZLE.cta}`;
+    const ask = { ...PUZZLE.ask, hex: side(PUZZLE.mover).hex };
+    const lastMove = PUZZLE.lastMove.map((a) => ({
+      points: a.route.map(cellAt),
+      hex: side(REPLAYED.movers[PUZZLE.ply - 1]).hex,
+    }));
     const hold = Math.max(
       PUZZLE_HOLD_SECONDS,
       readingSeconds({}, words) + TEXT_TIMING.overlayPop,
@@ -7737,7 +7770,13 @@ const renderStyle = async (styleName) => {
         playState(PUZZLE.board, {
           caption: wallz ? PUZZLE.text : "",
           fastForward: null,
-          puzzle: { label: PUZZLE.label, cta: PUZZLE.cta, t },
+          puzzle: {
+            cta: PUZZLE.cta,
+            t,
+            ask: wallz ? ask : null,
+            lastMove,
+            pitch: GRID.pitchX,
+          },
           cellFx: {
             kind: "ring",
             t,
@@ -7752,7 +7791,7 @@ const renderStyle = async (styleName) => {
     }
     puzzleQuiet[1] = elapsed;
     log(
-      `puzzle ${PUZZLE.n}: rewind to the position before ply ${PUZZLE.ply} at ${start.toFixed(2)} s, held ${hold.toFixed(1)} s (${PUZZLE.label}, ${seatColors[PUZZLE.mover]} to move)`,
+      `puzzle ${PUZZLE.n}: rewind to the position before ply ${PUZZLE.ply} at ${start.toFixed(2)} s, held ${hold.toFixed(1)} s (move ${PUZZLE.move}, ${seatColors[PUZZLE.mover]} to move)`,
     );
   };
 

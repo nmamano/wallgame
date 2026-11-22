@@ -443,6 +443,7 @@
       }
       #trapSvg,
       #pathSvg,
+      #lastMoveSvg,
       #namesSvg {
         position: absolute;
         inset: 0;
@@ -571,29 +572,6 @@
       }
       #race .vs > * {
         grid-area: 1 / 1;
-      }
-      /*
-        The puzzle's hold (edl.mjs puzzle) names its move, "MOVE 13", in
-        the flashback's label look, in the counter's middle in place of its
-        words: off the board, where the whole board is the puzzle (Wall
-        Game Director, 2026-11-22; Nil, C39: show that it is the past). Laid
-        out (hidden) all video long in a puzzle video, so the middle keeps
-        one width.
-      */
-      #racePast {
-        display: none;
-        visibility: hidden;
-        font-family: "DejaVu Sans Mono", monospace;
-        font-weight: 700;
-        font-size: 1.7em;
-        line-height: 1;
-        letter-spacing: 0.06em;
-        white-space: nowrap;
-        color: #fff;
-        text-shadow:
-          0.05em 0 rgba(255, 0, 80, 0.7),
-          -0.05em 0 rgba(0, 200, 255, 0.7),
-          0 0 0.3em rgba(0, 0, 0, 0.9);
       }
       #raceFast {
         display: none;
@@ -1404,7 +1382,6 @@
                 ><span id="raceTag">VS</span><small>STEPS</small></span
               >
               <span id="raceFast"></span>
-              <span id="racePast"></span>
             </div>
             <div class="side">
               <span class="n" id="raceNb"></span
@@ -1445,6 +1422,12 @@
             ></svg>
             <svg
               id="pathSvg"
+              class="hidden"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+            ></svg>
+            <svg
+              id="lastMoveSvg"
               class="hidden"
               viewBox="0 0 1000 1000"
               preserveAspectRatio="none"
@@ -3826,7 +3809,6 @@
         strip,
         cta,
         holdCta,
-        holdLabel,
         evalStrip,
         ending,
         fastForward,
@@ -3835,8 +3817,6 @@
         // The widest speed tag the video shows, laid out (hidden) all video
         // long, so the counter's middle keeps one width; none: no badge.
         $("raceFast").style.display = fastForward ? "block" : "none";
-        $("racePast").style.display = holdLabel ? "block" : "none";
-        $("racePast").textContent = holdLabel ?? "";
         $("raceFast").textContent = fastForward
           ? "▶\uFE0E▶\uFE0E " + fastForward
           : "";
@@ -4075,18 +4055,143 @@
       /** The badge's call to action (edl.mjs cta), from __fitWallz. */
       let stripCta = null;
       /**
-       * The puzzle's hold (edl.mjs puzzle): p = { label: "MOVE 13", cta,
-       * t: seconds into the hold }, or null. The label names the move in
-       * the counter's middle (#racePast, laid out by __fitWallz); the badge shows the puzzle's call to action, which pops
-       * as the hold opens and then breathes as the GG card's does. Off the
-       * hold, the badge shows the video's call to action, still.
+       * The opponent's last move on a puzzle's hold, as the page's arrow
+       * runs but bold enough to read on a phone (Nil, 2026-11-22, C80: the
+       * page's thin arrow was not seen): each route ({ points, hex }, cells
+       * as 0..1 of the board) draws from its start over LAST_MOVE_DRAW
+       * seconds once the ring has popped, then stays. It stops short of
+       * both pawns' centres, so its head points at the moved pawn and
+       * covers neither.
+       */
+      const LAST_MOVE_AT = 0.2;
+      const LAST_MOVE_DRAW = 0.4;
+      const paintLastMove = (routes, pitch, t) => {
+        const svg = $("lastMoveSvg");
+        const f = routes
+          ? easeOut3(span(t, LAST_MOVE_AT, LAST_MOVE_AT + LAST_MOVE_DRAW))
+          : 0;
+        show(svg, f > 0);
+        if (f <= 0) return;
+        const k = (v) => (v * 1000).toFixed(1);
+        const width = pitch * 0.16;
+        const head = pitch * 0.34;
+        svg.innerHTML = routes
+          .map((r) => {
+            // Trim the route: off the start pawn's cell centre and short of
+            // the end pawn's body, the head's tip at its edge.
+            const pts = r.points.map((q) => ({ x: q.x, y: q.y }));
+            const trim = (a, b, d) => {
+              const len = Math.hypot(b.x - a.x, b.y - a.y);
+              return {
+                x: a.x + ((b.x - a.x) * d) / len,
+                y: a.y + ((b.y - a.y) * d) / len,
+              };
+            };
+            pts[0] = trim(pts[0], pts[1], pitch * 0.12);
+            const n = pts.length;
+            pts[n - 1] = trim(pts[n - 1], pts[n - 2], pitch * 0.34);
+            const legs = pts
+              .slice(1)
+              .map((q, i) => Math.hypot(q.x - pts[i].x, q.y - pts[i].y));
+            let left = legs.reduce((x, y) => x + y, 0) * f;
+            const drawn = [pts[0]];
+            for (let i = 0; i < legs.length && left > 0; i += 1) {
+              const d = Math.min(left, legs[i]);
+              drawn.push(trim(pts[i], pts[i + 1], d));
+              left -= d;
+            }
+            const tip = drawn.at(-1);
+            const from = drawn.at(-2);
+            const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
+            const ux = (tip.x - from.x) / len;
+            const uy = (tip.y - from.y) / len;
+            const hl = Math.min(head, legs.reduce((x, y) => x + y, 0) * f);
+            const base = { x: tip.x - ux * hl, y: tip.y - uy * hl };
+            const wing = hl * 0.62;
+            const tri = [
+              tip,
+              { x: base.x - uy * wing, y: base.y + ux * wing },
+              { x: base.x + uy * wing, y: base.y - ux * wing },
+            ];
+            // The shaft ends inside the head, so no square end shows past it.
+            const shaft = drawn
+              .slice(0, -1)
+              .concat([{ x: tip.x - ux * hl * 0.6, y: tip.y - uy * hl * 0.6 }]);
+            const line = shaft.map((q) => k(q.x) + "," + k(q.y)).join(" ");
+            const poly = tri.map((q) => k(q.x) + "," + k(q.y)).join(" ");
+            const rim = (width * 0.45 * 1000).toFixed(1);
+            const w = (width * 1000).toFixed(1);
+            return (
+              '<polyline points="' +
+              line +
+              '" fill="none" stroke="#fff" stroke-width="' +
+              (width * 1000 + 2 * rim).toFixed(1) +
+              '" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<polygon points="' +
+              poly +
+              '" fill="#fff" stroke="#fff" stroke-width="' +
+              2 * rim +
+              '" stroke-linejoin="round"/>' +
+              '<polyline points="' +
+              line +
+              '" fill="none" stroke="' +
+              r.hex +
+              '" stroke-width="' +
+              w +
+              '" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<polygon points="' +
+              poly +
+              '" fill="' +
+              r.hex +
+              '"/>'
+            );
+          })
+          .join("");
+        const glow = pitch * $("boardWrap").clientWidth * 0.08;
+        svg.style.filter =
+          "drop-shadow(0 0 " + glow.toFixed(1) + "px rgba(0,0,0,0.7))";
+      };
+      /** Text as HTML, for a caption built from parts. */
+      const escapeHtml = (text) =>
+        text.replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      /**
+       * The puzzle's hold (edl.mjs puzzle): p = { cta, t: seconds into the
+       * hold, ask, lastMove, pitch }, or null. The hold shows no words but
+       * its own (Nil, 2026-11-22, C80): the counter row hides, and the
+       * caption's place asks the side to move by name, "What would you do
+       * as Red?", the name in that side's colour (ask = { before, word,
+       * after, hex }; null outside the daily look); the opponent's last
+       * move draws as a bold arrow (paintLastMove). The badge shows the
+       * puzzle's call to action, which pops as the hold opens and then
+       * breathes as the GG card's does. Off the hold, the badge shows the
+       * video's call to action, still.
        */
       const paintPuzzle = (p) => {
-        // After paintHud, which sets the middle's words for the frame.
-        $("racePast").style.visibility = p ? "inherit" : "hidden";
+        paintLastMove(
+          p?.lastMove.length ? p.lastMove : null,
+          p?.pitch ?? 0,
+          p?.t ?? 0,
+        );
         if (p) {
-          $("racePast").textContent = p.label;
-          $("race").querySelector(".vs .words").style.visibility = "hidden";
+          // After paintHud, which shows the counter row again each frame.
+          $("race").style.visibility = "hidden";
+          if (p.ask) {
+            // One span: the caption is a flex column, where each child is
+            // a line of its own.
+            $("caption").innerHTML =
+              "<span>" +
+              escapeHtml(p.ask.before) +
+              '<span style="color:' +
+              p.ask.hex +
+              '">' +
+              escapeHtml(p.ask.word) +
+              "</span>" +
+              escapeHtml(p.ask.after) +
+              "</span>";
+          }
         }
         const site = $("stripSite");
         if (!p) {

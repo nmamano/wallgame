@@ -386,16 +386,15 @@ describe("the puzzle ending", () => {
   const puzzle = {
     ply: 1,
     n: 3,
-    text: "the bot missed this 👀",
     cta: "solve it: wallgame.io/go/3",
   };
-  test("takes { ply, n, text, cta } and keeps it as it is", () => {
+  test("takes { ply, n, cta } and keeps it as it is", () => {
     expect(accept({ ...base, puzzle }).puzzle).toEqual(puzzle);
     // A list without one stores no field.
     expect("puzzle" in accept(base)).toBe(false);
   });
 
-  test("refuses a call to action without its own link, a long one and a long line", () => {
+  test("refuses a call to action without its own link, a long one, and a line of its own", () => {
     const errors = (p: object): string[] =>
       (validateEdl({ ...base, puzzle: { ...puzzle, ...p } }).errors ??
         []) as string[];
@@ -408,8 +407,10 @@ describe("the puzzle ending", () => {
     expect(errors({ cta: "solve this puzzle at wallgame.io/go/3" })).toEqual([
       "puzzle.cta has 37 characters; at most 30",
     ]);
-    expect(errors({ text: "a b c d e f g" })).toEqual([
-      "puzzle.text has 7 words; at most 6 are allowed",
+    // The hold's line is the renderer's, from the side to move (Nil,
+    // 2026-11-22, C80): a list cannot give one.
+    expect(errors({ text: "find the win" })).toEqual([
+      'puzzle: unknown field "text"',
     ]);
     expect(errors({ n: 0 })).toContain(
       "puzzle.n must be the puzzle's number, 1 or more",
