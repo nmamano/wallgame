@@ -22,7 +22,9 @@ export interface VideoPuzzle {
   ply: number;
 }
 
-export const VIDEO_PUZZLES: readonly VideoPuzzle[] = [];
+export const VIDEO_PUZZLES: readonly VideoPuzzle[] = [
+  { n: 1, itemId: "v-2026-11-22-1", gameId: "EDP5pYum", ply: 38 },
+];
 
 /** The tags of a visit from a daily video's call to action. */
 export const VIDEO_CTA_TAGS =
