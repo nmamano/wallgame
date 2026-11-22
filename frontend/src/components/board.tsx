@@ -1368,9 +1368,14 @@ export function Board({
   // In flush mode with 8+ cols, skip maxWidth to avoid px→rem→px rounding that can
   // clip the last column by 1-2px. The container's w-full handles the constraint.
   // For < 8 cols we still need maxWidth so small boards don't stretch to full width.
+  // Capped columns (maxCellSizeRem, the mobile page on a short screen) need it
+  // too: without it the wrapper stays full width and the narrower tracks sit at
+  // its left edge, where the parent's justify-center cannot reach them.
   const maxBoardWidthRem = cols * maxCellSize + (cols - 1) * gapSize + paddingX;
   const maxBoardWidth =
-    flush && cols >= 8 ? undefined : `${maxBoardWidthRem}rem`;
+    flush && cols >= 8 && maxCellSizeRemProp == null
+      ? undefined
+      : `${maxBoardWidthRem}rem`;
 
   // When a maxCellSizeRem is provided (mobile layout), cap each column via
   // minmax(0, Xrem) so the height constraint is enforced through CSS even in
