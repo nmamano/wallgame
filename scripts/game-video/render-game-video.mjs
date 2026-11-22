@@ -8042,10 +8042,20 @@ const renderStyle = async (styleName) => {
   /**
    * `intoEnding`: the ending cuts in after these events, so a zoom that is
    * the last of them holds to its last frame and no rest follows it.
+   * Returns the camera that zoom leaves (as playLeadZoom does), for the
+   * ending to hold; null when the board is whole again.
    */
   const playEvents = async (ply, plyIndex, { intoEnding = false } = {}) => {
     const landing = landingEventsAt(plyIndex);
     const endsInZoom = intoEnding && landing.at(-1)?.kind === "zoom";
+    let leftZoom = null;
+    // The ply's overlays open after its trap's word, its plants, or (a
+    // death card) its last event (overlaysOpenAfter): also after a zoom or
+    // a sound, else a death card after the capture's zoom never opened.
+    const opensAfter = overlaysOpenAfter(plyIndex);
+    const openOverlaysAfter = async (ev) => {
+      if (ev === opensAfter) await openPlyOverlays(ply, plyIndex);
+    };
     for (const ev of landing) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       const start = elapsed;
@@ -8102,6 +8112,7 @@ const renderStyle = async (styleName) => {
         stillNext = label;
         // Its span starts where its sound does: on the move's landing.
         spanOf(ev, moveTimes.findLast((m) => m.ply === plyIndex).at);
+        await openOverlaysAfter(ev);
         continue;
       }
       if (ev.kind === "zoom") {
@@ -8114,17 +8125,22 @@ const renderStyle = async (styleName) => {
         const out = endsInZoom && ev === landing.at(-1) ? 0 : ZOOM_OUT;
         const frames = Math.round((ZOOM_IN + ev.holdSeconds + out) * FPS);
         const mid = Math.round((ZOOM_IN + ev.holdSeconds / 2) * FPS);
+        const zoomFor = (t) => ({
+          ...z,
+          scale: zoomAt(t, z.scale, ev.holdSeconds),
+        });
         for (let i = 0; i < frames; i += 1) {
           if (i === mid) stillNext = label;
           await emit(
-            playState(ply, {
-              zoom: { ...z, scale: zoomAt(i / FPS, z.scale, ev.holdSeconds) },
-            }),
+            playState(ply, { zoom: zoomFor(i / FPS) }),
             1 / FPS,
             { kind: "swing-zoom", ply: plyIndex },
           );
         }
+        // A zoom with no pull-out leaves the camera on its last frame.
+        if (out === 0) leftZoom = zoomFor((frames - 1) / FPS);
         spanOf(ev, start);
+        await openOverlaysAfter(ev);
         continue;
       }
       const seconds = {
@@ -8182,10 +8198,7 @@ const renderStyle = async (styleName) => {
         }
       }
       spanOf(ev, start);
-      // After its trap's word, or its marks (overlaysOpenAfter).
-      if (ev === overlaysOpenAfter(plyIndex)) {
-        await openPlyOverlays(ply, plyIndex);
-      }
+      await openOverlaysAfter(ev);
     }
     if (!endsInZoom) {
       // The rest of the ply's pace, from its landing (timeline-frames.mjs).
@@ -8201,14 +8214,17 @@ const renderStyle = async (styleName) => {
         { kind: "move", ply: plyIndex },
       );
     }
-    // The board's layout box, not the camera layer: after a zoom that runs
-    // into the ending (endsInZoom) the camera is still zoomed here.
+    // A zoom that runs into the ending (endsInZoom) keeps the camera on
+    // purpose, and the ending holds it (holdForOverlay); every other ply
+    // gives the board back exactly. boardRectNow reads the camera layer.
+    if (leftZoom) return leftZoom;
     const after = await boardRectNow();
     if (JSON.stringify(after) !== JSON.stringify(encodedBoardRect)) {
       throw new Error(
         `the effects on ply ${plyIndex} did not give the board back - before ${JSON.stringify(encodedBoardRect)} after ${JSON.stringify(after)}`,
       );
     }
+    return null;
   };
 
   /*
@@ -8423,7 +8439,7 @@ const renderStyle = async (styleName) => {
         under them, and an ending frame is not a plain position of the game.
       */
       if (landingEventsAt(plyIndex).length > 0) {
-        await playEvents(ply, plyIndex, { intoEnding });
+        leftZoom = await playEvents(ply, plyIndex, { intoEnding });
       } else if (!leadIntoEnding) {
         await emit(playState(ply), paceAt(plyIndex), {
           kind: "move",
