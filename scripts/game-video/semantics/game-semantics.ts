@@ -233,7 +233,16 @@ const deepOnGpu = async (games: SemanticGame[], dir: string) => {
           link = new EngineLink(gpuHost, command);
         }
         const t0 = performance.now();
-        data.checks.push(await deepCheck(link, game, ply));
+        try {
+          data.checks.push(await deepCheck(link, game, ply));
+        } catch (error) {
+          // One bad ply (an old game today's rules refuse, a timeout) must
+          // not stop the scan: it stays unchecked and a later run retries.
+          console.error(
+            `deep check ${game.gameId} ply ${ply} failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          continue;
+        }
         data.checks.sort((a, b) => a.ply - b.ply);
         writeFileSync(path, JSON.stringify(data));
         console.error(
