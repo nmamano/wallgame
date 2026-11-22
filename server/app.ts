@@ -25,13 +25,13 @@ import { registerSeoRoutes } from "./routes/seo";
 import { registerHtmlShell, type HtmlShell } from "./routes/html-shell";
 import { CSP_HEADER, contentSecurityPolicy } from "./content-security-policy";
 import { registerCanonicalHostRedirect } from "./routes/canonical-host";
+import {
+  VIDEO_CTA_TARGET,
+  videoPuzzleTarget,
+} from "../shared/domain/video-puzzles";
 
 /** The largest websocket frame the server reads; a longer one closes the socket. */
 export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
-
-/** Where wallgame.io/go sends a viewer of a daily video: home, tagged. */
-export const VIDEO_CTA_TARGET =
-  "/?utm_source=video&utm_medium=cta&utm_campaign=video-cta";
 
 /** The largest request body the server reads; a longer one gets a 413. */
 export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -81,6 +81,11 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   for (const path of ["/go", "/go/"]) {
     app.get(path, (c) => c.redirect(VIDEO_CTA_TARGET, 302));
   }
+  // A puzzle video's link (task a03b8f5c): /go/<n> opens puzzle <n> of
+  // shared/domain/video-puzzles.ts, or the tagged home page for an unknown n.
+  app.get("/go/:n{[0-9]{1,9}}", (c) =>
+    c.redirect(videoPuzzleTarget(Number(c.req.param("n"))), 302),
+  );
 
   // Must precede the catch-alls at the bottom, which would otherwise answer
   // both of these with the SPA shell and a 200.

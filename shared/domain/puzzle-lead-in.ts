@@ -25,7 +25,13 @@
 
 import { GameState } from "./game-state";
 import { boardPawns, requirePawnCell } from "./pawns";
-import type { Cell, GameConfiguration, Move } from "./game-types";
+import type {
+  Cell,
+  CustomSetupClassicInitialState,
+  CustomSetupStandardInitialState,
+  GameConfiguration,
+  Move,
+} from "./game-types";
 import type {
   SavedPuzzleConfig,
   SavedPuzzleDbRow,
@@ -156,17 +162,25 @@ export const buildLeadInLaunch = (
   };
 };
 
-export interface SavedPuzzleLaunch {
+/**
+ * What a puzzle launch creates: a saved puzzle (below) or a position from a
+ * stored game (game-position-puzzle.ts). A saved puzzle's walls are neutral;
+ * a game position's walls keep their owners, so the board shows the colours
+ * the game had.
+ */
+export interface PuzzleLaunch {
   /** What the game session is created from (pre-position for P2 puzzles). */
   config: {
     variant: SavedPuzzleConfig["variant"];
     boardWidth: number;
     boardHeight: number;
     randomStart: false;
-    variantConfig: SavedPuzzleConfig["initialState"];
+    variantConfig:
+      | CustomSetupStandardInitialState
+      | CustomSetupClassicInitialState;
   };
   humanIsPlayer1: boolean;
-  /** The bot's scripted ply-0 move, applied at creation; null for P1 puzzles. */
+  /** The bot's ply-0 move, applied at creation; null when the human is P1. */
   leadInMove: Move | null;
 }
 
@@ -178,7 +192,7 @@ export interface SavedPuzzleLaunch {
  */
 export const resolveSavedPuzzleLaunch = (
   row: Pick<SavedPuzzleDbRow, "config" | "leadIn">,
-): SavedPuzzleLaunch => {
+): PuzzleLaunch => {
   const humanPlaysAs = row.config.initialState.turn.playerId;
   if (humanPlaysAs === 2) {
     if (!row.leadIn) {

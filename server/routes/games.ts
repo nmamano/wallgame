@@ -38,7 +38,14 @@ import {
 } from "../../shared/domain/game-types";
 import { botSupportsGameConfiguration } from "../../shared/domain/bot-capability";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
-import { resolveSavedPuzzleLaunch } from "../../shared/domain/puzzle-lead-in";
+import {
+  resolveSavedPuzzleLaunch,
+  type PuzzleLaunch,
+} from "../../shared/domain/puzzle-lead-in";
+import {
+  GamePositionUnavailable,
+  resolveGamePositionLaunch,
+} from "../../shared/domain/game-position-puzzle";
 import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
 import { db } from "../db";
 import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
@@ -53,6 +60,7 @@ import {
   getReplayGame,
   queryPastGames,
   queryPastGamesActivity,
+  getStoredGame,
 } from "../db/game-queries";
 import { getGlobalRatingForAuthUser } from "../db/rating-helpers";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
@@ -642,9 +650,12 @@ export const botsRoute = new Hono()
         // Resolve what to launch. Saved-puzzle launches are
         // server-authoritative (S-P1): the client names the puzzle and the
         // server derives config, seat, and lead-in from the DB row.
-        let gameConfig: CreateBotGameConfig;
+        let gameConfig: CreateBotGameConfig | PuzzleLaunch["config"];
         let hostIsPlayer1: boolean | undefined;
         let leadInMove: Move | null = null;
+        // A saved puzzle or a position from a stored game: either way the
+        // opponent must be the puzzle bot.
+        let isPuzzleLaunch = false;
         // Identity recorded on the game record (S-ID). Taken from the
         // validated DB row, never from the request, so a completion can never
         // be credited to a puzzle the server did not itself resolve.
@@ -665,10 +676,11 @@ export const botsRoute = new Hono()
               return c.json({ error: "Puzzle not found" }, 404);
             }
             const resolved = resolveSavedPuzzleLaunch(row);
-            gameConfig = { ...resolved.config, randomStart: false };
+            gameConfig = resolved.config;
             hostIsPlayer1 = resolved.humanIsPlayer1;
             leadInMove = resolved.leadInMove;
             resolvedPuzzleId = row.id;
+            isPuzzleLaunch = true;
           } catch (resolveError) {
             // Fail closed: a corrupted row, a missing lead-in during the
             // migration->population gap, or an invariant violation must
@@ -678,6 +690,32 @@ export const botsRoute = new Hono()
               error: resolveError,
             });
             return c.json({ error: "Puzzle is temporarily unavailable" }, 409);
+          }
+        } else if ("fromGame" in parsed) {
+          const { gameId, ply } = parsed.fromGame;
+          const stored = await getStoredGame(gameId);
+          if (!stored) {
+            return c.json({ error: "Game not found" }, 404);
+          }
+          try {
+            const resolved = resolveGamePositionLaunch(stored, ply);
+            gameConfig = resolved.config;
+            hostIsPlayer1 = resolved.humanIsPlayer1;
+            leadInMove = resolved.leadInMove;
+            isPuzzleLaunch = true;
+          } catch (resolveError) {
+            if (!(resolveError instanceof GamePositionUnavailable)) {
+              throw resolveError;
+            }
+            logLine("[games] game position launch refused", {
+              gameId,
+              ply,
+              reason: resolveError.message,
+            });
+            return c.json(
+              { error: "This position cannot be played as a puzzle" },
+              409,
+            );
           }
         } else {
           gameConfig = parsed.config;
@@ -693,7 +731,7 @@ export const botsRoute = new Hono()
         // request cannot skip, and it matters because puzzle completions feed
         // campaign progress.
         if (
-          resolvedPuzzleId !== undefined &&
+          isPuzzleLaunch &&
           (!bot.isAnalysisBot || bot.placement !== "puzzle")
         ) {
           return c.json(
@@ -701,7 +739,7 @@ export const botsRoute = new Hono()
             400,
           );
         }
-        if (resolvedPuzzleId === undefined && bot.placement !== "opponent") {
+        if (!isPuzzleLaunch && bot.placement !== "opponent") {
           return c.json(
             { error: "That bot is not available as an ordinary opponent" },
             400,

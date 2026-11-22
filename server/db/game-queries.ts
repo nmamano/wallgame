@@ -14,6 +14,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { GameState } from "../../shared/domain/game-state";
+import type { StoredGame } from "../../shared/domain/game-position-puzzle";
 import { clonePawns } from "../../shared/domain/pawns";
 import {
   RESIGN_CAUSES,
@@ -239,6 +240,36 @@ const resolveStoredClocks = (
   return parsed.data;
 };
 
+/** The configuration a stored game was played with. Touches no tables. */
+const storedGameConfig = (
+  game: Pick<
+    ReplayGameRow,
+    | "gameId"
+    | "variant"
+    | "timeControl"
+    | "rated"
+    | "boardWidth"
+    | "boardHeight"
+  >,
+  details: Pick<ReplayDetailsRow, "configParameters"> | undefined,
+): GameConfiguration => {
+  const storedParameters = details?.configParameters as
+    | { randomStart?: boolean }
+    | undefined;
+  return {
+    variant: parseStoredVariant(game.variant),
+    randomStart: storedParameters?.randomStart ?? false,
+    timeControl: resolveTimeControl(
+      game.timeControl,
+      details?.configParameters,
+    ),
+    rated: game.rated,
+    boardWidth: game.boardWidth,
+    boardHeight: game.boardHeight,
+    variantConfig: resolveVariantConfig(details?.configParameters, game.gameId),
+  };
+};
+
 /** Pure assembly: replays the moves and shapes the response. Touches no tables. */
 const assembleReplayGame = (
   game: ReplayGameRow,
@@ -249,28 +280,7 @@ const assembleReplayGame = (
   const result = resolveResultFromPlayers(players);
   const matchScore = resolveReplayMatchScore(game, players, seriesStandings);
 
-  const timeControl = resolveTimeControl(
-    game.timeControl,
-    details?.configParameters,
-  );
-  const variant = parseStoredVariant(game.variant);
-  const storedParameters = details?.configParameters as
-    | { randomStart?: boolean }
-    | undefined;
-  const variantConfig = resolveVariantConfig(
-    details?.configParameters,
-    game.gameId,
-  );
-
-  const config: GameConfiguration = {
-    variant,
-    randomStart: storedParameters?.randomStart ?? false,
-    timeControl,
-    rated: game.rated,
-    boardWidth: game.boardWidth,
-    boardHeight: game.boardHeight,
-    variantConfig,
-  };
+  const config = storedGameConfig(game, details);
 
   const startTimestamp = game.startedAt.getTime();
   const moves = Array.isArray(details?.moves) ? details.moves : [];
@@ -304,7 +314,7 @@ const assembleReplayGame = (
       error,
     );
     console.error(`Moves: ${JSON.stringify(moves)}`);
-    console.error(`Initial state: ${JSON.stringify(variantConfig)}`);
+    console.error(`Initial state: ${JSON.stringify(config.variantConfig)}`);
     throw error;
   }
 
@@ -512,6 +522,26 @@ export const getReplayGameReadonly = async (
   }
 
   return buildReplayGameFromRow(game);
+};
+
+/**
+ * A stored game's configuration and moves, for a puzzle from one of its
+ * positions (game-position-puzzle.ts). Null when no such game is stored. Reads
+ * only; the view counter is not touched.
+ */
+export const getStoredGame = async (
+  gameId: string,
+): Promise<StoredGame | null> => {
+  const [game] = await db
+    .select(replayGameSelect)
+    .from(gamesTable)
+    .where(eq(gamesTable.gameId, gameId))
+    .limit(1);
+  if (!game) return null;
+  const [details] = await fetchReplayDetails([gameId]);
+  if (!details) return null;
+  const moves = Array.isArray(details.moves) ? details.moves.map(String) : [];
+  return { config: storedGameConfig(game, details), moves };
 };
 
 export const getRandomShowcaseGames = async (

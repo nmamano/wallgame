@@ -668,6 +668,33 @@ export const createBotGameFromPuzzleSchema = z
   .strict();
 
 /**
+ * Server-authoritative launch of a position from a stored game (task a03b8f5c,
+ * the daily videos' puzzle ending): the client names the game and the ply (the
+ * plies played before the position); the server rebuilds the position, the
+ * seat and the lead-in from the stored game. `.strict()` for the same reason
+ * as the saved-puzzle launch.
+ */
+export const createBotGameFromGamePositionSchema = z
+  .object({
+    /** Composite bot ID: clientId:botId */
+    botId: z.string(),
+    fromGame: z
+      .object({
+        gameId: z.string().min(1).max(255),
+        ply: z.number().int().min(0),
+      })
+      .strict(),
+    hostDisplayName: z.string().max(50).optional(),
+    hostAppearance: appearanceSchema,
+    /**
+     * This browser's anonymous id, when it has one. Correlation telemetry only
+     * - see shared/domain/anonymous-id.ts.
+     */
+    anonymousId: z.string().regex(ANONYMOUS_ID_PATTERN).optional(),
+  })
+  .strict();
+
+/**
  * Also `.strict()`: with a non-strict direct shape, a malformed puzzle
  * request (puzzleId + config) would fail the strict puzzle variant and then
  * MATCH here with puzzleId silently stripped — a client-authoritative launch
@@ -728,6 +755,7 @@ export const createBotGameDirectSchema = z
 
 export const createBotGameSchema = z.union([
   createBotGameFromPuzzleSchema,
+  createBotGameFromGamePositionSchema,
   createBotGameDirectSchema,
 ]);
 
