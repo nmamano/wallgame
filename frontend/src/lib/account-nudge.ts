@@ -15,7 +15,10 @@
  */
 
 import type { GameResult, GameStatus } from "../../../shared/domain/game-types";
-import { isCountedResult } from "../../../shared/domain/game-utils";
+import {
+  endedBeforeBothPlayersMoved,
+  isCountedResult,
+} from "../../../shared/domain/game-utils";
 import type { IdStorage } from "./anonymous-id";
 
 /** Matches the existing `wall-game-theme` / `wall-game-anonymous-id` keys. */
@@ -36,6 +39,14 @@ const SHOWN_VALUE = "1";
  */
 export const NUDGE_SHOWN_EVENT = "account_nudge_shown";
 export const NUDGE_SIGNUP_CLICK_EVENT = "account_nudge_signup_click";
+
+/**
+ * Which offer the two events above count, as their `trigger` parameter
+ * (task B): the first-game toast, the offer after a win, or the offer after a
+ * solved video puzzle. One pair of events, so Growth's existing click rate
+ * keeps its meaning and splits by trigger.
+ */
+export type NudgeTrigger = "first-game" | WinOfferTrigger;
 
 /**
  * A finish, described by everything that decides whether this viewer actually
@@ -139,6 +150,7 @@ export function markShownThisSession(
  */
 export type NudgeSuppression =
   | "not-a-played-game"
+  | "won-offer-inline"
   | "auth-unsettled"
   | "signed-in"
   | "not-first-game"
@@ -170,6 +182,11 @@ export interface AccountNudgeInput {
   durable: IdStorage | undefined;
   /** Where the once-per-session mark lives. `sessionStorage` in a browser. */
   session: IdStorage | undefined;
+  /**
+   * This viewer won the game. A win gets the inline offer instead (task B),
+   * so the toast stands down for it.
+   */
+  viewerWon: boolean;
 }
 
 /**
@@ -189,6 +206,8 @@ export function recordFinishAndDecide(input: AccountNudgeInput): NudgeDecision {
   // this browser's first or it was not.
   const outcome = recordPlayedGame(input.gameId, input.durable);
 
+  // After the record: a first game that was won is still the first game.
+  if (input.viewerWon) return { show: false, because: "won-offer-inline" };
   if (input.embedded) return { show: false, because: "portal-frame" };
   if (!input.authSettled) return { show: false, because: "auth-unsettled" };
   if (input.isLoggedIn) return { show: false, because: "signed-in" };
@@ -206,4 +225,95 @@ export function recordFinishAndDecide(input: AccountNudgeInput): NudgeDecision {
     return { show: false, because: "storage-unavailable" };
   }
   return { show: true };
+}
+
+// ---------------------------------------------------------------------------
+// The offer after a win (task B; Nil, 2026-11-22). Inline in the end panel,
+// not a toast: the toast closes on the same tap that starts the next game.
+// ---------------------------------------------------------------------------
+
+/** A won game, or a solved video puzzle. */
+export type WinOfferTrigger = "win" | "puzzle";
+
+/** Its own session mark: the first-game toast does not use it up. */
+const WIN_OFFER_SHOWN_KEY = "wall-game-win-offer-shown";
+
+/**
+ * What this finish offers, if anything: a won game that the server stores
+ * ("win"), or a solved video puzzle ("puzzle"). The text says "save this
+ * game", so only a game that is stored gets it. A saved puzzle offers
+ * nothing: /puzzles already asks its solvers to log in.
+ */
+export function winOfferTrigger(
+  finish: GameFinish & {
+    viewerWon: boolean;
+    isVideoPuzzle: boolean;
+    /**
+     * The game runs on the server, which stores it. A local game (hot-seat,
+     * the in-browser bot) is never stored, so "save this game" would be false.
+     */
+    isOnline: boolean;
+    /**
+     * Plies played. The server stores no game that ended before both sides
+     * moved (persistence.ts), so a win on the first ply is not offered.
+     */
+    moveCount: number;
+  },
+): WinOfferTrigger | null {
+  if (
+    finish.gameStatus !== "finished" ||
+    !isCountedResult(finish.result) ||
+    !finish.hasSeat ||
+    finish.isReadOnly ||
+    !finish.viewerWon ||
+    !finish.isOnline ||
+    endedBeforeBothPlayersMoved(finish.moveCount)
+  ) {
+    return null;
+  }
+  if (finish.isPuzzle) return finish.isVideoPuzzle ? "puzzle" : null;
+  return "win";
+}
+
+export type WinOfferSuppression =
+  | "no-win"
+  | "portal-frame"
+  | "auth-unsettled"
+  | "signed-in"
+  | "already-shown-this-session"
+  | "storage-unavailable";
+
+export type WinOfferDecision =
+  | { show: true; trigger: WinOfferTrigger }
+  | { show: false; because: WinOfferSuppression };
+
+/**
+ * Whether to show the offer now, claiming the session's one offer when it
+ * does. As with the toast, no session storage means no offer: without the
+ * mark, "once per session" would become "after every win".
+ */
+export function decideWinOffer(input: {
+  trigger: WinOfferTrigger | null;
+  embedded: boolean;
+  authSettled: boolean;
+  isLoggedIn: boolean;
+  session: IdStorage | undefined;
+}): WinOfferDecision {
+  if (input.trigger === null) return { show: false, because: "no-win" };
+  if (input.embedded) return { show: false, because: "portal-frame" };
+  if (!input.authSettled) return { show: false, because: "auth-unsettled" };
+  if (input.isLoggedIn) return { show: false, because: "signed-in" };
+  if (!input.session) return { show: false, because: "storage-unavailable" };
+  try {
+    if (input.session.getItem(WIN_OFFER_SHOWN_KEY) === SHOWN_VALUE) {
+      return { show: false, because: "already-shown-this-session" };
+    }
+    input.session.setItem(WIN_OFFER_SHOWN_KEY, SHOWN_VALUE);
+    if (input.session.getItem(WIN_OFFER_SHOWN_KEY) !== SHOWN_VALUE) {
+      return { show: false, because: "storage-unavailable" };
+    }
+  } catch {
+    return { show: false, because: "storage-unavailable" };
+  }
+  return { show: true, trigger: input.trigger };
 }

@@ -53,6 +53,8 @@ import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { useAccountNudge } from "@/hooks/use-account-nudge";
+import { useWinOffer } from "@/hooks/use-win-offer";
+import { winOfferTrigger } from "@/lib/account-nudge";
 import { useGameFirstMove } from "@/hooks/use-game-first-move";
 import { sounds, play } from "@/lib/sounds";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
@@ -3352,6 +3354,9 @@ export function useGamePageController(gameId: string) {
    * silently stop counting as having finished a game. `gameState` here is the
    * live one.
    */
+  const viewerWon =
+    primaryLocalPlayerId !== null &&
+    gameState?.result?.winner === primaryLocalPlayerId;
   useAccountNudge({
     gameId,
     gameStatus,
@@ -3359,6 +3364,27 @@ export function useGamePageController(gameId: string) {
     hasSeat: primaryLocalPlayerId !== null,
     isReadOnly: isReadOnlySession,
     isPuzzle: isPuzzleGame,
+    authSettled: !userPending,
+    isLoggedIn,
+    viewerWon,
+  });
+  /**
+   * The offer after a guest's win or solved video puzzle (task B), shown in
+   * the end panel. From the live state, as the toast above.
+   */
+  const winOffer = useWinOffer({
+    gameId,
+    trigger: winOfferTrigger({
+      gameStatus,
+      result: gameState?.result ?? null,
+      hasSeat: primaryLocalPlayerId !== null,
+      isReadOnly: isReadOnlySession,
+      isPuzzle: isPuzzleGame,
+      viewerWon,
+      isVideoPuzzle: puzzleRef?.kind === "game",
+      isOnline: isRemoteFlow,
+      moveCount: gameState?.moveCount ?? 0,
+    }),
     authSettled: !userPending,
     isLoggedIn,
   });
@@ -4098,6 +4124,7 @@ export function useGamePageController(gameId: string) {
         videoPuzzleOutcome === null
           ? undefined
           : { outcome: videoPuzzleOutcome, handlePlayFullGame },
+      winOffer: winOffer ?? undefined,
       // Present only when this player earned the right to vote; the panels
       // render it and decide nothing.
       puzzleVote: puzzleVote.canVote

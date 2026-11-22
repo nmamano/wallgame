@@ -14,8 +14,10 @@
 
 import { describe, it, expect } from "bun:test";
 import {
+  decideWinOffer,
   isPlayedGameFinish,
   markShownThisSession,
+  winOfferTrigger,
   recordFinishAndDecide,
   recordPlayedGame,
   type GameFinish,
@@ -186,6 +188,7 @@ describe("recordFinishAndDecide", () => {
       embedded?: boolean;
       durable?: ReturnType<typeof workingStorage>;
       session?: ReturnType<typeof workingStorage>;
+      viewerWon?: boolean;
     } = {},
   ) {
     const durable = overrides.durable ?? workingStorage();
@@ -198,6 +201,7 @@ describe("recordFinishAndDecide", () => {
       embedded: overrides.embedded ?? false,
       durable,
       session,
+      viewerWon: overrides.viewerWon ?? false,
     });
     return { decision, durable, session };
   }
@@ -299,6 +303,14 @@ describe("recordFinishAndDecide", () => {
     expect(next).toEqual({ show: true });
   });
 
+  it("leaves a won game to the inline offer, but still records it", () => {
+    const { decision, durable, session } = guestRun({ viewerWon: true });
+    expect(decision).toEqual({ show: false, because: "won-offer-inline" });
+    expect(durable.dump()[FIRST_GAME_KEY]).toBe("game-1");
+    // The toast's session mark stays free for a later lost first game.
+    expect(session.dump()[SHOWN_KEY]).toBeUndefined();
+  });
+
   it("shows nothing when durable storage cannot be used", () => {
     const decision = recordFinishAndDecide({
       gameId: "game-1",
@@ -308,6 +320,7 @@ describe("recordFinishAndDecide", () => {
       embedded: false,
       durable: undefined,
       session: workingStorage(),
+      viewerWon: false,
     });
 
     expect(decision).toEqual({ show: false, because: "storage-unavailable" });
@@ -324,8 +337,93 @@ describe("recordFinishAndDecide", () => {
       embedded: false,
       durable: workingStorage(),
       session: throwingStorage(),
+      viewerWon: false,
     });
 
     expect(decision).toEqual({ show: false, because: "storage-unavailable" });
+  });
+});
+
+describe("the offer after a win (task B)", () => {
+  const won = (overrides: Partial<GameFinish> = {}) => ({
+    ...playedFinish(overrides),
+    viewerWon: true,
+    isVideoPuzzle: false,
+    isOnline: true,
+    moveCount: 20,
+  });
+
+  it("offers after a counted game this viewer won", () => {
+    expect(winOfferTrigger(won())).toBe("win");
+  });
+
+  it("offers nothing after a loss, an abort, a replay or with no seat", () => {
+    expect(winOfferTrigger({ ...won(), viewerWon: false })).toBeNull();
+    expect(
+      winOfferTrigger(
+        won({ result: { reason: "aborted" } as GameFinish["result"] }),
+      ),
+    ).toBeNull();
+    expect(winOfferTrigger(won({ isReadOnly: true }))).toBeNull();
+    expect(winOfferTrigger(won({ hasSeat: false }))).toBeNull();
+    expect(winOfferTrigger(won({ gameStatus: "playing" }))).toBeNull();
+    // A local game is never stored: "save this game" would be false.
+    expect(winOfferTrigger({ ...won(), isOnline: false })).toBeNull();
+    // A win before both sides moved is never stored (persistence.ts).
+    expect(winOfferTrigger({ ...won(), moveCount: 1 })).toBeNull();
+    expect(winOfferTrigger({ ...won(), moveCount: 2 })).toBe("win");
+  });
+
+  it("offers after a solved video puzzle, not after a saved puzzle", () => {
+    expect(
+      winOfferTrigger({ ...won({ isPuzzle: true }), isVideoPuzzle: true }),
+    ).toBe("puzzle");
+    expect(winOfferTrigger(won({ isPuzzle: true }))).toBeNull();
+  });
+
+  const guest = (
+    overrides: Partial<Parameters<typeof decideWinOffer>[0]> = {},
+  ) =>
+    decideWinOffer({
+      trigger: "win",
+      embedded: false,
+      authSettled: true,
+      isLoggedIn: false,
+      session: workingStorage(),
+      ...overrides,
+    });
+
+  it("shows once per session, and its mark is not the toast's", () => {
+    const session = workingStorage({ [SHOWN_KEY]: "1" });
+    expect(guest({ session })).toEqual({ show: true, trigger: "win" });
+    expect(guest({ session, trigger: "puzzle" })).toEqual({
+      show: false,
+      because: "already-shown-this-session",
+    });
+  });
+
+  it("names the rule that stopped it", () => {
+    expect(guest({ trigger: null })).toEqual({
+      show: false,
+      because: "no-win",
+    });
+    expect(guest({ embedded: true })).toEqual({
+      show: false,
+      because: "portal-frame",
+    });
+    expect(guest({ authSettled: false })).toEqual({
+      show: false,
+      because: "auth-unsettled",
+    });
+    expect(guest({ isLoggedIn: true })).toEqual({
+      show: false,
+      because: "signed-in",
+    });
+    for (const session of [undefined, throwingStorage(), lyingStorage()]) {
+      expect(guest({ session })).toEqual({
+        show: false,
+        because: "storage-unavailable",
+      });
+    }
   });
 });

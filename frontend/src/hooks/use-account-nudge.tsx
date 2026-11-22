@@ -6,6 +6,7 @@ import {
   NUDGE_SIGNUP_CLICK_EVENT,
   recordFinishAndDecide,
   type GameFinish,
+  type NudgeTrigger,
 } from "@/lib/account-nudge";
 import { browserSendEvent } from "@/lib/analytics";
 import { isEmbedded } from "@/lib/embedded-mode";
@@ -49,12 +50,16 @@ const NUDGE_ACTION_LABEL = "Sign up";
  */
 const NUDGE_DURATION_MS = 20_000;
 const NUDGE_SELECTOR = ".account-nudge";
+/** The `trigger` parameter of this offer's GA events (task B). */
+const FIRST_GAME_TRIGGER: NudgeTrigger = "first-game";
 
 export interface UseAccountNudgeInput extends GameFinish {
   gameId: string;
   /** The signed-in check has finished loading, i.e. `!userPending`. */
   authSettled: boolean;
   isLoggedIn: boolean;
+  /** This viewer won: the end panel's offer (useWinOffer) takes it instead. */
+  viewerWon: boolean;
 }
 
 export function useAccountNudge({
@@ -66,6 +71,7 @@ export function useAccountNudge({
   isPuzzle,
   authSettled,
   isLoggedIn,
+  viewerWon,
 }: UseAccountNudgeInput): void {
   useEffect(() => {
     const decision = recordFinishAndDecide({
@@ -76,6 +82,7 @@ export function useAccountNudge({
       embedded: isEmbedded(),
       durable: browserStorage("local"),
       session: browserStorage("session"),
+      viewerWon,
     });
     if (!decision.show) return;
 
@@ -83,7 +90,7 @@ export function useAccountNudge({
     // once-ever and once-per-session rules have already gated: one event per
     // offer actually made, which is what the click rate needs as its
     // denominator.
-    browserSendEvent(NUDGE_SHOWN_EVENT);
+    browserSendEvent(NUDGE_SHOWN_EVENT, { trigger: FIRST_GAME_TRIGGER });
 
     let active = true;
     let removeOutsideListener: (() => void) | undefined;
@@ -123,7 +130,9 @@ export function useAccountNudge({
             deactivate();
             // Before the navigation, not after: assigning to location.href can
             // tear the page down before a queued request leaves.
-            browserSendEvent(NUDGE_SIGNUP_CLICK_EVENT);
+            browserSendEvent(NUDGE_SIGNUP_CLICK_EVENT, {
+              trigger: FIRST_GAME_TRIGGER,
+            });
             // Back to this game after the sign-up, not to the home page.
             window.location.href = authHref("register");
           }}
@@ -163,5 +172,6 @@ export function useAccountNudge({
     isPuzzle,
     authSettled,
     isLoggedIn,
+    viewerWon,
   ]);
 }

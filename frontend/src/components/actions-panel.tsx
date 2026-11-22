@@ -1,5 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { WinOfferBlock } from "@/components/win-offer";
+import type { WinOffer } from "@/hooks/use-win-offer";
 import {
   VideoPuzzleNextStepButtons,
   type VideoPuzzleNextStep,
@@ -87,6 +89,8 @@ interface EndgameProps {
   isRetryingPuzzle?: boolean;
   /** Present only at the end of a daily video's puzzle, for the solver. */
   videoPuzzleNextStep?: VideoPuzzleNextStep;
+  /** The account offer after a guest's win (task B); absent otherwise. */
+  winOffer?: WinOffer;
   /**
    * Present only when this player earned a vote on this puzzle (S-G4). The
    * controller decides that; the panel just renders it.
@@ -155,6 +159,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     handleRetryPuzzle,
     isRetryingPuzzle = false,
     videoPuzzleNextStep,
+    winOffer,
     puzzleVote,
     primaryLocalPlayerId,
     spectatorRematchGameId,
@@ -205,17 +210,28 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
           gameStatus === "finished" ? "border border-accent/40" : ""
         }`}
       >
-        {/* Result Summary Area - Fixed height 64/84px */}
+        {/* Result Summary Area - Fixed height 64/84px. After a guest's win
+            the account offer takes it (task B): it says the result too, and
+            the fixed height keeps Rematch where it was. */}
         <div className="h-[64px] lg:h-[84px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 overflow-hidden flex items-center gap-3">
-          <Trophy className="w-8 h-8 lg:w-10 lg:h-10 text-yellow-500 shrink-0" />
-          <div className="min-w-0">
-            <h3 className="text-sm lg:text-base font-bold truncate">
-              {resultHeadline}
-            </h3>
-            <p className="text-[10px] lg:text-xs text-muted-foreground truncate">
-              {resultDetail}
-            </p>
-          </div>
+          {winOffer ? (
+            <WinOfferBlock
+              offer={winOffer}
+              buttonClassName="h-7 lg:h-8 px-3 text-xs"
+            />
+          ) : (
+            <>
+              <Trophy className="w-8 h-8 lg:w-10 lg:h-10 text-yellow-500 shrink-0" />
+              <div className="min-w-0">
+                <h3 className="text-sm lg:text-base font-bold truncate">
+                  {resultHeadline}
+                </h3>
+                <p className="text-[10px] lg:text-xs text-muted-foreground truncate">
+                  {resultDetail}
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Scoreboard Area - Replacing the 2x2 buttons grid */}

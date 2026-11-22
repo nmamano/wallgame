@@ -11,6 +11,7 @@ import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
 import { VideoPuzzleNextStepButtons } from "@/components/video-puzzle-next-step";
+import { WinOfferBlock } from "@/components/win-offer";
 import { MobileMoveBar } from "@/components/mobile-move-bar";
 import { MobileGameDrawer } from "@/components/mobile-game-drawer";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
@@ -379,7 +380,10 @@ function GamePageContent() {
     const mobileCellSizePx =
       boardAreaSize.w > 0
         ? Math.max(
-            28, // minimum tappable size
+            // The minimum tappable size, while there is something to tap. A
+            // finished game's board is only looked at, so it may shrink to
+            // make room for the end strips (task B).
+            actions.endgame.gameStatus === "finished" ? 16 : 28,
             Math.min(
               (boardAreaSize.h -
                 mobileChromePx -
@@ -556,6 +560,16 @@ function GamePageContent() {
             />
           </div>
 
+          {/* The account offer after a guest's win (task B): a strip of its
+              own above the next steps, so no button moves. */}
+          {actions.endgame.winOffer && (
+            <div className="shrink-0 border-t border-border bg-card/90 px-3 py-2">
+              <WinOfferBlock
+                offer={actions.endgame.winOffer}
+                buttonClassName="h-8 px-3 text-sm"
+              />
+            </div>
+          )}
           {/* The end of a daily video's puzzle: its next step gets a strip of
               its own, for the same reason as the vote strip below. */}
           {actions.endgame.videoPuzzleNextStep &&
