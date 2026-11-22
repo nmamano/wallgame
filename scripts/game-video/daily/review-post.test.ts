@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { PLATFORMS, StepRefused } from "./store.mjs";
-import { copySha256 } from "./copy.mjs";
+import { copySha256, puzzleLink, YOUTUBE_LINK } from "./copy.mjs";
 import { sha256 } from "./transport.mjs";
 import { createItemPoster } from "./review-post.mjs";
 
@@ -14,7 +14,7 @@ const VIDEO = Buffer.from("the approved mp4");
 const COPY = {
   x: "x line",
   youtubeTitle: "title",
-  youtubeDescription: "description",
+  youtubeDescription: `description ${YOUTUBE_LINK}`,
   tiktok: "tiktok line",
   instagram: "instagram line",
   facebook: "facebook line",
@@ -40,6 +40,8 @@ interface Item {
     video: { path: string; durationSeconds: number };
     music?: { track: string }[];
   };
+  candidate: { gameId: string; seats: { name: string; kind: string }[] };
+  edl: { doc: { puzzle?: { ply: number; n: number; cta: string } } };
   copy: { block: typeof COPY; sha256: string };
   approval: {
     videoSha256: string;
@@ -92,6 +94,8 @@ const world = (live: string[]) => {
     id: "v-2026-10-28-1",
     state: "approved",
     render: { video: { path: "/videos/1.mp4", durationSeconds: 30 } },
+    candidate: { gameId: "TESTGAME1", seats: [] },
+    edl: { doc: {} },
     copy: { block: { ...COPY }, sha256: copySha256(COPY) },
     approval: {
       videoSha256: sha256(VIDEO),
@@ -224,6 +228,16 @@ const world = (live: string[]) => {
       (lastSlots = { ...lastSlots, [platform]: at }),
     gapReads,
     setPuzzle: (why: string | null) => (puzzleWhy = why),
+    // The item's stored list's puzzle (a re-direct changes it), or none.
+    setListPuzzle: (n: number | null) => {
+      const item = items.get("v-2026-10-28-1")!;
+      item.edl = {
+        doc:
+          n === null
+            ? {}
+            : { puzzle: { ply: 5, n, cta: `solve it: wallgame.io/go/${n}` } },
+      };
+    },
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
       (reasons = { ...reasons, ...r }),
@@ -260,6 +274,66 @@ describe("a puzzle video's link (puzzle-gate.mjs)", () => {
     h.setPuzzle("the puzzle link https://wallgame.io/go/3 cannot be read");
     expect(await refusal(h.retry("v-2026-10-28-1"))).toContain(
       "the puzzle link https://wallgame.io/go/3 cannot be read",
+    );
+    expect(h.get().state).toBe("post-failed");
+  });
+});
+
+describe("the copy check again at post (copy.mjs copyProblems)", () => {
+  // Growth stored a puzzle item's block with its puzzle link, and the
+  // approval holds it; then the Director re-directed the item.
+  const withLink = (n: number) => {
+    const block = { ...COPY, bluesky: `solve it ${puzzleLink(n)}` };
+    return {
+      copy: { block, sha256: copySha256(block) },
+      approval: {
+        videoSha256: sha256(VIDEO),
+        copySha256: copySha256(block),
+        by: "Nil",
+        at: "2026-10-28T08:00:00Z",
+      },
+    };
+  };
+
+  test("a puzzle dropped after the copy was stored holds the item, approved, and refuses its retry", async () => {
+    const live = ["x", "bluesky"];
+    const h = world(live);
+    Object.assign(h.get(), withLink(3));
+    h.setListPuzzle(3);
+    // While the list ends on puzzle 3, the block posts.
+    const shared = structuredClone(h.get());
+    h.setListPuzzle(null);
+    const held = await h.post(SLOT);
+    expect(held.kind).toBe("none-applies");
+    const why = held.passed![0].notApplicable.x;
+    expect(why).toContain(
+      "its copy block no longer passes the copy check against its edit list",
+    );
+    expect(why).toContain(
+      "Bluesky may hold only the link https://wallgame.io/?utm_source=bluesky",
+    );
+    expect(Object.keys(held.passed![0].notApplicable)).toEqual(live);
+    expect(h.get().state).toBe("approved");
+    expect(h.logged).toEqual([]);
+    // Back on puzzle 3, it posts.
+    h.add(shared);
+    expect((await h.post(SLOT)).kind).toBe("posted");
+  });
+
+  test("a retry is refused while the copy fails against the current list", async () => {
+    const h = world(["bluesky"]);
+    Object.assign(h.get(), withLink(3));
+    h.setListPuzzle(3);
+    h.replies.bluesky = () => ({
+      ok: false,
+      mode: "live",
+      at: "t",
+      error: "500",
+    });
+    expect((await h.post(SLOT)).kind).toBe("post-failed");
+    h.setListPuzzle(4);
+    expect(await refusal(h.retry("v-2026-10-28-1"))).toContain(
+      "its copy block no longer passes the copy check",
     );
     expect(h.get().state).toBe("post-failed");
   });
@@ -801,20 +875,20 @@ describe("post(itemId)", () => {
       ]);
     });
 
-    test("a title YouTube stored without < and > still matches", async () => {
+    test("a title with < or > never reaches YouTube: the copy check at post holds it", async () => {
+      // YouTube stores such a title without them (the twin check compares
+      // titles without < and >), and the copy check refuses them; since
+      // 2026-11-22 it runs again at post too (copyHeld).
       const w = await uncertainYoutube("<3 the <wall>");
-      w.setYoutube([
-        {
-          id: "ARss61GrZXk",
-          title: "3 the wall #Shorts",
-          uploadStatus: "uploaded",
-          processingStatus: "processing",
-        },
-      ]);
+      expect(w.get().state).toBe("approved");
+      expect(w.confirmedSeen).toEqual([]);
       expect(await refusal(w.retry("v-2026-10-28-1", confirmed))).toContain(
-        'ARss61GrZXk has the title "<3 the <wall> #Shorts"',
+        "is approved; only a post-failed item is retried",
       );
-      expect(w.confirmedSeen).toEqual([["youtube", false]]);
+      const held = await w.post(SLOT);
+      expect(held.passed![0].notApplicable.youtube).toContain(
+        "YouTube title must not hold < or >",
+      );
     });
 
     test("a read that fails refuses: no blind retry", async () => {
