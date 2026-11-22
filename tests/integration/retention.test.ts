@@ -58,16 +58,21 @@ let nextGameId = 0;
 async function seedGame(
   day: string,
   browsers: (string | null)[],
-  options: { puzzleId?: string } = {},
+  options: {
+    puzzleId?: string;
+    puzzleGame?: { gameId: string; ply: number };
+  } = {},
 ) {
   const gameId = `g${++nextGameId}`;
   await db.execute(sql`
     INSERT INTO games (
       game_id, variant, time_control, rated, match_type,
-      board_width, board_height, started_at, puzzle_id
+      board_width, board_height, started_at, puzzle_id,
+      puzzle_game_id, puzzle_ply
     ) VALUES (
       ${gameId}, 'standard', 'rapid', false, 'friend',
-      8, 8, ${`${day}T12:00:00.000Z`}::timestamptz, ${options.puzzleId ?? null}
+      8, 8, ${`${day}T12:00:00.000Z`}::timestamptz, ${options.puzzleId ?? null},
+      ${options.puzzleGame?.gameId ?? null}, ${options.puzzleGame?.ply ?? null}
     )
   `);
   for (const [index, browser] of browsers.entries()) {
@@ -112,6 +117,10 @@ beforeAll(async () => {
   // A puzzle the next day by a player of the same cohort: different funnel,
   // so it must not rescue anyone's retention.
   await seedGame("2026-07-02", [BROWSER.sitting, null], { puzzleId: "puz1" });
+  // The same for a daily video's puzzle: a game position, not a saved puzzle.
+  await seedGame("2026-07-02", [BROWSER.sitting, null], {
+    puzzleGame: { gameId: "g1", ply: 10 },
+  });
 
   // --- puzzles only: never a player at all --------------------------------
   await seedGame("2026-07-01", [BROWSER.puzzleOnly, null], {

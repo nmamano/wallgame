@@ -17,7 +17,8 @@
  *   the tables only ever held real finished games. Someone who opened the site,
  *   started a game and wandered off is not in here at all, and the number is
  *   therefore about people who finished something - not about all visitors.
- * - **Match play, not puzzles.** Games with a `puzzle_id` are excluded. Puzzle
+ * - **Match play, not puzzles.** Puzzle attempts (a `puzzle_id`, or a
+ *   `puzzle_game_id` for a daily video's puzzle) are excluded. Puzzle
  *   solving is real engagement but a different funnel, and mixing the two
  *   changes what "a player came back" means.
  * - **Local hot-seat games are invisible**, because they never reach a server.
@@ -106,7 +107,10 @@ const PLAYER_FACTS = sql`
     FROM game_players gp
     JOIN games g ON g.game_id = gp.game_id
     WHERE gp.anonymous_id IS NOT NULL
+      -- Not a puzzle attempt: the same rule as isNotPuzzleAttempt in
+      -- game-queries.ts (raw SQL here, so it cannot call the helper).
       AND g.puzzle_id IS NULL
+      AND g.puzzle_game_id IS NULL
   ),
   -- A window rather than a self-join back onto seats, and the reason is not
   -- performance. Joining on s.player = pp.player silently dropped every seat
