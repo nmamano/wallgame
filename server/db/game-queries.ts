@@ -14,7 +14,10 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { GameState } from "../../shared/domain/game-state";
-import type { StoredGame } from "../../shared/domain/game-position-puzzle";
+import type {
+  StoredGame,
+  StoredSeats,
+} from "../../shared/domain/game-position-puzzle";
 import { clonePawns } from "../../shared/domain/pawns";
 import {
   RESIGN_CAUSES,
@@ -22,6 +25,7 @@ import {
   type GameResult,
   type GameSnapshot,
   type GameInitialState,
+  type PlayerAppearance,
   type PlayerId,
   type SerializedGameState,
   type TimeControlConfig,
@@ -240,6 +244,26 @@ const resolveStoredClocks = (
   return parsed.data;
 };
 
+/** A stored player's colour and pawns; "default" where none was recorded. */
+const storedAppearance = (
+  player: Pick<
+    ReplayPlayerRow,
+    | "pawnColor"
+    | "catSkin"
+    | "dogSkin"
+    | "mouseSkin"
+    | "elephantSkin"
+    | "homeSkin"
+  >,
+): Required<PlayerAppearance> => ({
+  pawnColor: player.pawnColor ?? "default",
+  dogSkin: player.dogSkin ?? "default",
+  catSkin: player.catSkin ?? "default",
+  mouseSkin: player.mouseSkin ?? "default",
+  elephantSkin: player.elephantSkin ?? "default",
+  homeSkin: player.homeSkin ?? "default",
+});
+
 /** The configuration a stored game was played with. Touches no tables. */
 const storedGameConfig = (
   game: Pick<
@@ -359,37 +383,24 @@ const assembleReplayGame = (
 
   const matchStatus: GameSnapshot = {
     id: game.gameId,
-    puzzleId: game.puzzleId ?? undefined,
+    puzzle: game.puzzleId
+      ? { kind: "saved", puzzleId: game.puzzleId }
+      : undefined,
     status: "completed",
     config,
     matchType: game.matchType as GameSnapshot["matchType"],
     createdAt: startTimestamp,
     updatedAt: startTimestamp,
-    players: orderedPlayers.map((player) => {
-      const pawnColor = player.pawnColor ?? "default";
-      const catSkin = player.catSkin ?? "default";
-      const dogSkin = player.dogSkin ?? "default";
-      const mouseSkin = player.mouseSkin ?? "default";
-      const elephantSkin = player.elephantSkin ?? "default";
-      const homeSkin = player.homeSkin ?? "default";
-      return {
-        role: player.playerRole as "host" | "joiner",
-        playerId: player.playerOrder as PlayerId,
-        displayName: player.displayName,
-        connected: false,
-        ready: true,
-        configType: player.playerConfigType === "bot" ? "bot" : "human",
-        appearance: {
-          pawnColor,
-          dogSkin,
-          catSkin,
-          mouseSkin,
-          elephantSkin,
-          homeSkin,
-        },
-        elo: player.ratingAtStart ?? undefined,
-      };
-    }),
+    players: orderedPlayers.map((player) => ({
+      role: player.playerRole as "host" | "joiner",
+      playerId: player.playerOrder as PlayerId,
+      displayName: player.displayName,
+      connected: false,
+      ready: true,
+      configType: player.playerConfigType === "bot" ? "bot" : "human",
+      appearance: storedAppearance(player),
+      elo: player.ratingAtStart ?? undefined,
+    })),
     matchScore,
   };
 
@@ -531,17 +542,34 @@ export const getReplayGameReadonly = async (
  */
 export const getStoredGame = async (
   gameId: string,
-): Promise<StoredGame | null> => {
+): Promise<{ game: StoredGame; seats: StoredSeats } | null> => {
   const [game] = await db
     .select(replayGameSelect)
     .from(gamesTable)
     .where(eq(gamesTable.gameId, gameId))
     .limit(1);
   if (!game) return null;
-  const [details] = await fetchReplayDetails([gameId]);
-  if (!details) return null;
+  const [[details], players] = await Promise.all([
+    fetchReplayDetails([gameId]),
+    fetchReplayPlayers([gameId]),
+  ]);
+  const seat = (playerId: PlayerId) => {
+    const player = players.find((row) => row.playerOrder === playerId);
+    return player
+      ? {
+          isBot: player.playerConfigType === "bot",
+          appearance: storedAppearance(player),
+        }
+      : null;
+  };
+  const p1 = seat(1);
+  const p2 = seat(2);
+  if (!details || !p1 || !p2) return null;
   const moves = Array.isArray(details.moves) ? details.moves.map(String) : [];
-  return { config: storedGameConfig(game, details), moves };
+  return {
+    game: { config: storedGameConfig(game, details), moves },
+    seats: { 1: p1, 2: p2 },
+  };
 };
 
 export const getRandomShowcaseGames = async (

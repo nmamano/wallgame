@@ -7,7 +7,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   GamePositionUnavailable,
+  recordSeatLooks,
   resolveGamePositionLaunch,
+  videoSeatColors,
   type StoredGame,
 } from "../../shared/domain/game-position-puzzle";
 import { GameState } from "../../shared/domain/game-state";
@@ -122,5 +124,34 @@ describe("resolveGamePositionLaunch", () => {
     expect(() => resolveGamePositionLaunch(game, 6)).toThrow(
       GamePositionUnavailable,
     );
+  });
+});
+
+describe("videoSeatColors", () => {
+  it("is the daily video's seat colour rule (a puzzle looks like its video)", async () => {
+    const { dailySeatColors } =
+      (await import("../../scripts/game-video/edl.mjs")) as {
+        dailySeatColors: (
+          isBot: Record<1 | 2, boolean>,
+        ) => Record<1 | 2, "red" | "blue">;
+      };
+    for (const isBot of [
+      { 1: false, 2: false },
+      { 1: false, 2: true },
+      { 1: true, 2: false },
+    ]) {
+      expect(videoSeatColors(isBot)).toEqual(dailySeatColors(isBot));
+    }
+  });
+
+  it("gives each seat the record's pawns in those colours", () => {
+    const looks = recordSeatLooks({
+      1: { isBot: false, appearance: { pawnColor: "green", catSkin: "a" } },
+      2: { isBot: true, appearance: { pawnColor: "pink", catSkin: "b" } },
+    });
+    expect(looks).toEqual({
+      1: { pawnColor: "blue", catSkin: "a" },
+      2: { pawnColor: "red", catSkin: "b" },
+    });
   });
 });

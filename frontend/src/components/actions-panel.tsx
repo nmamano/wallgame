@@ -1,6 +1,10 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  VideoPuzzleNextStepButtons,
+  type VideoPuzzleNextStep,
+} from "@/components/video-puzzle-next-step";
+import {
   Flag,
   Handshake,
   RotateCcw,
@@ -81,6 +85,8 @@ interface EndgameProps {
   isPuzzle?: boolean;
   handleRetryPuzzle?: () => void;
   isRetryingPuzzle?: boolean;
+  /** Present only at the end of a daily video's puzzle, for the solver. */
+  videoPuzzleNextStep?: VideoPuzzleNextStep;
   /**
    * Present only when this player earned a vote on this puzzle (S-G4). The
    * controller decides that; the panel just renders it.
@@ -148,6 +154,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     isPuzzle = false,
     handleRetryPuzzle,
     isRetryingPuzzle = false,
+    videoPuzzleNextStep,
     puzzleVote,
     primaryLocalPlayerId,
     spectatorRematchGameId,
@@ -285,7 +292,15 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
                 )
               ) : (
                 <>
-                  {isPuzzle && handleRetryPuzzle && (
+                  {isPuzzle && handleRetryPuzzle && videoPuzzleNextStep && (
+                    <VideoPuzzleNextStepButtons
+                      {...videoPuzzleNextStep}
+                      handleRetryPuzzle={handleRetryPuzzle}
+                      isRetryingPuzzle={isRetryingPuzzle}
+                      className="h-7 lg:h-8 px-3 text-xs flex-1"
+                    />
+                  )}
+                  {isPuzzle && handleRetryPuzzle && !videoPuzzleNextStep && (
                     <Button
                       size="sm"
                       className="h-7 lg:h-8 px-3 text-xs flex-1"

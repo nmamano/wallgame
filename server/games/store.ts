@@ -26,6 +26,7 @@ import type {
   Move,
   MatchScore,
   GameResult,
+  PuzzleRef,
 } from "../../shared/domain/game-types";
 import type {
   GameAccessWaitingReason,
@@ -143,16 +144,17 @@ export interface GameSession {
   updatedAt: number;
   config: GameConfiguration;
   /**
-   * Set only by a server-authoritative saved-puzzle launch, to the id of the
-   * puzzle row the server itself resolved (S-ID). Carries the puzzle's
-   * identity from launch to `persistCompletedGame`, which writes it onto the
-   * game record so completion can be verified server-side later.
+   * Set only by a server-authoritative puzzle launch, to the puzzle the server
+   * itself resolved (S-ID): a saved puzzle row, or a stored game's position.
+   * A saved puzzle's id goes from launch to `persistCompletedGame`, which
+   * writes it onto the game record so completion can be verified server-side
+   * later.
    *
    * Deliberately NOT propagated by `createRematchSession`: a rematch is a
    * different game (seats swap, and for Random Start the layout is regenerated),
    * so crediting it as the original puzzle would be wrong.
    */
-  puzzleId?: string;
+  puzzle?: PuzzleRef;
   /**
    * Who created the game through POST /api/games: the account when signed in,
    * else the client network (the e768fdb5 requester key). Counts the waiting
@@ -1242,8 +1244,8 @@ export const createGameSession = (args: {
     type: PlayerConfigType;
     displayName?: string;
   };
-  /** Server-resolved saved-puzzle id; see `GameSession.puzzleId` (S-ID). */
-  puzzleId?: string;
+  /** The server-resolved puzzle; see `GameSession.puzzle` (S-ID). */
+  puzzle?: PuzzleRef;
   /** See `GameSession.requester`. */
   requester?: string;
 }): GameCreationResult => {
@@ -1281,7 +1283,7 @@ export const createGameSession = (args: {
     startedAt: null,
     updatedAt: now,
     config: completeConfig,
-    puzzleId: args.puzzleId,
+    puzzle: args.puzzle,
     requester: args.requester,
     status: joinerReady ? "ready" : "waiting",
     matchType: args.matchType,
@@ -1416,7 +1418,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
   const session = ensureSession(id);
   return {
     id: session.id,
-    puzzleId: session.puzzleId,
+    puzzle: session.puzzle,
     status: session.status,
     config: session.config,
     matchType: session.matchType,
@@ -1627,7 +1629,7 @@ export const reconcileAuthenticatedSeat = (args: {
 export const listSessions = (): GameSnapshot[] => {
   return [...sessions.values()].map((session) => ({
     id: session.id,
-    puzzleId: session.puzzleId,
+    puzzle: session.puzzle,
     status: session.status,
     config: session.config,
     matchType: session.matchType,
@@ -1648,7 +1650,7 @@ const isWaitingInLobby = (session: GameSession): boolean =>
 export const listMatchmakingGames = (): LobbyGame[] => {
   return [...sessions.values()].filter(isWaitingInLobby).map((session) => ({
     id: session.id,
-    puzzleId: session.puzzleId,
+    puzzle: session.puzzle,
     status: session.status,
     // Field-picked, so the starting layout never reaches the lobby.
     config: {
@@ -1795,7 +1797,7 @@ const buildLiveGameSummary = (session: GameSession): LiveGameSummary => {
 const isSpectatableSession = (session: GameSession): boolean =>
   (session.status === "ready" || session.status === "in-progress") &&
   !session.cancelled &&
-  session.puzzleId === undefined;
+  session.puzzle === undefined;
 
 /**
  * A session that is over: nobody can lose anything by restarting now.
@@ -1903,7 +1905,7 @@ export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
     !session ||
     (session.status !== "ready" && session.status !== "in-progress") ||
     // Puzzle attempts are solo practice, not spectator content.
-    session.puzzleId !== undefined
+    session.puzzle !== undefined
   ) {
     return null;
   }
@@ -2329,7 +2331,7 @@ export const createRematchSession = (
   const hostPlayerId = previous.players.host.playerId;
   const joinerPlayerId = previous.players.joiner.playerId;
 
-  // NOTE: `puzzleId` is deliberately NOT carried over (S-ID). A rematch swaps
+  // NOTE: `puzzle` is deliberately NOT carried over (S-ID). A rematch swaps
   // seats and starts a different game, so crediting it as a solve of the
   // original puzzle would be wrong — and the server accepts a rematch offer
   // even where the UI suppresses one for puzzles.

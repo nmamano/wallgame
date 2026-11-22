@@ -6,6 +6,7 @@ import {
   type SavedPuzzlesResponse,
   type PuzzleProgressResponse,
   type PuzzleVoteState,
+  type GamePositionPuzzle,
 } from "../../../shared/contracts/puzzles";
 import { getAnonymousId } from "./anonymous-id";
 import { hc, type ClientResponse } from "hono/client";
@@ -17,6 +18,7 @@ import type {
   GameSnapshot,
   GameConfiguration,
   PlayerAppearance,
+  PuzzleRef,
   TimeControlPreset,
   TimeControlConfig,
   Variant,
@@ -314,6 +316,20 @@ export const fetchShowcaseGames = async (
   );
 };
 
+/**
+ * A stored game's position as a puzzle (task a03b8f5c): what its launch opens
+ * on. 404: no such game; 409: the position is not a puzzle.
+ */
+export const fetchGamePositionPuzzle = async (
+  gameId: string,
+  ply: number,
+): Promise<GamePositionPuzzle> =>
+  handleResponse<GamePositionPuzzle>(
+    api.puzzles.game[":gameId"][":ply"].$get({
+      param: { gameId, ply: String(ply) },
+    }),
+  );
+
 /** V3: Bot listing - no timeControl (bot games are untimed) */
 /** Shared so a vote can invalidate the listing its counts appear in. */
 export const SAVED_PUZZLES_QUERY_KEY = ["saved-puzzles"] as const;
@@ -539,25 +555,32 @@ export const playVsBot = async (args: {
 };
 
 /**
- * Server-authoritative saved-puzzle launch (S-P1): the server derives the
- * config, seat, and bot lead-in from the puzzle row — the client never
- * supplies a config, so Retry and launch always recreate the real puzzle.
+ * Server-authoritative puzzle launch (S-P1): the client names the puzzle (a
+ * saved puzzle, or a stored game's position) and the server derives the
+ * config, seat, and bot lead-in. The client never supplies a config, so Retry
+ * and launch always recreate the real puzzle.
  */
-export const playPuzzle = async (args: {
+export const launchPuzzle = async (args: {
   botId: string;
-  puzzleId: string;
+  ref: PuzzleRef;
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
 }): Promise<CreateBotGameResponse> => {
+  const common = {
+    botId: args.botId,
+    hostDisplayName: args.hostDisplayName,
+    hostAppearance: args.hostAppearance,
+    anonymousId: getAnonymousId(),
+  };
   return handleResponse<CreateBotGameResponse>(
     api.bots.play.$post({
-      json: {
-        botId: args.botId,
-        puzzleId: args.puzzleId,
-        hostDisplayName: args.hostDisplayName,
-        hostAppearance: args.hostAppearance,
-        anonymousId: getAnonymousId(),
-      },
+      json:
+        args.ref.kind === "saved"
+          ? { ...common, puzzleId: args.ref.puzzleId }
+          : {
+              ...common,
+              fromGame: { gameId: args.ref.gameId, ply: args.ref.ply },
+            },
     }),
   );
 };

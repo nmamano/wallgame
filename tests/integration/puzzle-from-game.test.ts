@@ -30,6 +30,7 @@ let container: StartedTestContainer | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 let getSession: typeof import("../../server/games/store").getSession;
+let getLiveGameSummary: typeof import("../../server/games/store").getLiveGameSummary;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -108,7 +109,10 @@ describe("a stored game's position launched as a puzzle", () => {
     const { gamesTable } = await import("../../server/db/schema/games");
     const { gameDetailsTable } =
       await import("../../server/db/schema/game-details");
-    ({ getSession } = await import("../../server/games/store"));
+    const { gamePlayersTable } =
+      await import("../../server/db/schema/game-players");
+    ({ getSession, getLiveGameSummary } =
+      await import("../../server/games/store"));
     const { app, websocket } = (await import("../../server/app")).createApp();
     server = Bun.serve({ fetch: app.fetch, websocket, port: 0 });
     baseUrl = `http://localhost:${server.port}`;
@@ -133,6 +137,31 @@ describe("a stored game's position launched as a puzzle", () => {
       },
       moves: STORED_MOVES,
     });
+    // A guest (P1) against a bot (P2), each with its own recorded look.
+    await db.insert(gamePlayersTable).values([
+      {
+        gameId: STORED_GAME_ID,
+        playerOrder: 1,
+        playerRole: "host",
+        playerConfigType: "you",
+        displayName: "Guest Wallaby",
+        pawnColor: "green",
+        catSkin: "cat-guest.svg",
+        outcomeRank: 2,
+        outcomeReason: "capture",
+      },
+      {
+        gameId: STORED_GAME_ID,
+        playerOrder: 2,
+        playerRole: "joiner",
+        playerConfigType: "bot",
+        displayName: "Superhuman Bot",
+        pawnColor: "pink",
+        catSkin: "cat-bot.svg",
+        outcomeRank: 1,
+        outcomeReason: "capture",
+      },
+    ]);
 
     socket = await attachBots(clientId, [puzzleBot, ordinaryBot]);
     // The bot registry writes through to the DB asynchronously on attach.
@@ -156,6 +185,23 @@ describe("a stored game's position launched as a puzzle", () => {
     );
     expect(session.gameState.history).toHaveLength(0);
     expect(session.gameState.turn).toBe(1);
+    // A puzzle attempt, not a live game anyone can watch.
+    expect(session.puzzle).toEqual({
+      kind: "game",
+      gameId: STORED_GAME_ID,
+      ply: 10,
+    });
+    expect(getLiveGameSummary(body.gameId)).toBeNull();
+    // The seats look as in the daily video: the human blue, the bot red, each
+    // with its recorded pawns; not the request's or PuzzleBot's look.
+    expect(session.players.host.appearance).toMatchObject({
+      pawnColor: "blue",
+      catSkin: "cat-guest.svg",
+    });
+    expect(session.players.joiner.appearance).toMatchObject({
+      pawnColor: "red",
+      catSkin: "cat-bot.svg",
+    });
   });
 
   it("P2 to move: the game's real move N-1 is already played", async () => {
@@ -166,6 +212,29 @@ describe("a stored game's position launched as a puzzle", () => {
     const state = getSession(body.gameId).gameState;
     expect(state.history).toHaveLength(1);
     expect(state.turn).toBe(2);
+  });
+
+  it("the page's preview is exactly what the launch opens on", async () => {
+    const res = await fetch(`${baseUrl}/api/puzzles/game/${STORED_GAME_ID}/11`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      launch: unknown;
+      looks: Record<string, { pawnColor: string }>;
+    };
+    expect(body.launch).toEqual(
+      JSON.parse(JSON.stringify(resolveGamePositionLaunch(STORED_GAME, 11))),
+    );
+    expect(body.looks["1"].pawnColor).toBe("blue");
+    expect(body.looks["2"].pawnColor).toBe("red");
+  });
+
+  it("the preview refuses what the launch refuses", async () => {
+    const after = await fetch(
+      `${baseUrl}/api/puzzles/game/${STORED_GAME_ID}/${STORED_MOVES.length}`,
+    );
+    expect(after.status).toBe(409);
+    const missing = await fetch(`${baseUrl}/api/puzzles/game/no-such-game/3`);
+    expect(missing.status).toBe(404);
   });
 
   it("refuses an opponent that is not the puzzle bot", async () => {

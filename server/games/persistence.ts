@@ -204,7 +204,10 @@ export const persistCompletedGame = async (
         movesCount: state.moveCount,
         // S-ID: which saved puzzle this game was, for server-verified
         // completion tracking. Undefined for every ordinary game.
-        puzzleId: session.puzzleId,
+        puzzleId:
+          session.puzzle?.kind === "saved"
+            ? session.puzzle.puzzleId
+            : undefined,
         // Which match this game belongs to and where in it. Both come straight
         // off the session, which has tracked them all along without ever
         // writing them down. Always written together - the table rejects one

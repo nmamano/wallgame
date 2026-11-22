@@ -17,6 +17,8 @@ import type {
   CustomSetupClassicInitialState,
   CustomSetupStandardInitialState,
   GameConfiguration,
+  PlayerAppearance,
+  PlayerId,
   WallPosition,
 } from "./game-types";
 import { moveFromStandardNotation } from "./standard-notation";
@@ -28,6 +30,38 @@ export interface StoredGame {
   /** One standard-notation string per ply. */
   moves: readonly string[];
 }
+
+/** Each seat of a stored game: a bot or not, and its recorded look. */
+export type StoredSeats = Record<
+  PlayerId,
+  { isBot: boolean; appearance: PlayerAppearance }
+>;
+
+/**
+ * The seat colours of the daily videos: the bot is red and the human blue;
+ * with two humans, P1 is red and P2 blue. A puzzle from a video must look like
+ * the video's last frame, so this is the same rule as the video tool's
+ * dailySeatColors (scripts/game-video/edl.mjs); a test holds the two equal.
+ * Two bots (no video shows them): P1 red, P2 blue.
+ */
+export const videoSeatColors = (
+  isBot: Record<PlayerId, boolean>,
+): Record<PlayerId, "red" | "blue"> =>
+  isBot[2] && !isBot[1] ? { 1: "blue", 2: "red" } : { 1: "red", 2: "blue" };
+
+/**
+ * How each seat of a puzzle from a stored game looks: the pawns the record
+ * holds, in the video's seat colours.
+ */
+export const recordSeatLooks = (
+  seats: StoredSeats,
+): Record<PlayerId, PlayerAppearance> => {
+  const colors = videoSeatColors({ 1: seats[1].isBot, 2: seats[2].isBot });
+  return {
+    1: { ...seats[1].appearance, pawnColor: colors[1] },
+    2: { ...seats[2].appearance, pawnColor: colors[2] },
+  };
+};
 
 /** Why a game position cannot be played as a puzzle. */
 export class GamePositionUnavailable extends Error {}

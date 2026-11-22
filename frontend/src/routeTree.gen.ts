@@ -27,6 +27,7 @@ import { Route as PuzzlesIndexRouteImport } from './routes/puzzles.index'
 import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
 import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
 import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
+import { Route as PuzzleGameGameIdPlyRouteImport } from './routes/puzzle.game.$gameId.$ply'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -118,6 +119,11 @@ const SoloCampaignIdRoute = SoloCampaignIdRouteImport.update({
   path: '/solo-campaign/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PuzzleGameGameIdPlyRoute = PuzzleGameGameIdPlyRouteImport.update({
+  id: '/puzzle/game/$gameId/$ply',
+  path: '/puzzle/game/$gameId/$ply',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles/': typeof PuzzlesIndexRoute
   '/solo-campaign/': typeof SoloCampaignIndexRoute
+  '/puzzle/game/$gameId/$ply': typeof PuzzleGameGameIdPlyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles': typeof PuzzlesIndexRoute
   '/solo-campaign': typeof SoloCampaignIndexRoute
+  '/puzzle/game/$gameId/$ply': typeof PuzzleGameGameIdPlyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles/': typeof PuzzlesIndexRoute
   '/solo-campaign/': typeof SoloCampaignIndexRoute
+  '/puzzle/game/$gameId/$ply': typeof PuzzleGameGameIdPlyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles/'
     | '/solo-campaign/'
+    | '/puzzle/game/$gameId/$ply'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles'
     | '/solo-campaign'
+    | '/puzzle/game/$gameId/$ply'
   id:
     | '__root__'
     | '/'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles/'
     | '/solo-campaign/'
+    | '/puzzle/game/$gameId/$ply'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   SoloCampaignIdRoute: typeof SoloCampaignIdRoute
   PuzzlesIndexRoute: typeof PuzzlesIndexRoute
   SoloCampaignIndexRoute: typeof SoloCampaignIndexRoute
+  PuzzleGameGameIdPlyRoute: typeof PuzzleGameGameIdPlyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SoloCampaignIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/puzzle/game/$gameId/$ply': {
+      id: '/puzzle/game/$gameId/$ply'
+      path: '/puzzle/game/$gameId/$ply'
+      fullPath: '/puzzle/game/$gameId/$ply'
+      preLoaderRoute: typeof PuzzleGameGameIdPlyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   SoloCampaignIdRoute: SoloCampaignIdRoute,
   PuzzlesIndexRoute: PuzzlesIndexRoute,
   SoloCampaignIndexRoute: SoloCampaignIndexRoute,
+  PuzzleGameGameIdPlyRoute: PuzzleGameGameIdPlyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

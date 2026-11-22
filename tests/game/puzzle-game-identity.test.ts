@@ -57,7 +57,7 @@ const startedSession = (puzzleId?: string) => {
     hostDisplayName: "Host",
     hostIsPlayer1: true,
     joinerConfig: { type: "bot", displayName: "PuzzleBot" },
-    puzzleId,
+    puzzle: puzzleId ? { kind: "saved", puzzleId } : undefined,
   });
   joinGameSession({ id: session.id, displayName: "PuzzleBot" });
   return session;
@@ -78,11 +78,14 @@ const playTurn = (id: string, playerId: PlayerId, col: number) =>
 
 describe("puzzle identity on a game session", () => {
   it("is carried by a session created for a saved-puzzle launch", () => {
-    expect(startedSession(PUZZLE_ID).puzzleId).toBe(PUZZLE_ID);
+    expect(startedSession(PUZZLE_ID).puzzle).toEqual({
+      kind: "saved",
+      puzzleId: PUZZLE_ID,
+    });
   });
 
   it("is absent from an ordinary bot game", () => {
-    expect(startedSession().puzzleId).toBeUndefined();
+    expect(startedSession().puzzle).toBeUndefined();
   });
 
   it("is not inherited by a rematch of a puzzle game", () => {
@@ -98,7 +101,7 @@ describe("puzzle identity on a game session", () => {
 
     const { newSession } = createRematchSession(session.id);
 
-    expect(session.puzzleId).toBe(PUZZLE_ID);
-    expect(newSession.puzzleId).toBeUndefined();
+    expect(session.puzzle).toEqual({ kind: "saved", puzzleId: PUZZLE_ID });
+    expect(newSession.puzzle).toBeUndefined();
   });
 });

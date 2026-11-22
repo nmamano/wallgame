@@ -10,6 +10,7 @@ import { EvaluationBar } from "@/components/evaluation-bar";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
+import { VideoPuzzleNextStepButtons } from "@/components/video-puzzle-next-step";
 import { MobileMoveBar } from "@/components/mobile-move-bar";
 import { MobileGameDrawer } from "@/components/mobile-game-drawer";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
@@ -333,7 +334,7 @@ function GamePageContent() {
         >
           {puzzleName ? `${puzzleName} - ` : "Puzzle - "}
           catch PuzzleBot&apos;s mouse before it catches yours.
-          {!compact && (
+          {!compact && info.puzzleKind === "saved" && (
             <Link
               to="/puzzles"
               className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 hover:underline"
@@ -423,12 +424,12 @@ function GamePageContent() {
                 not out to the site root - otherwise trying the next one costs two
                 navigations and a scroll. */}
             <Link
-              to={info.isPuzzle ? "/puzzles" : "/"}
+              to={info.puzzleKind === "saved" ? "/puzzles" : "/"}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="text-xs font-medium">
-                {info.isPuzzle ? "Back to puzzles" : "Wall Game"}
+                {info.puzzleKind === "saved" ? "Back to puzzles" : "Wall Game"}
               </span>
             </Link>
             <GameHelp
@@ -555,6 +556,21 @@ function GamePageContent() {
             />
           </div>
 
+          {/* The end of a daily video's puzzle: its next step gets a strip of
+              its own, for the same reason as the vote strip below. */}
+          {actions.endgame.videoPuzzleNextStep &&
+            actions.endgame.handleRetryPuzzle && (
+              <div className="shrink-0 flex items-center gap-2 border-t border-border bg-card/90 px-3 py-2">
+                <VideoPuzzleNextStepButtons
+                  {...actions.endgame.videoPuzzleNextStep}
+                  handleRetryPuzzle={() =>
+                    void actions.endgame.handleRetryPuzzle?.()
+                  }
+                  isRetryingPuzzle={actions.endgame.isRetryingPuzzle ?? false}
+                  className="h-9 flex-1 text-sm"
+                />
+              </div>
+            )}
           {/* Rate the puzzle you just beat (S-G4). Its own strip rather than
               more buttons in the toolbar below: at 390px that bar's centred
               result text runs underneath anything else on the right. The

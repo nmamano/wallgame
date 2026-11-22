@@ -500,7 +500,7 @@ const handleHandshake = async (
     variant,
     boardWidth,
     boardHeight,
-    session.puzzleId === undefined ? "opponent" : "puzzle",
+    session.puzzle === undefined ? "opponent" : "puzzle",
   );
   if (!evalBotResult) {
     send(ctx, {

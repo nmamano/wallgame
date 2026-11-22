@@ -18,7 +18,7 @@ import { usePuzzleGame } from "@/hooks/use-puzzle-game";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { PUZZLES } from "../../../shared/domain/puzzles";
 import {
-  playPuzzle,
+  launchPuzzle,
   savedPuzzlesQueryOptions,
   userQueryOptions,
 } from "@/lib/api";
@@ -168,9 +168,9 @@ function PuzzlePage() {
 
     void (async () => {
       try {
-        const response = await playPuzzle({
+        const response = await launchPuzzle({
           botId: playback.bot.id,
-          puzzleId: puzzle.id,
+          ref: { kind: "saved", puzzleId: puzzle.id },
           hostDisplayName: settings.displayName,
           hostAppearance: {
             pawnColor: settings.pawnColor,
@@ -188,8 +188,10 @@ function PuzzlePage() {
           role: response.role,
           playerId: response.playerId,
           shareUrl: response.shareUrl,
-          puzzleId: puzzle.id,
-          puzzleName: puzzle.displayName,
+          puzzle: {
+            ref: { kind: "saved", puzzleId: puzzle.id },
+            name: puzzle.displayName,
+          },
         });
         void navigate({ to: `/game/${response.gameId}`, replace: true });
       } catch (cause) {

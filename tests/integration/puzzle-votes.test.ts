@@ -156,7 +156,9 @@ async function playPuzzleGame(args: {
     hostDisplayName: "host",
     hostIsPlayer1: true,
     hostAuthUserId: args.hostAuthUserId,
-    puzzleId: args.puzzleId,
+    puzzle: args.puzzleId
+      ? { kind: "saved", puzzleId: args.puzzleId }
+      : undefined,
   });
   joinGameSession({ id: session.id, displayName: "joiner" });
 

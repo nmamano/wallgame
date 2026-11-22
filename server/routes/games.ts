@@ -35,6 +35,8 @@ import {
 import {
   type Move,
   type PlayerAppearance,
+  type PlayerId,
+  type PuzzleRef,
 } from "../../shared/domain/game-types";
 import { botSupportsGameConfiguration } from "../../shared/domain/bot-capability";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
@@ -44,6 +46,7 @@ import {
 } from "../../shared/domain/puzzle-lead-in";
 import {
   GamePositionUnavailable,
+  recordSeatLooks,
   resolveGamePositionLaunch,
 } from "../../shared/domain/game-position-puzzle";
 import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
@@ -653,13 +656,16 @@ export const botsRoute = new Hono()
         let gameConfig: CreateBotGameConfig | PuzzleLaunch["config"];
         let hostIsPlayer1: boolean | undefined;
         let leadInMove: Move | null = null;
-        // A saved puzzle or a position from a stored game: either way the
-        // opponent must be the puzzle bot.
-        let isPuzzleLaunch = false;
-        // Identity recorded on the game record (S-ID). Taken from the
-        // validated DB row, never from the request, so a completion can never
-        // be credited to a puzzle the server did not itself resolve.
-        let resolvedPuzzleId: string | undefined;
+        // The puzzle this game is an attempt at (S-ID): a saved puzzle or a
+        // stored game's position, either way with the puzzle bot as the
+        // opponent. Taken from what the server itself resolved, never from the
+        // request, so a completion can never be credited to a puzzle the
+        // server did not resolve.
+        let puzzle: PuzzleRef | undefined;
+        // A position from a stored game looks as it did in that game: each
+        // seat's colours and pawns come from the record, not from the request
+        // or the bot.
+        let recordLooks: Record<PlayerId, PlayerAppearance> | undefined;
 
         if ("puzzleId" in parsed) {
           const rows = await db
@@ -679,8 +685,7 @@ export const botsRoute = new Hono()
             gameConfig = resolved.config;
             hostIsPlayer1 = resolved.humanIsPlayer1;
             leadInMove = resolved.leadInMove;
-            resolvedPuzzleId = row.id;
-            isPuzzleLaunch = true;
+            puzzle = { kind: "saved", puzzleId: row.id };
           } catch (resolveError) {
             // Fail closed: a corrupted row, a missing lead-in during the
             // migration->population gap, or an invariant violation must
@@ -698,11 +703,12 @@ export const botsRoute = new Hono()
             return c.json({ error: "Game not found" }, 404);
           }
           try {
-            const resolved = resolveGamePositionLaunch(stored, ply);
+            const resolved = resolveGamePositionLaunch(stored.game, ply);
             gameConfig = resolved.config;
             hostIsPlayer1 = resolved.humanIsPlayer1;
             leadInMove = resolved.leadInMove;
-            isPuzzleLaunch = true;
+            puzzle = { kind: "game", gameId, ply };
+            recordLooks = recordSeatLooks(stored.seats);
           } catch (resolveError) {
             if (!(resolveError instanceof GamePositionUnavailable)) {
               throw resolveError;
@@ -731,7 +737,7 @@ export const botsRoute = new Hono()
         // request cannot skip, and it matters because puzzle completions feed
         // campaign progress.
         if (
-          isPuzzleLaunch &&
+          puzzle !== undefined &&
           (!bot.isAnalysisBot || bot.placement !== "puzzle")
         ) {
           return c.json(
@@ -739,7 +745,7 @@ export const botsRoute = new Hono()
             400,
           );
         }
-        if (!isPuzzleLaunch && bot.placement !== "opponent") {
+        if (puzzle === undefined && bot.placement !== "opponent") {
           return c.json(
             { error: "That bot is not available as an ordinary opponent" },
             400,
@@ -794,7 +800,14 @@ export const botsRoute = new Hono()
           ? await getGlobalRatingForAuthUser(user.id)
           : undefined;
 
-        const joinerAppearance = mapBotAppearance(bot.appearance);
+        const hostIsP1 = hostIsPlayer1 ?? Math.random() < 0.5;
+        const hostPlayerId: PlayerId = hostIsP1 ? 1 : 2;
+        const hostAppearance = recordLooks
+          ? recordLooks[hostPlayerId]
+          : parsed.hostAppearance;
+        const joinerAppearance = recordLooks
+          ? recordLooks[hostIsP1 ? 2 : 1]
+          : mapBotAppearance(bot.appearance);
 
         // Create game session with bot as joiner
         // V3: Bot games are untimed - use placeholder time control
@@ -809,8 +822,8 @@ export const botsRoute = new Hono()
             user?.id,
             parsed.hostDisplayName,
           ),
-          hostAppearance: parsed.hostAppearance,
-          hostIsPlayer1: hostIsPlayer1 ?? Math.random() < 0.5,
+          hostAppearance,
+          hostIsPlayer1: hostIsP1,
           hostAuthUserId: user?.id,
           hostAnonymousId: parsed.anonymousId,
           hostElo,
@@ -818,7 +831,7 @@ export const botsRoute = new Hono()
             type: "bot",
             displayName: bot.name,
           },
-          puzzleId: resolvedPuzzleId,
+          puzzle,
         });
 
         session.players.joiner.appearance = joinerAppearance;

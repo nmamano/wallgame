@@ -29,6 +29,8 @@
 
 import { z } from "zod";
 import { authoredPositionConfigSchema, cellSchema } from "./games";
+import type { PlayerAppearance, PlayerId } from "../domain/game-types";
+import type { PuzzleLaunch } from "../domain/puzzle-lead-in";
 
 const nonempty = z.string().min(1);
 
@@ -336,3 +338,17 @@ export type PuzzleProgressResponse = z.infer<
 export type ScriptedCompletionRequest = z.infer<
   typeof scriptedCompletionRequestSchema
 >;
+
+/**
+ * GET /api/puzzles/game/:gameId/:ply (task a03b8f5c): the position after
+ * `ply` plies of a stored game, as its puzzle opens. `launch` is exactly what
+ * a launch creates (the start position, the seat, the bot's first move), so
+ * the page draws the board the game will open on. `looks` is each seat's
+ * colour and pawns, as in the daily video.
+ */
+export interface GamePositionPuzzle {
+  gameId: string;
+  ply: number;
+  launch: PuzzleLaunch;
+  looks: Record<PlayerId, PlayerAppearance>;
+}

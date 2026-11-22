@@ -153,8 +153,12 @@ describe("the frontend attaches the id to every seat-creating request", () => {
           }),
       ],
       [
-        "playPuzzle",
-        () => api.playPuzzle({ botId: "client:bot", puzzleId: "S-42" }),
+        "launchPuzzle",
+        () =>
+          api.launchPuzzle({
+            botId: "client:bot",
+            ref: { kind: "saved", puzzleId: "S-42" },
+          }),
       ],
     ];
 

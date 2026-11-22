@@ -243,8 +243,7 @@ describe("handshake puzzle metadata", () => {
     role: "host",
     playerId: 2,
     shareUrl: "https://example/game/g1",
-    puzzleId: "pz1",
-    puzzleName: "Puzzle 7",
+    puzzle: { ref: { kind: "saved", puzzleId: "pz1" }, name: "Puzzle 7" },
   };
 
   it("withPuzzleMetadataFrom carries metadata onto rebuilt handshakes (refresh/Retry/rematch)", () => {
@@ -256,33 +255,15 @@ describe("handshake puzzle metadata", () => {
       playerId: 2,
     };
     const carried = withPuzzleMetadataFrom(rebuilt, base);
-    expect(carried.puzzleId).toBe("pz1");
-    expect(carried.puzzleName).toBe("Puzzle 7");
+    expect(carried.puzzle).toEqual(base.puzzle);
     // Non-puzzle games are untouched (spectator/shared-link fallback stays
     // generic because there is nothing to carry).
     const plain = withPuzzleMetadataFrom(rebuilt, {
       ...base,
-      puzzleId: undefined,
-      puzzleName: undefined,
+      puzzle: undefined,
     });
     expect(plain).toBe(rebuilt);
     expect(withPuzzleMetadataFrom(rebuilt, null)).toBe(rebuilt);
-  });
-
-  it("does not carry a lone malformed half-pair (metadata is atomic)", () => {
-    const rebuilt: StoredGameHandshake = {
-      gameId: "g3",
-      token: "t3",
-      socketToken: "s3",
-      role: "host",
-      playerId: 1,
-    };
-    expect(
-      withPuzzleMetadataFrom(rebuilt, { ...base, puzzleName: undefined }),
-    ).toBe(rebuilt);
-    expect(
-      withPuzzleMetadataFrom(rebuilt, { ...base, puzzleId: undefined }),
-    ).toBe(rebuilt);
   });
 
   it("getPuzzleBannerName resolves the name, else the generic fallback", () => {
@@ -290,24 +271,27 @@ describe("handshake puzzle metadata", () => {
     // Spectators/shared links have no handshake at all.
     expect(getPuzzleBannerName(null)).toBe(null);
     // Ordinary games carry no metadata.
-    expect(
-      getPuzzleBannerName({
-        ...base,
-        puzzleId: undefined,
-        puzzleName: undefined,
-      }),
-    ).toBe(null);
-    // A malformed half-pair is not trusted.
-    expect(getPuzzleBannerName({ ...base, puzzleId: undefined })).toBe(null);
-    expect(getPuzzleBannerName({ ...base, puzzleName: undefined })).toBe(null);
+    expect(getPuzzleBannerName({ ...base, puzzle: undefined })).toBe(null);
   });
 
   it("handshakesEqual detects dropped or changed puzzle metadata", () => {
     expect(handshakesEqual(base, { ...base })).toBe(true);
-    expect(handshakesEqual(base, { ...base, puzzleName: undefined })).toBe(
-      false,
-    );
-    expect(handshakesEqual(base, { ...base, puzzleId: "other" })).toBe(false);
+    expect(handshakesEqual(base, { ...base, puzzle: undefined })).toBe(false);
+    expect(
+      handshakesEqual(base, {
+        ...base,
+        puzzle: { ref: { kind: "saved", puzzleId: "other" }, name: "Puzzle 7" },
+      }),
+    ).toBe(false);
+    expect(
+      handshakesEqual(base, {
+        ...base,
+        puzzle: {
+          ref: { kind: "game", gameId: "g", ply: 3 },
+          name: "Puzzle 7",
+        },
+      }),
+    ).toBe(false);
     expect(handshakesEqual(null, base)).toBe(false);
     expect(handshakesEqual(null, null)).toBe(true);
   });

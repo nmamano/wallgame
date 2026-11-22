@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import type { VideoPuzzleNextStep } from "@/components/video-puzzle-next-step";
 import {
   Flag,
   Handshake,
@@ -72,6 +73,12 @@ export interface MobileToolbarEndgameProps {
   isPuzzle?: boolean;
   handleRetryPuzzle?: () => void;
   isRetryingPuzzle?: boolean;
+  /**
+   * At the end of a daily video's puzzle the next step is its own strip above
+   * this bar (routes/game.$id.tsx), for the same reason as the vote below; the
+   * bar then shows no Retry of its own.
+   */
+  videoPuzzleNextStep?: VideoPuzzleNextStep;
   // The puzzle vote control is deliberately NOT in this bar: at 390px the
   // centred result text runs under any extra buttons on the right — measured
   // in a browser, not guessed — so the mobile game page renders it as its own
@@ -139,6 +146,7 @@ export function MobileActionToolbar({
     isPuzzle = false,
     handleRetryPuzzle,
     isRetryingPuzzle = false,
+    videoPuzzleNextStep,
     primaryLocalPlayerId,
     spectatorRematchGameId,
     handleFollowSpectatorRematch,
@@ -207,7 +215,7 @@ export function MobileActionToolbar({
             ) : null
           ) : (
             <>
-              {isPuzzle && handleRetryPuzzle && (
+              {isPuzzle && handleRetryPuzzle && !videoPuzzleNextStep && (
                 <Button
                   size="sm"
                   className="h-7 px-2 text-[10px]"

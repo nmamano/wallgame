@@ -21,7 +21,14 @@ import {
   mapSavedPuzzleRows,
   puzzleVoteRequestSchema,
   scriptedCompletionRequestSchema,
+  type GamePositionPuzzle,
 } from "../../shared/contracts/puzzles";
+import { getStoredGame } from "../db/game-queries";
+import {
+  GamePositionUnavailable,
+  recordSeatLooks,
+  resolveGamePositionLaunch,
+} from "../../shared/domain/game-position-puzzle";
 import {
   createAnonymousWriteLimiter,
   clientNetworkKey,
@@ -119,6 +126,39 @@ export const puzzlesRoute = new Hono()
     } catch (error) {
       console.error("[puzzles] failed to list saved puzzles", { error });
       return c.json({ error: "Failed to load puzzles" }, 500);
+    }
+  })
+
+  /**
+   * A stored game's position as a puzzle (task a03b8f5c): what a launch of
+   * {fromGame: {gameId, ply}} would open on, for the page that offers it.
+   * Public, like the game's replay; reads only.
+   */
+  .get("/game/:gameId/:ply", async (c) => {
+    const gameId = c.req.param("gameId");
+    const plyParam = c.req.param("ply");
+    if (!/^[0-9]{1,4}$/.test(plyParam)) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+    const ply = Number(plyParam);
+    const stored = await getStoredGame(gameId);
+    if (!stored) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+    try {
+      const body: GamePositionPuzzle = {
+        gameId,
+        ply,
+        launch: resolveGamePositionLaunch(stored.game, ply),
+        looks: recordSeatLooks(stored.seats),
+      };
+      return c.json(body);
+    } catch (error) {
+      if (!(error instanceof GamePositionUnavailable)) throw error;
+      return c.json(
+        { error: "This position cannot be played as a puzzle" },
+        409,
+      );
     }
   })
 

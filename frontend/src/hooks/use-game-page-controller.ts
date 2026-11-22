@@ -23,6 +23,7 @@ import type {
   GameSnapshot,
   GameInitialState,
   SurvivalInitialState,
+  PuzzleRef,
 } from "../../../shared/domain/game-types";
 import {
   moveToStandardNotation,
@@ -46,7 +47,7 @@ import {
   fetchGameSession,
   abortGameSession,
   fetchBots,
-  playPuzzle,
+  launchPuzzle,
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
@@ -244,7 +245,12 @@ function buildSeatViewsFromSnapshot(
   // In a puzzle the opponent is not a rated player you are competing with, it is the
   // oracle you are being measured against. Showing its real bot identity and a normal
   // rating invites you to read the game as a match, which is the wrong frame.
-  const isPuzzle = snapshot.puzzleId !== undefined;
+  const isPuzzle = snapshot.puzzle !== undefined;
+  // A video's puzzle looks as the video did: every seat keeps the colour and
+  // pawns of the game record, the solver's included (task a03b8f5c).
+  const looksAsRecorded = snapshot.puzzle?.kind === "game";
+  const usesOwnLook = (playerId: PlayerId) =>
+    playerId === primaryLocalPlayerId && !looksAsRecorded;
   const ordered = [...snapshot.players].sort((a, b) => {
     if (a.role === "host" && b.role !== "host") return -1;
     if (b.role === "host" && a.role !== "host") return 1;
@@ -273,26 +279,21 @@ function buildSeatViewsFromSnapshot(
         ? ("you" as PlayerType)
         : ("friend" as PlayerType),
     isOnline: player.connected,
-    dogSkin:
-      player.playerId === primaryLocalPlayerId
-        ? localPreferences.dogSkin
-        : player.appearance?.dogSkin,
-    catSkin:
-      player.playerId === primaryLocalPlayerId
-        ? localPreferences.catSkin
-        : player.appearance?.catSkin,
-    mouseSkin:
-      player.playerId === primaryLocalPlayerId
-        ? localPreferences.mouseSkin
-        : player.appearance?.mouseSkin,
-    elephantSkin:
-      player.playerId === primaryLocalPlayerId
-        ? localPreferences.elephantSkin
-        : player.appearance?.elephantSkin,
-    homeSkin:
-      player.playerId === primaryLocalPlayerId
-        ? localPreferences.homeSkin
-        : player.appearance?.homeSkin,
+    dogSkin: usesOwnLook(player.playerId)
+      ? localPreferences.dogSkin
+      : player.appearance?.dogSkin,
+    catSkin: usesOwnLook(player.playerId)
+      ? localPreferences.catSkin
+      : player.appearance?.catSkin,
+    mouseSkin: usesOwnLook(player.playerId)
+      ? localPreferences.mouseSkin
+      : player.appearance?.mouseSkin,
+    elephantSkin: usesOwnLook(player.playerId)
+      ? localPreferences.elephantSkin
+      : player.appearance?.elephantSkin,
+    homeSkin: usesOwnLook(player.playerId)
+      ? localPreferences.homeSkin
+      : player.appearance?.homeSkin,
   }));
 }
 
@@ -692,8 +693,13 @@ export function useGamePageController(gameId: string) {
     return (idx + 1) as PlayerId;
   }, [playerTypes]);
 
+  /** See buildSeatViewsFromSnapshot: a video's puzzle keeps the record's look. */
+  const looksAsRecorded = viewModel.match?.puzzle?.kind === "game";
   const friendColorOverrides = useMemo(() => {
-    if ((!isMultiplayerMatch && !isReadOnlySession) || !viewModel.match) {
+    if (
+      (!isMultiplayerMatch && !isReadOnlySession && !looksAsRecorded) ||
+      !viewModel.match
+    ) {
       return {};
     }
     const map: Partial<Record<PlayerId, PlayerColor>> = {};
@@ -703,26 +709,31 @@ export function useGamePageController(gameId: string) {
       }
     });
     return map;
-  }, [viewModel.match, isMultiplayerMatch, isReadOnlySession]);
+  }, [viewModel.match, isMultiplayerMatch, isReadOnlySession, looksAsRecorded]);
 
   const playerColorsForBoard = useMemo(() => {
     const colors: Record<PlayerId, PlayerColor> = {
       1: DEFAULT_PLAYER_COLORS[1],
       2: DEFAULT_PLAYER_COLORS[2],
     };
-    if (primaryLocalPlayerId) {
+    if (primaryLocalPlayerId && !looksAsRecorded) {
       colors[primaryLocalPlayerId] = localPreferences.pawnColor;
     }
     Object.entries(friendColorOverrides).forEach(([key, value]) => {
       const playerId = Number(key) as PlayerId;
-      if (playerId === primaryLocalPlayerId) {
+      if (playerId === primaryLocalPlayerId && !looksAsRecorded) {
         return;
       }
       colors[playerId] = value;
     });
 
     return resolvePlayerColorPair(colors[1], colors[2]);
-  }, [friendColorOverrides, localPreferences.pawnColor, primaryLocalPlayerId]);
+  }, [
+    friendColorOverrides,
+    localPreferences.pawnColor,
+    primaryLocalPlayerId,
+    looksAsRecorded,
+  ]);
 
   const stagedActionsSnapshotRef = useRef<Action[] | null>(null);
   const latestStagedActionsRef = useRef<Action[]>([]);
@@ -1862,10 +1873,13 @@ export function useGamePageController(gameId: string) {
    * opponent you are competing with over a series: a rematch would swap the sides, which
    * makes no sense when one side is the puzzle, and a match score is counting nothing.
    */
-  const isPuzzleGame =
-    gameState !== null &&
-    (matchSnapshot?.puzzleId ?? getGameHandshake(gameId)?.puzzleId) !==
-      undefined;
+  const puzzleRef: PuzzleRef | null =
+    gameState === null
+      ? null
+      : (matchSnapshot?.puzzle ??
+        getGameHandshake(gameId)?.puzzle?.ref ??
+        null);
+  const isPuzzleGame = puzzleRef !== null;
   const survivalSettings =
     gameState?.config.variant === "survival"
       ? (gameState.config.variantConfig as SurvivalInitialState)
@@ -2701,6 +2715,10 @@ export function useGamePageController(gameId: string) {
     getSeatController,
   ]);
 
+  const handlePlayFullGame = useCallback(() => {
+    void navigate({ to: "/play" });
+  }, [navigate]);
+
   const handleExitAfterMatch = useCallback(() => {
     if (rematchState.status === "pending" && primaryLocalPlayerId) {
       if (isMultiplayerMatch) {
@@ -2726,12 +2744,20 @@ export function useGamePageController(gameId: string) {
         respondToRematch(primaryLocalPlayerId, "declined");
       }
     }
-    // Leaving a puzzle means going back to the puzzle list, not out to the landing
-    // page - you are almost always about to try another one.
-    void navigate({ to: isPuzzleGame ? "/puzzles" : "/" });
+    // Leaving a saved puzzle means going back to the puzzle list, not out to
+    // the landing page - you are almost always about to try another one. A
+    // video's puzzle leads to a full game instead (task a03b8f5c).
+    void navigate({
+      to:
+        puzzleRef?.kind === "saved"
+          ? "/puzzles"
+          : puzzleRef?.kind === "game"
+            ? "/play"
+            : "/",
+    });
   }, [
     isMultiplayerMatch,
-    isPuzzleGame,
+    puzzleRef?.kind,
     primaryLocalPlayerId,
     rematchState.status,
     respondToRematch,
@@ -2740,13 +2766,13 @@ export function useGamePageController(gameId: string) {
   ]);
 
   // Retry a puzzle: relaunch the SAME puzzle into a fresh game via the
-  // server-authoritative puzzleId launch (S-P1). The game's own config must
-  // NOT be used — for a puzzle with a bot lead-in it is the rewound
-  // pre-position, not the puzzle. The puzzleId rides the stored handshake.
+  // server-authoritative launch (S-P1). The game's own config must NOT be
+  // used — for a puzzle with a bot lead-in it is the rewound pre-position, not
+  // the puzzle. The puzzle comes from the server's snapshot, else from the
+  // stored handshake.
   const [isRetryingPuzzle, setIsRetryingPuzzle] = useState(false);
   const handleRetryPuzzle = useCallback(async () => {
     const config = gameState?.config;
-    const puzzleId = getGameHandshake(gameId)?.puzzleId;
     if (
       !isPuzzleGame ||
       gameStatus !== "finished" ||
@@ -2756,7 +2782,7 @@ export function useGamePageController(gameId: string) {
     ) {
       return;
     }
-    if (!puzzleId) {
+    if (!puzzleRef) {
       // Pre-S-P1 games and spectator-opened links have no stored puzzle
       // identity; without it the server cannot recreate the puzzle.
       addSystemMessage(
@@ -2784,9 +2810,9 @@ export function useGamePageController(gameId: string) {
         );
         return;
       }
-      const response = await playPuzzle({
+      const response = await launchPuzzle({
         botId: officialBot.id,
-        puzzleId,
+        ref: puzzleRef,
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
@@ -2825,6 +2851,7 @@ export function useGamePageController(gameId: string) {
     }
   }, [
     isPuzzleGame,
+    puzzleRef,
     gameStatus,
     isRetryingPuzzle,
     gameState?.config,
@@ -3298,9 +3325,13 @@ export function useGamePageController(gameId: string) {
    * game this player decisively won. Spectators, replays, draws and losses
    * therefore see nothing.
    */
+  const handshakePuzzleRef = getGameHandshake(gameId)?.puzzle?.ref;
   const votablePuzzleId =
-    isPuzzleGame && !isReadOnlySession && primaryLocalPlayerId !== null
-      ? (getGameHandshake(gameId)?.puzzleId ?? null)
+    isPuzzleGame &&
+    !isReadOnlySession &&
+    primaryLocalPlayerId !== null &&
+    handshakePuzzleRef?.kind === "saved"
+      ? handshakePuzzleRef.puzzleId
       : null;
   const wonThisPuzzle =
     gameStatus === "finished" &&
@@ -3498,11 +3529,27 @@ export function useGamePageController(gameId: string) {
   // An aborted game has no winner, but it is not a draw either - it never
   // became a game. Formatted here so the panels stay presentation-only.
   const gameIsAborted = gameResult?.reason === "aborted";
+  // A video's puzzle ends on its own words and one next step (task a03b8f5c):
+  // solved, or the bot held on.
+  const videoPuzzleOutcome: "solved" | "failed" | null =
+    puzzleRef?.kind === "game" &&
+    gameStatus === "finished" &&
+    !gameIsAborted &&
+    primaryLocalPlayerId !== null &&
+    !isReadOnlySession
+      ? gameResult?.winner === primaryLocalPlayerId
+        ? "solved"
+        : "failed"
+      : null;
   const resultHeadline = gameIsAborted
     ? "Game aborted"
-    : winnerPlayer
-      ? `${winnerPlayer.name} won`
-      : "Draw";
+    : videoPuzzleOutcome === "solved"
+      ? "Solved!"
+      : videoPuzzleOutcome === "failed"
+        ? "The bot held on"
+        : winnerPlayer
+          ? `${winnerPlayer.name} won`
+          : "Draw";
   const resultDetail = gameIsAborted
     ? "No rating or record change"
     : winReason
@@ -4046,6 +4093,10 @@ export function useGamePageController(gameId: string) {
       isPuzzle: isPuzzleGame,
       handleRetryPuzzle,
       isRetryingPuzzle,
+      videoPuzzleNextStep:
+        videoPuzzleOutcome === null
+          ? undefined
+          : { outcome: videoPuzzleOutcome, handlePlayFullGame },
       // Present only when this player earned the right to vote; the panels
       // render it and decide nothing.
       puzzleVote: puzzleVote.canVote
@@ -4115,6 +4166,7 @@ export function useGamePageController(gameId: string) {
       interactionLocked,
       isMultiplayerMatch: infoIsMultiplayerMatch,
       isPuzzle: isPuzzleGame,
+      puzzleKind: puzzleRef?.kind ?? null,
       unsupportedPlayers,
       placeholderCopy: PLACEHOLDER_COPY,
     },

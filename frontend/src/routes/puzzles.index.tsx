@@ -14,7 +14,7 @@ import {
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { useSettings } from "@/hooks/use-settings";
 import {
-  playPuzzle,
+  launchPuzzle,
   savedPuzzlesQueryOptions,
   userQueryOptions,
 } from "@/lib/api";
@@ -408,9 +408,9 @@ function PuzzlesSection() {
     try {
       // S-P1: server-authoritative launch — the server derives config, seat,
       // and the bot's lead-in move from the puzzle row.
-      const response = await playPuzzle({
+      const response = await launchPuzzle({
         botId: playback.bot.id,
-        puzzleId: puzzle.id,
+        ref: { kind: "saved", puzzleId: puzzle.id },
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
@@ -428,8 +428,10 @@ function PuzzlesSection() {
         role: response.role,
         playerId: response.playerId,
         shareUrl: response.shareUrl,
-        puzzleId: puzzle.id,
-        puzzleName: puzzle.displayName,
+        puzzle: {
+          ref: { kind: "saved", puzzleId: puzzle.id },
+          name: puzzle.displayName,
+        },
       });
       void navigate({ to: `/game/${response.gameId}` });
     } catch (cause) {

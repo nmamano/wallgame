@@ -260,7 +260,7 @@ describe("a drain refuses new games and leaves the live ones alone", () => {
       matchType: "friend",
       hostDisplayName: "solver",
       hostIsPlayer1: true,
-      puzzleId: "harness-puzzle",
+      puzzle: { kind: "saved", puzzleId: "harness-puzzle" },
     });
     store.joinGameSession({ id: session.id, displayName: "puzzle bot" });
     drainOn();

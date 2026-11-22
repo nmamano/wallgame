@@ -1,4 +1,4 @@
-import type { PlayerId } from "../../../shared/domain/game-types";
+import type { PlayerId, PuzzleRef } from "../../../shared/domain/game-types";
 import type { GameRole } from "../../../shared/contracts/games";
 
 export interface StoredGameHandshake {
@@ -9,13 +9,18 @@ export interface StoredGameHandshake {
   playerId: PlayerId;
   shareUrl?: string;
   /**
-   * Which saved puzzle launched this game, carried client-side only (no
-   * field on the game record — doc §G). Present only on the launching
+   * Which puzzle launched this game and its name, carried client-side only
+   * (no name on the game record — doc §G). Present only on the launching
    * client; spectators and shared links fall back to a generic "Puzzle".
+   * Retry relaunches `ref`.
    */
-  puzzleId?: string;
-  puzzleName?: string;
+  puzzle?: { ref: PuzzleRef; name: string };
 }
+
+const puzzlesEqual = (
+  a: StoredGameHandshake["puzzle"],
+  b: StoredGameHandshake["puzzle"],
+): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * Structural equality including puzzle metadata — a rewrite that dropped
@@ -34,8 +39,7 @@ export const handshakesEqual = (
     a.role === b.role &&
     a.playerId === b.playerId &&
     a.shareUrl === b.shareUrl &&
-    a.puzzleId === b.puzzleId &&
-    a.puzzleName === b.puzzleName
+    puzzlesEqual(a.puzzle, b.puzzle)
   );
 };
 
@@ -49,25 +53,18 @@ export const withPuzzleMetadataFrom = (
   next: StoredGameHandshake,
   previous: StoredGameHandshake | null | undefined,
 ): StoredGameHandshake => {
-  // The pair is atomic: a lone id or lone name (malformed storage) is not
-  // carried — the banner would have nothing trustworthy to show anyway.
-  if (!previous?.puzzleId || !previous.puzzleName) return next;
-  return {
-    ...next,
-    puzzleId: previous.puzzleId,
-    puzzleName: previous.puzzleName,
-  };
+  if (!previous?.puzzle) return next;
+  return { ...next, puzzle: previous.puzzle };
 };
 
 /**
- * The banner's puzzle name: only a handshake carrying the full atomic
- * id+name pair yields a name; anything else (spectators, shared links,
- * malformed halves) resolves to null and the UI shows the generic label.
+ * The banner's puzzle name: only a handshake carrying the puzzle yields a
+ * name; anything else (spectators, shared links) resolves to null and the UI
+ * shows the generic label.
  */
 export const getPuzzleBannerName = (
   handshake: StoredGameHandshake | null,
-): string | null =>
-  handshake?.puzzleId && handshake.puzzleName ? handshake.puzzleName : null;
+): string | null => handshake?.puzzle?.name ?? null;
 
 const STORAGE_PREFIX = "game-handshake";
 

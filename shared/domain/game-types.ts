@@ -209,10 +209,19 @@ export type MatchType = "friend" | "matchmaking";
 
 export type MatchScore = Record<PlayerId, number>;
 
+/**
+ * Which puzzle a game is an attempt at: a saved puzzle (its row id), or the
+ * position after `ply` plies of a stored game (task a03b8f5c). Metadata, not
+ * a rules variant; set only by a server-authoritative launch.
+ */
+export type PuzzleRef =
+  | { kind: "saved"; puzzleId: string }
+  | { kind: "game"; gameId: string; ply: number };
+
 export interface GameSnapshot {
   id: string;
-  /** Saved-puzzle identity is metadata, not a rules variant. */
-  puzzleId?: string;
+  /** Present only for a puzzle attempt. */
+  puzzle?: PuzzleRef;
   status: SessionStatus;
   config: GameConfiguration;
   matchType: MatchType;
