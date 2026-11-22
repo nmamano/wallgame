@@ -275,13 +275,7 @@
         background: rgba(255, 255, 255, 0.12);
         filter: blur(4px);
       }
-      /*
-        The puzzle's hold (edl.mjs puzzle) names its move in the
-        flashback's label, over the board in full colour, with no VHS look
-        (Wall Game Director, 2026-11-22; Nil, C39: show that it is the past).
-      */
-      #vhsLabel,
-      #pastLabel {
+      #vhsLabel {
         position: absolute;
         left: 4%;
         top: 3%;
@@ -577,6 +571,29 @@
       }
       #race .vs > * {
         grid-area: 1 / 1;
+      }
+      /*
+        The puzzle's hold (edl.mjs puzzle) names its move, "MOVE 13", in
+        the flashback's label look, in the counter's middle in place of its
+        words: off the board, where the whole board is the puzzle (Wall
+        Game Director, 2026-11-22; Nil, C39: show that it is the past). Laid
+        out (hidden) all video long in a puzzle video, so the middle keeps
+        one width.
+      */
+      #racePast {
+        display: none;
+        visibility: hidden;
+        font-family: "DejaVu Sans Mono", monospace;
+        font-weight: 700;
+        font-size: 1.7em;
+        line-height: 1;
+        letter-spacing: 0.06em;
+        white-space: nowrap;
+        color: #fff;
+        text-shadow:
+          0.05em 0 rgba(255, 0, 80, 0.7),
+          -0.05em 0 rgba(0, 200, 255, 0.7),
+          0 0 0.3em rgba(0, 0, 0, 0.9);
       }
       #raceFast {
         display: none;
@@ -1387,6 +1404,7 @@
                 ><span id="raceTag">VS</span><small>STEPS</small></span
               >
               <span id="raceFast"></span>
+              <span id="racePast"></span>
             </div>
             <div class="side">
               <span class="n" id="raceNb"></span
@@ -1458,7 +1476,6 @@
             <div id="vhsBand"></div>
             <div id="vhsLabel"></div>
           </div>
-          <div id="pastLabel" class="hidden"></div>
           <div id="fxFlash" class="hidden"></div>
           <div id="freezeBadge" class="hidden">
             <div></div>
@@ -3809,6 +3826,7 @@
         strip,
         cta,
         holdCta,
+        holdLabel,
         evalStrip,
         ending,
         fastForward,
@@ -3817,6 +3835,8 @@
         // The widest speed tag the video shows, laid out (hidden) all video
         // long, so the counter's middle keeps one width; none: no badge.
         $("raceFast").style.display = fastForward ? "block" : "none";
+        $("racePast").style.display = holdLabel ? "block" : "none";
+        $("racePast").textContent = holdLabel ?? "";
         $("raceFast").textContent = fastForward
           ? "▶\uFE0E▶\uFE0E " + fastForward
           : "";
@@ -4056,13 +4076,18 @@
       let stripCta = null;
       /**
        * The puzzle's hold (edl.mjs puzzle): p = { label: "MOVE 13", cta,
-       * t: seconds into the hold }, or null. The label names the move over
-       * the board; the badge shows the puzzle's call to action, which pops
+       * t: seconds into the hold }, or null. The label names the move in
+       * the counter's middle (#racePast, laid out by __fitWallz); the badge shows the puzzle's call to action, which pops
        * as the hold opens and then breathes as the GG card's does. Off the
        * hold, the badge shows the video's call to action, still.
        */
       const paintPuzzle = (p) => {
-        show($("pastLabel"), !!p);
+        // After paintHud, which sets the middle's words for the frame.
+        $("racePast").style.visibility = p ? "inherit" : "hidden";
+        if (p) {
+          $("racePast").textContent = p.label;
+          $("race").querySelector(".vs .words").style.visibility = "hidden";
+        }
         const site = $("stripSite");
         if (!p) {
           if (site.dataset.text !== (stripCta ?? "")) {
@@ -4075,7 +4100,6 @@
           site.style.backgroundImage = "";
           return;
         }
-        $("pastLabel").textContent = p.label;
         if (site.dataset.text !== p.cta) {
           ctaInto(site, p.cta);
           site.dataset.text = p.cta;

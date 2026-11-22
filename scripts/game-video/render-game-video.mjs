@@ -4677,6 +4677,8 @@ const renderStyle = async (styleName) => {
           // The badge fits the puzzle's call to action too, which it shows
           // on the puzzle's hold.
           holdCta: PUZZLE?.cta ?? null,
+          // And the counter's middle its move's label.
+          holdLabel: PUZZLE?.label ?? null,
           evalStrip: Boolean(EDL?.evalStrip),
           ending: style.ending,
           // The widest speed tag, for the counter's middle (stage.html).
@@ -7683,7 +7685,7 @@ const renderStyle = async (styleName) => {
    * closes: "<< REWIND" plays the board back from the last position to the
    * puzzle's, turning sepia under the flashback's VHS look, with rewind-1;
    * then the position holds in full colour: its move's label ("MOVE 13")
-   * over the board, the puzzle's line in the caption's place, a ring on
+   * in the counter's middle, off the board, the puzzle's line in the caption's place, a ring on
    * the side to move's hunter, and the puzzle's call to action in the
    * badge, popping and then breathing as the GG card's. The hold lasts
    * PUZZLE_HOLD_SECONDS, or the reading time of its words, fully shown;
