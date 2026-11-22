@@ -1047,6 +1047,12 @@ const FLASHBACK_FORWARD_SECONDS = 0.7;
  * catches in one turn: no puzzle (puzzle-one-turn).
  */
 const PUZZLE_HOLD_SECONDS = 3.0;
+/**
+ * When the opponent's last move shows on the hold, in seconds into it: its
+ * arrow starts to draw and its walls light, once the ring has popped
+ * (stage.html paintPuzzle), so the eye goes to them.
+ */
+const PUZZLE_MARK_AT = 0.2;
 const PUZZLE_MIN_STEPS = 2;
 const PUZZLE_REWIND_SOUND = "rewind-1";
 /**
@@ -4347,7 +4353,9 @@ for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
  * plies; for the lint and the log only), the hold's line, which asks the
  * side to move by its colour's name, and the opponent's last move: the
  * route of each pawn it moved, as the page's arrow runs (page-arrows.mjs;
- * the corner's L for a diagonal step). Nil, 2026-11-22, C80: "it's not
+ * the corner's L for a diagonal step), and the walls it placed, which the
+ * hold lights in their owner's colour (Wall Game Director, 2026-11-22: a
+ * wall-only last move must show too). Nil, 2026-11-22, C80: "it's not
  * clear whose turn it is ... "What would you do as Red?" with Red in red
  * ... show the "last move" visualization".
  */
@@ -4382,6 +4390,12 @@ const PUZZLE = (() => {
           REPLAYED.states[p.ply],
           replay.state.config.variant,
         ).map((a) => ({ type: a.type, route: a.routes.at(-1) }));
+  const lastWalls =
+    p.ply === 0
+      ? []
+      : String(history[p.ply - 1].notation ?? "")
+          .split(".")
+          .filter((t) => t.startsWith(">") || t.startsWith("^"));
   return {
     ...p,
     board: p.ply,
@@ -4393,6 +4407,7 @@ const PUZZLE = (() => {
     ask: { before: "What would you do as ", word, after: "?" },
     text: `What would you do as ${word}?`,
     lastMove,
+    lastWalls,
   };
 })();
 
@@ -4809,15 +4824,19 @@ const renderStyle = async (styleName) => {
     const who = `${seatColors[PUZZLE.mover]} ${PUZZLE.piece}`;
     const where = termOfCell(PUZZLE.cell);
     const before = PUZZLE.ply - 1;
+    const marks = [
+      ...PUZZLE.lastMove.map(
+        (a) =>
+          `${seatColors[REPLAYED.movers[before]]} ${a.type} ${a.route.map(termOfCell).join(" -> ")}`,
+      ),
+      ...(PUZZLE.lastWalls.length
+        ? [`walls ${PUZZLE.lastWalls.join(" ")} lit`]
+        : []),
+    ];
     const arrows =
-      PUZZLE.lastMove.length === 0
-        ? `no arrow: ${before < 0 ? "no move comes before it" : `ply ${before} moved no pawn`}`
-        : `the arrow of ply ${before}: ${PUZZLE.lastMove
-            .map(
-              (a) =>
-                `${seatColors[REPLAYED.movers[before]]} ${a.type} ${a.route.map(termOfCell).join(" -> ")}`,
-            )
-            .join(", ")}`;
+      before < 0
+        ? "no last move: no move comes before it"
+        : `the last move, ply ${before}: ${marks.join(", ")}`;
     if (PUZZLE.steps <= PUZZLE_MIN_STEPS) {
       fault(
         "puzzle-one-turn",
@@ -7714,7 +7733,8 @@ const renderStyle = async (styleName) => {
    * not relevant to the puzzle"): "What would you do as Red?" in the
    * caption's place, the side's name in its colour, a ring on the side to
    * move's hunter, the opponent's last move drawn as a bold arrow in its
-   * colour as the ring settles, and the puzzle's call to action in the
+   * colour and its walls lit as the ring settles, and the puzzle's call to
+   * action in the
    * badge, popping and then breathing as the GG card's. The hold lasts
    * PUZZLE_HOLD_SECONDS, or the reading time of its words, fully shown;
    * the loop tail's flash comes after it. The counters follow the
@@ -7775,8 +7795,17 @@ const renderStyle = async (styleName) => {
             t,
             ask: wallz ? ask : null,
             lastMove,
+            markAt: PUZZLE_MARK_AT,
             pitch: GRID.pitchX,
           },
+          // The opponent's last walls, lit in their owner's colour as the
+          // arrow draws (the plant's glow, held).
+          ...(PUZZLE.lastWalls.length > 0 && {
+            trap: {
+              t: t - PUZZLE_MARK_AT,
+              ...litWalls(PUZZLE.lastWalls, PUZZLE.board),
+            },
+          }),
           cellFx: {
             kind: "ring",
             t,
