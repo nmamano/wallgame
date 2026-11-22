@@ -256,9 +256,18 @@ export const gamesRoute = new Hono()
         if (parsed.config.rated && !user?.id) {
           return c.json({ error: "Log in to create a rated game." }, 403);
         }
+        // Never the anonymous id: it is the key to a guest's history (task B,
+        // POST /api/me/guest-games), so it stays out of the logs.
         console.log(
           "[games] POST /api/games body:",
-          JSON.stringify(parsed, null, 2),
+          JSON.stringify(
+            {
+              ...parsed,
+              anonymousId: parsed.anonymousId ? "(set)" : undefined,
+            },
+            null,
+            2,
+          ),
         );
 
         // Every await comes before the cap check: the check and
