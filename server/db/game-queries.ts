@@ -27,6 +27,7 @@ import {
   type GameInitialState,
   type PlayerAppearance,
   type PlayerId,
+  type PuzzleRef,
   type SerializedGameState,
   type TimeControlConfig,
   type TimeControlPreset,
@@ -110,8 +111,39 @@ export interface ReplayGameData {
   matchStatus: GameSnapshot;
   state: SerializedGameState;
   views: number;
-  puzzleId: string | null;
 }
+
+/**
+ * The games columns that record which puzzle a game was launched as. The one
+ * writer (persistence) and the one reader (`storedPuzzleRef`) live together,
+ * so a new puzzle kind cannot reach one and miss the other.
+ */
+export const storedPuzzleColumns = (
+  puzzle: PuzzleRef | undefined,
+): { puzzleId?: string; puzzleGameId?: string; puzzlePly?: number } => {
+  if (!puzzle) return {};
+  if (puzzle.kind === "saved") return { puzzleId: puzzle.puzzleId };
+  return { puzzleGameId: puzzle.gameId, puzzlePly: puzzle.ply };
+};
+
+const storedPuzzleRef = (row: {
+  puzzleId: string | null;
+  puzzleGameId: string | null;
+  puzzlePly: number | null;
+}): PuzzleRef | undefined => {
+  if (row.puzzleId !== null) return { kind: "saved", puzzleId: row.puzzleId };
+  if (row.puzzleGameId !== null && row.puzzlePly !== null) {
+    return { kind: "game", gameId: row.puzzleGameId, ply: row.puzzlePly };
+  }
+  return undefined;
+};
+
+/**
+ * A puzzle attempt is solo practice, not match history: Past Games and the
+ * showcase leave it out. Every such filter uses this one condition.
+ */
+const isNotPuzzleAttempt = (): SQL =>
+  and(isNull(gamesTable.puzzleId), isNull(gamesTable.puzzleGameId))!;
 
 const replayGameSelect = {
   gameId: gamesTable.gameId,
@@ -125,6 +157,8 @@ const replayGameSelect = {
   views: gamesTable.views,
   movesCount: gamesTable.movesCount,
   puzzleId: gamesTable.puzzleId,
+  puzzleGameId: gamesTable.puzzleGameId,
+  puzzlePly: gamesTable.puzzlePly,
   seriesId: gamesTable.seriesId,
   rematchNumber: gamesTable.rematchNumber,
 };
@@ -132,6 +166,8 @@ const replayGameSelect = {
 export interface ReplayGameRow {
   gameId: string;
   puzzleId: string | null;
+  puzzleGameId: string | null;
+  puzzlePly: number | null;
   variant: string;
   timeControl: string;
   rated: boolean;
@@ -383,9 +419,7 @@ const assembleReplayGame = (
 
   const matchStatus: GameSnapshot = {
     id: game.gameId,
-    puzzle: game.puzzleId
-      ? { kind: "saved", puzzleId: game.puzzleId }
-      : undefined,
+    puzzle: storedPuzzleRef(game),
     status: "completed",
     config,
     matchType: game.matchType as GameSnapshot["matchType"],
@@ -408,7 +442,6 @@ const assembleReplayGame = (
     matchStatus,
     state: serialized,
     views: game.views,
-    puzzleId: game.puzzleId,
   };
 };
 
@@ -578,7 +611,7 @@ export const getRandomShowcaseGames = async (
   const games = await db
     .select(replayGameSelect)
     .from(gamesTable)
-    .where(and(gte(gamesTable.movesCount, 10), isNull(gamesTable.puzzleId)))
+    .where(and(gte(gamesTable.movesCount, 10), isNotPuzzleAttempt()))
     .orderBy(sql`random()`)
     .limit(count);
 
@@ -599,11 +632,11 @@ export const getRandomShowcaseGames = async (
  * specific to that projection and is applied by its own query.
  */
 const buildPastGamesConditions = (args: PastGamesFilter): SQL[] => {
-  // Puzzle attempts (custom-setup variants) are solo practice, not match
-  // history - they never appear in Past Games.
+  // Puzzle attempts are solo practice, not match history - they never
+  // appear in Past Games.
   const conditions: SQL[] = [
     gte(gamesTable.movesCount, 2),
-    isNull(gamesTable.puzzleId),
+    isNotPuzzleAttempt(),
   ];
 
   if (args.variant) {

@@ -16,6 +16,7 @@ import type {
   CustomBotClientMessage,
 } from "../../shared/contracts/custom-bot-protocol";
 import { resolveGamePositionLaunch } from "../../shared/domain/game-position-puzzle";
+import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
   STORED_GAME,
   STORED_GAME_ID,
@@ -269,5 +270,73 @@ describe("a stored game's position launched as a puzzle", () => {
       }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("a finished attempt is stored as a puzzle attempt, never as match history", async () => {
+    const store = await import("../../server/games/store");
+    const { persistCompletedGame } =
+      await import("../../server/games/persistence");
+    const queries = await import("../../server/db/game-queries");
+    const { db } = await import("../../server/db");
+    const { gamesTable } = await import("../../server/db/schema/games");
+    const { eq } = await import("drizzle-orm");
+
+    const res = await play(PUZZLE_BOT, STORED_GAME_ID, 10);
+    expect(res.status).toBe(201);
+    const { gameId } = (await res.json()) as { gameId: string };
+    // 10 plies of the real game (enough for the showcase's 10-move floor),
+    // then the human resigns. The bot seat is moved through the store: the
+    // test's bot client never answers.
+    const t = Date.now();
+    for (let ply = 10; ply < 20; ply++) {
+      store.applyPlayerMove({
+        id: gameId,
+        playerId: ply % 2 === 0 ? 1 : 2,
+        move: moveFromStandardNotation(STORED_MOVES[ply], 8),
+        timestamp: t + ply,
+      });
+    }
+    store.resignGame({
+      id: gameId,
+      playerId: 1,
+      timestamp: t + 100,
+      cause: "player",
+    });
+    await persistCompletedGame(getSession(gameId));
+
+    const [row] = await db
+      .select({
+        movesCount: gamesTable.movesCount,
+        puzzleId: gamesTable.puzzleId,
+        puzzleGameId: gamesTable.puzzleGameId,
+        puzzlePly: gamesTable.puzzlePly,
+      })
+      .from(gamesTable)
+      .where(eq(gamesTable.gameId, gameId));
+    expect(row).toEqual({
+      movesCount: 10,
+      puzzleId: null,
+      puzzleGameId: STORED_GAME_ID,
+      puzzlePly: 10,
+    });
+
+    // The replay knows which position it came from.
+    const replay = await queries.getReplayGameReadonly(gameId);
+    expect(replay?.matchStatus.puzzle).toEqual({
+      kind: "game",
+      gameId: STORED_GAME_ID,
+      ply: 10,
+    });
+
+    // Past Games and the showcase list the source game, not the attempt.
+    const past = await queries.queryPastGames({ page: 1, pageSize: 100 });
+    const pastIds = past.games.map((game) => game.gameId);
+    expect(pastIds).toContain(STORED_GAME_ID);
+    expect(pastIds).not.toContain(gameId);
+    const showcaseIds = (await queries.getRandomShowcaseGames(100)).map(
+      (game) => game.matchStatus.id,
+    );
+    expect(showcaseIds).toContain(STORED_GAME_ID);
+    expect(showcaseIds).not.toContain(gameId);
   });
 });

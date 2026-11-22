@@ -367,7 +367,7 @@ const handleDatabaseGameHandshake = async (
     variant,
     boardWidth,
     boardHeight,
-    replayData.puzzleId === null ? "opponent" : "puzzle",
+    replayData.matchStatus.puzzle ? "puzzle" : "opponent",
   );
   if (!evalBotResult) {
     send(ctx, {

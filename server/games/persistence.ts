@@ -5,6 +5,7 @@ import { gamePlayersTable } from "../db/schema/game-players";
 import { builtInBotsTable } from "../db/schema/built-in-bots";
 import { userAuthTable } from "../db/schema/users";
 import { eq } from "drizzle-orm";
+import { storedPuzzleColumns } from "../db/game-queries";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type { GameSession, SessionPlayer } from "./store";
 import type { GameState } from "../../shared/domain/game-state";
@@ -202,12 +203,10 @@ export const persistCompletedGame = async (
         boardHeight: session.config.boardHeight,
         startedAt: new Date(startedAt),
         movesCount: state.moveCount,
-        // S-ID: which saved puzzle this game was, for server-verified
-        // completion tracking. Undefined for every ordinary game.
-        puzzleId:
-          session.puzzle?.kind === "saved"
-            ? session.puzzle.puzzleId
-            : undefined,
+        // Which puzzle this game was launched as: a saved puzzle (S-ID,
+        // server-verified completion tracking) or a game position (a daily
+        // video's puzzle). Undefined for every ordinary game.
+        ...storedPuzzleColumns(session.puzzle),
         // Which match this game belongs to and where in it. Both come straight
         // off the session, which has tracked them all along without ever
         // writing them down. Always written together - the table rejects one

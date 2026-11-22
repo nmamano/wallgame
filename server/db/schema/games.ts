@@ -7,6 +7,7 @@ import {
   text,
   check,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { savedPuzzlesTable } from "./saved-puzzles";
@@ -36,6 +37,18 @@ export const gamesTable = pgTable(
      */
     puzzleId: text("puzzle_id").references(() => savedPuzzlesTable.id),
     /**
+     * Which game position this game was launched as (a daily video's puzzle,
+     * task a03b8f5c): the stored game and the plies played before the
+     * position. NULL for every other game. Like `puzzleId`, written only from
+     * the position the server resolved at launch. A game is a puzzle attempt
+     * when `puzzleId` or this pair is set; see `isPuzzleAttempt` in
+     * game-queries.ts, which every "is this match history" filter uses.
+     */
+    puzzleGameId: varchar("puzzle_game_id", { length: 255 }).references(
+      (): AnyPgColumn => gamesTable.gameId,
+    ),
+    puzzlePly: integer("puzzle_ply"),
+    /**
      * Which match this game belongs to, and its position in that match.
      *
      * The server already knew both: `GameSession.seriesId` is the first game's
@@ -64,6 +77,20 @@ export const gamesTable = pgTable(
     check(
       "games_match_tracking_paired",
       sql`(${table.seriesId} IS NULL) = (${table.rematchNumber} IS NULL)`,
+    ),
+    /** A game position is a game and a ply: both or neither. */
+    check(
+      "games_puzzle_position_paired",
+      sql`(${table.puzzleGameId} IS NULL) = (${table.puzzlePly} IS NULL)`,
+    ),
+    check(
+      "games_puzzle_ply_non_negative",
+      sql`${table.puzzlePly} IS NULL OR ${table.puzzlePly} >= 0`,
+    ),
+    /** A game is launched as one puzzle at most: saved or game position. */
+    check(
+      "games_one_puzzle_source",
+      sql`${table.puzzleId} IS NULL OR ${table.puzzleGameId} IS NULL`,
     ),
     /** 0 is the first game of a match; below that is a bug, not a game. */
     check(

@@ -225,6 +225,13 @@
       "when": 1793583108493,
       "tag": "0031_resign_cause",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795323629066,
+      "tag": "0032_puzzle_position",
+      "breakpoints": true
     }
   ]
 }
