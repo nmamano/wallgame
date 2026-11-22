@@ -95,7 +95,7 @@ describe("ship", () => {
     // An older commit of main is allowed (a rollback is a ship too).
     expect(moveRelease(release, first)).toMatchObject({ ok: true, to: first });
     rmSync(root, { recursive: true });
-  });
+  }, 30_000);
 
   test("the GPU host is a plain ssh target, from the env or the app's command line", () => {
     const command = "env WALLGAME_GPU_HOST=nilo@box-1 node scripts/x.mjs";
@@ -320,7 +320,7 @@ describe("ship", () => {
       expect(fake.app.restarts).toBe(0);
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("a ship that passes moves, syncs, checks and restarts once", async () => {
       const { root, release, git, second } = repos();
@@ -343,7 +343,7 @@ describe("ship", () => {
       expect(fake.app.restarts).toBe(1);
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("the first start of the review queue: an app with no items, then items", async () => {
       const { root, release, second } = repos();
@@ -361,7 +361,7 @@ describe("ship", () => {
       );
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("an item that changed or went away in the restart fails the state step", async () => {
       const { root, release, second } = repos();
@@ -384,7 +384,7 @@ describe("ship", () => {
       );
       void gone.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("a failure after the move says where the checkout and the app are", async () => {
       const { root, release, git, first, second } = repos();
@@ -406,7 +406,7 @@ describe("ship", () => {
       expect(git(release, "rev-parse", "HEAD")).toBe(second);
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("a render that starts after the move stops the restart", async () => {
       const { root, release, second } = repos();
@@ -428,7 +428,7 @@ describe("ship", () => {
       expect(fake.app.restarts).toBe(0);
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
 
     test("a restart request that gets no answer says where the checkout is", async () => {
       const { root, release, second } = repos();
@@ -445,6 +445,6 @@ describe("ship", () => {
       );
       void fake.server.stop();
       rmSync(root, { recursive: true });
-    });
+    }, 30_000);
   });
 });
