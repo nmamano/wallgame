@@ -1289,17 +1289,17 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
     ).toContain("the race lead changes 2 times (plies 3, 8)");
   });
 
-  test("seatColorsOf: the daily look's colours, and P1/P2 for a bot-vs-bot game (no throw)", () => {
+  test("seatColorsOf: the daily look's colours; a bot-vs-bot game has seat 1 red (Nil, 2026-11-22)", () => {
     const { game } = loadFixture("qKeMIIRp");
     expect(seatColorsOf(game)).toEqual({ 1: "blue", 2: "red" });
     const bots = {
       ...game,
       seats: game.seats.map((x) => ({ ...x, kind: "official bot" as const })),
     };
-    expect(seatColorsOf(bots)).toEqual({ 1: "P1", 2: "P2" });
+    expect(seatColorsOf(bots)).toEqual({ 1: "red", 2: "blue" });
     const l = fixtureLabels("qKeMIIRp");
     expect(paceLine(l.pace, null, seatColorsOf(bots))).toContain(
-      "biggest walk jump: P2 3 -> 13 at ply 12 (move 7., by P1)",
+      "biggest walk jump: blue 3 -> 13 at ply 12 (move 7., by red)",
     );
   });
 

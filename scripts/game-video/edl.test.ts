@@ -876,7 +876,7 @@ describe("SAFE_AREA", () => {
 });
 
 describe("dailySeatColors", () => {
-  test("colours the AI red, else the first seat red, and refuses bot vs bot", () => {
+  test("colours the AI red, else the first seat red (two bots too)", () => {
     expect(dailySeatColors({ 1: false, 2: true })).toEqual({
       1: "blue",
       2: "red",
@@ -889,9 +889,10 @@ describe("dailySeatColors", () => {
       1: "red",
       2: "blue",
     });
-    expect(() => dailySeatColors({ 1: true, 2: true })).toThrow(
-      "both seats are bots",
-    );
+    expect(dailySeatColors({ 1: true, 2: true })).toEqual({
+      1: "red",
+      2: "blue",
+    });
   });
 });
 

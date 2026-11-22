@@ -129,17 +129,32 @@ describe("seat eligibility", () => {
     expect(memberSeatName("blue")).toBe("Blue player");
   });
 
-  test("human vs human is in; bot vs bot is out", () => {
+  test("human vs human is in; bot vs bot is in unless a seat is Easy Bot or PuzzleBot", () => {
     expect(gameEligibility(game(nil, guest))).toEqual({
       eligible: true,
       seatKinds: ["nil", "guest"],
       result: { winner: 1, reason: "capture" },
     });
     expect(gameEligibility(game(guest, guest)).eligible).toBe(true);
-    expect(gameEligibility(game(officialBot, officialBot))).toEqual({
-      eligible: false,
-      reason: "bot vs bot",
+    // Nil, 2026-11-22, ask b2516a83: "bot vs bot is fine".
+    expect(gameEligibility(game(officialBot, officialBot)).eligible).toBe(true);
+    const easy = seat({
+      playerConfigType: "bot",
+      displayName: "Easy Bot",
+      botId: "official:easy",
+      botIsOfficial: true,
     });
+    const puzzleBot = { ...easy, displayName: "PuzzleBot" };
+    expect(gameEligibility(game(officialBot, easy))).toEqual({
+      eligible: false,
+      reason: "bot vs bot with Easy Bot",
+    });
+    expect(gameEligibility(game(puzzleBot, officialBot))).toEqual({
+      eligible: false,
+      reason: "bot vs bot with PuzzleBot",
+    });
+    // Against a human, Easy Bot stays in.
+    expect(gameEligibility(game(guest, easy)).eligible).toBe(true);
   });
 
   test("--nil-seat keeps only games with a Nil seat", () => {

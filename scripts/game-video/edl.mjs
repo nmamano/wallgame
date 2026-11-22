@@ -321,9 +321,9 @@ export const EDL_VERSION = 1;
 
 /**
  * The daily look's seat colours (Nil, 2026-10-26: "red vs blue was the
- * goal"). AI vs human: the AI red and the human blue. Human vs human: the
- * first seat (playerOrder 1) red and the second blue. Bot vs bot never
- * reaches the daily path (the picker keeps it out), so it is an error here.
+ * goal"). AI vs human: the AI red and the human blue. Human vs human and
+ * bot vs bot (Nil, 2026-11-22, ask b2516a83): the first seat (playerOrder
+ * 1) red and the second blue.
  * The renderer and the storyboard both read this, so the video and the sheet
  * the Director sees cannot disagree.
  *
@@ -332,16 +332,8 @@ export const EDL_VERSION = 1;
  * @param {{ 1: boolean, 2: boolean }} isBot
  * @returns {{ 1: "red" | "blue", 2: "red" | "blue" }}
  */
-export const dailySeatColors = (isBot) => {
-  if (isBot[1] && isBot[2]) {
-    throw new Error(
-      "both seats are bots; the daily look shows AI vs human or human vs human",
-    );
-  }
-  return isBot[2] && !isBot[1]
-    ? { 1: "blue", 2: "red" }
-    : { 1: "red", 2: "blue" };
-};
+export const dailySeatColors = (isBot) =>
+  isBot[2] && !isBot[1] ? { 1: "blue", 2: "red" } : { 1: "red", 2: "blue" };
 export const ENDINGS = ["replay", "gg", "ko"];
 
 /** The most characters a call to action (`cta`) may have. */

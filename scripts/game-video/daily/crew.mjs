@@ -815,7 +815,7 @@ export const feedbackLines = (r) =>
 /**
  * The seats as the video shows them, with each seat's colour. The
  * renderer's rule (dailySeatColors): an AI is red; two humans are red for
- * seat 1 and blue for seat 2. Two bots are never a candidate.
+ * seat 1 and blue for seat 2, and so are two bots.
  */
 const seatsLine = (c) => {
   const colors = seatColors(c);

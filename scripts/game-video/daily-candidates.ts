@@ -10,8 +10,10 @@
  * names") or an official bot. A bot that is not official takes the whole game
  * out. Every variant is in. A member other than Nil is never named: the
  * report calls the seat by its colour (memberSeatName).
- * BOT VS BOT IS OUT (Nil, 2026-10-26): at least one seat is a human.
- * Human vs human is in, like human vs bot.
+ * BOT VS BOT IS IN (Nil, 2026-11-22, ask b2516a83: "bot vs bot is fine";
+ * it ends his 2026-10-26 rule that a seat must be human), except when a
+ * seat is one of BOT_VS_BOT_OUT. Human vs human is in, like human vs bot
+ * (human vs Easy Bot too).
  * Puzzle attempts are out: they start from an authored position and are a
  * solve, not a game. Fewer than MIN_PLIES moves is out: see the constant.
  *
@@ -120,6 +122,14 @@ export interface StoredGameSummary {
 
 export type SeatKind = "guest" | "nil" | "member" | "official bot";
 
+/**
+ * The official bots that keep a bot-vs-bot game out (Wall Game Director,
+ * 2026-11-22, C81, on Nil's yes): the weakest bot and the puzzle bot make
+ * no game worth a video against another bot. By display name, as
+ * BOT_STRENGTH. Against a human they stay in.
+ */
+export const BOT_VS_BOT_OUT: readonly string[] = ["Easy Bot", "PuzzleBot"];
+
 export type SeatVerdict =
   | { ok: true; kind: SeatKind }
   | { ok: false; reason: string };
@@ -188,7 +198,10 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
     seatKinds.push(verdict.kind);
   }
   if (seatKinds.every((kind) => kind === "official bot")) {
-    return { eligible: false, reason: "bot vs bot" };
+    const out = game.seats.find((s) => BOT_VS_BOT_OUT.includes(s.displayName));
+    if (out) {
+      return { eligible: false, reason: `bot vs bot with ${out.displayName}` };
+    }
   }
   return {
     eligible: true,

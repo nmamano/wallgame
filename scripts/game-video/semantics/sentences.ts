@@ -90,19 +90,17 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 const steps = (n: number) => `${n} step${n === 1 ? "" : "s"}`;
 
 /** A side's name in the pace line and the vision prompt. */
-export type SeatLabel = "red" | "blue" | "P1" | "P2";
+export type SeatLabel = "red" | "blue";
 
 /**
  * The daily look's seat colours (edl.mjs dailySeatColors: the AI red, the
- * human blue). A bot-vs-bot game has no daily look; it gets "P1" and "P2"
- * so a scan that meets one does not stop (VR1, 2026-11-19).
+ * human blue; two humans or two bots, seat 1 red).
  */
 export const seatColorsOf = (
   game: GameFacts["game"],
 ): Record<PlayerId, SeatLabel> => {
   const isBot = (p: PlayerId) =>
     game.seats.find((x) => x.playerOrder === p)?.kind === "official bot";
-  if (isBot(1) && isBot(2)) return { 1: "P1", 2: "P2" };
   return dailySeatColors({ 1: isBot(1), 2: isBot(2) });
 };
 
