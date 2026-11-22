@@ -10,6 +10,7 @@ import {
 import { browserSendEvent } from "@/lib/analytics";
 import { isEmbedded } from "@/lib/embedded-mode";
 import { browserStorage } from "@/lib/browser-storage";
+import { authHref } from "@/lib/auth-links";
 
 /**
  * Offers a guest an account once they have actually played a game.
@@ -39,8 +40,6 @@ const NUDGE_TITLE = "Playing as a guest";
 const NUDGE_DESCRIPTION =
   "Create a free account to pick a name, play rated games, and keep your game history.";
 const NUDGE_ACTION_LABEL = "Sign up";
-/** Where the site already sends people who want an account. */
-const REGISTER_URL = "/api/register";
 
 /**
  * Long enough to read and click, short enough that it does not camp on top of
@@ -125,7 +124,8 @@ export function useAccountNudge({
             // Before the navigation, not after: assigning to location.href can
             // tear the page down before a queued request leaves.
             browserSendEvent(NUDGE_SIGNUP_CLICK_EVENT);
-            window.location.href = REGISTER_URL;
+            // Back to this game after the sign-up, not to the home page.
+            window.location.href = authHref("register");
           }}
         >
           {NUDGE_ACTION_LABEL}

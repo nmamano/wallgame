@@ -146,15 +146,16 @@ describe("the body mark for portal-only CSS", () => {
 
 describe("the rated seat of a waiting game", () => {
   test("a portal frame offers no account, only the reason", () => {
-    expect(ratedSeatPrompt(true)).toEqual({
+    expect(ratedSeatPrompt(true, "/game/abc")).toEqual({
       waitingMessage: "This game is rated. Rated games are not available here.",
       action: null,
     });
   });
 
   test("wallgame.io still offers an account", () => {
-    const prompt = ratedSeatPrompt(false);
-    expect(prompt.action?.href).toBe("/api/register");
+    const prompt = ratedSeatPrompt(false, "/game/abc");
+    // The sign-up brings the guest back to this game (task B).
+    expect(prompt.action?.href).toBe("/api/register?return=%2Fgame%2Fabc");
     expect(prompt.action?.label).toBe("Create an account");
     expect(prompt.waitingMessage).toBe(
       "This game is rated. Rated games are only played between logged-in players.",

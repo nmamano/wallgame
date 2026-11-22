@@ -4,6 +4,7 @@ import { settingsQueryOptions, userQueryOptions } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { authHref } from "@/lib/auth-links";
 
 export const Route = createFileRoute("/profile")({
   component: Profile,
@@ -26,7 +27,7 @@ const LoginLayout = () => {
           <Card className="p-6 border-border/50 bg-card/50 backdrop-blur">
             <div className="flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="w-full sm:w-auto">
-                <a href="/api/login">Log in</a>
+                <a href={authHref("login")}>Log in</a>
               </Button>
               <Button
                 asChild
@@ -34,7 +35,7 @@ const LoginLayout = () => {
                 variant="outline"
                 className="w-full sm:w-auto"
               >
-                <a href="/api/register">Sign up</a>
+                <a href={authHref("register")}>Sign up</a>
               </Button>
             </div>
           </Card>

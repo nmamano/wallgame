@@ -115,6 +115,7 @@ import {
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
 import { isEmbedded } from "@/lib/embedded-mode";
 import { ratedSeatPrompt } from "@/lib/rated-seat-prompt";
+import { currentSitePath } from "@/lib/auth-links";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -3869,7 +3870,7 @@ export function useGamePageController(gameId: string) {
     : matchingStatusMessage;
   const ratedSeat =
     waitingAccessReason === "rated-requires-login"
-      ? ratedSeatPrompt(isEmbedded())
+      ? ratedSeatPrompt(isEmbedded(), currentSitePath())
       : null;
   const ratedSeatAction = ratedSeat?.action ?? null;
   const waitingMessage = isAuthoritativeWaiting

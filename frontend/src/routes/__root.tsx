@@ -12,6 +12,7 @@ import { Navigation } from "@/components/navigation";
 import { Toaster } from "@/components/ui/toaster";
 import { UsernamePickerGate } from "@/components/username-picker";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useLinkGuestGamesAfterSignup } from "@/hooks/use-link-guest-games";
 
 interface MyRouterContext {
   queryClient: QueryClient;
@@ -28,6 +29,7 @@ function Root() {
   const isGamePage = pathname.startsWith("/game/");
   // Hide nav on mobile game pages to maximize board space
   const hideChrome = isSmallScreen && isGamePage;
+  useLinkGuestGamesAfterSignup();
 
   return (
     <ThemeProvider defaultTheme="dark">

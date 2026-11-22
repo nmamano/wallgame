@@ -1,3 +1,4 @@
+import { authHref } from "./auth-links";
 import { PORTAL_RATED_UNAVAILABLE } from "./embedded-mode";
 
 /**
@@ -10,7 +11,11 @@ export interface RatedSeatPrompt {
   action: { label: string; description: string; href: string } | null;
 }
 
-export const ratedSeatPrompt = (embedded: boolean): RatedSeatPrompt =>
+/** `returnPath`: the game page, where the sign-up brings the player back. */
+export const ratedSeatPrompt = (
+  embedded: boolean,
+  returnPath: string,
+): RatedSeatPrompt =>
   embedded
     ? {
         waitingMessage: `This game is rated. ${PORTAL_RATED_UNAVAILABLE}`,
@@ -23,6 +28,6 @@ export const ratedSeatPrompt = (embedded: boolean): RatedSeatPrompt =>
           label: "Create an account",
           description:
             "This game is rated. Sign up or log in to take the seat - you can still watch as a spectator.",
-          href: "/api/register",
+          href: authHref("register", returnPath),
         },
       };

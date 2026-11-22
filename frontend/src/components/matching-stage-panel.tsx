@@ -15,6 +15,7 @@ import type {
   GameAccessWaitingReason,
   GameRole,
 } from "../../../shared/contracts/games";
+import { authHref } from "@/lib/auth-links";
 
 export interface MatchingPlayer {
   id: string;
@@ -145,11 +146,11 @@ export function MatchingStagePanel({
           {!isEmbedded() && (
             <>
               {" "}
-              <a className="underline" href="/api/register">
+              <a className="underline" href={authHref("register")}>
                 Sign up
               </a>{" "}
               or{" "}
-              <a className="underline" href="/api/login">
+              <a className="underline" href={authHref("login")}>
                 log in
               </a>{" "}
               to take the seat.
