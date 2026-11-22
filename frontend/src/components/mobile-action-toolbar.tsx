@@ -188,21 +188,18 @@ export function MobileActionToolbar({
         : undefined;
 
     return (
-      <div
-        className={`${barClass} relative gap-2 py-1`}
-        style={{ minHeight: "40px" }}
-      >
-        {/* Centered result text */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div className={`${barClass} gap-2 py-1`} style={{ minHeight: "40px" }}>
+        {/* The result text takes the room the buttons leave, centred there,
+            and wraps to a second line before it reaches them. */}
+        <div className="flex-1 min-w-0 flex items-center justify-center">
           <Trophy className="w-4 h-4 text-yellow-500 shrink-0 mr-1.5" />
-          <span className="text-xs font-medium truncate">
+          <span className="text-xs font-medium leading-tight text-center line-clamp-2">
             {resultHeadline}
             {resultDetail ? ` - ${resultDetail}` : ""}
           </span>
         </div>
         {/* Action buttons on the right */}
-        <div className="flex-1" />
-        <div className="flex gap-1 shrink-0 z-10">
+        <div className="flex gap-1 shrink-0">
           {isReadOnlyView ? (
             spectatorFollowHandler && spectatorRematchGameId ? (
               <Button
