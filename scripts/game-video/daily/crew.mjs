@@ -225,7 +225,10 @@
  *                                  growth-copy-1). The block is for the
  *                                  item's current video: a render that makes
  *                                  other bytes leaves it stale. A new block
- *                                  replaces the old until Nil approves
+ *                                  replaces the old until Nil approves;
+ *                                  after that only a held copy (the post
+ *                                  step passes the item over): the item is
+ *                                  then in review again, and Nil gets a new ask
  *   hold --item ID --why "<reason>" [--by NAME]
  *                                  keep an approved item from posting, its
  *                                  approval kept (a render fault found after

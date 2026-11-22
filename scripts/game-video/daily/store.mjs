@@ -51,7 +51,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { COPY_LINES, copySha256 } from "./copy.mjs";
+import { COPY_LINES, copyHeldReason, copySha256 } from "./copy.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 
 /**
@@ -1233,12 +1233,25 @@ export const openStore = (dataDir) => {
      * Wall Game Growth's copy block for an item's current video, checked by
      * copy.mjs. A new block replaces the old one until Nil approves the
      * item; a render that makes other bytes leaves it stale (reviewState).
+     * After the approval only a held copy is replaced (copyHeldReason: the
+     * post step passes the item over): the item is finished again, out of
+     * the approved queue, and the review asks open a new ask, because Nil's
+     * approval binds the block's sha256 (Wall Game PM, 2026-11-22).
      */
     recordCopy(id, copy) {
+      let held = null;
       return updateItem(
         id,
-        ["draft", "finished"],
+        ["draft", "finished", "approved"],
         (item) => {
+          if (item.state === "approved") {
+            held = copyHeldReason(item);
+            if (!held) {
+              refuse(
+                `${id} is approved, and its copy block passes the copy check: Nil approved that block, so it is not replaced`,
+              );
+            }
+          }
           expectStage(item, ["rendered", "checked"], "copy");
           // The final video passed a fresh reviewer first (Wall Game
           // Director, 2026-10-28, rule R10).
@@ -1253,8 +1266,15 @@ export const openStore = (dataDir) => {
             forVideoSha256: item.render.video.sha256,
             storedAt: new Date().toISOString(),
           };
+          if (held) {
+            item.state = "finished";
+            item.approval = null;
+          }
         },
-        `copy block (${copy.version})`,
+        () =>
+          held
+            ? `copy block (${copy.version}) replaces a held copy (${held}); the approval is void, so the item is in review again`
+            : `copy block (${copy.version})`,
       );
     },
 

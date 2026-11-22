@@ -2010,3 +2010,68 @@ describe("Nil's revise says the fix needs no second look (approve-fixed, C41)", 
     ).toBe(true);
   });
 });
+
+describe("a held copy on an approved item (store.recordCopy, Wall Game PM, 2026-11-22)", () => {
+  /** Approve the item through its ask, then make its stored block fail the copy check. */
+  const approvedAndHeld = async () => {
+    const w = withAsks();
+    await w.sync();
+    const [askId] = w.office.openIds();
+    w.office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: "Approve",
+    });
+    await w.sync();
+    expect(itemOf(w.store).state).toBe("approved");
+    // A copy rule that changed after the approval: the block now names the
+    // game id, which the copy check refuses.
+    const path = join(w.store.dirs.items, `${ID}.json`);
+    const raw = JSON.parse(readFileSync(path, "utf8")) as {
+      copy: { block: Record<string, string> };
+    };
+    raw.copy.block = {
+      ...raw.copy.block,
+      x: "bro thought GAME1 was safe #wallgame",
+    };
+    writeFileSync(path, JSON.stringify(raw));
+    return w;
+  };
+  const NEW_COPY = {
+    ...COPY,
+    x: "bro thought he could just walk home 🙏 #wallgame",
+  };
+
+  test("a held item takes a new block, is in review again, and Nil gets a new ask", async () => {
+    const w = await approvedAndHeld();
+    const out = w.store.recordCopy(ID, NEW_COPY) as Item;
+    expect(out.state).toBe("finished");
+    expect(out.approval).toBeNull();
+    expect(out.copy.sha256).toBe(copySha256(NEW_COPY));
+    expect(out.events.at(-1)!.what).toContain("replaces a held copy");
+    expect(out.events.at(-1)!.what).toContain("must not hold the game id");
+    const before = w.office.bodies.length;
+    expect((await w.sync()).opened).toEqual([ID]);
+    expect(w.office.bodies).toHaveLength(before + 1);
+    expect(String(w.office.bodies.at(-1)!.text)).toContain(
+      postCaption(NEW_COPY),
+    );
+  });
+
+  test("an approved item whose block passes the check refuses a new block", async () => {
+    const w = withAsks();
+    await w.sync();
+    const [askId] = w.office.openIds();
+    w.office.answer(askId, {
+      outcome: "replied",
+      by: "Nil",
+      answer: "Approve",
+    });
+    await w.sync();
+    expect(() => void w.store.recordCopy(ID, NEW_COPY)).toThrow(
+      `${ID} is approved, and its copy block passes the copy check: Nil approved that block, so it is not replaced`,
+    );
+    expect(itemOf(w.store).state).toBe("approved");
+    expect(itemOf(w.store).copy.sha256).toBe(copySha256(COPY));
+  });
+});

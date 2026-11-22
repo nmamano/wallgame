@@ -30,8 +30,7 @@
  * error }); it never throws for a platform's failure.
  */
 import { StepRefused, blockedMusic } from "./store.mjs";
-import { copyProblems, copySha256, postTexts } from "./copy.mjs";
-import { playerNames } from "./candidate.mjs";
+import { copyHeldReason, copySha256, postTexts } from "./copy.mjs";
 import { errorText, sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
 import { PLATFORM_GAPS, notInSlot, notYetDue } from "./slots.mjs";
@@ -115,27 +114,6 @@ export const createItemPoster = ({
   now = () => Date.now(),
 }) => {
   const iso = () => new Date(now()).toISOString();
-
-  /**
-   * Why the item's stored copy may not post with its video now, or null:
-   * the copy check of the copy route (copy.mjs copyProblems) again, against
-   * the item's CURRENT edit list, so a caption never carries a puzzle link
-   * that a re-directed video no longer ends on (Wall Game PM, 2026-11-22,
-   * on VR1's 176 N1). Like the link gate, a slot passes such an item over.
-   * @param {any} item
-   */
-  const copyHeld = (item) => {
-    if (!item.copy) return null;
-    const problems = copyProblems(
-      item.copy.block,
-      item.candidate.gameId,
-      playerNames(item.candidate),
-      item.edl?.doc?.puzzle?.n ?? null,
-    );
-    return problems.length
-      ? `its copy block no longer passes the copy check against its edit list (${problems.join("; ")}): Growth stores a new block`
-      : null;
-  };
 
   /**
    * Why no TikTok draft may go out now, or null. Any fault of the read (a
@@ -346,10 +324,10 @@ export const createItemPoster = ({
         passed.push({ itemId: queued.id, notApplicable: none });
         continue;
       }
-      // A copy that fails the copy check now (copyHeld), or a puzzle video
+      // A copy that fails the copy check now (copyHeldReason), or a puzzle video
       // whose link does not open its position yet (puzzle-gate.mjs), waits
       // approved: the slot passes it over on every platform.
-      const link = copyHeld(queued) ?? (await puzzleLink(queued));
+      const link = copyHeldReason(queued) ?? (await puzzleLink(queued));
       if (link) {
         passed.push({
           itemId: queued.id,
@@ -405,6 +383,10 @@ export const createItemPoster = ({
       return {
         itemId: item.id,
         refused,
+        // The items this slot passed over before it, still approved (a
+        // held copy, a puzzle link not open yet): Growth's slot message
+        // names them (scheduler.mjs), as it does when no item posts.
+        passed,
         ...(await run(
           item.id,
           video,
@@ -443,7 +425,7 @@ export const createItemPoster = ({
     }
     const problem = contentProblem(item, video);
     if (problem) throw new StepRefused(`${id}: ${problem}`);
-    const link = copyHeld(item) ?? (await puzzleLink(item));
+    const link = copyHeldReason(item) ?? (await puzzleLink(item));
     if (link) throw new StepRefused(`${id}: ${link}`);
     // A migrated item has posts{} from its day but no posting: its set is
     // the platforms that day tried.

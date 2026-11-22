@@ -305,6 +305,15 @@ export const createScheduler = ({
     });
     const head = slotHead(d.slot, firedAt, d.folded);
     const id = result.itemId;
+    // Approved items the slot passed over (review-post.mjs postNext): one
+    // reason when every platform (two or more) gives the same one.
+    const passedLines = (result.passed ?? []).map((r) => {
+      const why = Object.entries(r.notApplicable);
+      const same = why.length > 1 && new Set(why.map(([, w]) => w)).size === 1;
+      return same
+        ? `- ${r.itemId} (${why[0][1]})`
+        : `- ${r.itemId}: ${why.map(([p, w]) => `${p} (${w})`).join(", ")}`;
+    });
     const refusedLines = (result.refused ?? []).map(
       (r) =>
         `- ${r.itemId} failed its checks and is post-failed: ${r.error}. It needs a new approval (send it to the Director); a retry fails the same check.`,
@@ -329,6 +338,9 @@ export const createScheduler = ({
         ...(refusedLines.length
           ? ["Passed over before it:", ...refusedLines]
           : []),
+        ...(passedLines.length
+          ? ["Passed over, still approved:", ...passedLines]
+          : []),
         ...(notLive.length
           ? [`Live now but not in this slot: ${notLive.join(", ")}.`]
           : []),
@@ -341,12 +353,7 @@ export const createScheduler = ({
     } else if (result.kind === "none-applies") {
       queueMessage([
         `${head}: SKIPPED, no live platform posts this slot. The approved items stay approved for a later slot:`,
-        ...result.passed.map(
-          (r) =>
-            `- ${r.itemId}: ${Object.entries(r.notApplicable)
-              .map(([p, why]) => `${p} (${why})`)
-              .join(", ")}`,
-        ),
+        ...passedLines,
         ...refusedLines,
       ]);
     } else if (result.kind === "refused") {

@@ -320,6 +320,21 @@ describe("the copy check again at post (copy.mjs copyProblems)", () => {
     expect((await h.post(SLOT)).kind).toBe("posted");
   });
 
+  test("a held item passed over while the next one posts is in the result's passed list", async () => {
+    const h = world(["x", "bluesky"]);
+    const good = structuredClone(h.get());
+    Object.assign(h.get(), withLink(3));
+    h.setListPuzzle(null);
+    h.add({ ...good, id: "v-2026-10-28-2" });
+    const r = await h.post(SLOT);
+    expect(r).toMatchObject({ kind: "posted", itemId: "v-2026-10-28-2" });
+    expect(r.passed!.map((p) => p.itemId)).toEqual(["v-2026-10-28-1"]);
+    expect(r.passed![0].notApplicable.x).toContain(
+      "its copy block no longer passes the copy check against its edit list",
+    );
+    expect(h.get().state).toBe("approved");
+  });
+
   test("a retry is refused while the copy fails against the current list", async () => {
     const h = world(["bluesky"]);
     Object.assign(h.get(), withLink(3));

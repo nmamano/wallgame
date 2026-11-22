@@ -343,6 +343,37 @@ describe("scheduler", () => {
     ).toEqual([]);
   });
 
+  test("a slot that posts names the approved items it passed over, with the reason (Wall Game PM, 2026-11-22)", async () => {
+    const held =
+      "its copy block no longer passes the copy check against its edit list (X must not hold the game id)";
+    const w = world({ ready: 2, liveNow: ["x", "bluesky"] });
+    w.setOutcome(() => ({
+      kind: "posted",
+      platforms: ["x", "bluesky"],
+      posts: {
+        x: { ok: true, url: "https://x/1" },
+        bluesky: { ok: true, url: "https://bluesky/1" },
+      },
+      refused: [],
+      passed: [
+        { itemId: "v-2026-10-27-9", notApplicable: { x: held, bluesky: held } },
+        {
+          itemId: "v-2026-10-27-8",
+          notApplicable: { x: "reason a", bluesky: "reason b" },
+        },
+      ],
+    }));
+    const s = w.make();
+    await s.tick();
+    w.setTime(OCT29_0900);
+    await s.tick();
+    const m = w.sent[0];
+    expect(m).toContain("POSTED v-2026-10-28-1.");
+    expect(m).toContain(
+      `Passed over, still approved:\n- v-2026-10-27-9 (${held})\n- v-2026-10-27-8: x (reason a), bluesky (reason b)`,
+    );
+  });
+
   test("an error after the item was taken: the 6 h gap still holds", async () => {
     const w = world({ ready: 1 });
     w.setOutcome(() => {

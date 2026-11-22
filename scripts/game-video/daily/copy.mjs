@@ -27,7 +27,7 @@
  * comes in, so Nil never reviews a text that cannot post.
  */
 import { createHash } from "node:crypto";
-import { textProblems } from "./candidate.mjs";
+import { playerNames, textProblems } from "./candidate.mjs";
 import { findUrls, textLimitProblems } from "./post-limits.mjs";
 
 /**
@@ -325,3 +325,26 @@ export const postTexts = (copy) => ({
   bluesky: copy.bluesky,
   threads: copy.threads,
 });
+
+/**
+ * Why an item's stored copy block may not post now, or null: the copy
+ * route's check (copyProblems) again, against the item's CURRENT edit list
+ * and game, so a caption never carries a puzzle link that a re-directed
+ * video no longer ends on (Wall Game PM, 2026-11-22, on VR1's 176 N1). The
+ * post step passes such an item over (review-post.mjs), and only such an
+ * approved item takes a new block (store.recordCopy).
+ * @param {any} item
+ * @returns {string | null}
+ */
+export const copyHeldReason = (item) => {
+  if (!item.copy) return null;
+  const problems = copyProblems(
+    item.copy.block,
+    item.candidate.gameId,
+    playerNames(item.candidate),
+    item.edl?.doc?.puzzle?.n ?? null,
+  );
+  return problems.length
+    ? `its copy block no longer passes the copy check against its edit list (${problems.join("; ")}): Growth stores a new block with crew.mjs copy, and the item goes back to Nil's review`
+    : null;
+};
