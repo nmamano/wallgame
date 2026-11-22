@@ -566,19 +566,44 @@ export const measureSilences = (ffmpeg, file, seconds) => {
  * The silences over the rules, each with the rule it breaks: over
  * SILENCE_SECONDS anywhere, or over OPENING_SILENCE_SECONDS inside the
  * opening [VS sound, first move] (null: a video without the daily opening).
+ * A stretch that is quiet on purpose, `quiet` [start, end] (a puzzle's
+ * hold: render-game-video.mjs playPuzzle), is left out: what remains of a
+ * gap on each side of it is held to the rules.
  * @param {{ start: number, end: number, seconds: number }[]} gaps
  * @param {[number, number] | null} opening
+ * @param {[number, number] | null} [quiet]
  */
-export const silencesOverRules = (gaps, opening) =>
-  gaps.flatMap((g) => {
-    if (g.seconds > SILENCE_SECONDS) return [{ ...g, rule: SILENCE_SECONDS }];
-    const inOpening = opening
-      ? Math.min(g.end, opening[1]) - Math.max(g.start, opening[0])
-      : 0;
-    return inOpening > OPENING_SILENCE_SECONDS
-      ? [{ ...g, seconds: hundredth(inOpening), rule: OPENING_SILENCE_SECONDS }]
-      : [];
-  });
+export const silencesOverRules = (gaps, opening, quiet = null) =>
+  gaps
+    .flatMap((g) =>
+      !quiet || g.end <= quiet[0] || g.start >= quiet[1]
+        ? [g]
+        : [
+            [g.start, quiet[0]],
+            [quiet[1], g.end],
+          ]
+            .filter(([a, b]) => b > a)
+            .map(([a, b]) => ({
+              start: hundredth(a),
+              end: hundredth(b),
+              seconds: hundredth(b - a),
+            })),
+    )
+    .flatMap((g) => {
+      if (g.seconds > SILENCE_SECONDS) return [{ ...g, rule: SILENCE_SECONDS }];
+      const inOpening = opening
+        ? Math.min(g.end, opening[1]) - Math.max(g.start, opening[0])
+        : 0;
+      return inOpening > OPENING_SILENCE_SECONDS
+        ? [
+            {
+              ...g,
+              seconds: hundredth(inOpening),
+              rule: OPENING_SILENCE_SECONDS,
+            },
+          ]
+        : [];
+    });
 
 /**
  * Why a master fails the gate, or null when it passes.

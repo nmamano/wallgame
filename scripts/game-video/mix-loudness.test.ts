@@ -422,6 +422,24 @@ describe("silence", () => {
     ).toEqual([]);
     expect(SILENCE_FILTER).toBe("silencedetect=noise=-45dB:d=0.6");
   });
+
+  test("a puzzle's quiet hold is left out, and what is left on each side is held to the rules", () => {
+    // The rewind's whir ends at 40.1 s, the hold runs 40.3-43.8 s, and the
+    // loop tail is quiet to the end.
+    const gaps = [{ start: 40.1, end: 44.3, seconds: 4.2 }];
+    expect(silencesOverRules(gaps, null, [40.3, 43.8])).toEqual([]);
+    expect(silencesOverRules(gaps, null)).toHaveLength(1);
+    // A quiet stretch of 1.6 s before the hold still breaks the rule.
+    expect(
+      silencesOverRules(
+        [{ start: 38.0, end: 44.3, seconds: 6.3 }],
+        null,
+        [39.6, 43.8],
+      ),
+    ).toEqual([
+      { start: 38.0, end: 39.6, seconds: 1.6, rule: SILENCE_SECONDS },
+    ]);
+  });
 });
 
 describe("the master", () => {

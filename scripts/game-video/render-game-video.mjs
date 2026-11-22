@@ -1039,6 +1039,17 @@ const FLASHBACK_PAST_BEFORE_SECONDS = 0.3;
 const FLASHBACK_PAST_SECONDS = 1.4;
 const FLASHBACK_FORWARD_SECONDS = 0.7;
 /**
+ * The puzzle ending (edl.mjs puzzle): after the ending, "<< REWIND" plays
+ * the board back to the puzzle's position over FLASHBACK_REWIND_SECONDS,
+ * and the position holds PUZZLE_HOLD_SECONDS, or longer when its words
+ * need it (Wall Game Director, 2026-11-22: "about 3 s").
+ * A side whose hunter is PUZZLE_MIN_STEPS steps or fewer from its target
+ * catches in one turn: no puzzle (puzzle-one-turn).
+ */
+const PUZZLE_HOLD_SECONDS = 3.0;
+const PUZZLE_MIN_STEPS = 2;
+const PUZZLE_REWIND_SOUND = "rewind-1";
+/**
  * The evaluation strip (edl.mjs evalStrip), over the call to action: it
  * moves to a move's value over
  * EVAL_MOVE_SECONDS from its landing (Wall Game Director, 2026-10-31: a
@@ -2907,6 +2918,35 @@ const mixCues = (cues) =>
     },
   );
 
+/**
+ * When a sound's last sample over SOUND_FLOOR_DB plays, at its gain, in
+ * seconds from the file's start (decoded at 8 kHz, as the silence measure
+ * hears it): the puzzle's rewind waits for the finish sound's end (Wall
+ * Game Director, 2026-11-22: the finish must not run under rewind-1).
+ * @param {{ file: string, gain: number, rate?: number }} sound
+ */
+const audibleEndSeconds = (sound) => {
+  if (!existsSync(sound.file)) return 0;
+  const raw = ff([
+    "-i",
+    sound.file,
+    "-ac",
+    "1",
+    "-ar",
+    "8000",
+    "-f",
+    "s16le",
+    "pipe:1",
+  ]);
+  const x = new Int16Array(Uint8Array.from(raw).buffer);
+  const floor = 32768 * 10 ** (SOUND_FLOOR_DB / 20);
+  let last = -1;
+  for (let i = 0; i < x.length; i += 1) {
+    if (Math.abs(x[i]) * sound.gain > floor) last = i;
+  }
+  return (last + 1) / 8000 / (sound.rate ?? 1);
+};
+
 const buildAudio = ({ cues, totalSeconds, music, work }) => {
   const present = mixCues(cues);
   const absent = cues.filter((e) => !existsSync(e.file));
@@ -4300,6 +4340,46 @@ for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
 }
 
 /**
+ * The puzzle ending's position (edl.mjs puzzle), or null: the board before
+ * the move of its ply, the side to move (that ply's mover), the cell of
+ * that side's hunter, which the hold rings, its steps to its target, and
+ * the move's number as wallgame.io's move list shows it (a move is a pair
+ * of plies), as the flashback's "MOVE N" (Nil, C39: show clearly that it
+ * is the past).
+ */
+const PUZZLE = (() => {
+  const p = EDL?.puzzle;
+  if (!p) return null;
+  if (!REPLAYED || p.ply >= REPLAYED.movers.length) {
+    console.error(`puzzle.ply ${p.ply} is not a move of this game`);
+    process.exit(2);
+  }
+  if (!outcome?.winnerId) {
+    console.error(
+      "the puzzle plays after the ending, and a game with no winner has none",
+    );
+    process.exit(2);
+  }
+  const mover = REPLAYED.movers[p.ply];
+  const track = REPLAYED.tracks.find((t) => t.hunter.player === mover);
+  if (!track) {
+    console.error(
+      `the puzzle rings the hunter of the side to move at ply ${p.ply}, and ${replay.state.config.variant} gives player ${mover} none`,
+    );
+    process.exit(2);
+  }
+  return {
+    ...p,
+    board: p.ply,
+    mover,
+    piece: track.hunter.type,
+    cell: pawnCell(REPLAYED.states[p.ply].pawns, mover, track.hunter.type),
+    steps: track.walks[p.ply],
+    label: `MOVE ${Math.ceil(history[p.ply].index / 2)}`,
+  };
+})();
+
+/**
  * The hunter's and the target's cells of the closest hunt at a board, as
  * [row, col]: the race's moment, which an overlay must not hide. None in a
  * variant where nothing hunts.
@@ -4585,13 +4665,18 @@ const renderStyle = async (styleName) => {
     /** The daily look's board, sized by the stage to what the safe area leaves. */
     const board = wallz
       ? await page.evaluate((a) => window.__fitWallz(a), {
-          captions: CAPTIONS,
+          // The puzzle's line takes the caption's place on its hold: the
+          // caption row keeps the height of the tallest.
+          captions: PUZZLE ? [...CAPTIONS, PUZZLE.text] : CAPTIONS,
           hud: Boolean(RACE_DISTANCES || GOAL_LINE),
           goal: GOAL_LINE,
           raceLabel: RACE_LABEL,
           credit: CREDIT_LINES,
           strip,
           cta: EDL?.cta ?? null,
+          // The badge fits the puzzle's call to action too, which it shows
+          // on the puzzle's hold.
+          holdCta: PUZZLE?.cta ?? null,
           evalStrip: Boolean(EDL?.evalStrip),
           ending: style.ending,
           // The widest speed tag, for the counter's middle (stage.html).
@@ -4697,6 +4782,29 @@ const renderStyle = async (styleName) => {
     if ("stop" in art) fault("reactor-pawn", ev.ply, art.stop, 0);
     if ("recapture" in art)
       fault("reactor-capture", ev.ply, `the ${ev.asset}: ${art.recapture}`, 0);
+  }
+  /*
+    The puzzle's position, as direct prints it: the side to move and its
+    hunter's walk. A walk the side covers in one turn is no puzzle (Wall
+    Game Director, 2026-11-22): the render stops.
+  */
+  if (PUZZLE) {
+    const who = `${seatColors[PUZZLE.mover]} ${PUZZLE.piece}`;
+    const where = termOfCell(PUZZLE.cell);
+    if (PUZZLE.steps <= PUZZLE_MIN_STEPS) {
+      fault(
+        "puzzle-one-turn",
+        PUZZLE.ply,
+        `the puzzle's ${who} on ${where} is ${PUZZLE.steps} step${PUZZLE.steps === 1 ? "" : "s"} from its target before ply ${PUZZLE.ply}: it catches in one turn (${PUZZLE_MIN_STEPS} steps or fewer), so it is no puzzle; pick another ply`,
+        0,
+      );
+    }
+    fault(
+      "puzzle-frame",
+      PUZZLE.ply,
+      `puzzle ${PUZZLE.n}: the position before ply ${PUZZLE.ply} (${PUZZLE.label.toLowerCase()}), ${seatColors[PUZZLE.mover]} to move; a ring on the ${who} on ${where}, ${PUZZLE.steps} steps from its target`,
+      0,
+    );
   }
   /**
    * Queue `sound` for the mix at `at` s. `leadIn` s of silence at the file's
@@ -4890,6 +4998,11 @@ const renderStyle = async (styleName) => {
    */
   const stills = [];
   let stillNext = null;
+  /**
+   * The puzzle's hold, [start, end] in seconds, once it has played: quiet
+   * on purpose, so the silence rules leave it out (playPuzzle).
+   */
+  let puzzleQuiet = null;
   let frameNo = 0;
   /** The video's first frame, which the loop tail ends on. */
   let firstState = null;
@@ -6418,6 +6531,7 @@ const renderStyle = async (styleName) => {
   const layoutBoxes = wallz
     ? await stage.evaluate((a) => window.__layoutBoxes(a), {
         captions: CAPTIONS,
+        puzzle: PUZZLE?.text ?? null,
         race: Boolean(RACE_DISTANCES),
         goal: Boolean(GOAL_LINE),
         credit: Boolean(CREDIT),
@@ -6513,7 +6627,7 @@ const renderStyle = async (styleName) => {
       fault(
         "text-fit",
         null,
-        `the call to action does not fit STRIP_AREA on one line at its smallest size: ${EDL?.cta ?? DEFAULT_CTA}`,
+        `the call to action does not fit STRIP_AREA on one line at its smallest size: ${[EDL?.cta ?? DEFAULT_CTA, ...(PUZZLE ? [PUZZLE.cta] : [])].join(" / ")}`,
       );
     }
     log(
@@ -6529,10 +6643,14 @@ const renderStyle = async (styleName) => {
    */
   const captionText = wallz
     ? await stage
-        .evaluate((c) => window.__captionText(c), CAPTIONS)
-        .then(([caption, payoff]) => ({
-          ...(caption && { caption }),
-          ...(payoff && { payoff }),
+        .evaluate(
+          (c) => window.__captionText(c),
+          PUZZLE ? [...CAPTIONS, PUZZLE.text] : CAPTIONS,
+        )
+        .then((beats) => ({
+          ...(CAPTIONS[0] && { caption: beats[0] }),
+          ...(CAPTIONS[1] && { payoff: beats[1] }),
+          ...(PUZZLE && { puzzle: beats[CAPTIONS.length] }),
         }))
     : null;
 
@@ -7560,6 +7678,82 @@ const renderStyle = async (styleName) => {
    * counters and the strip follow it; the caption holds the setup until
    * the glow now, and no speed tag shows.
    */
+  /**
+   * The puzzle ending (edl.mjs puzzle), after the ending holds and its bar
+   * closes: "<< REWIND" plays the board back from the last position to the
+   * puzzle's, turning sepia under the flashback's VHS look, with rewind-1;
+   * then the position holds in full colour: its move's label ("MOVE 13")
+   * over the board, the puzzle's line in the caption's place, a ring on
+   * the side to move's hunter, and the puzzle's call to action in the
+   * badge, popping and then breathing as the GG card's. The hold lasts
+   * PUZZLE_HOLD_SECONDS, or the reading time of its words, fully shown;
+   * the loop tail's flash comes after it. The counters follow the
+   * position shown. The hold has no sound of its own: the silence rules
+   * leave it out (Wall Game Director, 2026-11-22).
+   */
+  const playPuzzle = async (ply, plyIndex) => {
+    const start = elapsed;
+    const frames = (seconds) => Math.round(seconds * FPS);
+    const meta = { kind: "puzzle-rewind", ply: plyIndex };
+    // The caption the video ended on holds through the rewind.
+    const caption = wallz ? captionAt(ply) : "";
+    cue(meme(PUZZLE_REWIND_SOUND), "puzzle", { at: elapsed });
+    const back = frames(FLASHBACK_REWIND_SECONDS);
+    for (let i = 0; i < back; i += 1) {
+      const f = (i + 1) / back;
+      if (i === Math.floor(back / 2)) {
+        stillNext = {
+          ply: plyIndex,
+          kind: "puzzle-rewind",
+          sound: PUZZLE_REWIND_SOUND,
+        };
+      }
+      const b = Math.round(ply - (ply - PUZZLE.board) * easeInOut(f));
+      await emit(
+        playState(b, {
+          caption,
+          fastForward: null,
+          flashback: { sepia: f, label: "<< REWIND", t: elapsed - start },
+        }),
+        1 / FPS,
+        meta,
+      );
+    }
+    const words = `${PUZZLE.label} ${PUZZLE.text} ${PUZZLE.cta}`;
+    const hold = Math.max(
+      PUZZLE_HOLD_SECONDS,
+      readingSeconds({}, words) + TEXT_TIMING.overlayPop,
+    );
+    puzzleQuiet = [elapsed, null];
+    const holdFrames = frames(hold);
+    for (let i = 0; i < holdFrames; i += 1) {
+      const t = i / FPS;
+      if (i === frames(1.0)) {
+        stillNext = { ply: plyIndex, kind: "puzzle-hold", sound: null };
+      }
+      await emit(
+        playState(PUZZLE.board, {
+          caption: wallz ? PUZZLE.text : "",
+          fastForward: null,
+          puzzle: { label: PUZZLE.label, cta: PUZZLE.cta, t },
+          cellFx: {
+            kind: "ring",
+            t,
+            cell: cellAt(PUZZLE.cell),
+            size: GRID.pitchX,
+            color: side(PUZZLE.mover).hex,
+          },
+        }),
+        1 / FPS,
+        { kind: "puzzle-hold", ply: plyIndex },
+      );
+    }
+    puzzleQuiet[1] = elapsed;
+    log(
+      `puzzle ${PUZZLE.n}: rewind to the position before ply ${PUZZLE.ply} at ${start.toFixed(2)} s, held ${hold.toFixed(1)} s (${PUZZLE.label}, ${seatColors[PUZZLE.mover]} to move)`,
+    );
+  };
+
   const playFlashback = async (ply, plyIndex, ev) => {
     const start = elapsed;
     const meta = { kind: "flashback", ply: plyIndex };
@@ -8372,7 +8566,7 @@ const renderStyle = async (styleName) => {
                   0,
                   readingSeconds(
                     {},
-                    `GG ${dailyName(winnerId)} ${how} ${EDL?.cta ?? DEFAULT_CTA}`,
+                    `GG ${dailyName(winnerId)} ${how}${PUZZLE ? "" : ` ${EDL?.cta ?? DEFAULT_CTA}`}`,
                   ) -
                     (timing.seconds - timing.cardIn + timing.hold),
                 ) * FPS,
@@ -8381,9 +8575,26 @@ const renderStyle = async (styleName) => {
         if (cardMore > 0) {
           log(`ending held +${cardMore.toFixed(1)} s for the GG card`);
         }
-        const holdSeconds =
+        /*
+          A puzzle's rewind starts once the finish sound has ended, so the
+          two do not play together (Wall Game Director, 2026-11-22): the
+          ending holds until then.
+        */
+        const finishEnd = PUZZLE
+          ? finishNote - finishLead + audibleEndSeconds(sounds.finish)
+          : 0;
+        const finishWait =
+          Math.ceil(Math.max(0, finishEnd - elapsed) * FPS) / FPS;
+        const holdSeconds = Math.max(
           timing.hold +
-          Math.max(bar ? holdFor(barShows, timing.flash) : 0, cardMore);
+            Math.max(bar ? holdFor(barShows, timing.flash) : 0, cardMore),
+          finishWait,
+        );
+        if (PUZZLE && finishWait > 0) {
+          log(
+            `ending held to ${finishEnd.toFixed(2)} s, the end of the finish sound ${sounds.finish.name}, before the puzzle's rewind`,
+          );
+        }
         if (style.ending === "gg") {
           /*
             The GG card's call to action keeps moving while the ending
@@ -8456,6 +8667,7 @@ const renderStyle = async (styleName) => {
         );
       }
       closeOverlay();
+      if (PUZZLE && winnerId) await playPuzzle(ply, plyIndex);
       /*
         The loop tail (audit item 6): a white flash that fades into the
         video's own first frame, so the feed's loop cuts from a frame to
@@ -8701,6 +8913,8 @@ const renderStyle = async (styleName) => {
   for (const m of composedMusic) {
     heard.push([m.start, m.bed > 0 ? videoSeconds : m.endAt]);
   }
+  // The puzzle's hold is quiet on purpose (playPuzzle).
+  if (puzzleQuiet) heard.push(puzzleQuiet);
   heard.sort((a, b) => a[0] - b[0]);
   // The opening: from the VS hit to the first move, when the video has both.
   const opening =
@@ -9016,7 +9230,7 @@ const renderStyle = async (styleName) => {
           silence = {
             floorDbfs: SILENCE_FLOOR_DBFS,
             gaps,
-            over: silencesOverRules(gaps, opening),
+            over: silencesOverRules(gaps, opening, puzzleQuiet),
           };
           for (const g of silence.over) {
             log(

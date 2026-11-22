@@ -94,6 +94,19 @@
  *            names wallgame.io ("play free at wallgame.io"). It replaces
  *            "wallgame.io" in the badge under the board, for the whole
  *            video, and as the GG card's last line. Absent: "wallgame.io".
+ *   puzzle   optional: { ply, n, text, cta }, the puzzle ending (task
+ *            a03b8f5c; Nil, 2026-11-22: "payoff then puzzle as an
+ *            experiment"). The ending plays as it does, then "<< REWIND"
+ *            (the flashback's look) back to the position before `ply`'s
+ *            move, which holds in full colour: a ring on the cat of the
+ *            side to move (the mover of `ply`), `text` in the caption's
+ *            place ("find the win"; the caption's limits) and `cta` in
+ *            the badge under the board. `cta` names the puzzle's link,
+ *            wallgame.io/go/<n>, where `n` is the puzzle's entry in
+ *            shared/domain/video-puzzles.ts; the GG card shows no call to
+ *            action then. `ply` comes before the last move. The poster
+ *            refuses the video until wallgame.io/go/<n> opens this
+ *            position (daily/puzzle-gate.mjs).
  *   evalStrip
  *            optional, OFF by default: the engine's view as a thin strip
  *            under the players' names below the board, in the look of the
@@ -549,12 +562,14 @@ export const LINT_KINDS = {
   "callback-joint": "stops",
   "callback-cover": "stops",
   "video-long": "warns",
+  "puzzle-one-turn": "stops",
   "voice-no-speaker": "warns",
   "zoom-scale": "note",
   "stamp-flat": "note",
   "walk-number-crowded": "note",
   "gg-card-moved": "note",
   "gg-card-waits": "note",
+  "puzzle-frame": "note",
 };
 /**
  * The stopping kinds that are a fault of the game's capture, not of the
@@ -768,6 +783,7 @@ export const validateEdl = (raw) => {
       "finishAt",
       "opening",
       "cta",
+      "puzzle",
       "evalStrip",
       "pace",
       "events",
@@ -952,6 +968,36 @@ export const validateEdl = (raw) => {
   if (cta !== null) {
     const problem = ctaProblem(cta);
     if (problem) fail(problem);
+  }
+
+  const puzzle = raw.puzzle ?? null;
+  if (puzzle !== null) {
+    if (typeof puzzle !== "object" || Array.isArray(puzzle)) {
+      fail("puzzle must be { ply, n, text, cta }, or absent for no puzzle");
+    } else {
+      unknown(puzzle, ["ply", "n", "text", "cta"], "puzzle");
+      if (!isPly(puzzle.ply)) fail("puzzle.ply must be a 0-based ply");
+      if (!Number.isInteger(puzzle.n) || puzzle.n < 1) {
+        fail("puzzle.n must be the puzzle's number, 1 or more");
+      }
+      checkCaptionText(puzzle.text, "puzzle.text");
+      if (typeof puzzle.text === "string" && puzzle.text.trim() === "") {
+        fail("puzzle.text must not be empty");
+      }
+      const problem = ctaProblem(puzzle.cta);
+      if (problem) {
+        fail(`puzzle.${problem}`);
+      } else if (
+        Number.isInteger(puzzle.n) &&
+        !new RegExp(`wallgame\\.io/go/${puzzle.n}(?![0-9])`, "i").test(
+          puzzle.cta,
+        )
+      ) {
+        fail(
+          `puzzle.cta must name the puzzle's link, wallgame.io/go/${puzzle.n}; got ${JSON.stringify(puzzle.cta)}`,
+        );
+      }
+    }
   }
 
   const pace = raw.pace ?? [];
@@ -1569,6 +1615,16 @@ export const validateEdl = (raw) => {
       ...slots,
       // Only when set, so a list without one stores the same bytes as before.
       ...(cta !== null ? { cta } : {}),
+      ...(puzzle !== null
+        ? {
+            puzzle: {
+              ply: puzzle.ply,
+              n: puzzle.n,
+              text: puzzle.text,
+              cta: puzzle.cta,
+            },
+          }
+        : {}),
       ...(raw.finishAt !== undefined ? { finishAt: raw.finishAt } : {}),
       ...(evalStrip !== null ? { evalStrip } : {}),
       pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
@@ -1682,6 +1738,13 @@ export const checkEdlAgainstGame = (
       );
     }
   });
+  // The puzzle's position is the one before its ply's move, and the game
+  // goes on after it: the last move ends the game, so it is no puzzle.
+  if (edl.puzzle && edl.puzzle.ply >= notations.length - 1) {
+    errors.push(
+      `puzzle.ply ${edl.puzzle.ply} must be before the last move (${notations.length - 1}): the puzzle is the position before that ply's move`,
+    );
+  }
   for (const ply of plies) {
     if (ply >= notations.length) {
       errors.push(

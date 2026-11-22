@@ -34,6 +34,7 @@ import { copySha256, postTexts } from "./copy.mjs";
 import { errorText, sha256 } from "./transport.mjs";
 import { storyProblem } from "./post-instagram.mjs";
 import { PLATFORM_GAPS, notInSlot, notYetDue } from "./slots.mjs";
+import { puzzleLinkProblem } from "./puzzle-gate.mjs";
 
 /**
  * Why a platform does not apply to an item's video, or null. Nil wants every
@@ -95,6 +96,9 @@ const liveOf = (reasons) =>
  *   uploadStatus: string | null, processingStatus: string | null }[]>}
  *   deps.youtubeRecent the channel's last uploads in every state
  *   (post-youtube.mjs youtubeRecentUploads), read inside the post lock
+ * @param {(item: any) => Promise<string | null>} [deps.puzzleLink] why a
+ *   puzzle video may not post yet (puzzle-gate.mjs puzzleLinkProblem: its
+ *   wallgame.io/go/<n> does not open its position), or null
  * @param {() => number} [deps.now]
  */
 export const createItemPoster = ({
@@ -106,6 +110,7 @@ export const createItemPoster = ({
   tiktokWaiting,
   lastLiveSlotAt,
   youtubeRecent,
+  puzzleLink = puzzleLinkProblem,
   now = () => Date.now(),
 }) => {
   const iso = () => new Date(now()).toISOString();
@@ -319,6 +324,16 @@ export const createItemPoster = ({
         passed.push({ itemId: queued.id, notApplicable: none });
         continue;
       }
+      // A puzzle video waits, approved, until its link opens its position
+      // (puzzle-gate.mjs): the slot passes it over on every platform.
+      const link = await puzzleLink(queued);
+      if (link) {
+        passed.push({
+          itemId: queued.id,
+          notApplicable: Object.fromEntries(platforms.map((p) => [p, link])),
+        });
+        continue;
+      }
       let problem = null;
       let item;
       try {
@@ -405,6 +420,8 @@ export const createItemPoster = ({
     }
     const problem = contentProblem(item, video);
     if (problem) throw new StepRefused(`${id}: ${problem}`);
+    const link = await puzzleLink(item);
+    if (link) throw new StepRefused(`${id}: ${link}`);
     // A migrated item has posts{} from its day but no posting: its set is
     // the platforms that day tried.
     const platforms = item.posting?.platforms ?? Object.keys(item.posts);

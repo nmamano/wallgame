@@ -382,6 +382,56 @@ const START_8 = {
   walls: [],
 };
 
+describe("the puzzle ending", () => {
+  const puzzle = {
+    ply: 1,
+    n: 3,
+    text: "the bot missed this 👀",
+    cta: "solve it: wallgame.io/go/3",
+  };
+  test("takes { ply, n, text, cta } and keeps it as it is", () => {
+    expect(accept({ ...base, puzzle }).puzzle).toEqual(puzzle);
+    // A list without one stores no field.
+    expect("puzzle" in accept(base)).toBe(false);
+  });
+
+  test("refuses a call to action without its own link, a long one and a long line", () => {
+    const errors = (p: object): string[] =>
+      (validateEdl({ ...base, puzzle: { ...puzzle, ...p } }).errors ??
+        []) as string[];
+    expect(errors({ cta: "solve it: wallgame.io/go/31" })).toEqual([
+      'puzzle.cta must name the puzzle\'s link, wallgame.io/go/3; got "solve it: wallgame.io/go/31"',
+    ]);
+    expect(errors({ cta: "solve it: wallgame.io/go" })[0]).toContain(
+      "puzzle.cta must name the puzzle's link",
+    );
+    expect(errors({ cta: "solve this puzzle at wallgame.io/go/3" })).toEqual([
+      "puzzle.cta has 37 characters; at most 30",
+    ]);
+    expect(errors({ text: "a b c d e f g" })).toEqual([
+      "puzzle.text has 7 words; at most 6 are allowed",
+    ]);
+    expect(errors({ n: 0 })).toContain(
+      "puzzle.n must be the puzzle's number, 1 or more",
+    );
+    expect(errors({ hint: "x" })).toEqual(['puzzle: unknown field "hint"']);
+  });
+
+  test("its ply comes before the last move", () => {
+    const at = (ply: number) =>
+      checkEdlAgainstGame(accept({ ...base, puzzle: { ...puzzle, ply } }), {
+        notations: ["Ce7", "Cf7", "^a4.^h4"],
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      });
+    expect(at(1)).toEqual([]);
+    expect(at(2)).toEqual([
+      "puzzle.ply 2 must be before the last move (2): the puzzle is the position before that ply's move",
+    ]);
+  });
+});
+
 describe("checkEdlAgainstGame", () => {
   const notations = ["Ce7", "Cf7", "^a4.^h4"];
   test("accepts a wall placed by that ply and rejects one placed later or never", () => {

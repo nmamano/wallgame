@@ -73,6 +73,7 @@ interface Outcome {
   notApplicable?: Record<string, string>;
   posts: Record<string, Post>;
   refused?: { itemId: string; error: string }[];
+  passed?: { itemId: string; notApplicable: Record<string, string> }[];
 }
 
 /** The message a promise is refused with, or null when it is not. */
@@ -128,6 +129,8 @@ const world = (live: string[]) => {
   // an Error is a read that throws (a damaged post log).
   let lastSlots: Record<string, string | Error> = {};
   const gapReads: string[] = [];
+  // puzzle-gate.mjs puzzleLinkProblem: why a puzzle video waits, or null.
+  let puzzleWhy: string | null = null;
   const store = {
     item: (id: string) => structuredClone(items.get(id)) ?? null,
     items: ({ states }: { states?: string[] } = {}) =>
@@ -196,6 +199,7 @@ const world = (live: string[]) => {
         ? Promise.reject(youtubeUploads)
         : Promise.resolve(youtubeUploads);
     },
+    puzzleLink: () => Promise.resolve(puzzleWhy),
   });
   const post = async (slot: { slotAt: string; firedBy?: string }) =>
     (await poster.postNext(slot)) as Outcome;
@@ -219,6 +223,7 @@ const world = (live: string[]) => {
     setLastSlot: (platform: string, at: string | Error) =>
       (lastSlots = { ...lastSlots, [platform]: at }),
     gapReads,
+    setPuzzle: (why: string | null) => (puzzleWhy = why),
     setLive: (p: string[]) => (reasons = reasonsOf(p)),
     setReasons: (r: Record<string, string[]>) =>
       (reasons = { ...reasons, ...r }),
@@ -226,6 +231,39 @@ const world = (live: string[]) => {
 };
 
 const SLOT = { slotAt: "2026-10-29T16:00:00.000Z" };
+
+describe("a puzzle video's link (puzzle-gate.mjs)", () => {
+  test("a slot passes it over, approved, until its link opens its position", async () => {
+    const live = ["x", "bluesky"];
+    const h = world(live);
+    const why =
+      "the puzzle link https://wallgame.io/go/3 sends to /, not to /puzzle/game/eeFSMEmL/12";
+    h.setPuzzle(why);
+    const waited = await h.post(SLOT);
+    expect(waited.kind).toBe("none-applies");
+    expect(waited.passed).toEqual([
+      {
+        itemId: "v-2026-10-28-1",
+        notApplicable: Object.fromEntries(live.map((p) => [p, why])),
+      },
+    ]);
+    expect(h.get().state).toBe("approved");
+    expect(h.logged).toEqual([]);
+    h.setPuzzle(null);
+    expect((await h.post(SLOT)).kind).toBe("posted");
+  });
+
+  test("a retry is refused while the link is wrong, and changes nothing", async () => {
+    const h = world(["x"]);
+    h.replies.x = () => ({ ok: false, mode: "live", at: "t", error: "500" });
+    expect((await h.post(SLOT)).kind).toBe("post-failed");
+    h.setPuzzle("the puzzle link https://wallgame.io/go/3 cannot be read");
+    expect(await refusal(h.retry("v-2026-10-28-1"))).toContain(
+      "the puzzle link https://wallgame.io/go/3 cannot be read",
+    );
+    expect(h.get().state).toBe("post-failed");
+  });
+});
 
 describe("post(itemId)", () => {
   test("posts to the platforms live at the slot and fixes that set", async () => {
