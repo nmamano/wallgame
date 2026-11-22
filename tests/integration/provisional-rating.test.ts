@@ -59,7 +59,7 @@ beforeAll(async () => {
   const helpers = await import("../../server/db/rating-helpers");
   getGlobalRatingForAuthUser = helpers.getGlobalRatingForAuthUser;
   PROVISIONAL_RATING = helpers.PROVISIONAL_RATING;
-});
+}, 120_000);
 
 afterAll(async () => {
   await teardownEphemeralDb(container);

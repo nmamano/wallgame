@@ -148,7 +148,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     await sleep(200);
     classicPuzzleId = await seedPuzzle(0, 901);
     tooSmallPuzzleId = await seedPuzzle(2, 902);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     socket?.close();

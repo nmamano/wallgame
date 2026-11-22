@@ -142,7 +142,7 @@ describe("the bot list is ordered by the ladder we chose", () => {
     socket = await attachBots("ladder-client", LADDER);
     // The bot registry writes through to the DB asynchronously on attach.
     await sleep(200);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     socket?.close();

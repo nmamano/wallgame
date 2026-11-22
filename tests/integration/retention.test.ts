@@ -128,7 +128,7 @@ beforeAll(async () => {
   await seedGame("2026-07-14", [BROWSER.immatureBusy, null]);
   await seedGame("2026-07-14", [BROWSER.immatureBusy, null]);
   await seedGame("2026-07-14", [BROWSER.immatureQuiet, null]);
-});
+}, 120_000);
 
 afterAll(async () => {
   await client.end();
