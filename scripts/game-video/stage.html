@@ -2393,6 +2393,8 @@
        *       board image (0..1), size: one cell's width (0..1), side: where
        *       the bubble goes, emoji: the react's character }
        */
+      /** The dark edge round a ring's band: the badges' navy. */
+      const RING_EDGE = "#10182c";
       const paintCellFx = (c) => {
         const fx = $("cellFx");
         show(fx, !!c);
@@ -2427,9 +2429,21 @@
         }
 
         if (c.kind === "ring") {
+          // A thin dark edge on both sides of the band keeps the ring one
+          // shape above a lit wall it crosses (the puzzle hold's glow, VR1's
+          // 177 N1; Wall Game Director, 2026-11-22: the ring is the point).
+          const edge = px * 0.03 + "px " + RING_EDGE;
           ring.style.borderWidth = px * 0.08 + "px";
           ring.style.borderColor = c.color;
-          ring.style.boxShadow = "0 0 " + px * 0.25 + "px " + c.color;
+          ring.style.boxShadow =
+            "0 0 0 " +
+            edge +
+            ", inset 0 0 0 " +
+            edge +
+            ", 0 0 " +
+            px * 0.25 +
+            "px " +
+            c.color;
           ring.style.opacity = span(c.t, 0, 0.2);
           ring.style.transform = "scale(" + pop + ")";
         }
