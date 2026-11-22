@@ -12,6 +12,11 @@
  * and the engine's best move in the position before. The best move is also
  * played on a copy of the position, so the walks it would have given are
  * computed here, never guessed.
+ *
+ * THE DEEP CHECK (optional). For a missed win (labels.ts missedWinPlies),
+ * PuzzleBot's engine at a deeper search scores the position before and
+ * after the move and plays the position out (deep-check.ts). Only its
+ * numbers are here; labels.ts judges them.
  */
 import type { GameState } from "../../../shared/domain/game-state";
 import type { Grid } from "../../../shared/domain/grid";
@@ -69,6 +74,33 @@ export interface EngineData {
   bestMoves: (string | null)[];
   /** The final value is the game result, not the engine's opinion. */
   finalFromResult: boolean;
+}
+
+/**
+ * The deep check of one missed win (deep-check.ts). Chances are the MOVER's,
+ * in [0, 1]; null where the engine gave no value.
+ */
+export interface DeepCheck {
+  ply: number;
+  before: number | null;
+  after: number | null;
+  /** The engine's best move in the position before the played move. */
+  best: string | null;
+  /**
+   * The engine playing both sides from the position before the played
+   * move, its best move each turn, cut where the game ends (the game
+   * rules decide the end, not the engine).
+   */
+  selfPlay: string[];
+  /** Who won the self-play, or null when it did not end. */
+  selfPlayWinner: PlayerId | null;
+}
+
+/** The deep checks of one game (DIR/<game>.deep.json). */
+export interface DeepData {
+  /** The engine command, so a reader knows the search depth. */
+  command: string;
+  checks: DeepCheck[];
 }
 
 /** One hunt across one move. */
@@ -180,6 +212,8 @@ export interface GameFacts {
   /** The stored winner; null for a draw. */
   winner: PlayerId | null;
   engineBotId: string | null;
+  /** The deep checks of the missed wins; null when none ran. */
+  deep: DeepData | null;
 }
 
 const sameActions = (a: string, b: string): boolean =>
@@ -435,6 +469,7 @@ const stepsOf = (
 export const gameFacts = (
   game: SemanticGame,
   engine: EngineData | null,
+  deep: DeepData | null,
 ): GameFacts => {
   const replay: ReplayedGame = replayDistances(game);
   const hunts = huntsFor(game.variant as Variant);
@@ -505,5 +540,6 @@ export const gameFacts = (
     plies,
     winner: game.result.winner ?? null,
     engineBotId: engine?.botId ?? null,
+    deep,
   };
 };

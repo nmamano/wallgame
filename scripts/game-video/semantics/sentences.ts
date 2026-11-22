@@ -49,7 +49,9 @@ import {
   isMoment,
   raceWords,
   type GameLabels,
+  DEEP_WIN_TURNS,
   type Link,
+  type MissedWin,
   type Pace,
 } from "./labels";
 import type { PlySeen } from "./vision";
@@ -792,6 +794,31 @@ export const paceLine = (
   return `Pace: ${parts.join("; ")}`;
 };
 
+/**
+ * The missed wins of a game in one line (C78, the puzzle ending), with the
+ * deep check's verdict: "Missed wins: ply 38 (move 20., Normal Bot, red)
+ * 98% -> 0%, confirmed: a 3-turn win" or "Missed wins: none".
+ */
+export const missedWinLine = (
+  missed: MissedWin[],
+  colors: Record<PlayerId, SeatLabel>,
+): string => {
+  if (missed.length === 0) return "Missed wins: none";
+  const one = (m: MissedWin) => {
+    const head = `ply ${m.ply} (move ${siteMove(m.ply)}, ${m.seat}, ${colors[m.mover]}) ${pct(m.before)} -> ${pct(m.after)}`;
+    if (m.deep === null) return `${head}, not checked (--deep)`;
+    if (m.confirmed) return `${head}, confirmed: a ${m.winTurn}-turn win`;
+    const d = m.deep;
+    const deep = `deep ${d.before === null ? "?" : pct(d.before)} -> ${d.after === null ? "?" : pct(d.after)}`;
+    const play =
+      m.winTurn === null
+        ? `no win for ${colors[m.mover]} in ${DEEP_WIN_TURNS.max} turns`
+        : `a ${m.winTurn}-turn win`;
+    return `${head}, not confirmed (${deep}, ${play})`;
+  };
+  return `Missed wins: ${missed.map(one).join("; ")}`;
+};
+
 const seenCell = (x: PlySeen | undefined) =>
   x === undefined ? "?" : `${x.seen ? "seen" : "NOT seen"}: ${x.reason}`;
 
@@ -808,6 +835,10 @@ export const renderTable = (s: GameSemantics): string => {
     `Turning point: ${s.labels.turningPoint}`,
     "",
     paceLine(s.labels.pace, s.seen, seatColorsOf(s.facts.game)),
+    "",
+    s.facts.engineBotId === null
+      ? "Missed wins: unknown (no engine scores)"
+      : missedWinLine(s.labels.missedWins, seatColorsOf(s.facts.game)),
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = wallgame.io's move list (N. first player, N... second player); ply = 0-based turn`,
     "",

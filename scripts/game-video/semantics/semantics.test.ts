@@ -9,7 +9,14 @@ import type {
 } from "./facts";
 import { readFileSync } from "node:fs";
 import { siteMoveNumber } from "../site-move.mjs";
-import { gameFacts, type EngineData, type SemanticGame } from "./facts";
+import {
+  gameFacts,
+  type DeepData,
+  type EngineData,
+  type SemanticGame,
+} from "./facts";
+import { deepCommand } from "./deep-check";
+import type { ConfigFile } from "../../../official-custom-bot-client/src/config-schema";
 import {
   countersShow,
   isBoardMoment,
@@ -22,6 +29,7 @@ import {
 import {
   checkSentence,
   factsOf,
+  missedWinLine,
   paceLine,
   seatColorsOf,
   renderTable,
@@ -90,6 +98,7 @@ const gameOf = (
   },
   winner,
   engineBotId: "dw-transformer",
+  deep: null,
   plies: specs.map((s, ply): PlyFacts => {
     const mover: PlayerId = ply % 2 === 0 ? 1 : 2;
     const engine: EngineFacts | null = s.wc
@@ -698,12 +707,12 @@ describe("a box-in sentence says the box", () => {
 const loadFixture = (gameId: string) =>
   JSON.parse(
     readFileSync(new URL(`fixtures/${gameId}.json`, import.meta.url), "utf8"),
-  ) as { game: SemanticGame; engine: EngineData };
+  ) as { game: SemanticGame; engine: EngineData; deep?: DeepData };
 
-/** A stored game, labelled. */
+/** A stored game, labelled, with its stored deep checks if it has any. */
 const fixtureLabels = (gameId: string) => {
-  const { game, engine } = loadFixture(gameId);
-  return labelGame(gameFacts(game, engine));
+  const { game, engine, deep } = loadFixture(gameId);
+  return labelGame(gameFacts(game, engine, deep ?? null));
 };
 
 describe("the stored result over the replay's", () => {
@@ -715,12 +724,13 @@ describe("the stored result over the replay's", () => {
   const draw = gameFacts(
     { ...fixture.game, result: { reason: "one-move-rule" } },
     fixture.engine,
+    null,
   );
 
   test("a stored draw has no winner, and its last move says the rule", () => {
     // The same moves stored as a capture win: the replay is not asked.
     expect(fixture.game.result).toEqual({ winner: 1, reason: "capture" });
-    expect(gameFacts(fixture.game, fixture.engine).winner).toBe(1);
+    expect(gameFacts(fixture.game, fixture.engine, null).winner).toBe(1);
     expect(draw.winner).toBeNull();
     const last = draw.plies.at(-1)!;
     expect(last.end).toEqual({ winner: null, reason: "one-move-rule" });
@@ -902,7 +912,7 @@ describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
     const fixture = JSON.parse(
       readFileSync(new URL("fixtures/VX-IPenv.json", import.meta.url), "utf8"),
     ) as { game: SemanticGame; engine: EngineData };
-    const l = labelGame(gameFacts(fixture.game, fixture.engine));
+    const l = labelGame(gameFacts(fixture.game, fixture.engine, null));
     const link = (from: number) =>
       l.links.find((k) => k.kind === "blunder-punish" && k.from === from);
     // Ply 9: Normal Bot's cat 2 -> 4, Guest Jackal's 3 -> 2; walled back at once.
@@ -1353,7 +1363,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
   test("2_S7mz__ 1: a cat step onto its own mouse with the mover's own wall is no huh", () => {
     // >d6.Cg6: the step alone is 6 -> 5; the wall >d6 makes the move 6 -> 7.
     const { game, engine } = loadFixture("2_S7mz__");
-    const facts = gameFacts(game, engine);
+    const facts = gameFacts(game, engine, null);
     const cat = facts.plies[1].hunts.find(
       (h) => h.hunter.player === 2 && h.hunter.type === "cat",
     )!;
@@ -1446,5 +1456,110 @@ describe("CASES from C46 on: what a move means (2026-11-04)", () => {
     expect(l.plies.filter((p) => p.destroys).map((p) => p.ply)).toEqual([20]);
     // A closed trap destroys too.
     expect(fixtureLabels("JbpdRM9D").plies[20].destroys).toBe(true);
+  });
+});
+
+describe("C74 rtciBs9j: the same trap, both sides", () => {
+  test("both 2 -> 8 boxes are punishes of a blunder, the cost shown", () => {
+    const l = fixtureLabels("rtciBs9j");
+    for (const [blunder, box] of [
+      [16, 17],
+      [29, 30],
+    ]) {
+      expect(l.plies[blunder].tags).toContain("blunder");
+      expect(l.plies[box].label).toBe("punish");
+      expect([l.plies[box].focus.before, l.plies[box].focus.after]).toEqual([
+        2, 8,
+      ]);
+      expect(l.links).toContainEqual({
+        kind: "blunder-punish",
+        from: blunder,
+        to: box,
+        costShown: true,
+      });
+    }
+  });
+});
+
+describe("missed wins (C78, the puzzle ending)", () => {
+  test("EDP5pYum: the bot's 3-turn win at 38 is confirmed, the one at 28 is not", () => {
+    const l = fixtureLabels("EDP5pYum");
+    expect(l.missedWins.map((m) => m.ply)).toEqual([28, 38]);
+    const [m28, m38] = l.missedWins;
+    expect(m38).toMatchObject({
+      mover: 1,
+      seat: "Normal Bot",
+      played: "Cg2",
+      winTurn: 3,
+      confirmed: true,
+    });
+    // The deep check puts the move at 39%, above the 30% bar.
+    expect(m28.confirmed).toBe(false);
+    expect(m28.deep?.after).toBe(0.389);
+  });
+
+  test("u6D6S_f_: P2's missed win is the mover's own chance, not flipped", () => {
+    const l = fixtureLabels("u6D6S_f_");
+    expect(l.missedWins).toHaveLength(1);
+    expect(l.missedWins[0]).toMatchObject({
+      ply: 47,
+      mover: 2,
+      seat: "Normal Bot",
+      confirmed: true,
+      winTurn: 3,
+    });
+    expect(l.missedWins[0].before).toBeGreaterThanOrEqual(0.9);
+  });
+
+  test("with no deep check the verdict is unknown, not false", () => {
+    const { game, engine } = loadFixture("EDP5pYum");
+    const l = labelGame(gameFacts(game, engine, null));
+    expect(l.missedWins.map((m) => [m.ply, m.confirmed])).toEqual([
+      [28, null],
+      [38, null],
+    ]);
+  });
+
+  test("the bar: 90% before, 50% after, and no win in this turn", () => {
+    const l = labels([
+      // P1 at 95% plays a move that drops to 20%: a missed win.
+      { w1: [5, 5], w2: [6, 6], wc: [0.95, 0.2] },
+      // P2's cat is 2 from the mouse: a one-turn win, no puzzle.
+      { w1: [5, 5], w2: [2, 3], wc: [0.95, 0.2] },
+      // 89% before is not enough.
+      { w1: [5, 5], w2: [6, 6], wc: [0.89, 0.1] },
+      // 51% after is not a loss of the win.
+      { w1: [6, 6], w2: [5, 5], wc: [0.95, 0.51] },
+    ]);
+    expect(l.missedWins.map((m) => m.ply)).toEqual([0]);
+  });
+
+  test("the line names each verdict, and none", () => {
+    const colors = { 1: "blue", 2: "red" } as const;
+    expect(missedWinLine([], colors)).toBe("Missed wins: none");
+    expect(missedWinLine(fixtureLabels("EDP5pYum").missedWins, colors)).toBe(
+      "Missed wins: ply 28 (move 15., Normal Bot, blue) 95% -> 42%, not confirmed (deep 95% -> 39%, no win for blue in 3 turns); ply 38 (move 20., Normal Bot, blue) 98% -> 0%, confirmed: a 3-turn win",
+    );
+    const { game, engine } = loadFixture("u6D6S_f_");
+    expect(
+      missedWinLine(
+        labelGame(gameFacts(game, engine, null)).missedWins,
+        colors,
+      ),
+    ).toBe(
+      "Missed wins: ply 47 (move 24..., Normal Bot, red) 95% -> 7%, not checked (--deep)",
+    );
+  });
+
+  test("the deep engine is PuzzleBot's at 20000 samples, with no losing fallback", () => {
+    const config = {
+      engineCommands: {
+        "dw-puzzle":
+          "../e --model m.trt --samples 5000 --parallel_samples 128 --losing_fallback --losing_fallback_eval -0.9",
+      },
+    } as unknown as ConfigFile;
+    expect(deepCommand(config)).toBe(
+      "../e --model m.trt --samples 20000 --parallel_samples 128",
+    );
   });
 });

@@ -21,7 +21,13 @@
 import type { PlayerId, Variant } from "../../../shared/domain/game-types";
 import { minJumpFor, type Hunt } from "../race-replay";
 import { siteMove } from "../site-move.mjs";
-import type { GameFacts, HuntChange, PlyFacts } from "./facts";
+import {
+  CAPTURE_REACH,
+  type DeepCheck,
+  type GameFacts,
+  type HuntChange,
+  type PlyFacts,
+} from "./facts";
 
 export const LABELS = [
   "capture",
@@ -471,6 +477,96 @@ export const paceOf = (
   return { moments, longestQuiet, leadChanges, biggestJump };
 };
 
+/** A missed win: the mover's engine chance before the move (C78). */
+export const MISSED_WIN_BEFORE = 0.9;
+/** ... and after the move it played. */
+export const MISSED_WIN_AFTER = 0.5;
+/**
+ * The deep check confirms a missed win (the bar the Director and GSW agreed
+ * on 2026-11-22 for the puzzle ending, C78): the deep chance before is
+ * MISSED_WIN_BEFORE or more, after the played move DEEP_AFTER or less, and
+ * the deep self-play wins in the mover's DEEP_WIN_TURNS (a win in the first
+ * turn is no puzzle; a longer one is too far to see in a 3 s hold).
+ */
+export const DEEP_AFTER = 0.3;
+export const DEEP_WIN_TURNS = { min: 2, max: 3 } as const;
+
+/**
+ * A move that threw a win away (C78, the puzzle ending): the mover had
+ * MISSED_WIN_BEFORE or more on the engine before it and MISSED_WIN_AFTER or
+ * less after it, and could not win in this turn (no own hunt within
+ * CAPTURE_REACH: that is a missed capture, a one-turn win, no puzzle).
+ */
+export interface MissedWin {
+  ply: number;
+  moveNumber: number;
+  mover: PlayerId;
+  /** The mover's seat name. */
+  seat: string;
+  /** The engine's chance for the mover before and after the move. */
+  before: number;
+  after: number;
+  played: string;
+  /** The engine's best move in the position before; null if none. */
+  best: string | null;
+  /** The deep check (facts.deep) of this ply; null when it did not run. */
+  deep: DeepCheck | null;
+  /** The mover's turn in which the deep self-play wins; null if it does not. */
+  winTurn: number | null;
+  /** The deep check's verdict; null when it did not run. */
+  confirmed: boolean | null;
+}
+
+/** The plies of the missed wins (MissedWin), from the engine and the board. */
+export const missedWinPlies = (facts: GameFacts): number[] =>
+  facts.plies
+    .filter(
+      (f) =>
+        f.engine !== null &&
+        f.engine.before >= MISSED_WIN_BEFORE &&
+        f.engine.after <= MISSED_WIN_AFTER &&
+        !f.hunts.some(
+          (h) => h.hunter.player === f.mover && h.before <= CAPTURE_REACH,
+        ),
+    )
+    .map((f) => f.ply);
+
+const missedWinsOf = (facts: GameFacts): MissedWin[] => {
+  const names = seatNames(facts);
+  return missedWinPlies(facts).map((ply) => {
+    const f = facts.plies[ply];
+    const deep = facts.deep?.checks.find((c) => c.ply === ply) ?? null;
+    // The self-play starts with the mover and is cut at its end, so a win
+    // by the mover is its last move, in turn ceil(length / 2).
+    const winTurn =
+      deep && deep.selfPlayWinner === f.mover
+        ? Math.ceil(deep.selfPlay.length / 2)
+        : null;
+    return {
+      ply,
+      moveNumber: f.moveNumber,
+      mover: f.mover,
+      seat: names[f.mover],
+      before: f.engine!.before,
+      after: f.engine!.after,
+      played: f.notation,
+      best: f.engine!.bestMove,
+      deep,
+      winTurn,
+      confirmed:
+        deep === null
+          ? null
+          : deep.before !== null &&
+            deep.before >= MISSED_WIN_BEFORE &&
+            deep.after !== null &&
+            deep.after <= DEEP_AFTER &&
+            winTurn !== null &&
+            winTurn >= DEEP_WIN_TURNS.min &&
+            winTurn <= DEEP_WIN_TURNS.max,
+    };
+  });
+};
+
 export interface GameLabels {
   plies: PlyLabel[];
   links: Link[];
@@ -480,6 +576,8 @@ export interface GameLabels {
    */
   turningPoint: string;
   pace: Pace;
+  /** The missed wins, in ply order (C78). */
+  missedWins: MissedWin[];
 }
 
 const clamp01 = (x: number) =>
@@ -964,6 +1062,7 @@ export const labelGame = (facts: GameFacts): GameLabels => {
     links,
     turningPoint: turningPointOf(facts, labels, links),
     pace: paceOf(labels),
+    missedWins: missedWinsOf(facts),
   };
 };
 

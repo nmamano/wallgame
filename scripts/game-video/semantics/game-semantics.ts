@@ -4,7 +4,7 @@
  *
  *   bun scripts/game-video/semantics/game-semantics.ts \
  *     (--item ITEM.json | --candidates DAY.json [--game ID ...]) \
- *     --out DIR [--engine] [--sentences]
+ *     --out DIR [--engine] [--deep] [--vision] [--sentences]
  *
  * THE GAMES COME FROM FILES THE DAILY JOB ALREADY WROTE: a daily item
  * (items/<id>.json, its `candidate`) or a candidates day file (its `ranked`
@@ -18,6 +18,13 @@
  * DIR/<game>.engine.json; a later run without --engine reads them from there.
  * Without either, the engine labels (threat, blunder, turn, punish,
  * trap-closes) do not appear.
+ *
+ * --deep checks each missed win (labels.ts MissedWin: the mover at 90% or
+ * more threw it to 50% or less, C78) with PuzzleBot's engine at a deeper
+ * search on the 4090 (deep-check.ts, about 30 s a ply; same limits as
+ * --engine). It needs the engine scores (--engine now or an earlier run).
+ * The checks go to DIR/<game>.deep.json; a later run reads them from there
+ * and checks only new plies. The verdict is `confirmed` in each missed win.
  *
  * --vision shoots each position's storyboard tile (DIR/<game>.tiles/) and
  * asks a model whether each labelled move can be SEEN in its tiles
@@ -39,9 +46,16 @@ import {
   gpuHostFromEnv,
   scoreGame,
 } from "../engine-eval";
-import { gameFacts, type EngineData, type SemanticGame } from "./facts";
-import { labelGame } from "./labels";
+import { deepCheck, deepCommand } from "./deep-check";
 import {
+  gameFacts,
+  type DeepData,
+  type EngineData,
+  type SemanticGame,
+} from "./facts";
+import { labelGame, missedWinPlies } from "./labels";
+import {
+  missedWinLine,
   paceLine,
   seatColorsOf,
   renderTable,
@@ -56,6 +70,7 @@ interface Args {
   games: string[];
   out: string;
   engine: boolean;
+  deep: boolean;
   sentences: boolean;
   vision: boolean;
 }
@@ -80,6 +95,7 @@ const parseArgs = (argv: string[]): Args => {
     ),
     out,
     engine: argv.includes("--engine"),
+    deep: argv.includes("--deep"),
     sentences: argv.includes("--sentences"),
     vision: argv.includes("--vision"),
   };
@@ -186,6 +202,50 @@ const scoreOnGpu = async (games: SemanticGame[], dir: string) => {
   }
 };
 
+const readJson = <T>(path: string): T | null =>
+  existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T) : null;
+
+/** The deep check of each game's missed wins not yet in DIR/<game>.deep.json. */
+const deepOnGpu = async (games: SemanticGame[], dir: string) => {
+  const gpuHost = gpuHostFromEnv("--deep");
+  const command = deepCommand(engineConfig(gpuHost));
+  let link: EngineLink | null = null;
+  try {
+    for (const game of games) {
+      const engine = readJson<EngineData>(
+        join(dir, `${game.gameId}.engine.json`),
+      );
+      if (!engine) {
+        console.error(`${game.gameId}: no engine scores, no deep check`);
+        continue;
+      }
+      const path = join(dir, `${game.gameId}.deep.json`);
+      const stored = readJson<DeepData>(path);
+      // Checks at another depth or engine are not this check.
+      const data: DeepData =
+        stored?.command === command ? stored : { command, checks: [] };
+      const todo = missedWinPlies(gameFacts(game, engine, null)).filter(
+        (ply) => !data.checks.some((c) => c.ply === ply),
+      );
+      for (const ply of todo) {
+        if (!link || link.broken) {
+          await link?.close();
+          link = new EngineLink(gpuHost, command);
+        }
+        const t0 = performance.now();
+        data.checks.push(await deepCheck(link, game, ply));
+        data.checks.sort((a, b) => a.ply - b.ply);
+        writeFileSync(path, JSON.stringify(data));
+        console.error(
+          `deep check ${game.gameId} ply ${ply} in ${((performance.now() - t0) / 1000).toFixed(1)} s`,
+        );
+      }
+    }
+  } finally {
+    await link?.close();
+  }
+};
+
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   mkdirSync(args.out, { recursive: true });
@@ -195,12 +255,17 @@ const main = async () => {
       read.map((r) => r.game),
       args.out,
     );
+  if (args.deep)
+    await deepOnGpu(
+      read.map((r) => r.game),
+      args.out,
+    );
   for (const { game, stored } of read) {
-    const enginePath = join(args.out, `${game.gameId}.engine.json`);
-    const engine = existsSync(enginePath)
-      ? (JSON.parse(readFileSync(enginePath, "utf8")) as EngineData)
-      : null;
-    const facts = gameFacts(game, engine);
+    const engine = readJson<EngineData>(
+      join(args.out, `${game.gameId}.engine.json`),
+    );
+    const deep = readJson<DeepData>(join(args.out, `${game.gameId}.deep.json`));
+    const facts = gameFacts(game, engine, deep);
     const labels = labelGame(facts);
     const semantics: GameSemantics = args.sentences
       ? writeSentences(facts, labels)
@@ -228,6 +293,8 @@ const main = async () => {
     console.log(
       `  ${paceLine(labels.pace, semantics.seen, seatColorsOf(game))}`,
     );
+    if (engine)
+      console.log(`  ${missedWinLine(labels.missedWins, seatColorsOf(game))}`);
   }
 };
 
