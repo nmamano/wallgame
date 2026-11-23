@@ -184,6 +184,18 @@ describe("isRestShot: no part starts inside any effect", () => {
         state: { ...plain, trap: { t: 0.2, fade: 1, walls: [] } },
       },
     ],
+    // Before its first tap and between taps the cat is at rest and the
+    // wall unlit: only the beat and the wall's state tell.
+    knock: [
+      {
+        kind: "beat-knock",
+        state: {
+          ...plain,
+          beat: { kind: "knock", t: 0, hits: [0.08], dir: { x: 0, y: 1 } },
+          trap: { t: 0, lit: true, fade: 0, walls: [] },
+        },
+      },
+    ],
     react: [{ kind: "beat-react", state: { ...plain, ...cell } }],
     path: [
       {

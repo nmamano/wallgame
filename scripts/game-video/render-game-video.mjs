@@ -178,6 +178,7 @@ import {
   leadInOf,
   levelGain,
   memeGain,
+  SOUND_HITS,
 } from "./meme-sounds.mjs";
 import {
   CUT_OUT_FEATHER,
@@ -947,6 +948,16 @@ const SHAKE_SECONDS = 0.6;
  */
 const SCARED_SECONDS = 1.2;
 const LAUGH_SECONDS = 1.3;
+/**
+ * A knock (edl.mjs): its length, and the run-up of its first tap: the
+ * knock sound starts this long after the beat, so the cat moves from rest
+ * and meets the wall on the first knock (stage.html KNOCK_IN). The wall
+ * flashes on each hit for KNOCK_FLASH_SECONDS, from KNOCK_FLASH_IN before it.
+ */
+const KNOCK_SECONDS = 1.0;
+const KNOCK_RUN_UP = 0.07;
+const KNOCK_FLASH_IN = 0.03;
+const KNOCK_FLASH_SECONDS = 0.15;
 const STAMP_SECONDS = 1.0;
 /**
  * A stamp lands this long after its move, so the move is seen first (audit
@@ -6192,8 +6203,7 @@ const renderStyle = async (styleName) => {
     // went elsewhere.
     const steps = (p) =>
       Math.abs(p.x - at.x) / GRID.pitchX + Math.abs(p.y - at.y) / GRID.pitchY;
-    const moved =
-      left.length > 1 ? left.filter((p) => steps(p) < 2.3) : left;
+    const moved = left.length > 1 ? left.filter((p) => steps(p) < 2.3) : left;
     const name = termOfCell(cell);
     if (waiting.length !== 1 || moved.length !== 1) {
       log(
@@ -6780,9 +6790,55 @@ const renderStyle = async (styleName) => {
    * crop moves in.
    */
   const cellColours = new Map();
+  /**
+   * Each knock's cat and the way it taps (edl.mjs `knock`): the hunter
+   * beside the knock's wall whose target is the cell across it, on the
+   * board after the move, and the direction from it to its target. A knock
+   * with no such cat stops the render (knock-standoff) and is left out.
+   * @type {Map<object, { cat: string, dir: { x: number, y: number } }>}
+   */
+  const KNOCKS = new Map();
+  for (const ev of EVENTS.filter((e) => e.kind === "knock")) {
+    const board = ev.ply + 1;
+    const m = ev.wall.match(/^([>^])([a-z])(\d+)$/);
+    const col = m[2].charCodeAt(0) - "a".charCodeAt(0);
+    const row = Number(m[3]);
+    const here = `${m[2]}${row}`;
+    const across =
+      m[1] === "^"
+        ? `${m[2]}${row + 1}`
+        : `${String.fromCharCode("a".charCodeAt(0) + col + 1)}${row}`;
+    const track = REPLAYED.tracks.find(
+      (t) =>
+        (t.hunterCells[board] === here && t.targetCells[board] === across) ||
+        (t.hunterCells[board] === across && t.targetCells[board] === here),
+    );
+    if (!track) {
+      fault(
+        "knock-standoff",
+        ev.ply,
+        `the knock on ply ${ev.ply} names ${ev.wall}, between ${here} and ${across}, and after the move no hunter stands on one with its target on the other (${REPLAYED.tracks.map((t) => `${seatColors?.[t.hunter.player] ?? `player ${t.hunter.player}`} ${t.hunter.type} ${t.hunterCells[board]}, its target ${t.targetCells[board]}`).join("; ")})`,
+        0,
+      );
+      continue;
+    }
+    const cat = track.hunterCells[board];
+    const from = cellAtTerm(cat);
+    const to = cellAtTerm(track.targetCells[board]);
+    KNOCKS.set(ev, {
+      cat,
+      dir: { x: Math.sign(to.x - from.x), y: Math.sign(to.y - from.y) },
+    });
+  }
   for (const ev of EVENTS) {
-    if (ev.kind !== "scared" && ev.kind !== "laugh") continue;
-    const at = cellAtTerm(ev.cell);
+    const term =
+      ev.kind === "scared" || ev.kind === "laugh"
+        ? ev.cell
+        : ev.kind === "knock"
+          ? KNOCKS.get(ev)?.cat
+          : undefined;
+    if (term === undefined) continue;
+    const at = cellAtTerm(term);
     cellColours.set(
       ev,
       await stage.evaluate(
@@ -6798,7 +6854,7 @@ const renderStyle = async (styleName) => {
         ],
       ),
     );
-    log(`${ev.kind} on ${ev.cell}, ply ${ev.ply}: cell ${cellColours.get(ev)}`);
+    log(`${ev.kind} on ${term}, ply ${ev.ply}: cell ${cellColours.get(ev)}`);
   }
   /** The beats with a mark beside a cell's pawn, and how long each plays. */
   const MARK_SECONDS = {
@@ -7209,6 +7265,38 @@ const renderStyle = async (styleName) => {
                 ...stampSpots.get(ev),
               }
             : undefined,
+      };
+    }
+    if (ev.kind === "knock") {
+      const knock = KNOCKS.get(ev);
+      // A knock-standoff fault stops the render before its shoot.
+      if (!knock) return {};
+      const hits = SOUND_HITS[ev.sound].map((h) => h + KNOCK_RUN_UP);
+      const flash = Math.max(
+        0,
+        ...hits.map((h) => {
+          const d = t - h;
+          if (d >= -KNOCK_FLASH_IN && d < 0) return 1 + d / KNOCK_FLASH_IN;
+          if (d >= 0 && d < KNOCK_FLASH_SECONDS) {
+            return 1 - d / KNOCK_FLASH_SECONDS;
+          }
+          return 0;
+        }),
+      );
+      return {
+        beat: {
+          kind: "knock",
+          board: fileUrl(boardFrames[ply]),
+          cell: cellAtTerm(knock.cat),
+          size: GRID.pitchX,
+          cellSize: GRID.cellX,
+          under: cellColours.get(ev),
+          side: "up",
+          t,
+          hits,
+          dir: knock.dir,
+        },
+        trap: { t, lit: true, fade: flash, ...litWalls([ev.wall], ply) },
       };
     }
     const mark = markState(ev, ply, fxSides.get(ev));
@@ -8138,7 +8226,9 @@ const renderStyle = async (styleName) => {
                   ? STAMP_LAND_AT
                   : ev.kind === "trap"
                     ? TRAP_STAMP_AT
-                    : 0),
+                    : ev.kind === "knock"
+                      ? KNOCK_RUN_UP
+                      : 0),
         );
       }
       if (ev.kind === "sound") {
@@ -8164,11 +8254,10 @@ const renderStyle = async (styleName) => {
         });
         for (let i = 0; i < frames; i += 1) {
           if (i === mid) stillNext = label;
-          await emit(
-            playState(ply, { zoom: zoomFor(i / FPS) }),
-            1 / FPS,
-            { kind: "swing-zoom", ply: plyIndex },
-          );
+          await emit(playState(ply, { zoom: zoomFor(i / FPS) }), 1 / FPS, {
+            kind: "swing-zoom",
+            ply: plyIndex,
+          });
         }
         // A zoom with no pull-out leaves the camera on its last frame.
         if (out === 0) leftZoom = zoomFor((frames - 1) / FPS);
@@ -8181,6 +8270,7 @@ const renderStyle = async (styleName) => {
         stamp: STAMP_LAND_AT + stampSeconds(ev.text),
         trap: Math.max(TRAP_SECONDS, TRAP_STAMP_AT + stampSeconds(ev.text)),
         plant: PLANT_SECONDS,
+        knock: KNOCK_SECONDS,
         race: RACE_FLASH_SECONDS,
         path: ev.kind === "path" ? pathSeconds(ev) : 0,
       }[ev.kind];
@@ -8206,7 +8296,9 @@ const renderStyle = async (styleName) => {
             ? Math.round((STAMP_LAND_AT + 0.4) * FPS)
             : ev.kind === "race"
               ? Math.round(RACE_FLASH_SECONDS * 0.75 * FPS)
-              : Math.round(frames / 2);
+              : ev.kind === "knock"
+                ? Math.round((KNOCK_RUN_UP + SOUND_HITS[ev.sound].at(-1)) * FPS)
+                : Math.round(frames / 2);
       for (let i = 0; i < frames; i += 1) {
         if (i === stillAt) stillNext = label;
         const extra = momentState(ev, ply, i / FPS, seconds, i);

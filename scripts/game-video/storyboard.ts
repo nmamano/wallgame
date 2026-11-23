@@ -140,6 +140,7 @@ interface EdlEvent {
   kind: string;
   cell?: string;
   walls?: string[];
+  wall?: string;
   frame?: string[];
   lead?: boolean;
   emoji?: string;
@@ -194,7 +195,9 @@ if (edlPath) {
               ? ev.text!
               : ev.kind === "overlay"
                 ? `${ev.asset}${ev.text ? ` "${ev.text}"` : ""}`
-                : (ev.cell ?? "");
+                : ev.kind === "knock"
+                  ? ev.wall!
+                  : (ev.cell ?? "");
     mark(ev.ply, `${ev.kind.toUpperCase()} ${what}${sound}`.trim());
     if (ev.cell && KIND_HEX[ev.kind]) {
       edlCells.set(ev.ply, [
@@ -202,7 +205,8 @@ if (edlPath) {
         { cell: ev.cell, color: KIND_HEX[ev.kind] },
       ]);
     }
-    const walls = ev.kind === "trap" ? ev.walls! : [];
+    const walls =
+      ev.kind === "trap" ? ev.walls! : ev.kind === "knock" ? [ev.wall!] : [];
     if (walls.length > 0) {
       edlWalls.set(ev.ply, [...(edlWalls.get(ev.ply) ?? []), ...walls]);
     }

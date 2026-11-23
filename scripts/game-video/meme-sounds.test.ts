@@ -1,18 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { KNOCK_FAMILY } from "./edl.mjs";
 import {
   KNOWN_FADE_OUTS,
   LEAD_INS,
   MEME_FAMILIES,
   MEME_SOUNDS,
   OUR_CUTS,
+  SOUND_HITS,
   VOICE_FAMILIES,
   VOICE_KEYS,
   isVoice,
 } from "./meme-sounds.mjs";
 
 describe("meme sounds", () => {
+  test("every knock sound has its hits, and every hit list is a known clip's, in order, in its first second", () => {
+    const knocks = Object.keys(MEME_SOUNDS).filter(
+      (k) => k.replace(/-\d+$/, "") === KNOCK_FAMILY,
+    );
+    expect(knocks.length).toBeGreaterThan(0);
+    for (const key of knocks) expect(key in SOUND_HITS).toBe(true);
+    for (const [key, hits] of Object.entries(SOUND_HITS)) {
+      expect(key in MEME_SOUNDS).toBe(true);
+      expect(hits.length).toBeGreaterThan(0);
+      expect([...hits].sort((a, b) => a - b)).toEqual(hits);
+      expect(hits[0]).toBeGreaterThanOrEqual(0);
+      expect(hits.at(-1)).toBeLessThan(1);
+    }
+  });
+
   test("every lead-in is a known clip's, between the detector's 50 ms and 1 s", () => {
     for (const [key, seconds] of Object.entries(LEAD_INS)) {
       expect(key in MEME_SOUNDS).toBe(true);

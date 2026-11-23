@@ -1860,6 +1860,9 @@
        *   scared  the cat is close: the mouse trembles, sweats, and a "!"
        *           bubble pops over it.
        *   laugh   a wall has saved it: the mouse bounces and a 😂 bubble pops.
+       *   knock   a stand-off: the cat taps against the wall toward its
+       *           mouse on each hit of the knock sound (b.hits, seconds),
+       *           in direction b.dir ({x, y}, one of them 0); no bubble.
        *
        * b = { kind, t: seconds into the beat, board: the screenshot under it,
        *       cell: {x, y} the mouse's cell centre in the board image (0..1),
@@ -1872,6 +1875,29 @@
        *       side: where the bubble goes, up | right | left | down, chosen
        *       by the renderer away from the other pawns }
        */
+      /** How far a knock's tap goes toward the wall, in cell pitches. */
+      const KNOCK_TAP = 0.12;
+      /** The share of the crop's edge a knock clips (paintBeat). */
+      const KNOCK_CLIP = 0.04;
+      /** A tap's run-up before its hit, and its spring back after it. */
+      const KNOCK_IN = 0.07;
+      const KNOCK_BACK = 0.12;
+      /**
+       * A knock's reach at `t` seconds, 0 (at rest) to 1 (on the wall at a
+       * hit): it speeds up into each hit and eases back after it.
+       */
+      const knockReach = (t, hits) =>
+        Math.max(
+          0,
+          ...hits.map((h) => {
+            const d = t - h;
+            if (d >= -KNOCK_IN && d < 0)
+              return ((d + KNOCK_IN) / KNOCK_IN) ** 2;
+            if (d >= 0 && d < KNOCK_BACK) return 1 - easeOut3(d / KNOCK_BACK);
+            return 0;
+          }),
+        );
+      window.__knockReach = knockReach;
       const paintBeat = (b) => {
         const fx = $("pawnFx");
         show(fx, !!b);
@@ -1912,6 +1938,32 @@
           ")";
         const sweat = $("pawnSweat");
 
+        if (b.kind === "knock") {
+          /*
+            Each tap reaches the wall on its hit and springs back. The
+            window is the cell, so the art meets its edge at the wall: the
+            cut there reads as the cat hitting the wall. The strip the tap
+            uncovers behind it shows the cell's own colour (b.under).
+          */
+          const reach = knockReach(b.t, b.hits);
+          /*
+            The crop's outer rows hold a sliver of the next walls, out of
+            sight at rest; a tap carries them into the cell as a thin line
+            (seen on 6eL ply 23, 2026-11-23), so its edge is clipped.
+          */
+          crop.style.clipPath = "inset(" + KNOCK_CLIP * 100 + "%)";
+          crop.style.transform =
+            "translate(" +
+            b.dir.x * reach * px * KNOCK_TAP +
+            "px," +
+            b.dir.y * reach * px * KNOCK_TAP +
+            "px)";
+          show(bubble, false);
+          show(sweat, false);
+          return;
+        }
+        show(bubble, true);
+        crop.style.clipPath = "";
         if (b.kind === "scared") {
           /*
             Its own size, never enlarged: the window would cut the art. The

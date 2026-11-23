@@ -507,3 +507,37 @@ Agents cannot hear, so this is measured, not heard (2026-11-14, RMS per
 1.75 s, falls to about -27 dB for its last note (1.78-1.96 s), and is
 silent from 2.02 s. Measured with make-sound-reel.mjs --measure: -17.1
 LUFS momentary max, -7.3 dBTP, so memeGain plays it at -21 LUFS.
+
+## knock-1, the stand-off's knock (2026-11-23)
+
+Director Rewriter, 2026-11-23 (the Director chose it; meme list C31/C32:
+the sound only with a visual of its idea): a sound for a `standoff`, the
+cat and the mouse on next-door cells with a wall between them. It plays
+only on a `knock` event (edl.mjs), where the cat taps the wall once on
+each knock. New family knock. Not a voice. The page shows "Creative
+Commons 0" and says how the sound was made (the renderer read it on
+2026-11-23): "Simple knock on the wooden door ... Recorded using Zoom H1".
+The input is the file the Director Rewriter fetched (7.03 s, sha256
+7956a9a247e0c7145f9c9ac48ab1cc2967e68a37b9524abe16f51308267bd0c4): three
+groups of knocks, at 0-0.77, 1.82-3.07 and 5.00-6.26 s. Our cut is the
+first group.
+
+| Key     | Freesound title   | Length | Uploader   | Why it is safe                                                                                               | Claim risk | Source page                                            |
+| ------- | ----------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------ | ---------- | ------------------------------------------------------ |
+| knock-1 | Knock on the door | 0.8 s  | HunteR4708 | CC0; "Simple knock on the wooden door ... Recorded using Zoom H1" (the page, 38,340 downloads on 2026-11-23) | LOW        | https://freesound.org/people/HunteR4708/sounds/256513/ |
+
+| Key     | Made from        | Length | Command (ffmpeg, from the downloaded file)                                                                                           |
+| ------- | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| knock-1 | Freesound 256513 | 0.8 s  | `-af "atrim=0.07:0.87,asetpts=PTS-STARTPTS,afade=t=in:d=0.005,afade=t=out:st=0.72:d=0.08" -c:a libmp3lame -b:a 128k -ar 44100 -ac 2` |
+
+Agents cannot hear, so this is measured, not heard (2026-11-23, the peak
+per 1 ms on the mono mix at 48 kHz). The first group is three knocks with
+onsets at 0.079, 0.276 and 0.474 s in the upload (0.009, 0.206 and 0.404 s
+in the cut: meme-sounds.mjs SOUND_HITS, which the knock's taps follow).
+Each knock falls about 20 dB in 0.15 s, and the group is under -50 dB
+from 0.81 s, so the cut ends in silence (its last 30 ms peak at -66 dB).
+Measured with make-sound-reel.mjs --measure: -16.5 LUFS momentary max,
+-1.5 dBTP. Its true peak is high for its loudness, so memeGain's ceiling
+plays it at about -25 LUFS, 4 dB under the target (the whole upload,
+-0.3 dBTP, would be the same); a limiter would cost the knocks their
+attack, as for bonk-1, so the cut is used as is.

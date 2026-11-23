@@ -161,6 +161,12 @@ export const MEME_SOUNDS = {
   // the uploader made in BeepBox, CC0 on freesound.org (meme-sounds.md),
   // our cut, measured 2026-11-14.
   "gameover-1": { lufs: -17.1, truePeak: -7.3 },
+  // A stand-off: the cat knocks on the wall between it and the mouse, with
+  // the knock visual (Director Rewriter, 2026-11-23; meme list C31/C32: the
+  // sound only with a visual of its idea). Three knocks on a wooden door
+  // the uploader recorded, CC0 on freesound.org (meme-sounds.md), our cut
+  // of the first group, measured 2026-11-23.
+  "knock-1": { lufs: -16.5, truePeak: -1.5 },
 };
 
 /**
@@ -230,6 +236,8 @@ export const MEME_FAMILIES = {
     "a cat eats the mouse: Yoshi's tongue and gulp (Nil's pick; some captures only, for variety)",
   gameover:
     "the finish: a loser that turned it round or saved, and still lost (an 8-bit game-over tune)",
+  knock:
+    "a stand-off: the cat knocks on the wall between it and the mouse (only on a knock event)",
 };
 
 /**
@@ -250,7 +258,7 @@ export const MEME_FAMILIES = {
  * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
  * audience off screen, as ooh), and gasp and scream (no word,
  * as scared-2), bonk-1 (a drum hit), yoshi (game sound effects, no
- * word), and gameover-1 (an 8-bit tune). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * word), gameover-1 (an 8-bit tune), and knock-1 (knocks on a door). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
  * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */
@@ -348,6 +356,7 @@ export const MEME_SOURCE_NOTES = {
  *             a sound in KNOWN_FADE_OUTS may
  */
 export const OUR_CUTS = {
+  "knock-1": { end: "silence", measured: "-50 dB past 0.81 s" },
   "nono-1": {
     end: "silence",
     measured: "the dip between words: -36 dB for 50 ms past 7.13 s",
@@ -478,6 +487,17 @@ export const LEAD_INS = {
 
 /** Clip `key`'s silent lead-in in seconds (LEAD_INS), or 0. @type {(key: string) => number} */
 export const leadInOf = (key) => LEAD_INS[key] ?? 0;
+
+/**
+ * The hits of a sound that a picture moves on, in seconds from the clip's
+ * first sample: each hit's onset, the first 1 ms over -20 dBFS (measured
+ * 2026-11-23 on the mono mix at 48 kHz). A knock event's cat taps the
+ * wall on each one (edl.mjs `knock`), so the picture keeps time with the
+ * sound it plays. Every knock sound has its hits here (meme-sounds.test).
+ */
+export const SOUND_HITS = {
+  "knock-1": [0.009, 0.206, 0.404],
+};
 
 /** "boom-2" -> "boom". @type {(key: string) => string} */
 export const memeFamily = (key) => key.replace(/-\d+$/, "");

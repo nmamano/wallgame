@@ -228,6 +228,15 @@
  *     plant   the setup of a later callback: on the ply that places
  *             `wall`, as its move lands, that wall glows for 0.8 s, with
  *             no word, so the viewer has seen it once.
+ *     knock   a stand-off (Director Rewriter, 2026-11-23; meme list
+ *             C31/C32): the cat beside `wall` (a wall on the board after
+ *             the move) knocks on it, its mouse on the other side. On each
+ *             hit of its `sound` (required, a knock sound: meme-sounds.mjs
+ *             SOUND_HITS) the cat taps against the wall, which flashes in
+ *             its colour; it lasts 1 s. A knock sound plays on a knock
+ *             only, and a knock only with one. The render stops when no
+ *             cat stands beside the wall with the mouse it hunts across it
+ *             (knock-standoff).
  *     flashback  the board goes back in time to the move that built
  *             `wall` (Nil, 2026-11-01, C39: "you need to show clearly
  *             that you are showing the past"). `toPly` is the ply that
@@ -296,7 +305,7 @@
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
  */
-import { MEME_SOUNDS } from "./meme-sounds.mjs";
+import { MEME_SOUNDS, memeFamily } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import {
   OVERLAYS,
@@ -540,6 +549,7 @@ export const LINT_KINDS = {
   silence: "warns",
   "still-before-ending": "warns",
   "zoom-cuts-pawn": "warns",
+  "knock-standoff": "stops",
   "stamp-covers": "warns",
   "mark-covers-wall": "warns",
   "mark-covers-pawn": "stops",
@@ -592,6 +602,7 @@ export const EVENT_KINDS = [
   "explain",
   "plant",
   "flashback",
+  "knock",
 ];
 
 /** When an overlay on an explain's ply opens (`at`): see the header. */
@@ -626,7 +637,10 @@ const KIND_FIELDS = {
   explain: ["hunter", "label", "expect", "callback", "buildUp"],
   plant: ["wall"],
   flashback: ["toPly", "wall", "forwardSound", "nowSound"],
+  knock: ["wall"],
 };
+/** The family of the sounds a knock plays, and only a knock (C31/C32). */
+export const KNOCK_FAMILY = "knock";
 /**
  * The meme sounds an event plays, in order: its `sound`, and a flashback's
  * `forwardSound` and `nowSound`. Every reader of a list's sounds goes
@@ -720,6 +734,7 @@ const VARIED = [
   "react",
   "freeze",
   "stamp",
+  "knock",
 ];
 
 /** The reading rule in words, for the messages. */
@@ -949,6 +964,10 @@ export const validateEdl = (raw) => {
     if (!Object.hasOwn(MEME_SOUNDS, slots[field])) {
       fail(
         `${field} ${JSON.stringify(raw[field])} is not a known sound, or absent for ${fallback}`,
+      );
+    } else if (memeFamily(slots[field]) === KNOCK_FAMILY) {
+      fail(
+        `${field} ${slots[field]}: a knock sound plays only on a knock event, with the cat's taps (C31/C32)`,
       );
     }
   }
@@ -1240,6 +1259,28 @@ export const validateEdl = (raw) => {
           `${where}: sound ${JSON.stringify(ev.sound)} is not known. Known: ${Object.keys(MEME_SOUNDS).join(", ")}`,
         );
       }
+      // A knock and its sound go together (meme list C31/C32): the sound
+      // only with the taps, and the taps only with a knock sound.
+      if (ev.kind === "knock") {
+        if (
+          !(typeof ev.sound === "string" && ev.sound in MEME_SOUNDS) ||
+          memeFamily(ev.sound) !== KNOCK_FAMILY
+        ) {
+          fail(
+            `${where}: a knock needs a knock sound (${Object.keys(MEME_SOUNDS)
+              .filter((k) => memeFamily(k) === KNOCK_FAMILY)
+              .join(", ")}): the cat taps on its knocks`,
+          );
+        }
+      } else {
+        for (const key of eventSoundKeys(ev)) {
+          if (memeFamily(key) === KNOCK_FAMILY) {
+            fail(
+              `${where}: ${key} plays only on a knock event, with the cat's taps (C31/C32); a ${ev.kind} takes no knock`,
+            );
+          }
+        }
+      }
       const out = { ...ev };
       if (ev.kind === "zoom") {
         const terms = ev.frame;
@@ -1413,7 +1454,9 @@ export const validateEdl = (raw) => {
         }
       }
       if (
-        (ev.kind === "plant" || ev.kind === "flashback") &&
+        (ev.kind === "plant" ||
+          ev.kind === "flashback" ||
+          ev.kind === "knock") &&
         !(typeof ev.wall === "string" && WALL.test(ev.wall))
       ) {
         fail(`${where}: wall must be a wall (^h4, >h4)`);
@@ -1748,9 +1791,11 @@ export const checkEdlAgainstGame = (
         ? ev.frame
         : ev.kind === "trap"
           ? ev.walls
-          : ev.cell
-            ? [ev.cell]
-            : [];
+          : ev.kind === "knock"
+            ? [ev.wall]
+            : ev.cell
+              ? [ev.cell]
+              : [];
     for (const term of terms) {
       if (!onBoard(term)) {
         errors.push(`events[${i}]: ${term} is off the ${cols}x${rows} board`);

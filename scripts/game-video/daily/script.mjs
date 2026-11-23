@@ -154,7 +154,8 @@ const eventLabel = (e) => {
       : e.kind === "react"
         ? `react ${e.emoji}`
         : e.kind;
-  const where = e.cell ? ` on ${e.cell}` : "";
+  const on = e.cell ?? (e.kind === "knock" ? e.wall : undefined);
+  const where = on ? ` on ${on}` : "";
   return `${what}${where}${e.sound ? ` + ${e.sound}` : ""}`;
 };
 

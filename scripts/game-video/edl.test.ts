@@ -255,6 +255,34 @@ describe("the moment kinds", () => {
     );
   });
 
+  test("a knock names a wall and takes a knock sound, and a knock sound plays only on a knock (C31/C32)", () => {
+    const knock = { ply: 23, kind: "knock", wall: "^b3", sound: "knock-1" };
+    expect(accept({ ...base, events: [knock] }).events[0]).toMatchObject({
+      wall: "^b3",
+      sound: "knock-1",
+    });
+    const errors = (raw: object) =>
+      (validateEdl({ ...base, ...raw }).errors ?? []) as string[];
+    const needs =
+      "events[0]: a knock needs a knock sound (knock-1): the cat taps on its knocks";
+    const silent = { ply: 23, kind: "knock", wall: "^b3" };
+    expect(errors({ events: [silent] })).toContain(needs);
+    expect(errors({ events: [{ ...knock, sound: "bonk-1" }] })).toContain(
+      needs,
+    );
+    expect(errors({ events: [{ ...knock, wall: "b3" }] })).toContain(
+      "events[0]: wall must be a wall (^h4, >h4)",
+    );
+    expect(
+      errors({ events: [{ ply: 23, kind: "sound", sound: "knock-1" }] }),
+    ).toContain(
+      "events[0]: knock-1 plays only on a knock event, with the cat's taps (C31/C32); a sound takes no knock",
+    );
+    expect(errors({ finishSound: "knock-1" })).toContain(
+      "finishSound knock-1: a knock sound plays only on a knock event, with the cat's taps (C31/C32)",
+    );
+  });
+
   test("an explain's build-up zoom, and overlays timed inside the explain (Nil, 2026-11-01)", () => {
     const explain = { ply: 12, kind: "explain", hunter: "blue" };
     const fire = {
@@ -526,6 +554,14 @@ describe("checkEdlAgainstGame", () => {
       events: [{ ply, kind: "plant", wall: "^h4" }],
     });
     expect(check(plant(2))).toEqual([]);
+    // A knock's wall is on the board by its ply, whichever move placed it.
+    const knock = (ply: number) => ({
+      events: [{ ply, kind: "knock", wall: "^h4", sound: "knock-1" }],
+    });
+    expect(check(knock(2))).toEqual([]);
+    expect(check(knock(1))).toEqual([
+      "events[0]: wall ^h4 is not on the board by ply 1",
+    ]);
     expect(check(plant(1))).toEqual([
       "events[0]: a plant lights its own move's wall, and ply 1 (Cf7) does not place ^h4",
     ]);
