@@ -6183,9 +6183,17 @@ const renderStyle = async (styleName) => {
     const before = pawnSpots.get(L - 1) ?? [];
     const after = pawnSpots.get(L) ?? [];
     const waiting = before.filter(near);
-    const moved = before.filter(
+    const left = before.filter(
       (p) => !near(p) && !after.some((q) => same(p, q)),
     );
+    // A turn can move both of a player's pawns ("Ch5.Mb4", c6KnUshV ply
+    // 30, render vet 2026-11-23): the one that came onto the cell started
+    // at most 2 steps from it (a pawn moves at most 2 a turn); the other
+    // went elsewhere.
+    const steps = (p) =>
+      Math.abs(p.x - at.x) / GRID.pitchX + Math.abs(p.y - at.y) / GRID.pitchY;
+    const moved =
+      left.length > 1 ? left.filter((p) => steps(p) < 2.3) : left;
     const name = termOfCell(cell);
     if (waiting.length !== 1 || moved.length !== 1) {
       log(
