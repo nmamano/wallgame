@@ -167,6 +167,11 @@ export const MEME_SOUNDS = {
   // the uploader recorded, CC0 on freesound.org (meme-sounds.md), our cut
   // of the first group, measured 2026-11-23.
   "knock-1": { lufs: -16.5, truePeak: -1.5 },
+  // A threat that a save answers on the next move, the ooh-1 line, on the
+  // threatened mouse (Director Rewriter, meme cycle 8, 2026-11-23): a
+  // string tremolo crescendo the uploader made, CC0 on freesound.org
+  // (meme-sounds.md), the upload as is, measured 2026-11-23.
+  "tremolo-1": { lufs: -26.3, truePeak: -17.4 },
 };
 
 /**
@@ -238,6 +243,8 @@ export const MEME_FAMILIES = {
     "the finish: a loser that turned it round or saved, and still lost (an 8-bit game-over tune)",
   knock:
     "a stand-off: the cat knocks on the wall between it and the mouse (only on a knock event)",
+  tremolo:
+    "a threat that a save answers on the next move, on the threatened mouse: strings swell (as ooh)",
 };
 
 /**
@@ -258,7 +265,8 @@ export const MEME_FAMILIES = {
  * fall and fightbell, chomp (a mouth's bite, no word), crowdlaugh (an
  * audience off screen, as ooh), and gasp and scream (no word,
  * as scared-2), bonk-1 (a drum hit), yoshi (game sound effects, no
- * word), gameover-1 (an 8-bit tune), and knock-1 (knocks on a door). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
+ * word), gameover-1 (an 8-bit tune), knock-1 (knocks on a door), and tremolo-1
+ * (strings). uhoh-3 is a voiced "uh oh" (a VOICE_KEY in the family of
  * uhoh-1's sting). Not known (no source line says, and agents cannot hear): scared-3 ("Shocked sound") and pointing
  * (a part of a Spider-Man theme song).
  */

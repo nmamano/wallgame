@@ -541,3 +541,28 @@ Measured with make-sound-reel.mjs --measure: -16.5 LUFS momentary max,
 plays it at about -25 LUFS, 4 dB under the target (the whole upload,
 -0.3 dBTP, would be the same); a limiter would cost the knocks their
 attack, as for bonk-1, so the cut is used as is.
+
+## tremolo-1, strings for a threat (2026-11-23)
+
+Director Rewriter, meme cycle 8 (director repo d6386c1; Video Script
+Reviewer GO 2026-11-23): a second sound for the ooh-1 line, a threat that
+a save answers on the next move, on the threatened mouse. New family
+tremolo. Not a voice. The page shows "Creative Commons 0" and says how the
+sound was made (the renderer read it on 2026-11-23): "A tremolo crescendo
+made in Logic Pro X." The file is Freesound's HQ preview mp3 as the
+Director Rewriter fetched it, with no cut: sha256
+0aec28f2c35b5dd3cfa7f1fd87d4178d4dc788ab9c3d9cda67cbcda3bb72f853.
+
+| Key       | Freesound title   | Length | Uploader  | Why it is safe                                                                          | Claim risk | Source page                                           |
+| --------- | ----------------- | ------ | --------- | --------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------- |
+| tremolo-1 | Tremolo Strings 1 | 1.7 s  | nomiqbomi | CC0; "A tremolo crescendo made in Logic Pro X." (the page, 190 downloads on 2026-11-23) | LOW        | https://freesound.org/people/nomiqbomi/sounds/578579/ |
+
+Agents cannot hear, so this is measured, not heard (2026-11-23, the peak
+per 0.1 s on the mono mix). It rises from under -50 dB at 0.3 s to -26 dB
+at 0.6 s and -18 dB at 1.2 s, then falls to -46 dB by 1.4 s and is under
+-50 dB from 1.55 s. Measured with make-sound-reel.mjs --measure: -26.3
+LUFS momentary max, -17.4 dBTP, so memeGain plays it at -21 LUFS (+5.3 dB,
+its true peak then about -12 dBTP). On a `scared` mark it plays 3 dB lower
+(STING_STEP, Nil 2026-10-26), as ooh-1 does: -24 LUFS on the 4090 test
+kit (6eL ply 6). Its swell peaks about 1.2 s after it starts: the threat's
+ply holds 1.2 s or more.
