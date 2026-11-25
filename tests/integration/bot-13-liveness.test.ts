@@ -5,9 +5,10 @@
  * never checked that those pings kept coming: only Bun's default websocket
  * idle timeout (120 s) closed a silent bot socket, so its bots stayed listed
  * for about 2.5 minutes after the client went quiet (measured 2026-11-25).
- * Now an attached socket that sends nothing for BOT_PING_TIMEOUT_MS is closed
- * through the disconnect grace, and /api/bots says whether the official bots
- * are away.
+ * Now an attached socket that keeps the heartbeat and then sends nothing for
+ * BOT_PING_TIMEOUT_MS is closed through the disconnect grace, and /api/bots
+ * says whether the official bots are away. A client that never pings is left
+ * to the transport timeout, as before.
  *
  * Times are scaled down: the ping timeout is TEST_PING_TIMEOUT_MS here, and a
  * healthy client pings at a third of it, as the real one pings at 30 s
@@ -182,6 +183,9 @@ describe("bot socket liveness", () => {
   it("closes a silent client, hides its bots, and lets it reattach", async () => {
     const silent = await attachBot("silent", "quiet", TEST_OFFICIAL_TOKEN);
     expect(await listedIds()).toContain("silent:quiet");
+    // One heartbeat, as the official client sends 30 s after attach; then
+    // nothing, as when its host loses the network.
+    silent.ping();
 
     const closedAt = await Promise.race([
       silent.closed,
@@ -202,6 +206,23 @@ describe("bot socket liveness", () => {
     back.drop();
     await back.closed;
     await sleep(TEST_GRACE_MS + 100);
+  });
+});
+
+describe("a client that keeps no heartbeat", () => {
+  it("stays attached while idle: the 75 s rule is only for heartbeat clients", async () => {
+    // The protocol doc never asked clients to ping, so a client written to it
+    // sends nothing between games. It must not be dropped every 75 s.
+    const quiet = await attachBot("doc-client", "idle", TEST_OFFICIAL_TOKEN);
+    try {
+      await sleep(TEST_PING_TIMEOUT_MS * 4);
+      expect(quiet.isOpen()).toBe(true);
+      expect(await listedIds()).toContain("doc-client:idle");
+    } finally {
+      quiet.drop();
+      await quiet.closed;
+      await sleep(TEST_GRACE_MS + 100);
+    }
   });
 });
 

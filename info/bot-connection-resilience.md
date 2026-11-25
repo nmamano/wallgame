@@ -30,6 +30,9 @@ reaches the server. The bot appears online but never responds to game requests.
 - Responds to `{"type":"ping"}` with `{"type":"pong"}` immediately
 - Handled via exact string match *before* typed JSON parsing (ping/pong is
   outside the typed protocol contract to avoid polluting the message types)
+- Once a socket has sent a ping, closes it with code 4001 "No ping" after
+  75 seconds with no frame at all (task 9158770c), through the disconnect
+  grace, so the bots leave the list 45-85 seconds after the client goes quiet
 
 **Detection time:** 30–60 seconds (one missed pong cycle).
 

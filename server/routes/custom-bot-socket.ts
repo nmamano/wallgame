@@ -149,7 +149,10 @@ const BOT_DISCONNECT_GRACE_MS = (() => {
 /**
  * How long an attached bot socket may stay silent before the server treats
  * it as gone (task 9158770c). The client sends a {"type":"ping"} text frame
- * every 30 s, so 75 s is two missed pings and a half. Without this, only
+ * every 30 s, so 75 s is two missed pings and a half. The rule holds only for
+ * a client that sends that heartbeat (see BotSocket.sendsHeartbeat): the
+ * protocol doc never required it, so a client written to the doc that is idle
+ * between games keeps the transport's idle timeout instead. Without this, only
  * Bun's default websocket idle timeout (120 s, never set here) ends such a
  * socket: measured 2026-11-25, a paused client's bots left /api/bots 151-166 s
  * after its last frame. This owns the rule and halves the time the bot pickers
@@ -195,6 +198,12 @@ interface BotSocket {
    * Every inbound frame re-arms it; the close clears it.
    */
   livenessTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * The client has sent at least one {"type":"ping"}: it keeps a heartbeat,
+   * so the server may expect a frame every BOT_PING_TIMEOUT_MS. Only such a
+   * socket gets a livenessTimer.
+   */
+  sendsHeartbeat: boolean;
 }
 
 /** Response types the bot can send */
@@ -1653,6 +1662,7 @@ const handleMessage = (
 ): void => {
   // Handle keepalive ping before typed parse (ping is outside the typed protocol)
   if (typeof raw === "string" && raw === '{"type":"ping"}') {
+    socket.sendsHeartbeat = true;
     const unpongable = unpongableReason(ctx, socket);
     if (unpongable) {
       console.info("[custom-bot-ws] closing a socket we cannot honestly pong", {
@@ -1961,6 +1971,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             superseded: false,
             inboundFrames: 0,
             livenessTimer: null,
+            sendsHeartbeat: false,
           };
           mapSocketContext(ws, socket);
           console.info("[custom-bot-ws] connection opened");
@@ -2001,9 +2012,9 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
               // Ignore close errors
             }
           }
-          // After the frame is handled, so the attach frame itself starts
-          // the countdown. Any frame counts: the 30 s ping is a text frame.
-          if (socket.attached && !socket.superseded) {
+          // After the frame is handled, so the first ping itself starts the
+          // countdown. Any frame re-arms it: the 30 s ping is a text frame.
+          if (socket.attached && socket.sendsHeartbeat && !socket.superseded) {
             armLivenessTimer(ws, socket);
           }
         },

@@ -438,9 +438,9 @@ The dedicated WS endpoint for custom bot clients has these responsibilities:
 
 ## Ping and Pong
 
-- The server pings attached bot clients every 30s and relies on WS pong responses.
-- If no pong is received within 30s, the server marks the client disconnected and drops the WS connection.
-- Only the server sends periodic pings; bot clients do not send independent heartbeats.
+- A client may send the text frame `{"type":"ping"}` (exactly these bytes). The server answers `{"type":"pong"}`. The official bot client sends it every 30s and reconnects when a pong does not come back.
+- Once a client has sent one ping, the server expects some frame from it at least every 75s. An attached socket that is silent for longer is closed with code `4001` ("No ping"). Its bots leave the bot list at once, and its games wait for the client's re-attach during the disconnect grace.
+- A client that never sends a ping is not held to the 75s rule. The server's websocket transport closes it only when it stops answering WS-level pings, which the server sends to a socket that has been idle for about 2 minutes.
 
 ## Reconnection
 
