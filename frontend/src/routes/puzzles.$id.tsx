@@ -22,6 +22,7 @@ import {
   savedPuzzlesQueryOptions,
   userQueryOptions,
 } from "@/lib/api";
+import { BOTS_DOWN_MESSAGE } from "@/lib/bots-availability";
 import { saveGameHandshake } from "@/lib/game-session";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -114,7 +115,8 @@ function PuzzlePage() {
   const puzzle = puzzlesQuery.data
     ? resolveSavedPuzzle(puzzles, id)
     : undefined;
-  const { playbackFor, refetchFor } = usePuzzlePlayback(puzzles);
+  const { playbackFor, refetchFor, officialBotsAway } =
+    usePuzzlePlayback(puzzles);
 
   /**
    * WHICH puzzle was forced onto its authored line after a refused launch —
@@ -337,8 +339,9 @@ function PuzzlePage() {
     return shell(
       <Card className="border-destructive p-6 text-destructive">
         <p>
-          The opponent for this puzzle is offline right now. Try again in a
-          little while.
+          {officialBotsAway
+            ? BOTS_DOWN_MESSAGE
+            : "The opponent for this puzzle is offline right now. Try again in a little while."}
         </p>
       </Card>,
     );

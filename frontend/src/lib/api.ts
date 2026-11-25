@@ -41,9 +41,10 @@ import type {
 } from "../../../shared/contracts/games";
 import type {
   BotPlacement,
-  ListedBot,
-  RecommendedBotEntry,
+  ListBotsResponse,
+  ListRecommendedBotsResponse,
 } from "../../../shared/contracts/custom-bot-protocol";
+import { refetchWhileBotsAway } from "@/lib/bots-availability";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -403,6 +404,7 @@ export const puzzleBotsQueryOptionsFor = (args: {
   queryFn: () =>
     fetchBots({ ...args, randomStart: false, placement: "puzzle" }),
   staleTime: PUZZLE_LIST_STALE_MS,
+  refetchInterval: refetchWhileBotsAway,
 });
 
 /**
@@ -463,11 +465,11 @@ export const fetchBots = async (args: {
   boardWidth?: number;
   boardHeight?: number;
   placement?: BotPlacement;
-}): Promise<{ bots: ListedBot[] }> => {
+}): Promise<ListBotsResponse> => {
   if (args.variant === "survival") {
     throw new Error("Survival games are not supported by this endpoint.");
   }
-  return handleResponse<{ bots: ListedBot[] }>(
+  return handleResponse<ListBotsResponse>(
     api.bots.$get({
       query: {
         variant: args.variant,
@@ -486,12 +488,12 @@ export const fetchBots = async (args: {
 export const fetchRecommendedBots = async (args: {
   variant: Variant;
   randomStart: boolean;
-}): Promise<{ bots: RecommendedBotEntry[] }> => {
+}): Promise<ListRecommendedBotsResponse> => {
   // Bot discovery uses the true variant: bots register exactly what they serve
   // (custom-setup included), so collapsing here would list the wrong bots.
   if (args.variant === "survival")
     throw new Error("Survival games are not supported by this endpoint.");
-  return handleResponse<{ bots: RecommendedBotEntry[] }>(
+  return handleResponse<ListRecommendedBotsResponse>(
     api.bots.recommended.$get({
       query: {
         variant: args.variant,

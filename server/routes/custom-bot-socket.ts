@@ -146,6 +146,27 @@ const BOT_DISCONNECT_GRACE_MS = (() => {
   return DEFAULT_BOT_DISCONNECT_GRACE_MS;
 })();
 
+/**
+ * How long an attached bot socket may stay silent before the server treats
+ * it as gone (task 9158770c). The client sends a {"type":"ping"} text frame
+ * every 30 s, so 75 s is two missed pings and a half. Without this, only
+ * Bun's default websocket idle timeout (120 s, never set here) ends such a
+ * socket: measured 2026-11-25, a paused client's bots left /api/bots 151-166 s
+ * after its last frame. This owns the rule and halves the time the bot pickers
+ * offer bots that cannot answer. The close goes through the disconnect grace
+ * like any other, so the bots leave /api/bots at once and their games wait for
+ * the reattach. Overridable via BOT_PING_TIMEOUT_MS, only for tests.
+ */
+export const DEFAULT_BOT_PING_TIMEOUT_MS = 75_000;
+const BOT_PING_TIMEOUT_MS = (() => {
+  const raw = process.env.BOT_PING_TIMEOUT_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_BOT_PING_TIMEOUT_MS;
+})();
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -169,6 +190,11 @@ interface BotSocket {
    * millisecond.
    */
   inboundFrames: number;
+  /**
+   * Fires when an attached socket has been silent for BOT_PING_TIMEOUT_MS.
+   * Every inbound frame re-arms it; the close clears it.
+   */
+  livenessTimer: ReturnType<typeof setTimeout> | null;
 }
 
 /** Response types the bot can send */
@@ -327,17 +353,56 @@ const disconnectIfSilent = (
     "[custom-bot-ws] request timed out on a silent connection — treating it as a disconnect",
     { clientId: socket.clientId, requestType, bgsId },
   );
-  // What onClose does, done now. Superseded makes the real close event (and
-  // any late frame from this socket) a no-op.
+  disconnectNow(ctx, socket, socket.clientId, 4000, "No response");
+  return true;
+};
+
+/**
+ * What onClose does, done now, for a connection the server judges dead before
+ * it has seen it close. Superseded makes the real close event (and any late
+ * frame from this socket) a no-op.
+ */
+const disconnectNow = (
+  ctx: WSContext,
+  socket: BotSocket,
+  clientId: string,
+  code: number,
+  reason: string,
+): void => {
   socket.superseded = true;
-  clientIdToContext.delete(socket.clientId);
-  beginDisconnectGrace(socket.clientId);
+  clearLivenessTimer(socket);
+  clientIdToContext.delete(clientId);
+  beginDisconnectGrace(clientId);
   try {
-    ctx.close(4000, "No response");
+    ctx.close(code, reason);
   } catch {
     // Ignore close errors: the socket is already dead
   }
-  return true;
+};
+
+const clearLivenessTimer = (socket: BotSocket): void => {
+  if (socket.livenessTimer === null) return;
+  clearTimeout(socket.livenessTimer);
+  socket.livenessTimer = null;
+};
+
+/**
+ * (Re)starts the silence countdown of an attached socket. When it runs out,
+ * the connection is treated as closed (see BOT_PING_TIMEOUT_MS).
+ */
+const armLivenessTimer = (ctx: WSContext, socket: BotSocket): void => {
+  clearLivenessTimer(socket);
+  socket.livenessTimer = setTimeout(() => {
+    socket.livenessTimer = null;
+    const clientId = socket.clientId;
+    if (!clientId || socket.superseded) return;
+    if (!ownsClientIdMapping(ctx, clientId)) return;
+    console.info(
+      "[custom-bot-ws] no frame from an attached client — treating it as a disconnect",
+      { clientId, silentMs: BOT_PING_TIMEOUT_MS },
+    );
+    disconnectNow(ctx, socket, clientId, 4001, "No ping");
+  }, BOT_PING_TIMEOUT_MS);
 };
 
 /**
@@ -613,6 +678,7 @@ const handleAttach = (
       const oldSocket = getSocketForContext(oldCtx);
       if (oldSocket) {
         oldSocket.superseded = true;
+        clearLivenessTimer(oldSocket);
       }
       console.info("[custom-bot-ws] force-disconnecting old client", {
         clientId: message.clientId,
@@ -1894,6 +1960,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             unexpectedMessageCount: 0,
             superseded: false,
             inboundFrames: 0,
+            livenessTimer: null,
           };
           mapSocketContext(ws, socket);
           console.info("[custom-bot-ws] connection opened");
@@ -1934,6 +2001,11 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
               // Ignore close errors
             }
           }
+          // After the frame is handled, so the attach frame itself starts
+          // the countdown. Any frame counts: the 30 s ping is a text frame.
+          if (socket.attached && !socket.superseded) {
+            armLivenessTimer(ws, socket);
+          }
         },
 
         onClose(_event: CloseEvent, ws: WSContext) {
@@ -1947,6 +2019,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             clientId: socket.clientId,
             superseded: socket.superseded,
           });
+          clearLivenessTimer(socket);
 
           // Per-connection map cleanup is always safe.
           contextToSocket.delete(ws);

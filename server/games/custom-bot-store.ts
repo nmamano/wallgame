@@ -24,6 +24,7 @@ import type {
   BotPlacement,
   VariantConfig,
   ListedBot,
+  OfficialBotsStatus,
   RecommendedBotEntry,
 } from "../../shared/contracts/custom-bot-protocol";
 import { db } from "../db";
@@ -97,6 +98,36 @@ const clients = new Map<string, BotClientConnection>();
 
 /** Index: compositeId (clientId:botId) -> RegisteredBot */
 const botIndex = new Map<string, RegisteredBot>();
+
+/** When this process's bot registry began: no client can be attached before. */
+const registryStartedAt = Date.now();
+
+/**
+ * How long after a start the server does not yet call the official bots away.
+ * A deploy restarts the server and the official client attaches again within
+ * seconds (about 3 s on 2026-11-22); a page loaded in that gap must not say
+ * the bots are down for maintenance.
+ */
+export const OFFICIAL_BOTS_STARTUP_WINDOW_MS = 20_000;
+
+/**
+ * "away" when no connected client serves an official bot (a client in the
+ * disconnect grace is not connected: its bots are already hidden), once the
+ * startup window has passed. See OfficialBotsStatus.
+ */
+export const getOfficialBotsStatus = (
+  now: number = Date.now(),
+): OfficialBotsStatus => {
+  for (const client of clients.values()) {
+    if (client.disconnectedAt !== undefined) continue;
+    for (const bot of client.bots.values()) {
+      if (bot.isOfficial) return "online";
+    }
+  }
+  return now - registryStartedAt < OFFICIAL_BOTS_STARTUP_WINDOW_MS
+    ? "online"
+    : "away";
+};
 
 /**
  * Maximum number of connected clients without an official bot. Such a client

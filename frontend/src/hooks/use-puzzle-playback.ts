@@ -211,5 +211,10 @@ export function usePuzzlePlayback(puzzles: SavedPuzzle[]) {
     [shapes, botQueries],
   );
 
-  return { playbackFor, refetchFor };
+  /** The server says the official bots (PuzzleBot among them) are away. */
+  const officialBotsAway = botQueries.some(
+    (query) => query.data?.officialBots === "away",
+  );
+
+  return { playbackFor, refetchFor, officialBotsAway };
 }

@@ -16,6 +16,7 @@ import type {
   RecommendedBotEntry,
 } from "../../../../shared/contracts/custom-bot-protocol";
 import { useBotsQuery, useRecommendedBotsQuery } from "@/hooks/use-bots";
+import { BOTS_DOWN_MESSAGE } from "@/lib/bots-availability";
 
 type BotTabKey = "recommended" | "filtered";
 
@@ -74,6 +75,16 @@ export function BotsPanel({
     !recommendedLoading && !recommendedRows.some((e) => e.bot.isOfficial);
   const noOfficialMatching =
     !matchingLoading && !matchingRows.some((b) => b.isOfficial);
+  // Why no official bot is here: the server says they are all away (a
+  // maintenance message), or none of them plays these settings.
+  const recommendedUnavailable =
+    recommendedData?.officialBots === "away"
+      ? BOTS_DOWN_MESSAGE
+      : NO_OFFICIAL_BOT_MESSAGE;
+  const matchingUnavailable =
+    matchingData?.officialBots === "away"
+      ? BOTS_DOWN_MESSAGE
+      : NO_OFFICIAL_BOT_MESSAGE;
 
   /**
    * The availability notice, placed where the player is already looking.
@@ -83,10 +94,8 @@ export function BotsPanel({
    * rows present it goes above them instead, so the bot that IS there stays
    * listed and playable.
    */
-  const renderUnavailableCaption = () => (
-    <p className="text-xs text-muted-foreground mb-2">
-      {NO_OFFICIAL_BOT_MESSAGE}
-    </p>
+  const renderUnavailableCaption = (message: string) => (
+    <p className="text-xs text-muted-foreground mb-2">{message}</p>
   );
 
   const handlePlayBot = (
@@ -111,7 +120,8 @@ export function BotsPanel({
     <TableRow>
       <TableCell
         colSpan={colSpan}
-        className="py-6 text-center text-muted-foreground"
+        // The table cell does not wrap by default; this line must, on a phone.
+        className="py-6 text-center text-muted-foreground whitespace-normal"
       >
         {label}
       </TableCell>
@@ -150,7 +160,7 @@ export function BotsPanel({
       {activeTab === "recommended" && (
         <div className="overflow-x-auto">
           {noOfficialRecommended && recommendedRows.length > 0 ? (
-            renderUnavailableCaption()
+            renderUnavailableCaption(recommendedUnavailable)
           ) : (
             <p className="text-xs text-muted-foreground mb-2">
               Showing recommended bots for:{" "}
@@ -170,7 +180,7 @@ export function BotsPanel({
                 renderEmptyState("Loading recommended bots...", 3)}
               {!recommendedLoading &&
                 (recommendedRows.length === 0
-                  ? renderEmptyState(NO_OFFICIAL_BOT_MESSAGE, 3)
+                  ? renderEmptyState(recommendedUnavailable, 3)
                   : recommendedRows.map((entry) => (
                       <TableRow
                         key={`${entry.bot.id}-${entry.boardWidth}x${entry.boardHeight}`}
@@ -209,7 +219,7 @@ export function BotsPanel({
       {activeTab === "filtered" && (
         <div className="overflow-x-auto">
           {noOfficialMatching && matchingRows.length > 0 ? (
-            renderUnavailableCaption()
+            renderUnavailableCaption(matchingUnavailable)
           ) : (
             <p className="text-xs text-muted-foreground mb-2">
               Showing bots matching:{" "}
@@ -230,7 +240,7 @@ export function BotsPanel({
                 renderEmptyState("Loading matching bots...", 3)}
               {!matchingLoading &&
                 (matchingRows.length === 0
-                  ? renderEmptyState(NO_OFFICIAL_BOT_MESSAGE, 3)
+                  ? renderEmptyState(matchingUnavailable, 3)
                   : matchingRows.map((bot) => (
                       <TableRow
                         key={bot.id}

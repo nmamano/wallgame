@@ -19,6 +19,7 @@
  * All BGS messages follow request/response pattern with expectedPly for ordering.
  */
 
+import { z } from "zod";
 import type { Variant, GameInitialState } from "../domain/game-types";
 
 // ============================================================================
@@ -306,4 +307,25 @@ export interface RecommendedBotEntry {
   bot: ListedBot;
   boardWidth: number;
   boardHeight: number;
+}
+
+/**
+ * Whether the site's own bots are reachable (task 9158770c). "away": no
+ * connected client serves an official bot - a reboot or network loss of the
+ * bot host - and the page says the bots are down for maintenance. Custom bots
+ * do not count; they are listed or not on their own.
+ */
+export const officialBotsStatusSchema = z.enum(["online", "away"]);
+export type OfficialBotsStatus = z.infer<typeof officialBotsStatusSchema>;
+
+/** GET /api/bots */
+export interface ListBotsResponse {
+  bots: ListedBot[];
+  officialBots: OfficialBotsStatus;
+}
+
+/** GET /api/bots/recommended */
+export interface ListRecommendedBotsResponse {
+  bots: RecommendedBotEntry[];
+  officialBots: OfficialBotsStatus;
 }

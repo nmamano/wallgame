@@ -11,6 +11,7 @@ import {
   launchPuzzle,
   userQueryOptions,
 } from "@/lib/api";
+import { BOTS_DOWN_MESSAGE } from "@/lib/bots-availability";
 import { saveGameHandshake } from "@/lib/game-session";
 import { useSettings } from "@/hooks/use-settings";
 import { computeLastMoves, computeLastWalls } from "@/lib/gameViewModel";
@@ -126,7 +127,7 @@ function GamePositionPuzzlePage() {
     setLaunchError(null);
     try {
       const { config } = puzzle.launch;
-      const { bots } = await fetchBots({
+      const { bots, officialBots } = await fetchBots({
         variant: config.variant,
         randomStart: false,
         boardWidth: config.boardWidth,
@@ -140,7 +141,9 @@ function GamePositionPuzzlePage() {
       );
       if (!bot) {
         setLaunchError(
-          "PuzzleBot is offline right now. Try again in a few minutes.",
+          officialBots === "away"
+            ? BOTS_DOWN_MESSAGE
+            : "PuzzleBot is offline right now. Try again in a few minutes.",
         );
         setLaunching(false);
         return;

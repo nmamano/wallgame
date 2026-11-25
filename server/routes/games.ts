@@ -53,7 +53,11 @@ import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
 import { db } from "../db";
 import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
 import { eq } from "drizzle-orm";
-import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
+import type {
+  BotAppearance,
+  ListBotsResponse,
+  ListRecommendedBotsResponse,
+} from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { endGameEngineSessions, sendMatchStatus } from "./game-socket";
 import { bgsOwnerFor, bgsPoolRefusal } from "../games/bgs-store";
@@ -69,6 +73,7 @@ import { getGlobalRatingForAuthUser } from "../db/rating-helpers";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import {
   getMatchingBots,
+  getOfficialBotsStatus,
   getRecommendedBots,
   getBotByCompositeId,
   isBotClientInGrace,
@@ -612,7 +617,10 @@ export const botsRoute = new Hono()
         undefined,
         query.placement,
       );
-      return c.json({ bots });
+      return c.json<ListBotsResponse>({
+        bots,
+        officialBots: getOfficialBotsStatus(),
+      });
     } catch (error) {
       console.error("Failed to list bots:", error);
       return c.json({ error: "Internal server error" }, 500);
@@ -629,7 +637,10 @@ export const botsRoute = new Hono()
         undefined,
         query.placement,
       );
-      return c.json({ bots });
+      return c.json<ListRecommendedBotsResponse>({
+        bots,
+        officialBots: getOfficialBotsStatus(),
+      });
     } catch (error) {
       console.error("Failed to list recommended bots:", error);
       return c.json({ error: "Internal server error" }, 500);

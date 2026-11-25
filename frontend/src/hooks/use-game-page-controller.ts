@@ -49,6 +49,7 @@ import {
   fetchBots,
   launchPuzzle,
 } from "@/lib/api";
+import { BOTS_DOWN_MESSAGE } from "@/lib/bots-availability";
 import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
@@ -2796,7 +2797,7 @@ export function useGamePageController(gameId: string) {
     setIsRetryingPuzzle(true);
     let navigated = false;
     try {
-      const { bots } = await fetchBots({
+      const { bots, officialBots } = await fetchBots({
         variant: config.variant,
         randomStart: config.randomStart,
         boardWidth: config.boardWidth,
@@ -2809,7 +2810,9 @@ export function useGamePageController(gameId: string) {
       );
       if (!officialBot) {
         addSystemMessage(
-          "PuzzleBot is offline right now, so the puzzle cannot be retried.",
+          officialBots === "away"
+            ? BOTS_DOWN_MESSAGE
+            : "PuzzleBot is offline right now, so the puzzle cannot be retried.",
         );
         return;
       }

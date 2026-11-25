@@ -5,11 +5,12 @@ import type {
   PlayerAppearance,
 } from "../../../shared/domain/game-types";
 import type {
-  ListedBot,
-  RecommendedBotEntry,
+  ListBotsResponse,
+  ListRecommendedBotsResponse,
 } from "../../../shared/contracts/custom-bot-protocol";
 import type { CreateBotGameResponse } from "../../../shared/contracts/games";
 import { fetchBots, fetchRecommendedBots, playVsBot } from "@/lib/api";
+import { refetchWhileBotsAway } from "@/lib/bots-availability";
 
 /** V3: Bot query settings - no timeControl (bot games are untimed) */
 export interface BotsQuerySettings {
@@ -20,7 +21,7 @@ export interface BotsQuerySettings {
 }
 
 export const useBotsQuery = (settings: BotsQuerySettings) => {
-  return useQuery<{ bots: ListedBot[] }>({
+  return useQuery<ListBotsResponse>({
     queryKey: [
       "bots",
       settings.variant,
@@ -29,6 +30,7 @@ export const useBotsQuery = (settings: BotsQuerySettings) => {
       settings.boardHeight ?? null,
     ],
     queryFn: () => fetchBots(settings),
+    refetchInterval: refetchWhileBotsAway,
   });
 };
 
@@ -37,9 +39,10 @@ export const useRecommendedBotsQuery = (
   variant: Variant,
   randomStart: boolean,
 ) => {
-  return useQuery<{ bots: RecommendedBotEntry[] }>({
+  return useQuery<ListRecommendedBotsResponse>({
     queryKey: ["bots", "recommended", variant, randomStart],
     queryFn: () => fetchRecommendedBots({ variant, randomStart }),
+    refetchInterval: refetchWhileBotsAway,
   });
 };
 
