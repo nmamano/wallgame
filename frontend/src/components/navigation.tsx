@@ -44,11 +44,19 @@ export function Navigation() {
       <div className="container mx-auto px-4">
         <div className="flex h-10 lg:h-16 items-center justify-between">
           <Link to="/" className="flex items-center space-x-2">
-            <img
-              src={assetUrl("/logo.png")}
-              alt="WallGame Logo"
-              className="h-6 lg:h-8 w-auto object-contain mix-blend-multiply dark:mix-blend-screen"
-            />
+            {/* Shown 24-32 px tall: a 96 px copy is sharp on a 3x screen, and
+                the WebP is 4 KB where logo.png is 137 KB (task 42c3ae3a).
+                width/height give the box its shape before the file arrives. */}
+            <picture>
+              <source srcSet={assetUrl("/logo-96.webp")} type="image/webp" />
+              <img
+                src={assetUrl("/logo-96.png")}
+                alt="WallGame Logo"
+                width={131}
+                height={96}
+                className="h-6 lg:h-8 w-auto object-contain mix-blend-multiply dark:mix-blend-screen"
+              />
+            </picture>
             <div className="text-xl lg:text-2xl font-serif font-bold tracking-tight text-foreground">
               Wall<span className="text-primary">Game</span>
             </div>

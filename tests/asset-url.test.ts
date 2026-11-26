@@ -23,6 +23,7 @@ const ASSET_PREFIXES = [
   "/pawns/",
   "/time_control_icons/",
   "/logo.png",
+  "/logo-96.",
   "/board-coordinates.png",
   "/starting-position.png",
   "/og-image.png",
