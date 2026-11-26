@@ -2182,6 +2182,7 @@ describe("Instagram", () => {
       return reply(req);
     });
     return postToInstagram({
+      altered: false,
       video: Buffer.from("v"),
       caption: "c",
       publicUrl: dryRunPublicUrl,
@@ -3410,6 +3411,21 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   ]);
   // Each platform posts the approved block's own line.
   expect(xPlan[3].body?.text).toBe(COPY.x);
+  // A game item is not altered content (special.test.ts has the other
+  // side): YouTube says false, and no AI field goes anywhere else.
+  expect(
+    planOf("youtube").find((r) => r.body?.status)?.body?.status,
+  ).toMatchObject({ containsSyntheticMedia: false });
+  for (const p of PLATFORMS) {
+    const sent = JSON.stringify(planOf(p).map((r) => r.body));
+    for (const field of [
+      "made_with_ai",
+      "is_ai_generated",
+      "is_made_with_ai",
+    ]) {
+      expect([p, sent.includes(field)]).toEqual([p, false]);
+    }
+  }
   const ytPlan = readFileSync(posts.youtube.requestsFile, "utf8");
   expect(ytPlan).toContain(JSON.stringify(`${COPY.youtubeTitle} #Shorts`));
   expect(ytPlan).toContain(

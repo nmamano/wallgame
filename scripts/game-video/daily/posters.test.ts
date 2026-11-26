@@ -186,6 +186,7 @@ describe("Facebook", () => {
     const transport = dryRunTransport(facebookDryRunReply);
     const probe = commitProbe(transport);
     const result = await postToFacebook({
+      altered: false,
       video: VIDEO,
       durationSeconds: 30,
       description: TEXT,
@@ -221,6 +222,7 @@ describe("Facebook", () => {
     for (const durationSeconds of [2.9, 90.5, null]) {
       const transport = dryRunTransport(facebookDryRunReply);
       const post = postToFacebook({
+        altered: false,
         video: VIDEO,
         durationSeconds,
         description: TEXT,
@@ -237,6 +239,7 @@ describe("Facebook", () => {
   test("the token is in headers only", async () => {
     const transport = fakeLive((req) => facebookDryRunReply(req));
     await postToFacebook({
+      altered: false,
       video: VIDEO,
       durationSeconds: 30,
       description: TEXT,
@@ -271,6 +274,7 @@ describe("Facebook", () => {
     transport.sent.filter((r) => r.url.includes("fields=status")).length;
   const run = (transport: ReturnType<typeof fakeLive>) =>
     postToFacebook({
+      altered: false,
       video: VIDEO,
       durationSeconds: 30,
       description: TEXT,
@@ -663,6 +667,7 @@ describe("Threads", () => {
     const transport = dryRunTransport(threadsDryRunReply);
     const probe = commitProbe(transport);
     const result = await postToThreads({
+      altered: false,
       video: VIDEO,
       text: TEXT,
       publicUrl: dryRunPublicUrl,
@@ -778,6 +783,7 @@ describe("Threads", () => {
         return threadsDryRunReply(req);
       });
       return postToThreads({
+        altered: false,
         video: VIDEO,
         text: TEXT,
         publicUrl: dryRunPublicUrl,
@@ -822,6 +828,7 @@ describe("Threads", () => {
     const err = String(
       await failure(
         postToThreads({
+          altered: false,
           video: VIDEO,
           text: TEXT,
           publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
@@ -873,6 +880,7 @@ describe("Instagram fetches the video from R2", () => {
     beforeCommit = noSleep,
   ) =>
     postToInstagram({
+      altered: false,
       video: VIDEO,
       caption: "c",
       publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
@@ -909,6 +917,7 @@ describe("Instagram fetches the video from R2", () => {
     const transport = fakeLive(instagramDryRunReply);
     const probe = commitProbe(transport);
     const result = await postToInstagram({
+      altered: false,
       video: VIDEO,
       surface: "story",
       durationSeconds: 30,
@@ -934,6 +943,7 @@ describe("Instagram fetches the video from R2", () => {
       const transport = fakeLive(instagramDryRunReply);
       return failure(
         postToInstagram({
+          altered: false,
           video,
           surface: "story",
           durationSeconds,

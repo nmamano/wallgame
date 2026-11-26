@@ -72,6 +72,7 @@ import {
   scriptText,
   fixedApprovalProblem,
   gameOnly,
+  isSpecial,
 } from "./store.mjs";
 import { resultProblems } from "./script.mjs";
 import {
@@ -1465,6 +1466,11 @@ export const createDaily = ({
       ? makeLiveTransport()
       : dryRunTransport(dryRunReplies[platform]);
     const texts = postTexts(item.copy.block);
+    // A special item shows a real place with altered footage (Wall Game
+    // PM, 2026-11-26): each platform whose API has a field for altered or
+    // AI-made content says so (YouTube, X, Instagram, Facebook, Threads;
+    // TikTok's inbox upload and Bluesky have none).
+    const altered = isSpecial(item);
     const at = new Date().toISOString();
     // Set once the final, public request is about to go out.
     let committing = false;
@@ -1482,6 +1488,7 @@ export const createDaily = ({
         video,
         surface,
         caption: surface === "reel" ? texts.instagram : undefined,
+        altered,
         durationSeconds: item.render.video.durationSeconds,
         publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
         transport,
@@ -1502,6 +1509,7 @@ export const createDaily = ({
         return postToX({
           video,
           text: texts.x,
+          altered,
           transport,
           sign: creds ? (req) => oauth1Header(req, creds) : dryRunSigner,
           sleep,
@@ -1512,6 +1520,7 @@ export const createDaily = ({
         postToYoutube({
           video,
           caption: texts,
+          altered,
           transport,
           creds: live
             ? {
@@ -1553,6 +1562,7 @@ export const createDaily = ({
           video,
           durationSeconds: item.render.video.durationSeconds,
           description: texts.facebook,
+          altered,
           transport,
           creds: { pageId: meta.pageId, pageToken: meta.pageToken },
           sleep,
@@ -1573,6 +1583,7 @@ export const createDaily = ({
         postToThreads({
           video,
           text: texts.threads,
+          altered,
           publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
           tokens: threadsTokens(tokens),
           transport,

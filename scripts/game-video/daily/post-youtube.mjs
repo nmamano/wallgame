@@ -108,6 +108,9 @@ export const youtubeAccessToken = async ({
 
 /**
  * Upload `video` (a Buffer). `caption` has youtubeTitle and youtubeDescription.
+ * `altered`: the video holds realistic altered or synthetic content (a
+ * special item, store.mjs ITEM_KINDS); YouTube's status.containsSyntheticMedia
+ * says so.
  * `creds` is the client id and secret and the stored `refreshToken`, or
  * DRY_RUN_CREDS for a dry run. `onRefreshToken` gets a new refresh token if
  * Google ever sends one (its pages describe none; the store keeps it).
@@ -120,6 +123,7 @@ export const youtubeAccessToken = async ({
 export const postToYoutube = async ({
   video,
   caption,
+  altered,
   transport,
   creds,
   onRefreshToken = () => {},
@@ -145,7 +149,7 @@ export const postToYoutube = async ({
     status: {
       privacyStatus: "public",
       selfDeclaredMadeForKids: false,
-      containsSyntheticMedia: false,
+      containsSyntheticMedia: altered,
     },
   };
   const start = await transport.request({

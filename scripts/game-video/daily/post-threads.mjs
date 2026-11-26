@@ -210,11 +210,14 @@ export const withoutSignedUrl = (text, url, replacement) =>
  * the file. `tokens` is a
  * threadsTokens store. `creds` holds the stored `userId` (live) or
  * DRY_RUN_THREADS. `beforeCommit` runs just before threads_publish. Returns
- * {postId, url}.
+ * {postId, url}. `altered`: the video holds altered or synthetic content
+ * (a special item, store.mjs ITEM_KINDS): the container sets
+ * is_made_with_ai, Threads' AI label. Else the field is not sent.
  */
 export const postToThreads = async ({
   video,
   text,
+  altered,
   publicUrl,
   tokens,
   transport,
@@ -256,11 +259,12 @@ export const postToThreads = async ({
     if (!/^https:\/\//.test(hosted?.url ?? "")) {
       throw new NotPosted("threads: the video needs a public https URL");
     }
+    const label = altered ? { is_made_with_ai: true } : {};
     const container = await graph(
       "POST",
       `${THREADS_GRAPH}/${user}/threads`,
-      { media_type: "VIDEO", video_url: hosted.url, text },
-      { media_type: "VIDEO", video_url: inPlaceOfUrl, text },
+      { media_type: "VIDEO", video_url: hosted.url, text, ...label },
+      { media_type: "VIDEO", video_url: inPlaceOfUrl, text, ...label },
     );
     const containerId = container.json?.id;
     if (!ok(container) || !containerId) {

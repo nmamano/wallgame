@@ -174,8 +174,12 @@ export const instagramDryRunReply = (req) => {
  * remove once Instagram no longer needs the file. `creds` is {igUserId,
  * pageToken} from discoverMeta (in a dry run, from its canned replies).
  * `beforeCommit` runs just before media_publish. Returns {postId, url}.
+ * `altered`: the video holds altered or synthetic content (a special item,
+ * store.mjs ITEM_KINDS): the container sets is_ai_generated, Instagram's
+ * AI disclosure. Else the field is not sent.
  *
  * @param {{ video: Buffer, surface?: "reel" | "story", caption?: string,
+ *   altered: boolean,
  *   durationSeconds?: number, publicUrl: any, transport: any,
  *   creds: { igUserId: string, pageToken: string }, sleep: any,
  *   beforeCommit: any }} o
@@ -184,6 +188,7 @@ export const postToInstagram = async ({
   video,
   surface = "reel",
   caption,
+  altered,
   durationSeconds,
   publicUrl,
   transport,
@@ -224,7 +229,10 @@ export const postToInstagram = async ({
     if (!/^https:\/\//.test(hosted?.url ?? "")) {
       throw new NotPosted(`${name}: the video needs a public https URL`);
     }
-    const fields = story ? {} : { caption };
+    const fields = {
+      ...(story ? {} : { caption }),
+      ...(altered ? { is_ai_generated: true } : {}),
+    };
     const container = await graph(
       "POST",
       `${GRAPH}/${user}/media`,

@@ -1158,8 +1158,7 @@ export const openStore = (dataDir) => {
           item.state = "finished";
           // The fields a render has, so every reader of a video (the vet,
           // the review, the post and its log row) reads it as one; what a
-          // special item does not have is null, and it plays no track of
-          // ours (music []).
+          // special item does not have is null.
           item.render = {
             jobId: null,
             fromCache: false,
@@ -1184,7 +1183,10 @@ export const openStore = (dataDir) => {
             sheet: null,
             effect: null,
             sound: null,
-            music: [],
+            // The composite keeps the posted clip's audio and its music
+            // (Video Editor, 2026-11-26), so the license checks of approve
+            // and post (blockedMusic) see its tracks.
+            music: needItem(item.source.specialFrom).render.music,
             quality: null,
             timeline: null,
             grid: null,

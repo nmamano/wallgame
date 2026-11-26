@@ -20,8 +20,10 @@ import {
   YOUTUBE_LINK,
 } from "./copy.mjs";
 import {
+  blockedMusic,
   ITEM_VERSION,
   isSpecial,
+  PLATFORMS,
   openStore,
   readPostLog,
   reviewState,
@@ -81,6 +83,8 @@ const BLOCK = [
 const COPY = { ...parseCopy(BLOCK).copy!, version: "growth-copy-1" };
 
 const POSTED = "v-2026-11-01-1";
+/** The music the posted video played, which its composite keeps. */
+const POSTED_MUSIC = [{ fromPly: 0, track: "deja-vus", at: 0 }];
 const GAME = "GAME1";
 
 /** The special item's script: the story and the vet's checks. */
@@ -106,8 +110,8 @@ const scriptPass = (script = SCRIPT) => ({
   notes: "the story holds\nVERDICT: pass",
 });
 
-/** A short real MP4 (ffprobe reads its length): 2 s, 108x192. */
-const mp4 = (dir: string, name = "billboard.mp4", seconds = 2) => {
+/** A short real MP4 (ffprobe reads its length): 4 s (a Story takes 3 s at least), 108x192. */
+const mp4 = (dir: string, name = "billboard.mp4", seconds = 4) => {
   const path = join(dir, name);
   execFileSync("ffmpeg", [
     "-v",
@@ -159,7 +163,7 @@ const withPosted = () => {
       finishedAt: "2026-11-01T09:00:00.000Z",
       error: null,
       video: { path, bytes: 12, sha256: video, durationSeconds: 20 },
-      music: [],
+      music: POSTED_MUSIC,
     },
     check: { ok: true, verdicts: [] },
     caption: null,
@@ -312,16 +316,17 @@ describe("its video comes after its script review passes", () => {
     expect(r.video.sha256).toBe(sha(readFileSync(video)));
     expect(sha(readFileSync(r.video.path))).toBe(r.video.sha256);
     expect(r.video.bytes).toBe(readFileSync(video).length);
-    expect(r.video.durationSeconds).toBeCloseTo(2, 1);
+    expect(r.video.durationSeconds).toBeCloseTo(4, 1);
     expect(r.sources).toEqual({
       file: sources,
       sha256: sha(readFileSync(sources, "utf8")),
       text: readFileSync(sources, "utf8"),
     });
-    // No list, sheet or track of ours; the script it came in under.
+    // No list or sheet; the posted video's music; the script it came in
+    // under.
     expect(r.edlSha256).toBeNull();
     expect(r.sheet).toBeNull();
-    expect(r.music).toEqual([]);
+    expect(r.music).toEqual(POSTED_MUSIC);
     expect(r.scriptReview.at).toBe(it.scriptReviews[0].at);
     expect(it.events.at(-1)?.what).toContain("special video attached");
   });
@@ -448,10 +453,94 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
     expect(row).toMatchObject({
       itemId: id,
       gameId: GAME,
-      music: [],
+      music: ["deja-vus"],
       edlSha256: null,
       videoSha256,
     });
+  });
+
+  test("the posted video's music goes with it: a track that may not play stops its approval", () => {
+    const env = withPosted();
+    const posted = env.store.item(POSTED) as Item & {
+      render: { music: unknown[] };
+    };
+    posted.render.music = [{ fromPly: 0, track: "no-such-track", at: 0 }];
+    writeFileSync(
+      join(env.store.dirs.items, `${POSTED}.json`),
+      JSON.stringify(posted),
+    );
+    const id = scripted(env.store);
+    const it = env.store.attachSpecial(id, env) as Item;
+    expect(blockedMusic(it)).toEqual([
+      { track: "no-such-track", license: "unknown" },
+    ]);
+    expect(env.store.approveProblem(it)).toBe(
+      "the music no-such-track has the license unknown: re-direct with a track that may play",
+    );
+  });
+
+  test("its post says it is altered where the platform's API has a field; a game item's does not (daily.test.ts)", async () => {
+    const { dir, id, videoSha256 } = inReview();
+    const store = openStore(dir);
+    store.review(id, {
+      action: "approve",
+      notes: "",
+      videoSha256,
+      copySha256: copySha256(COPY),
+      by: "Nil",
+      memberId: REVIEWER_MEMBER_ID,
+    });
+    const daily = createDaily({
+      dataDir: dir,
+      env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+      backupWindow: null,
+    });
+    DAILIES.push(daily);
+    const item = store.item(id) as Item;
+    const video = readFileSync(item.render!.video.path);
+    const plans: Record<string, { url: string; body: unknown }[]> = {};
+    await daily.asThePost(async () => {
+      for (const platform of PLATFORMS) {
+        const r = (await daily.postPlatform(platform, {
+          item,
+          video,
+          beforeCommit: () => undefined,
+        })) as { ok: boolean; error?: string; requestsFile: string };
+        expect([platform, r.ok, r.error]).toEqual([platform, true, undefined]);
+        plans[platform] = JSON.parse(readFileSync(r.requestsFile, "utf8")) as {
+          url: string;
+          body: unknown;
+        }[];
+      }
+    });
+    const bodyWith = (platform: string, field: string) =>
+      plans[platform]
+        .map((r) => r.body as Record<string, unknown> | null)
+        // A form body (a token request) is a string.
+        .find((b) => typeof b === "object" && b !== null && field in b);
+    expect(
+      (bodyWith("youtube", "status")?.status as Record<string, unknown>)
+        .containsSyntheticMedia,
+    ).toBe(true);
+    expect(bodyWith("x", "made_with_ai")?.made_with_ai).toBe(true);
+    expect(bodyWith("instagram", "is_ai_generated")?.is_ai_generated).toBe(
+      true,
+    );
+    expect(
+      bodyWith("instagram-story", "is_ai_generated")?.is_ai_generated,
+    ).toBe(true);
+    expect(bodyWith("facebook", "is_ai_generated")).toMatchObject({
+      upload_phase: "finish",
+      is_ai_generated: true,
+    });
+    expect(bodyWith("threads", "is_made_with_ai")?.is_made_with_ai).toBe(true);
+    // TikTok's inbox upload and Bluesky have no such field: nothing is sent.
+    for (const p of ["tiktok", "bluesky"]) {
+      const sent = JSON.stringify(plans[p].map((r) => r.body));
+      expect([p, /made_with_ai|is_ai_generated|synthetic/i.test(sent)]).toEqual(
+        [p, false],
+      );
+    }
   });
 
   test("a vet of another video does not count, and a script review after the video takes it out of review", () => {

@@ -114,11 +114,15 @@ export const facebookDryRunReply = (req) => {
  * `description`. `creds` is {pageId, pageToken} from discoverMeta (in a
  * dry run, from its canned replies).
  * `beforeCommit` runs just before the finish step. Returns {postId, url}.
+ * `altered`: the video holds altered or synthetic content (a special item,
+ * store.mjs ITEM_KINDS): the finish sets is_ai_generated, the Reel's AI
+ * disclosure. Else the field is not sent.
  */
 export const postToFacebook = async ({
   video,
   durationSeconds,
   description,
+  altered,
   transport,
   creds,
   sleep,
@@ -185,6 +189,7 @@ export const postToFacebook = async ({
     upload_phase: "finish",
     video_state: "PUBLISHED",
     description,
+    ...(altered ? { is_ai_generated: true } : {}),
   });
   if (!ok(finish) || finish.json?.success !== true) {
     // A Graph error is often HTTP 400 even when it is transient, so the
