@@ -694,6 +694,12 @@ export const openStore = (dataDir) => {
   const approveProblem = (item) => {
     // A special item is the one exception: it shows a posted video of its
     // game (pickSpecial).
+    // A special item's sounds and music are its posted item's (review.mjs
+    // soundsItem): with that item gone, Nil's ask cannot name its
+    // claim-risk sounds (VR1 183 N1).
+    if (isSpecial(item) && !readItem(item.source.specialFrom)) {
+      return `the posted item it shows (${item.source.specialFrom}) is missing, so its claim-risk sounds cannot be named`;
+    }
     const other = isSpecial(item) ? null : postOfGame(item);
     if (other) {
       return `another video of this game is ${other.state} (${other.id}): ${other.state === "approved" ? "withdraw it, or discard this one" : "only one video of a game posts; discard this one"}`;
@@ -1153,8 +1159,16 @@ export const openStore = (dataDir) => {
               `special --video: ${video} is not a video that ffprobe reads (${err.message})`,
             );
           }
+          // Every fact is read before the rename, so a refusal leaves no
+          // file in videos/ that no item points to (VR1 182 N2).
+          const durationSeconds = Number(facts?.duration?.toFixed?.(2));
+          if (!(durationSeconds > 0)) {
+            rmSync(scratch, { force: true });
+            refuse(
+              `special --video: ffprobe gives ${video} no length, so nothing is kept`,
+            );
+          }
           renameSync(scratch, path);
-          const durationSeconds = Number(facts.duration.toFixed(2));
           item.state = "finished";
           // The fields a render has, so every reader of a video (the vet,
           // the review, the post and its log row) reads it as one; what a

@@ -179,7 +179,11 @@ export const reviewView = (store, nextSlot) => ({
     approveProblem: store.approveProblem(it),
     // Each sound with a high claim risk that the video plays, once: the
     // director kept it on purpose, and Nil must see the risk.
-    claimRiskSounds: claimRiskSounds(soundsItem(store, it).edl.doc),
+    // A special item whose posted item is gone names none; approveProblem
+    // says why, so one card cannot break the page (VR1 183 N1).
+    claimRiskSounds: soundsItem(store, it)
+      ? claimRiskSounds(soundsItem(store, it).edl.doc)
+      : [],
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
     scriptCarried: carriedScriptLine(renderScriptReview(it)),

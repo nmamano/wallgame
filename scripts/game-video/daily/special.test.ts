@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   copyHeldReason,
@@ -32,12 +32,12 @@ import {
 import { createDaily, logRow } from "./routes.mjs";
 import { reviewView } from "./review.mjs";
 import { askPrompt } from "./review-asks.mjs";
-
-/** A next slot that posts (scheduler.mjs status nextSlot). */
-const NEXT_SLOT = { pacific: "Fri 09:00 PT", willPost: true, why: null };
 import { specialVetPrompt, vetChecks } from "./script.mjs";
 import { REVIEWER_MEMBER_ID } from "./review.mjs";
 import { testTmp } from "../test-tmp";
+
+/** A next slot that posts (scheduler.mjs status nextSlot). */
+const NEXT_SLOT = { pacific: "Fri 09:00 PT", willPost: true, why: null };
 
 const TEST_TMP = testTmp();
 const DAILIES: { stop: () => void }[] = [];
@@ -412,6 +412,18 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
     env.store.recordCopy(id, COPY);
     return { ...env, id, videoSha256 };
   };
+
+  test("with its posted item gone, the review page still loads; the card names no sound and Approve says why (VR1 183 N1)", () => {
+    const { store, id } = inReview();
+    rmSync(join(store.dirs.items, `${POSTED}.json`));
+    const card = reviewView(store, NEXT_SLOT).items.find(
+      (x: { id: string }) => x.id === id,
+    );
+    expect(card).toMatchObject({
+      claimRiskSounds: [],
+      approveProblem: `the posted item it shows (${POSTED}) is missing, so its claim-risk sounds cannot be named`,
+    });
+  });
 
   test("in review after its own vet and a block; Nil approves it though its game posted; a game item of the game is still refused", () => {
     const { store, id, videoSha256 } = inReview();
