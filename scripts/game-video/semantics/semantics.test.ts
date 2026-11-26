@@ -8,7 +8,7 @@ import type {
   PlyFacts,
 } from "./facts";
 import { readFileSync } from "node:fs";
-import { siteMoveNumber } from "../site-move.mjs";
+import { siteMove, siteMoveNumber } from "../site-move.mjs";
 import {
   gameFacts,
   type DeepData,
@@ -16,6 +16,7 @@ import {
   type SemanticGame,
 } from "./facts";
 import { deepCommand } from "./deep-check";
+import type { ForcedWin } from "./forced-win";
 import type { ConfigFile } from "../../../official-custom-bot-client/src/config-schema";
 import {
   countersShow,
@@ -29,6 +30,7 @@ import {
 import {
   checkSentence,
   factsOf,
+  forcedWinLine,
   missedWinLine,
   paceLine,
   seatColorsOf,
@@ -708,7 +710,12 @@ describe("a box-in sentence says the box", () => {
 const loadFixture = (gameId: string) =>
   JSON.parse(
     readFileSync(new URL(`fixtures/${gameId}.json`, import.meta.url), "utf8"),
-  ) as { game: SemanticGame; engine: EngineData; deep?: DeepData };
+  ) as {
+    game: SemanticGame;
+    engine: EngineData;
+    deep?: DeepData;
+    forced?: ForcedWin[];
+  };
 
 /** A stored game, labelled, with its stored deep checks if it has any. */
 const fixtureLabels = (gameId: string) => {
@@ -1564,4 +1571,112 @@ describe("missed wins (C78, the puzzle ending)", () => {
       "../e --model m.trt --samples 20000 --parallel_samples 128",
     );
   });
+});
+
+describe("cycle 8 cases (C79, C82-C84)", () => {
+  test("C79 _T3d_YPz: the approved story's beats (a save, the trap that seals it, the capture)", () => {
+    const l = fixtureLabels("_T3d_YPz");
+    expect([21, 25, 33, 35].map((p) => l.plies[p].label)).toEqual([
+      "save",
+      "trap-closes",
+      "trap-closes",
+      "capture",
+    ]);
+    expect(l.links).toEqual([
+      { kind: "threat-save", from: 20, to: 21 },
+      { kind: "sealed-capture", from: 25, to: 35 },
+    ]);
+  });
+
+  test("C82 6eLdTxTn: ply 23, the knock, is a standoff of the winner", () => {
+    const l = fixtureLabels("6eLdTxTn");
+    expect(l.plies[23]).toMatchObject({ mover: 2, label: "standoff" });
+  });
+
+  test("C83 c6KnUshV: the winner's shown huh 2 plies before the capture is a missed one-turn capture, no puzzle", () => {
+    const l = fixtureLabels("c6KnUshV");
+    expect(l.plies[28]).toMatchObject({
+      mover: 1,
+      label: "quiet",
+      huh: { kind: "missed-capture", walk: 1, shown: true },
+    });
+    expect(isBoardMoment(l.plies[28])).toBe(true);
+    expect(l.plies[30].label).toBe("capture");
+    expect(l.missedWins.map((m) => m.ply)).not.toContain(28);
+  });
+
+  test("C84 g1JRpajK: a quiet move with a detour tag is no moment", () => {
+    const l = fixtureLabels("g1JRpajK");
+    for (const p of [13, 15, 19, 21]) {
+      expect(l.plies[p].label).toBe("quiet");
+      expect(l.plies[p].tags).toContain("detour");
+      expect(isMoment(l.plies[p])).toBe(false);
+      expect(isBoardMoment(l.plies[p])).toBe(false);
+    }
+  });
+});
+
+describe("the forced-win line agrees with the stored search (cycle 8, the 11-26 table)", () => {
+  // [ply, side to move, colour, turns, winning count, played verdict]
+  const table: Record<
+    string,
+    [number, string, string, number, number, "lost" | "delayed"][]
+  > = {
+    EDP5pYum: [[38, "Normal Bot", "red", 3, 1, "lost"]],
+    _T3d_YPz: [[29, "Guest Yak", "blue", 3, 1, "lost"]],
+    qKeMIIRp: [
+      [37, "Normal Bot", "red", 3, 1, "lost"],
+      [39, "Normal Bot", "red", 2, 1, "delayed"],
+    ],
+    KqbeyXIF: [
+      [14, "Normal Bot", "red", 2, 1, "lost"],
+      [16, "Normal Bot", "red", 3, 3, "lost"],
+    ],
+  };
+  const words = {
+    lost: "lost it",
+    delayed: "delayed it (still wins in 3)",
+  } as const;
+
+  for (const [id, rows] of Object.entries(table)) {
+    test(`${id}: plies ${rows.map((r) => r[0]).join(", ")}`, () => {
+      const { game, engine, deep, forced } = loadFixture(id);
+      if (!forced) throw new Error(`fixture ${id} has no forced search`);
+      expect(forced).toHaveLength(game.moves.length);
+      const line = forcedWinLine(
+        gameFacts(game, engine, deep ?? null, forced),
+        seatColorsOf(game),
+      );
+      // The line names exactly the table's plies, and nothing is unknown.
+      expect([...line.matchAll(/ply (\d+) \(move/g)].map((m) => +m[1])).toEqual(
+        rows.map((r) => r[0]),
+      );
+      expect(line).not.toContain("not known");
+      // One part a ply; the tail counts the plies searched.
+      expect(line).toEndWith(
+        ` (${game.moves.length} of ${game.moves.length} plies searched)`,
+      );
+      const parts = line
+        .replace(/^Forced wins: /, "")
+        .replace(/ \(\d+ of \d+ plies searched\)$/, "")
+        .split(/; (?=ply \d+ \(move)/);
+      expect(parts).toHaveLength(rows.length);
+      rows.forEach(([ply, name, colour, turns, count, verdict], i) => {
+        const f = forced.find((x) => x.ply === ply);
+        if (!f) throw new Error(`no stored search at ply ${ply}`);
+        expect(f).toMatchObject({
+          turns,
+          winningCount: count,
+          playedVerdict: verdict,
+          countCapped: false,
+          timedOut: false,
+        });
+        const winning = f.winning ?? [];
+        expect(winning).toHaveLength(count);
+        expect(parts[i]).toBe(
+          `ply ${ply} (move ${siteMove(ply)}, ${name}, ${colour} to move) a ${turns}-turn win, ${count} of ${f.legalCount} first moves win (${winning.join(", ")}); played ${f.played}: ${words[verdict]}`,
+        );
+      });
+    });
+  }
 });

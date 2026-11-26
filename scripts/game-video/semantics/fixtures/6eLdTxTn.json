@@ -1,0 +1,101 @@
+{
+  "note": "C82 (2026-11-23, APPROVE with the first knock): Guest Viper's ply 23 is the standoff the knock marks. Engine: dw-transformer scan.",
+  "game": {
+    "gameId": "6eLdTxTn",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "initialState": {
+      "pawns": {
+        "p1": { "cat": [4, 1], "mouse": [5, 1] },
+        "p2": { "cat": [4, 6], "mouse": [5, 6] }
+      },
+      "walls": [
+        { "cell": [2, 3], "orientation": "vertical" },
+        { "cell": [4, 0], "orientation": "horizontal" },
+        { "cell": [4, 7], "orientation": "horizontal" },
+        { "cell": [6, 0], "orientation": "horizontal" },
+        { "cell": [6, 7], "orientation": "horizontal" }
+      ]
+    },
+    "moves": [
+      ">f4.^g3",
+      "Mh4",
+      "Cd4",
+      ">d4.Cg5",
+      "Ce3",
+      "Ce5",
+      "Cg3",
+      "^h3.Cd5",
+      "Cf4",
+      "^e4.^f4",
+      "Ce3",
+      ">b3.^b2",
+      ">c5.^d4",
+      "^c6.^d6",
+      "Cc3",
+      "^b6.Cd6",
+      "Cc5",
+      "^d5.Cc6",
+      "Ca5",
+      ">a7.^a5",
+      ">f6.^b3",
+      "Cc5.^b4",
+      ">b5.^f6",
+      "Cb4",
+      ">b6.^d7",
+      "Ca3",
+      "^f2.Ma3"
+    ],
+    "seats": [
+      { "playerOrder": 1, "kind": "official bot", "name": "Normal Bot" },
+      { "playerOrder": 2, "kind": "guest", "name": "Guest Viper" }
+    ],
+    "result": { "winner": 2, "reason": "capture" }
+  },
+  "engine": {
+    "botId": "dw-transformer",
+    "evaluationsP1": [
+      0.2154904454946518, -0.429809033870697, 0.5856031775474548,
+      0.09878920763731003, 0.5292091369628906, -0.5086315274238586,
+      0.6570994853973389, -0.5571495294570923, -0.6386914849281311,
+      -0.7662931084632874, -0.6413192749023438, -0.7325676083564758,
+      -0.6996856331825256, -0.6967891454696655, -0.5299344658851624,
+      -0.6927912831306458, -0.10878320783376694, -0.7834293842315674,
+      -0.8693919777870178, -0.8887994885444641, -0.8744190335273743,
+      -0.8570146560668945, -0.8784621953964233, -0.9007490873336792,
+      -0.952462911605835, -0.9668258428573608, -0.9895086884498596, -1
+    ],
+    "bestMoves": [
+      "Cc4.>f4",
+      ">f3.^g2",
+      "^g4.Cc4",
+      "Cg5.>g3",
+      ">f5.^g4",
+      ">g3.Cf5",
+      ">d5.^g4",
+      ">f5.^h3",
+      ">c5.^d4",
+      "^e4.^f4",
+      ">c5.^d4",
+      "Cc4",
+      ">c5.>c4",
+      "Cc6",
+      ">c6.>d7",
+      ">d5.^c3",
+      ">c6.Cc4",
+      "Cc6.>c6",
+      "^b3.Cc4",
+      "Cb5",
+      "^b3.^h5",
+      "Cc5.^b5",
+      "^c3.Cb5",
+      "Cb4",
+      ">b8.Cb5",
+      "Ca3",
+      ">c3.Ma3",
+      "Mg4"
+    ],
+    "finalFromResult": false
+  }
+}

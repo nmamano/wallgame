@@ -16,6 +16,7 @@ import type { SemanticGame } from "./facts";
 import {
   everyReplyLoses,
   forcedWinAt,
+  type ForcedWin,
   movesOf,
   sameMove,
   winningMoves,
@@ -55,6 +56,19 @@ describe("forced wins (exact search on the game rules)", () => {
       playedVerdict: "delayed",
     });
     expect(f.legalCount).toBeGreaterThan(1000);
+  });
+
+  test("KqbeyXIF 14 (the /go/2 puzzle): the live search gives the stored result", () => {
+    const { game, state } = before("KqbeyXIF", 14);
+    const stored = (
+      JSON.parse(
+        readFileSync(
+          new URL("fixtures/KqbeyXIF.json", import.meta.url),
+          "utf8",
+        ),
+      ) as { forced: ForcedWin[] }
+    ).forced.find((f) => f.ply === 14);
+    expect(forcedWinAt(state, 14, game.moves[14])).toEqual(stored!);
   });
 
   test("EDP5pYum 38: Ch2.Mb2 (the engine's line) forces a capture in 3 turns", () => {
