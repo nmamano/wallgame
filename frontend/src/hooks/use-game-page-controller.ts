@@ -58,7 +58,7 @@ import { useWinOffer } from "@/hooks/use-win-offer";
 import { winOfferTrigger } from "@/lib/account-nudge";
 import { useGameFirstMove } from "@/hooks/use-game-first-move";
 import { usePuzzleSolved } from "@/hooks/use-puzzle-solved";
-import { sounds, play } from "@/lib/sounds";
+import { play } from "@/lib/sounds";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -963,7 +963,7 @@ export function useGamePageController(gameId: string) {
             const hasWall = lastEntry.move.actions.some(
               (a) => a.type === "wall",
             );
-            play(hasWall ? sounds.wall : sounds.pawn);
+            play(hasWall ? "wall" : "pawn");
           }
         }
         // Turn ownership is NOT recorded here. It is derived from
@@ -1802,7 +1802,7 @@ export function useGamePageController(gameId: string) {
     // Play sound when matching panel closes (all seats filled, game starts)
     if (prev === true && matchingPanelOpen === false) {
       if (sfxEnabled && !isReadOnlySession) {
-        play(sounds.gameStart);
+        play("gameStart");
       }
     }
   }, [matchingPanelOpen, sfxEnabled, isReadOnlySession]);
@@ -3280,7 +3280,7 @@ export function useGamePageController(gameId: string) {
   useEffect(() => {
     if (gameState?.status !== "finished" || !gameState.result) return;
     if (sfxEnabledRef.current) {
-      play(sounds.gameEnd);
+      play("gameEnd");
     }
     const result = gameState.result;
     if (result.reason === "aborted") {

@@ -27,7 +27,7 @@ import {
   promotePremovesAtTurnStart,
   MAX_LOCAL_ACTIONS,
 } from "@/game/local-actions";
-import { sounds, play } from "@/lib/sounds";
+import { play } from "@/lib/sounds";
 import { pawnMoveArrows } from "@/lib/move-arrows";
 import {
   useAnnotations,
@@ -396,7 +396,7 @@ export function useBoardInteractions(
         setQueue(nextQueue);
         setError(null);
         if (sfxEnabled) {
-          play(action.type === "wall" ? sounds.wallUndo : sounds.pawnUndo);
+          play(action.type === "wall" ? "wallUndo" : "pawnUndo");
         }
         return "removed";
       }
@@ -420,7 +420,7 @@ export function useBoardInteractions(
       setQueue(nextQueue);
       setError(null);
       if (sfxEnabled) {
-        play(action.type === "wall" ? sounds.wall : sounds.pawn);
+        play(action.type === "wall" ? "wall" : "pawn");
       }
 
       // Auto-commit when the current turn's remaining action budget is filled.
@@ -502,7 +502,7 @@ export function useBoardInteractions(
           clearSelection();
           setError(null);
           if (sfxEnabled) {
-            play(sounds.pawnUndo);
+            play("pawnUndo");
           }
           return;
         }
@@ -561,7 +561,7 @@ export function useBoardInteractions(
           return;
         }
         if (sfxEnabled) {
-          play(sounds.pawn);
+          play("pawn");
         }
         if (queueMode === "staged") {
           commitStagedActions(doubleStepSequence);
@@ -632,7 +632,7 @@ export function useBoardInteractions(
         setSelectedPawnId(null);
         setError(null);
         if (sfxEnabled) {
-          play(sounds.pawnUndo);
+          play("pawnUndo");
         }
         return;
       }

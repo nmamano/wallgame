@@ -91,20 +91,46 @@ rememberVideoItem(window.location.search, browserStorage("session"));
  * f23b28a4). The first page needs only its own code before it can show; the
  * total download stays about the same (508 kB gzip after idle against 483 kB
  * as one file, 2026-11-06), in a different order.
+ *
+ * Except the game page's code (the largest chunk, with the game's sounds):
+ * it loads in idle time only on a page that starts a game, where the next
+ * click is likely to open one (task 42c3ae3a, Wall Game PM 2026-11-26). The
+ * home page and the other pages load no game code until a game opens.
  */
+type RouteId = keyof typeof router.routesById;
+// Typed by the router's own ids, so a renamed route is a compile error here.
+const GAME_ROUTE: RouteId = "/game/$id";
+const GAME_STARTING_ROUTES: readonly RouteId[] = [
+  "/play",
+  "/puzzles/",
+  "/puzzles/$id",
+  "/puzzle/game/$gameId/$ply",
+];
+const idle = (task: () => void) => {
+  if ("requestIdleCallback" in window) window.requestIdleCallback(task);
+  else setTimeout(task, 1);
+};
+// A chunk that a later deploy removed fails here and again when its page
+// opens; there the router reloads the tab once to get the new build
+// (lazyRouteComponent), so a preload drops the error.
+const preloadChunk = (id: RouteId) => {
+  router.loadRouteChunk(router.routesById[id])?.catch(() => undefined);
+};
 const stopPreloadWatch = router.subscribe("onResolved", () => {
   stopPreloadWatch();
-  const preloadAll = () => {
-    const routes = router.routesById;
-    for (const id of Object.keys(routes) as (keyof typeof routes)[]) {
-      // A chunk that a later deploy removed fails here and again when its
-      // page opens; there the router reloads the tab once to get the new build
-      // (lazyRouteComponent), so the preload drops the error.
-      router.loadRouteChunk(routes[id])?.catch(() => undefined);
+  idle(() => {
+    for (const id of Object.keys(router.routesById) as RouteId[]) {
+      if (id !== GAME_ROUTE) preloadChunk(id);
     }
-  };
-  if ("requestIdleCallback" in window) window.requestIdleCallback(preloadAll);
-  else setTimeout(preloadAll, 1);
+  });
+});
+const stopGamePreloadWatch = router.subscribe("onResolved", () => {
+  const onGameStartingPage = router.state.matches.some((match) =>
+    GAME_STARTING_ROUTES.includes(match.routeId),
+  );
+  if (!onGameStartingPage) return;
+  stopGamePreloadWatch();
+  idle(() => preloadChunk(GAME_ROUTE));
 });
 
 createRoot(document.getElementById("root")!).render(
