@@ -9,6 +9,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { installNavigationReporting, browserReporter } from "./lib/analytics";
+import { browserStorage } from "./lib/browser-storage";
+import { rememberVideoItem } from "./lib/puzzle-events";
 import { resetStalePreferences } from "./lib/preference-reset";
 import { RESETTABLE_GAME_SETUP_KEYS } from "./hooks/use-settings";
 import { isEmbedded, markEmbeddedDocument } from "./lib/embedded-mode";
@@ -75,6 +77,13 @@ const stopNavigationReporting = installNavigationReporting(
 import.meta.hot?.dispose(() => {
   stopNavigationReporting();
 });
+
+/**
+ * A daily video's /go/<n> link lands here with the video's item in the query
+ * (shared/domain/video-puzzles.ts). Kept for this tab, so the puzzle events
+ * can name the video after Solve it has replaced the landing URL.
+ */
+rememberVideoItem(window.location.search, browserStorage("session"));
 
 /**
  * Once the first page shows, the other pages' code loads in idle time, so a

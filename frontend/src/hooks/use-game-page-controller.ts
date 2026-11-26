@@ -57,6 +57,7 @@ import { useAccountNudge } from "@/hooks/use-account-nudge";
 import { useWinOffer } from "@/hooks/use-win-offer";
 import { winOfferTrigger } from "@/lib/account-nudge";
 import { useGameFirstMove } from "@/hooks/use-game-first-move";
+import { usePuzzleSolved } from "@/hooks/use-puzzle-solved";
 import { sounds, play } from "@/lib/sounds";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
 import { MusicController } from "@/lib/music";
@@ -3409,6 +3410,18 @@ export function useGamePageController(gameId: string) {
       ? (matchSnapshot?.players.find((p) => p.playerId !== primaryLocalPlayerId)
           ?.configType ?? null)
       : "human",
+  });
+
+  /**
+   * Count a puzzle this player solved (puzzle_solved, task 7db1b18a), from
+   * the live state for the same reason as the nudge above.
+   */
+  usePuzzleSolved({
+    gameId,
+    puzzle: puzzleRef,
+    state: gameState,
+    playerId: primaryLocalPlayerId,
+    isReadOnly: isReadOnlySession,
   });
 
   // Clear annotations when turn changes (move is committed)

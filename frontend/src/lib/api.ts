@@ -55,6 +55,9 @@ import type {
 import type { MeResponse } from "../../../shared/contracts/user";
 
 import { messageFromApiErrorBody } from "@/lib/api-error";
+import { browserSendEvent } from "@/lib/analytics";
+import { browserStorage } from "@/lib/browser-storage";
+import { PUZZLE_START_EVENT, puzzleParams } from "@/lib/puzzle-events";
 
 const client = hc<ApiRoutes>("/");
 
@@ -561,6 +564,11 @@ export const playVsBot = async (args: {
  * saved puzzle, or a stored game's position) and the server derives the
  * config, seat, and bot lead-in. The client never supplies a config, so Retry
  * and launch always recreate the real puzzle.
+ *
+ * A launch the server accepted is one puzzle game, so `puzzle_start` (task
+ * 7db1b18a) is sent here: every way to start a puzzle (Solve it, the listing,
+ * Retry) comes through this function, so no start goes uncounted or counts
+ * twice. A refused launch throws before it.
  */
 export const launchPuzzle = async (args: {
   botId: string;
@@ -574,7 +582,7 @@ export const launchPuzzle = async (args: {
     hostAppearance: args.hostAppearance,
     anonymousId: getAnonymousId(),
   };
-  return handleResponse<CreateBotGameResponse>(
+  const response = await handleResponse<CreateBotGameResponse>(
     api.bots.play.$post({
       json:
         args.ref.kind === "saved"
@@ -585,6 +593,11 @@ export const launchPuzzle = async (args: {
             },
     }),
   );
+  browserSendEvent(
+    PUZZLE_START_EVENT,
+    puzzleParams(args.ref, browserStorage("session")),
+  );
+  return response;
 };
 
 // Campaign progress API
