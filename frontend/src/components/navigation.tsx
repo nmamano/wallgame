@@ -34,6 +34,11 @@ export function Navigation() {
       : [{ label: isLoggedIn ? "Profile" : "Login", href: "/profile" }]),
   ];
 
+  // The icon buttons show no text, so a screen reader needs their name
+  // (task 42c3ae3a, Lighthouse "buttons have no accessible name").
+  const themeToggleLabel =
+    theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4">
@@ -65,6 +70,7 @@ export function Navigation() {
               variant="ghost"
               size="icon"
               className="cursor-pointer"
+              aria-label={themeToggleLabel}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? (
@@ -81,6 +87,7 @@ export function Navigation() {
               variant="ghost"
               size="icon"
               className="cursor-pointer"
+              aria-label={themeToggleLabel}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? (
@@ -91,7 +98,12 @@ export function Navigation() {
             </Button>
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="cursor-pointer">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="cursor-pointer"
+                  aria-label="Open menu"
+                >
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
