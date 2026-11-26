@@ -31,11 +31,13 @@ import type {
 } from "../../../shared/domain/game-types";
 import { pawnCell } from "../../../shared/domain/pawns";
 import {
+  cellFromStandardNotation,
   cellToStandardNotation,
   moveFromStandardNotation,
   wallToStandardNotation,
 } from "../../../shared/domain/standard-notation";
 import type { SeatKind } from "../daily-candidates";
+import type { ForcedWin } from "./forced-win";
 import { winChance } from "../daily-candidates";
 import { siteMoveNumber } from "../site-move.mjs";
 import {
@@ -214,6 +216,11 @@ export interface GameFacts {
   engineBotId: string | null;
   /** The deep checks of the missed wins; null when none ran. */
   deep: DeepData | null;
+  /**
+   * The forced-win search of each searched ply (forced-win.ts), in ply
+   * order; null when it did not run.
+   */
+  forced: ForcedWin[] | null;
 }
 
 const sameActions = (a: string, b: string): boolean =>
@@ -292,8 +299,55 @@ export type Defence =
   | "two-actions"
   | "no-answer";
 
+/**
+ * The single actions of `player` in `state`, in standard notation: each of
+ * its pawns' steps by length (a step of 2 cells costs both actions, so it
+ * never pairs with anything; VR1, review 135 N1) and every wall slot. Not
+ * all of them are legal (a wall slot may be taken, a step blocked): the
+ * caller applies them and drops what the rules refuse.
+ */
+export const actionsOf = (
+  state: GameState,
+  player: PlayerId,
+): {
+  pawns: { type: GamePawnType; near: string[]; far: string[] }[];
+  walls: string[];
+} => {
+  const height = state.config.boardHeight;
+  const width = state.config.boardWidth;
+  const cells: Cell[] = [];
+  for (let r = 0; r < height; r++)
+    for (let c = 0; c < width; c++) cells.push([r, c]);
+  const name = (c: Cell) => cellToStandardNotation(c, height);
+  const walls = cells.flatMap((c) => [`>${name(c)}`, `^${name(c)}`]);
+  const letter: Record<string, string> = {
+    cat: "C",
+    mouse: "M",
+    dog: "D",
+    elephant: "E",
+  };
+  const pawns = (["cat", "mouse", "dog", "elephant"] as GamePawnType[])
+    .map((type) => ({ type, at: pawnCell(state.pawns, player, type) }))
+    .filter((p): p is { type: GamePawnType; at: Cell } => p.at !== undefined)
+    .map((p) => {
+      const at = (d: number) =>
+        cells
+          .filter(
+            (c) => Math.abs(c[0] - p.at[0]) + Math.abs(c[1] - p.at[1]) === d,
+          )
+          .map((c) => `${letter[p.type]}${name(c)}`);
+      return { type: p.type, near: at(1), far: at(2) };
+    });
+  return { pawns, walls };
+};
+
 /** The Defence of the side to move in `state` against `mover`'s hunts. */
-export const defenceOf = (state: GameState, mover: PlayerId): Defence => {
+export const defenceOf = (
+  state: GameState,
+  mover: PlayerId,
+  /** Try every wall slot (the tests' reference for the pruning below). */
+  allWalls = false,
+): Defence => {
   const hunts = huntsFor(state.config.variant);
   const animal = (by: PlayerId) =>
     hunts.flatMap((h, i) =>
@@ -310,32 +364,29 @@ export const defenceOf = (state: GameState, mover: PlayerId): Defence => {
     return "wins-first";
   }
   const height = state.config.boardHeight;
-  const width = state.config.boardWidth;
-  const cells: Cell[] = [];
-  for (let r = 0; r < height; r++)
-    for (let c = 0; c < width; c++) cells.push([r, c]);
-  const name = (c: Cell) => cellToStandardNotation(c, height);
-  const walls = cells.flatMap((c) => [`>${name(c)}`, `^${name(c)}`]);
-  const letter: Record<string, string> = {
-    cat: "C",
-    mouse: "M",
-    dog: "D",
-    elephant: "E",
-  };
-  // Each pawn's steps by length: a step of 2 cells costs both actions, so
-  // it never pairs with anything (VR1, review 135 N1).
-  const pawns = (["cat", "mouse", "dog", "elephant"] as GamePawnType[])
-    .map((type) => ({ type, at: pawnCell(state.pawns, defender, type) }))
-    .filter((p): p is { type: GamePawnType; at: Cell } => p.at !== undefined)
-    .map((p) => {
-      const at = (d: number) =>
-        cells
-          .filter(
-            (c) => Math.abs(c[0] - p.at[0]) + Math.abs(c[1] - p.at[1]) === d,
-          )
-          .map((c) => `${letter[p.type]}${name(c)}`);
-      return { near: at(1), far: at(2) };
-    });
+  const { pawns, walls: every } = actionsOf(state, defender);
+  // A wall answers only by blocking a walk of CAPTURE_REACH steps, and such a
+  // walk stays within CAPTURE_REACH cells (Manhattan) of its hunter. A wall
+  // names one cell of its edge; the other is 1 further. So walls whose cell
+  // is farther than CAPTURE_REACH + 1 from every hunter in reach change no
+  // answer, alone or with a step (a test compares it with all walls).
+  const hunters = reach.flatMap((i) => {
+    const at = pawnCell(
+      state.pawns,
+      hunts[i].hunter.player,
+      hunts[i].hunter.type,
+    );
+    return at ? [at] : [];
+  });
+  const walls = allWalls
+    ? every
+    : every.filter((w) => {
+        const c = cellFromStandardNotation(w.slice(1), height);
+        return hunters.some(
+          (h) =>
+            Math.abs(h[0] - c[0]) + Math.abs(h[1] - c[1]) <= CAPTURE_REACH + 1,
+        );
+      });
   const safe = (notation: string): boolean => {
     let next: GameState;
     try {
@@ -470,6 +521,7 @@ export const gameFacts = (
   game: SemanticGame,
   engine: EngineData | null,
   deep: DeepData | null,
+  forced: ForcedWin[] | null,
 ): GameFacts => {
   const replay: ReplayedGame = replayDistances(game);
   const hunts = huntsFor(game.variant as Variant);
@@ -541,5 +593,6 @@ export const gameFacts = (
     winner: game.result.winner ?? null,
     engineBotId: engine?.botId ?? null,
     deep,
+    forced,
   };
 };

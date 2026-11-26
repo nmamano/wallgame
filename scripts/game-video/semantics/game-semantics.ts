@@ -26,6 +26,13 @@
  * The checks go to DIR/<game>.deep.json; a later run reads them from there
  * and checks only new plies. The verdict is `confirmed` in each missed win.
  *
+ * --forced searches every ply for a forced win of the side to move in 2 or 3
+ * turns (forced-win.ts: an exact search on the game rules, CPU only, about
+ * 1-300 s a ply). Each ply goes to DIR/<game>.forced/<ply>.json; a later run
+ * reads them and searches only the missing plies. --forced-ply N searches
+ * that one ply of each game and writes nothing else, so a caller can run
+ * plies in parallel (the 4090 desktop's CPU, by desktop-run).
+ *
  * --vision shoots each position's storyboard tile (DIR/<game>.tiles/) and
  * asks a model whether each labelled move can be SEEN in its tiles
  * (vision.ts); the result is `seen` in the json and a column in the .md.
@@ -36,7 +43,13 @@
  * Writes DIR/<game>.semantics.json (everything) and DIR/<game>.md (the short
  * table for a person).
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { GameResult, Variant } from "../../../shared/domain/game-types";
 import { evalBarEngineFor } from "../daily-candidates";
@@ -55,6 +68,14 @@ import {
 } from "./facts";
 import { labelGame, missedWinPlies } from "./labels";
 import {
+  FORCED_CAP_MS,
+  FORCED_VERSION,
+  forcedWinAt,
+  type ForcedWin,
+} from "./forced-win";
+import { replayDistances } from "../race-replay";
+import {
+  forcedWinLine,
   missedWinLine,
   paceLine,
   seatColorsOf,
@@ -71,6 +92,8 @@ interface Args {
   out: string;
   engine: boolean;
   deep: boolean;
+  forced: boolean;
+  forcedPly?: number;
   sentences: boolean;
   vision: boolean;
 }
@@ -96,6 +119,11 @@ const parseArgs = (argv: string[]): Args => {
     out,
     engine: argv.includes("--engine"),
     deep: argv.includes("--deep"),
+    forced: argv.includes("--forced") || argv.includes("--forced-ply"),
+    forcedPly:
+      value("forced-ply") === undefined
+        ? undefined
+        : Number(value("forced-ply")),
     sentences: argv.includes("--sentences"),
     vision: argv.includes("--vision"),
   };
@@ -224,7 +252,7 @@ const deepOnGpu = async (games: SemanticGame[], dir: string) => {
       // Checks at another depth or engine are not this check.
       const data: DeepData =
         stored?.command === command ? stored : { command, checks: [] };
-      const todo = missedWinPlies(gameFacts(game, engine, null)).filter(
+      const todo = missedWinPlies(gameFacts(game, engine, null, null)).filter(
         (ply) => !data.checks.some((c) => c.ply === ply),
       );
       for (const ply of todo) {
@@ -255,6 +283,53 @@ const deepOnGpu = async (games: SemanticGame[], dir: string) => {
   }
 };
 
+/** The stored forced-win search of a game, current version only. */
+const readForced = (dir: string, gameId: string): ForcedWin[] | null => {
+  const folder = join(dir, `${gameId}.forced`);
+  if (!existsSync(folder)) return null;
+  const found = readdirSync(folder)
+    .filter((f) => f.endsWith(".json"))
+    .map(
+      (f) =>
+        JSON.parse(readFileSync(join(folder, f), "utf8")) as {
+          version: string;
+          result: ForcedWin;
+        },
+    )
+    .filter((x) => x.version === FORCED_VERSION)
+    .map((x) => x.result)
+    .sort((a, b) => a.ply - b.ply);
+  return found.length > 0 ? found : null;
+};
+
+/** Searches the plies of `game` with no stored result (or only `only`). */
+const searchForced = (game: SemanticGame, dir: string, only?: number) => {
+  const folder = join(dir, `${game.gameId}.forced`);
+  mkdirSync(folder, { recursive: true });
+  const states = replayDistances(game).states;
+  const done = new Set((readForced(dir, game.gameId) ?? []).map((f) => f.ply));
+  for (let ply = 0; ply < game.moves.length; ply++) {
+    if (only !== undefined && ply !== only) continue;
+    if (done.has(ply)) continue;
+    const t0 = performance.now();
+    const result = forcedWinAt(
+      states[ply],
+      ply,
+      game.moves[ply],
+      FORCED_CAP_MS,
+    );
+    writeFileSync(
+      join(folder, `${ply}.json`),
+      JSON.stringify({ version: FORCED_VERSION, result }),
+    );
+    const s = (performance.now() - t0) / 1000;
+    if (s > 1 || result.turns !== null)
+      console.error(
+        `forced ${game.gameId} ply ${ply}: ${result.timedOut ? "not known (time cap)" : result.turns === null ? "none" : `${result.turns} turns, ${result.winningCount} of ${result.legalCount}`} in ${s.toFixed(1)} s`,
+      );
+  }
+};
+
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   mkdirSync(args.out, { recursive: true });
@@ -264,6 +339,11 @@ const main = async () => {
       read.map((r) => r.game),
       args.out,
     );
+  if (args.forced) {
+    for (const r of read) searchForced(r.game, args.out, args.forcedPly);
+    // One ply of a parallel run writes only its own file.
+    if (args.forcedPly !== undefined) return;
+  }
   if (args.deep)
     await deepOnGpu(
       read.map((r) => r.game),
@@ -274,7 +354,12 @@ const main = async () => {
       join(args.out, `${game.gameId}.engine.json`),
     );
     const deep = readJson<DeepData>(join(args.out, `${game.gameId}.deep.json`));
-    const facts = gameFacts(game, engine, deep);
+    const facts = gameFacts(
+      game,
+      engine,
+      deep,
+      readForced(args.out, game.gameId),
+    );
     const labels = labelGame(facts);
     const semantics: GameSemantics = args.sentences
       ? writeSentences(facts, labels)
@@ -304,6 +389,8 @@ const main = async () => {
     );
     if (engine)
       console.log(`  ${missedWinLine(labels.missedWins, seatColorsOf(game))}`);
+    if (facts.forced)
+      console.log(`  ${forcedWinLine(facts, seatColorsOf(game))}`);
   }
 };
 

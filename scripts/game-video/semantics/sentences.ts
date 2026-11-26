@@ -55,6 +55,7 @@ import {
   type Pace,
 } from "./labels";
 import type { PlySeen } from "./vision";
+import { TRIVIAL_SHARE, type ForcedWin } from "./forced-win";
 import { siteMove, siteMoveNumber } from "../site-move.mjs";
 import { dailySeatColors } from "../edl.mjs";
 
@@ -817,6 +818,42 @@ export const missedWinLine = (
   return `Missed wins: ${missed.map(one).join("; ")}`;
 };
 
+/**
+ * The forced wins of a game in one line (forced-win.ts): each ply where the
+ * side to move had a forced capture in 2-3 turns and did not play a winning
+ * move, with the count of winning first moves (few = a real puzzle).
+ */
+export const forcedWinLine = (
+  facts: GameFacts,
+  colors: Record<PlayerId, SeatLabel>,
+): string => {
+  const forced = facts.forced;
+  if (forced === null) return "Forced wins: not searched (--forced)";
+  if (forced.some((f) => !f.covered))
+    return `Forced wins: not covered for ${facts.game.variant}`;
+  const names = namesOf(facts);
+  const searched = `${forced.length} of ${facts.game.moves.length} plies searched`;
+  const unknown = forced.filter((f) => f.timedOut).map((f) => f.ply);
+  const tail = `${unknown.length > 0 ? `; not known (time cap): ${unknown.length === 1 ? "ply" : "plies"} ${unknown.join(", ")}` : ""} (${searched})`;
+  const missed = forced.filter(
+    (f) => f.turns !== null && f.playedVerdict !== "found",
+  );
+  if (missed.length === 0) return `Forced wins: none missed${tail}`;
+  const verdict = {
+    delayed: "delayed it (still wins in 3)",
+    lost: "lost it",
+    unknown: "lost or delayed it (time cap)",
+  } as const;
+  const one = (f: ForcedWin) => {
+    const share = f.winningCount / f.legalCount;
+    const moves =
+      f.winning && !f.countCapped ? ` (${f.winning.join(", ")})` : "";
+    const count = `${f.countCapped ? "at least " : ""}${f.winningCount} of ${f.legalCount}`;
+    return `ply ${f.ply} (move ${siteMove(f.ply)}, ${names[f.mover]}, ${colors[f.mover]} to move) a ${f.turns}-turn win, ${count} first moves win${moves}${share >= TRIVIAL_SHARE ? ", trivial" : ""}; played ${f.played}: ${verdict[f.playedVerdict as keyof typeof verdict]}`;
+  };
+  return `Forced wins: ${missed.map(one).join("; ")}${tail}`;
+};
+
 const seenCell = (x: PlySeen | undefined) =>
   x === undefined ? "?" : `${x.seen ? "seen" : "NOT seen"}: ${x.reason}`;
 
@@ -837,6 +874,8 @@ export const renderTable = (s: GameSemantics): string => {
     s.facts.engineBotId === null
       ? "Missed wins: unknown (no engine scores)"
       : missedWinLine(s.labels.missedWins, seatColorsOf(s.facts.game)),
+    "",
+    forcedWinLine(s.facts, seatColorsOf(s.facts.game)),
     "",
     `https://wallgame.io/game/${game.gameId}  ·  engine: ${s.facts.engineBotId ?? "none"}  ·  move = wallgame.io's move list (N. first player, N... second player); ply = 0-based turn`,
     "",

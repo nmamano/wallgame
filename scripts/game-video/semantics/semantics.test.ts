@@ -99,6 +99,7 @@ const gameOf = (
   winner,
   engineBotId: "dw-transformer",
   deep: null,
+  forced: null,
   plies: specs.map((s, ply): PlyFacts => {
     const mover: PlayerId = ply % 2 === 0 ? 1 : 2;
     const engine: EngineFacts | null = s.wc
@@ -712,7 +713,7 @@ const loadFixture = (gameId: string) =>
 /** A stored game, labelled, with its stored deep checks if it has any. */
 const fixtureLabels = (gameId: string) => {
   const { game, engine, deep } = loadFixture(gameId);
-  return labelGame(gameFacts(game, engine, deep ?? null));
+  return labelGame(gameFacts(game, engine, deep ?? null, null));
 };
 
 describe("the stored result over the replay's", () => {
@@ -725,12 +726,13 @@ describe("the stored result over the replay's", () => {
     { ...fixture.game, result: { reason: "one-move-rule" } },
     fixture.engine,
     null,
+    null,
   );
 
   test("a stored draw has no winner, and its last move says the rule", () => {
     // The same moves stored as a capture win: the replay is not asked.
     expect(fixture.game.result).toEqual({ winner: 1, reason: "capture" });
-    expect(gameFacts(fixture.game, fixture.engine, null).winner).toBe(1);
+    expect(gameFacts(fixture.game, fixture.engine, null, null).winner).toBe(1);
     expect(draw.winner).toBeNull();
     const last = draw.plies.at(-1)!;
     expect(last.end).toEqual({ winner: null, reason: "one-move-rule" });
@@ -912,7 +914,7 @@ describe("costShown (VX-IPenv, engine of 2026-10-29)", () => {
     const fixture = JSON.parse(
       readFileSync(new URL("fixtures/VX-IPenv.json", import.meta.url), "utf8"),
     ) as { game: SemanticGame; engine: EngineData };
-    const l = labelGame(gameFacts(fixture.game, fixture.engine, null));
+    const l = labelGame(gameFacts(fixture.game, fixture.engine, null, null));
     const link = (from: number) =>
       l.links.find((k) => k.kind === "blunder-punish" && k.from === from);
     // Ply 9: Normal Bot's cat 2 -> 4, Guest Jackal's 3 -> 2; walled back at once.
@@ -1363,7 +1365,7 @@ describe("CASES from C16 on: what a move means (2026-11-01)", () => {
   test("2_S7mz__ 1: a cat step onto its own mouse with the mover's own wall is no huh", () => {
     // >d6.Cg6: the step alone is 6 -> 5; the wall >d6 makes the move 6 -> 7.
     const { game, engine } = loadFixture("2_S7mz__");
-    const facts = gameFacts(game, engine, null);
+    const facts = gameFacts(game, engine, null, null);
     const cat = facts.plies[1].hunts.find(
       (h) => h.hunter.player === 2 && h.hunter.type === "cat",
     )!;
@@ -1513,7 +1515,7 @@ describe("missed wins (C78, the puzzle ending)", () => {
 
   test("with no deep check the verdict is unknown, not false", () => {
     const { game, engine } = loadFixture("EDP5pYum");
-    const l = labelGame(gameFacts(game, engine, null));
+    const l = labelGame(gameFacts(game, engine, null, null));
     expect(l.missedWins.map((m) => [m.ply, m.confirmed])).toEqual([
       [28, null],
       [38, null],
@@ -1543,7 +1545,7 @@ describe("missed wins (C78, the puzzle ending)", () => {
     const { game, engine } = loadFixture("u6D6S_f_");
     expect(
       missedWinLine(
-        labelGame(gameFacts(game, engine, null)).missedWins,
+        labelGame(gameFacts(game, engine, null, null)).missedWins,
         colors,
       ),
     ).toBe(
