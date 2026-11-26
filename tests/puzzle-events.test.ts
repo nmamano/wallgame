@@ -149,6 +149,27 @@ describe("puzzleSolvedPhase", () => {
     expect(puzzleSolvedPhase(view({ state: lost }))).toBe("over");
   });
 
+  it("does not call the bot's resignation a solve", () => {
+    // The server resigns for a bot whose engine or client failed; a bot
+    // never resigns by choice.
+    const forfeit = {
+      status: "finished" as const,
+      result: {
+        winner: 1 as const,
+        reason: "resignation" as const,
+        resignCause: "bot-forfeit" as const,
+      },
+    };
+    expect(puzzleSolvedPhase(view({ state: forfeit }))).toBe("over");
+    expect(
+      takePuzzleSolvedEvent({
+        view: view({ state: forfeit }),
+        sawPlaying: true,
+        session: workingStorage(),
+      }),
+    ).toBeNull();
+  });
+
   it("is none for an ordinary game, a spectator, a replay or no seat", () => {
     for (const other of [
       view({ puzzle: null, state: won }),

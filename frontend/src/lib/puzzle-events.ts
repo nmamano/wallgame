@@ -6,7 +6,8 @@
  *   one event per puzzle game. Sent by `launchPuzzle` (lib/api.ts), the one
  *   function every launch goes through.
  * - `puzzle_solved`: this browser's seated player won a puzzle game that this
- *   page saw in play. Once per game.
+ *   page saw in play, by play rather than by the bot's resignation (see
+ *   `puzzleSolvedPhase`). Once per game.
  *
  * Both describe the puzzle the same way (`puzzleParams`): its kind, and the
  * daily video that brought the visitor when the tab landed through
@@ -112,8 +113,14 @@ export interface PuzzleSolvedView {
 /**
  * Where this view stands for the event: "none" (not a puzzle game of this
  * browser's own: no puzzle, no state, no seat, a spectator, a replay),
- * "playing", "won" (finished, and this player is the winner) or "over"
- * (finished any other way: a loss, a draw).
+ * "playing", "won" (finished, and this player won by play) or "over"
+ * (finished any other way: a loss, a draw, an abort, the bot's resignation).
+ *
+ * A win by the bot's RESIGNATION is not a solve (Wall Game Reviewer 1, F1,
+ * 2026-11-26). A bot never resigns by choice: the server resigns for it when
+ * its engine or client fails ("bot-forfeit") or a server timer runs out, so
+ * counting it would inflate solves exactly during a bot outage. A timeout
+ * needs no rule: puzzle games run without a clock (BOT_GAME_TIME_CONTROL).
  */
 export function puzzleSolvedPhase(
   view: PuzzleSolvedView,
@@ -121,7 +128,10 @@ export function puzzleSolvedPhase(
   if (!view.puzzle || !view.state || view.playerId === null) return "none";
   if (view.isReadOnly) return "none";
   if (view.state.status !== "finished") return "playing";
-  return view.state.result?.winner === view.playerId ? "won" : "over";
+  const result = view.state.result;
+  return result?.winner === view.playerId && result.reason !== "resignation"
+    ? "won"
+    : "over";
 }
 
 /**
