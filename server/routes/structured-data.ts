@@ -1,22 +1,31 @@
 /**
  * schema.org structured data (JSON-LD) in the first HTTP response.
  *
- * Scope (board 456de365, Wall Game PM 2026-11-26): one puzzle page,
- * `/puzzles/$id`, gets a BreadcrumbList - Wall Game > Puzzles > Puzzle 7. Every
- * other page gets nothing, so its bytes stay exactly as they were. The home
- * page in particular is frozen while Growth's title test runs.
+ * Scope (board 456de365, Wall Game PM 2026-11-26): two pages carry it.
+ *
+ * - `/` gets a WebSite and a VideoGame, a fixed block with no database read.
+ *   Its description is the home page's meta description, so the two cannot
+ *   disagree; that copy belongs to Growth (shared/domain/page-metadata.ts).
+ * - `/puzzles/$id` gets a BreadcrumbList - Wall Game > Puzzles > Puzzle 7.
+ *
+ * Every other page gets nothing, so its bytes stay exactly as they were.
  *
  * Deliberately not here:
  *
+ * - A SearchAction on the WebSite. It promises a search URL, and the site has
+ *   none.
  * - A type for the puzzle itself. schema.org has no Puzzle type, and calling a
  *   puzzle position a `Game` would claim something it is not.
- * - Ratings or reviews. The like counts are not reviews, and marking them up as
- *   such is the kind of markup search engines penalise.
+ * - Ratings or reviews, on any page. The like counts are not reviews, and
+ *   marking them up as such is the kind of markup search engines penalise.
  * - `/puzzles` (the listing) and `/puzzle/game/...`: a one-step breadcrumb says
  *   nothing, and a replay of one game is not a page we want described.
  */
 
-import { normalizePath } from "../../shared/domain/page-metadata";
+import {
+  normalizePath,
+  pageMetaForPath,
+} from "../../shared/domain/page-metadata";
 import {
   puzzlePath,
   resolveSavedPuzzle,
@@ -28,6 +37,40 @@ import { fetchEnabledSavedPuzzles, SITE_ORIGIN } from "./seo";
 /** The names match the visible navigation (frontend/src/components/navigation.tsx). */
 const HOME_CRUMB = { name: "Wall Game", path: "/" };
 const PUZZLES_CRUMB = { name: "Puzzles", path: "/puzzles" };
+
+/**
+ * What the home page says about the site and the game. Every field is a fact a
+ * visitor can check on the site: it is free (no paid feature exists,
+ * 2026-11-26), it runs in a browser, and it is played alone (bots, puzzles) or
+ * against other people.
+ */
+export function homeStructuredData() {
+  const url = `${SITE_ORIGIN}/`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${url}#website`,
+        name: HOME_CRUMB.name,
+        url,
+      },
+      {
+        "@type": "VideoGame",
+        "@id": `${url}#game`,
+        name: HOME_CRUMB.name,
+        url,
+        description: pageMetaForPath("/").description,
+        genre: "Strategy",
+        gamePlatform: "Web browser",
+        applicationCategory: "GameApplication",
+        operatingSystem: "Any",
+        playMode: ["SinglePlayer", "MultiPlayer"],
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      },
+    ],
+  };
+}
 
 /** The `$id` segment of a per-puzzle page, or null for any other path. */
 function puzzlePageParam(path: string): string | null {
@@ -87,7 +130,7 @@ const PUZZLE_LOOKUP_TIMEOUT_MS = 1000;
  * hint to search engines. A database error costs the hint, and a stalled
  * database costs the hint after `timeoutMs`; neither costs the page. Only a
  * per-puzzle path ever calls `loadPuzzles`, so no other page waits on the
- * database.
+ * database; the home page's block is fixed.
  *
  * @param loadPuzzles the enabled puzzles. A parameter so a test can make it
  * throw or hang; production uses the sitemap's query.
@@ -97,6 +140,10 @@ export async function structuredDataForPath(
   loadPuzzles: () => Promise<SavedPuzzleRef[]> = fetchEnabledSavedPuzzles,
   timeoutMs: number = PUZZLE_LOOKUP_TIMEOUT_MS,
 ): Promise<string | undefined> {
+  if (normalizePath(path) === "/") {
+    return serializeJsonLd(homeStructuredData());
+  }
+
   const param = puzzlePageParam(path);
   if (param === null) return undefined;
 

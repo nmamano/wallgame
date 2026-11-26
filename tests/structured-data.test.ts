@@ -8,11 +8,13 @@
 
 import { describe, it, expect, spyOn } from "bun:test";
 import {
+  homeStructuredData,
   puzzleBreadcrumbList,
   serializeJsonLd,
   structuredDataForPath,
 } from "../server/routes/structured-data";
 import type { SavedPuzzleRef } from "../shared/domain/puzzle-links";
+import { pageMetaForPath } from "../shared/domain/page-metadata";
 
 const PUZZLES: SavedPuzzleRef[] = [
   { id: "rowid-one", displayName: "Puzzle 1" },
@@ -56,6 +58,42 @@ describe("puzzleBreadcrumbList", () => {
   });
 });
 
+describe("homeStructuredData", () => {
+  it("is a WebSite and a VideoGame at the site's root", () => {
+    const [site, game] = homeStructuredData()["@graph"];
+
+    expect(site).toEqual({
+      "@type": "WebSite",
+      "@id": "https://wallgame.io/#website",
+      name: "Wall Game",
+      url: "https://wallgame.io/",
+    });
+    expect(game).toMatchObject({
+      "@type": "VideoGame",
+      name: "Wall Game",
+      url: "https://wallgame.io/",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    });
+  });
+
+  it("describes the game in the home page's own meta description", () => {
+    const [, game] = homeStructuredData()["@graph"];
+    expect(game.description).toBe(pageMetaForPath("/").description);
+  });
+
+  it("claims no rating, review or search", () => {
+    const json = JSON.stringify(homeStructuredData());
+    for (const claim of [
+      "aggregateRating",
+      "review",
+      "potentialAction",
+      "SearchAction",
+    ]) {
+      expect(json).not.toContain(claim);
+    }
+  });
+});
+
 describe("serializeJsonLd", () => {
   it("cannot close its script element, and still means the same JSON", () => {
     const hostile = { name: "</script><script>alert(1)</script><!--" };
@@ -87,6 +125,20 @@ describe("structuredDataForPath", () => {
     );
   });
 
+  it("describes the home page without querying", async () => {
+    let queries = 0;
+    const counting = () => {
+      queries += 1;
+      return load();
+    };
+
+    for (const path of ["/", "//"]) {
+      const json = await structuredDataForPath(path, counting);
+      expect(JSON.parse(json!)).toEqual(homeStructuredData());
+    }
+    expect(queries).toBe(0);
+  });
+
   it("gives nothing for a puzzle that is not in the enabled list", async () => {
     for (const path of ["/puzzles/8", "/puzzles/no-such-row"]) {
       expect(await structuredDataForPath(path, load)).toBeUndefined();
@@ -101,7 +153,6 @@ describe("structuredDataForPath", () => {
     };
 
     for (const path of [
-      "/",
       "/play",
       "/puzzles",
       "/puzzles/",

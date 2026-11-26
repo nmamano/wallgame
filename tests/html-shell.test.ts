@@ -17,6 +17,10 @@ import {
 // Path normalisation moved to shared/ when the client began needing the same
 // titles; the server composes it with the origin rather than owning it.
 import { normalizePath } from "../shared/domain/page-metadata";
+import {
+  homeStructuredData,
+  serializeJsonLd,
+} from "../server/routes/structured-data";
 
 let createApp: typeof import("../server/app").createApp;
 
@@ -418,13 +422,28 @@ describe("the served document", () => {
   });
 
   /**
-   * The home page is frozen while Growth's title test runs (2026-11-26), and
-   * structured data must not move a byte of any page it does not describe.
-   * The expected document is the fixture with only the nine values swapped,
-   * built by hand rather than by renderPageShell, so a change to the renderer
-   * cannot move both sides of the comparison.
+   * Growth owns the home page's title and meta description, and a title test
+   * read them (verdict 2026-11-26). Pinned as literals: a change to either
+   * must go through Growth, and this test failing is how it gets noticed.
    */
-  it("serves the home page as the template with only its values changed", async () => {
+  it("keeps the home page's title and description exactly as Growth set them", async () => {
+    const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
+
+    const metadata = readMetadata(await (await app.request("/")).text());
+
+    expect(metadata.title).toBe("Wall Game - free online walls game");
+    expect(metadata.description).toBe(
+      "A free online walls game: build walls to trap your opponent and hunt down their mouse. Play in your browser against a friend, a stranger, or bots.",
+    );
+  });
+
+  /**
+   * The expected document is the fixture with only the nine values swapped
+   * and the one structured-data block added, built by hand rather than by
+   * renderPageShell, so a change to the renderer cannot move both sides of
+   * the comparison.
+   */
+  it("serves the home page as the template with its values and one block added", async () => {
     const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
     const meta = metaForPath("/");
     expect(meta.url).toBe("https://wallgame.io/");
@@ -437,16 +456,20 @@ describe("the served document", () => {
       .replaceAll(
         'content="Original description."',
         `content="${meta.description}"`,
+      )
+      .replace(
+        "</head>",
+        `<script type="application/ld+json">${serializeJsonLd(homeStructuredData())}</script></head>`,
       );
 
     expect(await (await app.request("/")).text()).toBe(expected);
   });
 
-  it("adds structured data to no page other than a puzzle", async () => {
+  it("adds structured data to no page but the home page and a puzzle", async () => {
     const shell = parseHtmlShell(FIXTURE);
     const { app } = createApp({ htmlShell: shell });
 
-    for (const path of ["/", "/play", "/puzzles", "/learn", "/game/abc123"]) {
+    for (const path of ["/play", "/puzzles", "/learn", "/game/abc123"]) {
       const html = await (await app.request(path)).text();
       expect(html).toBe(renderPageShell(shell, path));
       expect(html).not.toContain("application/ld+json");
