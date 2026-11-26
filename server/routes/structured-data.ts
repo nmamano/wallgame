@@ -74,32 +74,52 @@ export function serializeJsonLd(data: unknown): string {
 }
 
 /**
+ * How long a puzzle page waits for its structured data. A CHOSEN value: long
+ * enough for the query on a healthy database (36 rows, 2026-11-26), short
+ * enough that a stalled pool delays the page by at most this much.
+ */
+const PUZZLE_LOOKUP_TIMEOUT_MS = 1000;
+
+/**
  * The JSON-LD for a page, or undefined when the page carries none.
  *
  * Fails OPEN, unlike the sitemap: the page is the product and the markup is a
- * hint to search engines, so a database fault costs the hint and never the
- * page. Only a per-puzzle path ever calls `loadPuzzles`, so no other page waits
- * on the database.
+ * hint to search engines. A database error costs the hint, and a stalled
+ * database costs the hint after `timeoutMs`; neither costs the page. Only a
+ * per-puzzle path ever calls `loadPuzzles`, so no other page waits on the
+ * database.
  *
  * @param loadPuzzles the enabled puzzles. A parameter so a test can make it
- * throw; production uses the sitemap's query.
+ * throw or hang; production uses the sitemap's query.
  */
 export async function structuredDataForPath(
   path: string,
   loadPuzzles: () => Promise<SavedPuzzleRef[]> = fetchEnabledSavedPuzzles,
+  timeoutMs: number = PUZZLE_LOOKUP_TIMEOUT_MS,
 ): Promise<string | undefined> {
   const param = puzzlePageParam(path);
   if (param === null) return undefined;
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let puzzles: SavedPuzzleRef[];
   try {
-    puzzles = await loadPuzzles();
+    puzzles = await Promise.race([
+      loadPuzzles(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`no answer in ${timeoutMs} ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
   } catch (error) {
     console.error("[seo] puzzle structured data skipped: query failed", {
       path,
       error,
     });
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 
   const puzzle = resolveSavedPuzzle(puzzles, param);

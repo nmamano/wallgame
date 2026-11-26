@@ -115,6 +115,23 @@ describe("structuredDataForPath", () => {
     expect(queries).toBe(0);
   });
 
+  it("fails open on a stalled database: the page waits only so long", async () => {
+    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const started = performance.now();
+      const json = await structuredDataForPath(
+        "/puzzles/7",
+        () => new Promise<SavedPuzzleRef[]>(() => undefined),
+        20,
+      );
+      expect(json).toBeUndefined();
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(quiet).toHaveBeenCalledTimes(1);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
   it("fails open: a database fault costs the markup, not the page", async () => {
     const quiet = spyOn(console, "error").mockImplementation(() => undefined);
     try {
