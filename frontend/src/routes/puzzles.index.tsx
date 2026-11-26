@@ -331,7 +331,7 @@ function CampaignSection() {
             <h3 className="font-serif font-semibold leading-tight text-muted-foreground">
               More coming soon…
             </h3>
-            <p className="mt-0.5 text-sm text-muted-foreground/70">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               Additional levels are in development
             </p>
           </div>

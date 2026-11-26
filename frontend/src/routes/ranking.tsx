@@ -357,14 +357,14 @@ function Ranking() {
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground/70">
+                    <TableCell className="text-muted-foreground">
                       {Math.round(ranking.peakRating)}
                     </TableCell>
                     <TableCell>{formatRecord(ranking)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground/70">
+                    <TableCell className="text-sm text-muted-foreground">
                       {formatDate(ranking.createdAt)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground/70">
+                    <TableCell className="text-sm text-muted-foreground">
                       {formatDate(ranking.lastGameAt)}
                     </TableCell>
                   </TableRow>
