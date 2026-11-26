@@ -15,7 +15,11 @@
 
 import { Hono } from "hono";
 import { CANONICAL_PATHS } from "../../shared/domain/page-metadata";
-import { puzzlePath, savedPuzzleSlug } from "../../shared/domain/puzzle-links";
+import {
+  puzzlePath,
+  savedPuzzleSlug,
+  type SavedPuzzleRef,
+} from "../../shared/domain/puzzle-links";
 
 /**
  * Sitemap entries have to be absolute, so the origin is written down once here.
@@ -61,21 +65,14 @@ export function buildRobotsTxt(): string {
 }
 
 /**
- * The path of every puzzle a stranger can open, newest numbering and all.
+ * Every puzzle a stranger can open, in listing order.
  *
  * `enabled` is the same filter the public listing uses, so a retired puzzle
- * leaves the sitemap for the same reason it leaves the page. The slug is built
- * by `savedPuzzleSlug` rather than from the row id, because that is what the
- * links in the app say, and a sitemap advertising a second address for the
- * same page is the duplicate-content problem it exists to avoid.
- *
- * Worth knowing rather than fixing here: a puzzle link carries its NUMBER, and
- * retiring a puzzle renumbers the survivors, so an indexed URL can later point
- * at a different puzzle. Nil was shown that trade and chose it (2026-08-02);
- * generating this list from the database at request time is what keeps the
- * sitemap honest about the numbering as it stands today.
+ * leaves the sitemap - and the per-puzzle structured data
+ * (./structured-data.ts) - for the same reason it leaves the page. Both read
+ * this one query, so the two cannot disagree about which puzzles exist.
  */
-export async function fetchPuzzleSitemapPaths(): Promise<string[]> {
+export async function fetchEnabledSavedPuzzles(): Promise<SavedPuzzleRef[]> {
   // Imported HERE rather than at the top of the file, because server/db opens
   // a Postgres pool at import time and demands DATABASE_URL. A top-level
   // import put that demand on every module that builds the app: four test
@@ -87,7 +84,7 @@ export async function fetchPuzzleSitemapPaths(): Promise<string[]> {
   const { savedPuzzlesTable } = await import("../db/schema/saved-puzzles");
   const { asc, eq } = await import("drizzle-orm");
 
-  const rows = await db
+  return db
     .select({
       id: savedPuzzlesTable.id,
       displayName: savedPuzzlesTable.displayName,
@@ -95,7 +92,24 @@ export async function fetchPuzzleSitemapPaths(): Promise<string[]> {
     .from(savedPuzzlesTable)
     .where(eq(savedPuzzlesTable.enabled, true))
     .orderBy(asc(savedPuzzlesTable.sortIndex));
+}
 
+/**
+ * The path of every puzzle a stranger can open, newest numbering and all.
+ *
+ * The slug is built by `savedPuzzleSlug` rather than from the row id, because
+ * that is what the links in the app say, and a sitemap advertising a second
+ * address for the same page is the duplicate-content problem it exists to
+ * avoid.
+ *
+ * Worth knowing rather than fixing here: a puzzle link carries its NUMBER, and
+ * retiring a puzzle renumbers the survivors, so an indexed URL can later point
+ * at a different puzzle. Nil was shown that trade and chose it (2026-08-02);
+ * generating this list from the database at request time is what keeps the
+ * sitemap honest about the numbering as it stands today.
+ */
+export async function fetchPuzzleSitemapPaths(): Promise<string[]> {
+  const rows = await fetchEnabledSavedPuzzles();
   return rows.map((row) => puzzlePath("saved", savedPuzzleSlug(row)));
 }
 

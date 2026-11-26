@@ -7,7 +7,7 @@
  * a file itself.
  */
 
-import { describe, it, expect, beforeAll } from "bun:test";
+import { describe, it, expect, beforeAll, spyOn } from "bun:test";
 import {
   parseHtmlShell,
   renderPageShell,
@@ -206,6 +206,8 @@ const ALL_MARKERS: { label: string; pattern: RegExp }[] = [
     pattern: /<meta[^>]*\sname="twitter:description"[^>]*>/,
   },
   { label: "twitter:url", pattern: /<meta[^>]*\sname="twitter:url"[^>]*>/ },
+  // Not a value but the place structured data goes (./structured-data.test.ts).
+  { label: "</head>", pattern: /<\/head>/ },
 ];
 
 describe("parseHtmlShell", () => {
@@ -257,6 +259,15 @@ describe("parseHtmlShell", () => {
     expect(() => parseHtmlShell(duplicated)).toThrow(/expected exactly one/);
   });
 
+  it("refuses a </head> that comes before a rewritten value", () => {
+    const early = FIXTURE.replace("</head>", "").replace(
+      '<meta charset="UTF-8" />',
+      '<meta charset="UTF-8" /></head>',
+    );
+
+    expect(() => parseHtmlShell(early)).toThrow(/before a rewritten value/);
+  });
+
   it("names the marker it could not find", () => {
     const withoutCanonical = FIXTURE.replace(
       '<link rel="canonical" href="https://wallgame.io/" />',
@@ -294,6 +305,17 @@ describe("renderPageShell", () => {
     expect(html).toContain('<meta property="og:type" content="website" />');
     expect(html).toContain('<meta charset="UTF-8" />');
     expect(html.length).toBeGreaterThan(200);
+  });
+
+  it("puts structured data just before </head>, and changes nothing else", () => {
+    const shell = parseHtmlShell(FIXTURE);
+    const script = '<script type="application/ld+json">{"a":1}</script>';
+
+    const html = renderPageShell(shell, "/puzzles/7", '{"a":1}');
+
+    expect(html).toContain(`${script}</head>`);
+    expect(html.split(script)).toHaveLength(2);
+    expect(html.replace(script, "")).toBe(renderPageShell(shell, "/puzzles/7"));
   });
 
   it("escapes a title as text and an attribute as an attribute", () => {
@@ -392,6 +414,59 @@ describe("the served document", () => {
     for (const path of ["/", "/past-games", "/game-like", "/puzzles"]) {
       const response = await app.request(path);
       expect(response.headers.get("x-robots-tag")).toBeNull();
+    }
+  });
+
+  /**
+   * The home page is frozen while Growth's title test runs (2026-11-26), and
+   * structured data must not move a byte of any page it does not describe.
+   * The expected document is the fixture with only the nine values swapped,
+   * built by hand rather than by renderPageShell, so a change to the renderer
+   * cannot move both sides of the comparison.
+   */
+  it("serves the home page as the template with only its values changed", async () => {
+    const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
+    const meta = metaForPath("/");
+    expect(meta.url).toBe("https://wallgame.io/");
+
+    const expected = FIXTURE.replace(
+      "<title>Original title</title>",
+      `<title>${meta.title}</title>`,
+    )
+      .replaceAll('content="Original social title"', `content="${meta.title}"`)
+      .replaceAll(
+        'content="Original description."',
+        `content="${meta.description}"`,
+      );
+
+    expect(await (await app.request("/")).text()).toBe(expected);
+  });
+
+  it("adds structured data to no page other than a puzzle", async () => {
+    const shell = parseHtmlShell(FIXTURE);
+    const { app } = createApp({ htmlShell: shell });
+
+    for (const path of ["/", "/play", "/puzzles", "/learn", "/game/abc123"]) {
+      const html = await (await app.request(path)).text();
+      expect(html).toBe(renderPageShell(shell, path));
+      expect(html).not.toContain("application/ld+json");
+    }
+  });
+
+  it("still serves a puzzle page when the database cannot be reached", async () => {
+    // DATABASE_URL points at a database that is not there (beforeAll), so the
+    // puzzle lookup really fails here rather than being stubbed to fail.
+    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
+
+      const response = await app.request("/puzzles/7");
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain("application/ld+json");
+      expect(quiet).toHaveBeenCalled();
+    } finally {
+      quiet.mockRestore();
     }
   });
 

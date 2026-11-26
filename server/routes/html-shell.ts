@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import { SITE_ORIGIN } from "./seo";
+import { structuredDataForPath } from "./structured-data";
 import {
   normalizePath,
   pageMetaForPath,
@@ -78,6 +79,11 @@ export interface HtmlShell {
    * rewrites, so one hash holds for every page (content-security-policy.ts).
    */
   inlineScriptHashes: string[];
+  /**
+   * Where `</head>` sits in the last piece, the one place a page's structured
+   * data goes (./structured-data.ts).
+   */
+  headCloseOffset: number;
 }
 
 /** The CSP hash source of each <script> with no src attribute. */
@@ -240,15 +246,49 @@ export function parseHtmlShell(template: string): HtmlShell {
     pieces,
     values: slots.map(({ value, escape }) => ({ value, escape })),
     inlineScriptHashes: inlineScriptHashes(template),
+    headCloseOffset: locateHeadClose(template, cursor) - cursor,
   };
 }
 
-export function renderPageShell(shell: HtmlShell, path: string): string {
+/** The one `</head>`, which must come after every rewritten value. */
+function locateHeadClose(template: string, afterLastSlot: number): number {
+  const matches = [...template.matchAll(/<\/head>/g)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `HTML shell: expected exactly one </head> in ${SHELL_FILE}, found ${matches.length}.`,
+    );
+  }
+  if (matches[0].index < afterLastSlot) {
+    throw new Error(
+      `HTML shell: </head> in ${SHELL_FILE} comes before a rewritten value.`,
+    );
+  }
+  return matches[0].index;
+}
+
+/**
+ * @param structuredData serialized JSON-LD (./structured-data.ts). When it is
+ * absent the document is exactly what it was before structured data existed:
+ * no element, not even whitespace, is added.
+ */
+export function renderPageShell(
+  shell: HtmlShell,
+  path: string,
+  structuredData?: string,
+): string {
   const meta = metaForPath(path);
 
   let html = shell.pieces[0];
   shell.values.forEach(({ value, escape }, index) => {
-    html += escape(meta[value]) + shell.pieces[index + 1];
+    const piece = shell.pieces[index + 1];
+    const isLast = index === shell.values.length - 1;
+    html += escape(meta[value]);
+    html +=
+      isLast && structuredData !== undefined
+        ? piece.slice(0, shell.headCloseOffset) +
+          `<script type="application/ld+json">${structuredData}</script>` +
+          piece.slice(shell.headCloseOffset)
+        : piece;
   });
 
   return html;
@@ -320,6 +360,11 @@ export const registerHtmlShell = (app: Hono, shell: HtmlShell) => {
       headers["X-Robots-Tag"] = "noindex, follow";
     }
 
-    return c.body(renderPageShell(shell, c.req.path), 200, headers);
+    const structuredData = await structuredDataForPath(c.req.path);
+    return c.body(
+      renderPageShell(shell, c.req.path, structuredData),
+      200,
+      headers,
+    );
   });
 };

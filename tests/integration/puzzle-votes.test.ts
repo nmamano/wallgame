@@ -529,3 +529,50 @@ describe("the sitemap's puzzle pages", () => {
     ]);
   });
 });
+
+/**
+ * Board 456de365. A puzzle page's BreadcrumbList names the puzzle from the
+ * same query the sitemap uses, so a retired puzzle loses its markup for the
+ * same reason it leaves the sitemap. tests/structured-data.test.ts covers the
+ * shape and the fault path; this proves the lookup reads the right rows.
+ */
+describe("a puzzle page's structured data", () => {
+  const breadcrumbFor = async (path: string) => {
+    const { structuredDataForPath } =
+      await import("../../server/routes/structured-data");
+    const json = await structuredDataForPath(path);
+    return json === undefined
+      ? undefined
+      : (JSON.parse(json) as {
+          itemListElement: { name: string; item: string }[];
+        });
+  };
+
+  it("names an enabled puzzle, by number or by row id", async () => {
+    const [row] = await db
+      .select({
+        id: savedPuzzlesTable.id,
+        displayName: savedPuzzlesTable.displayName,
+      })
+      .from(savedPuzzlesTable)
+      .where(eq(savedPuzzlesTable.id, PUZZLE_A));
+    const { savedPuzzleSlug } =
+      await import("../../shared/domain/puzzle-links");
+    const slug = savedPuzzleSlug(row);
+    // The seed rows are numbered, so this is the number path, not the id path.
+    expect(slug).toMatch(/^\d+$/);
+
+    for (const path of [`/puzzles/${slug}`, `/puzzles/${PUZZLE_A}`]) {
+      const crumbs = (await breadcrumbFor(path))?.itemListElement;
+      expect(crumbs?.[2]).toMatchObject({
+        name: row.displayName,
+        item: `https://wallgame.io/puzzles/${slug}`,
+      });
+    }
+  });
+
+  it("gives a retired or unknown puzzle none", async () => {
+    expect(await breadcrumbFor(`/puzzles/${RETIRED}`)).toBeUndefined();
+    expect(await breadcrumbFor("/puzzles/9999")).toBeUndefined();
+  });
+});
