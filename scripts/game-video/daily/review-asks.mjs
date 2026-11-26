@@ -168,7 +168,13 @@ export const askPrompt = (item, card, previous) => {
     ...revisionLines(item, previous),
     ...(what ? [`Changed: ${asSentence(what)}`] : []),
     "Post this video?",
-    `On the video: "${item.caption}"${item.payoff?.text ? ` then "${item.payoff.text}"` : ""}`,
+    // A special item has no on-video caption of ours (store.mjs
+    // ITEM_KINDS): no line, never "null".
+    ...(item.caption === null
+      ? []
+      : [
+          `On the video: "${item.caption}"${item.payoff?.text ? ` then "${item.payoff.text}"` : ""}`,
+        ]),
     `Post: ${card.caption}`,
     ...(card.youtubeTitle ? [`YouTube title: ${card.youtubeTitle}`] : []),
     ...card.claimRiskSounds.map(

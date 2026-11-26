@@ -498,6 +498,25 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
     expect(ask).not.toContain("fuahhh-1");
   });
 
+  test("Nil's ask has no 'On the video' line for a special item, which has no caption; a game item's ask keeps it", () => {
+    const { store, id } = inReview();
+    const card = reviewView(store, NEXT_SLOT).items.find((x) => x.id === id);
+    if (!card) throw new Error(`${id} is not in review`);
+    const ask = askPrompt(store.item(id), card);
+    expect(ask).not.toContain("On the video");
+    expect(ask).not.toContain("null");
+    expect(ask).not.toContain('""');
+    const game = {
+      ...(store.item(id) as Item),
+      kind: "game",
+      caption: "bro thought he was safe",
+      payoff: { text: "he was not" },
+    };
+    expect(askPrompt(game, card)).toContain(
+      'On the video: "bro thought he was safe" then "he was not"',
+    );
+  });
+
   test("the posted video's music goes with it: a track that may not play stops its approval", () => {
     const env = withPosted();
     const posted = env.store.item(POSTED) as Item & {
