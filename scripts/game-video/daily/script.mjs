@@ -334,3 +334,121 @@ export const batchLines = (items, selfId) => {
     });
   return lines.length ? lines : ["- (no other video in draft or review)"];
 };
+
+/**
+ * The checks a special item's script gives its render vet: the lines of
+ * its section that starts with a line "VET CHECKS" (the Director writes
+ * them: the screen corners hold, the clip reads on the screen, the reveal
+ * card, the credit), up to the next section (a blank line, then a line in
+ * capitals) or the end. Null when the script has no such section, or the
+ * section has no check.
+ * @param {string} script
+ * @returns {string[] | null}
+ */
+export const vetChecks = (script) => {
+  const lines = script.split("\n");
+  const start = lines.findIndex((l) => /^VET CHECKS\b/.test(l));
+  if (start === -1) return null;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex(
+    (l, i) =>
+      i > 0 &&
+      rest[i - 1].trim() === "" &&
+      /^[A-Z]{2,}(?:[ -][A-Z]{2,})*(?:[\s:(]|$)/.test(l),
+  );
+  const checks = (end === -1 ? rest : rest.slice(0, end))
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim());
+  return checks.length ? checks : null;
+};
+
+/**
+ * The render vet's prompt for a special item (store.mjs ITEM_KINDS): the
+ * parts of the vet that do not need a game (how to look, nothing hidden,
+ * reading time, length, anything broken, the output), the checks of its
+ * script's VET CHECKS section, and its inputs. A special item has no edit
+ * list, contact sheet, storyboard or game state to check against.
+ * @param {{ item: any, checks: string[], scriptFile: string,
+ *   scriptNotesFile: string, sourcesFile: string, review: any,
+ *   fix: any, notesFile: string, scratch: string }} o
+ * @returns {string[]}
+ */
+export const specialVetPrompt = ({
+  item,
+  checks,
+  scriptFile,
+  scriptNotesFile,
+  sourcesFile,
+  review,
+  fix,
+  notesFile,
+  scratch,
+}) => {
+  const video = item.render.video;
+  const revises = item.reviews.filter((r) => r.action === "revise");
+  return [
+    '# Independent review ("vet") of one special Wall Game video',
+    "",
+    "You did not make this video. Judge it as a strict first-time viewer AND",
+    "as Nil, the product owner, who reviews every video before it posts. Find",
+    "every fault before Nil sees it. A fault you miss reaches him.",
+    "",
+    `This is a special video: a one-off made outside the game renderer, that`,
+    `shows the posted video ${item.source.specialFrom}. It has no edit list,`,
+    "no contact sheet and no game checks. Its story passed its script review.",
+    "You check the VIDEO: does it show what the script says, does it pass each",
+    "check of its VET CHECKS list, and is it clean?",
+    "",
+    "## How to look",
+    "",
+    "- Use ffmpeg to take frames:",
+    "  `ffmpeg -v error -y -ss <t> -i <video> -frames:v 1 -vf scale=360:-1 <out.png>`,",
+    "  and stack several with hstack into one PNG to save reads. Open PNGs",
+    "  with the Read tool. ffprobe gives the duration.",
+    "- Sample each text and each moving part on frames across its WHOLE time",
+    "  on screen, every ~0.3 s, not only its first frame. Also sample the",
+    "  opening, the last 4 s and the last frame.",
+    "- Sound: you cannot hear; say so. Measure the gaps and the loudness with",
+    "  `node scripts/game-video/daily/crew.mjs audio --video <video>`.",
+    "",
+    "## Check each category; report every finding with its second (t=..)",
+    "",
+    "1. VET CHECKS: each check of the script's list (in your task).",
+    "2. MATCHES THE SCRIPT: each beat of the script is on screen at its time,",
+    "   with its text. Do NOT re-judge the story: if you think it is wrong,",
+    "   write one INFO line, not a finding.",
+    "3. NOTHING HIDDEN: no text is cut off by the frame's edge or covered, and",
+    "   nothing covers a part of the picture that the script says the viewer",
+    "   must see.",
+    "4. READING TIME: each text on screen is FULLY shown (not fading in or",
+    "   out) at least 1.2 s + 0.3 s per word. A word is a token with a letter",
+    "   or a digit: an emoji is not a word.",
+    "5. LENGTH: 60 s or less (Instagram Story limit), or say by how much it is",
+    "   over.",
+    "6. ANYTHING BROKEN a viewer would see or hear (a black frame, sound cut",
+    "   off at the end, an emoji that shows as a box, flicker, text overlaps,",
+    "   a jump cut).",
+    "",
+    "## Output",
+    "",
+    "Write your full findings to the NOTES file named in your task (plain",
+    "text, one finding per line, each with t=..s and the category number).",
+    "End with one line: `VERDICT: pass` or `VERDICT: fail`. Fail only on",
+    "something false, or something a viewer would notice. List small points",
+    "as notes; they never fail a video. Keep the NOTES file under 3500",
+    "characters. Then reply with the verdict and the findings in short.",
+    "",
+    `## Your task: item ${item.id}, a special video of game ${item.gameId}`,
+    `- VIDEO: ${video.path} (sha256 ${video.sha256}, ${video.durationSeconds ?? "?"} s)`,
+    `- SOURCES: ${sourcesFile} (where each part of the video comes from)`,
+    `- SCRIPT: ${scriptFile} (the approved script, ${review.verdict} by ${review.reviewer} at ${review.at}${fix ? `, with a text fix after the review by ${fix.by} at ${fix.at}: ${JSON.stringify(fix.why)}` : ""}; its review notes: ${scriptNotesFile})`,
+    "- VET CHECKS (from the script, word for word):",
+    ...checks.map((l) => `  ${l}`),
+    revises.length
+      ? "- NIL'S REVISE NOTES, word for word:"
+      : "- NIL'S REVISE NOTES: none",
+    ...revises.map((r) => `  - ${r.at}: ${JSON.stringify(r.notes ?? "")}`),
+    `- NOTES: ${notesFile} (write your findings here)`,
+    `- SCRATCH: ${scratch} (your frames and files)`,
+  ];
+};

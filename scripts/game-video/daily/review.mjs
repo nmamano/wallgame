@@ -57,7 +57,7 @@
  * are the poster's.
  */
 import { copySha256 } from "./copy.mjs";
-import { renderScriptReview, StepRefused } from "./store.mjs";
+import { isSpecial, renderScriptReview, StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { quoteLines } from "./quote.mjs";
 import { claimRisk, soundUses } from "./sounds.mjs";
@@ -152,13 +152,16 @@ export const reviewView = (store, nextSlot) => ({
     approveProblem: store.approveProblem(it),
     // Each sound with a high claim risk that the video plays, once: the
     // director kept it on purpose, and Nil must see the risk.
-    claimRiskSounds: [
-      ...new Set(
-        soundUses(it.edl.doc)
-          .map(([, key]) => key)
-          .filter((key) => claimRisk(key)),
-      ),
-    ],
+    // A special item plays no meme sound of ours: it has no list.
+    claimRiskSounds: isSpecial(it)
+      ? []
+      : [
+          ...new Set(
+            soundUses(it.edl.doc)
+              .map(([, key]) => key)
+              .filter((key) => claimRisk(key)),
+          ),
+        ],
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
     scriptCarried: carriedScriptLine(renderScriptReview(it)),

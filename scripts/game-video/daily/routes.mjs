@@ -21,6 +21,10 @@
  *   crew.mjs copy    -> POST /api/daily/copy     Wall Game Growth's copy block
  *                       for the item's video (copy.mjs)
  *   crew.mjs drop    -> POST /api/daily/drop     the director stops an item
+ *   crew.mjs special -> POST /api/daily/special  a special item: a one-off
+ *                       video made outside the renderer, of a posted item's
+ *                       game; POST /api/daily/special/video gives it its
+ *                       video after its script review passed
  *
  * A finished item with a fresh block is in review: Nil approves, discards
  * or revises it on /review. An approved item posts at a slot (Wall Game
@@ -67,6 +71,7 @@ import {
   currentScriptReview,
   scriptText,
   fixedApprovalProblem,
+  gameOnly,
 } from "./store.mjs";
 import { resultProblems } from "./script.mjs";
 import {
@@ -2249,6 +2254,32 @@ export const createDaily = ({
     },
 
     /**
+     * {from: <item id>}: a new special item (store.pickSpecial), a draft of
+     * the game of `from`, which must be posted.
+     */
+    "POST /api/daily/special": async (req, res) => {
+      const body = await readJson(req);
+      picked(res, store.pickSpecial(itemOf(body.from).id));
+    },
+
+    /**
+     * {item, video, sources}: a special item's video and its sources file,
+     * absolute paths on this box (store.attachSpecial). The app copies the
+     * video; it needs a passed script review.
+     */
+    "POST /api/daily/special/video": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.attachSpecial(itemOf(body.item).id, {
+          video: body.video,
+          sources: body.sources,
+        }),
+      );
+    },
+
+    /**
      * {item, edl, claimRiskOk?, what?}: the director's edit decision list
      * for the item's game; `what`, after Nil's Revise only, is one line of
      * what the list changed.
@@ -2259,6 +2290,7 @@ export const createDaily = ({
     "POST /api/daily/direct": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
+      gameOnly(item, "direct");
       const { edl, risk, errors } = listChecks(
         item,
         body.edl,
@@ -2484,6 +2516,8 @@ export const createDaily = ({
     "POST /api/daily/render": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
+      // Before the 4090 is asked for the game's capture.
+      gameOnly(item, "render");
       const jobId = `${item.id}-${item.gameId}-${Date.now().toString(36)}`;
       // With the game's capture on the 4090 the render reads it and adds no
       // view; `live` captures again on purpose (one view), for example when
@@ -2528,6 +2562,7 @@ export const createDaily = ({
     "POST /api/daily/preview": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
+      gameOnly(item, "preview");
       if (body.draft !== undefined && typeof body.draft !== "boolean") {
         throw new StepRefused("draft is true or false");
       }
@@ -2619,6 +2654,7 @@ export const createDaily = ({
     "POST /api/daily/lint": async (req, res) => {
       const body = await readJson(req);
       const item = itemOf(body.item);
+      gameOnly(item, "lint");
       const raw = body.edl ?? item.edl?.doc;
       if (!raw) {
         throw new StepRefused(
@@ -3421,7 +3457,8 @@ const DASHBOARD = `<!doctype html>
              ...COPY.flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", k.copy.block[f])])]
           : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
         el("div", "muted", "style: " + k.style),
-        el("div", "muted", k.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
+        el("div", "muted", k.kind === "special" ? "Special item: a video made outside the renderer, of the posted " + k.source.specialFrom
+          : k.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
         ...(k.edl ? k.edl.summary.map((l) => el("div", null, l)) : []));
       const r = k.render;
       const q = "?item=" + encodeURIComponent(k.id);

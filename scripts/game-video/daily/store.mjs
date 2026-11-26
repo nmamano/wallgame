@@ -48,11 +48,16 @@ import {
   existsSync,
   readdirSync,
   appendFileSync,
+  copyFileSync,
+  rmSync,
+  statSync,
 } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { createHash } from "node:crypto";
 import { COPY_LINES, copyHeldReason, copySha256 } from "./copy.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
+import { probe } from "./tools.mjs";
+import { vetChecks } from "./script.mjs";
 
 /**
  * A day file's format. migrateV1 turns a version 1 file into version 2, and
@@ -77,6 +82,19 @@ export const ITEM_STATES = [
   "posted",
   "post-failed",
 ];
+
+/**
+ * What an item makes. "game": a daily video of one game, from an edit list
+ * rendered on the 4090. "special": a one-off made outside the renderer (a
+ * composite, e.g. a posted video on a billboard; Wall Game PM, 2026-11-26),
+ * tied to the game of the posted item it shows. Its video comes in by
+ * `attachSpecial`, with no edit list, no render and no contact sheet. An
+ * item from before kinds has no `kind` field: a game item (isSpecial).
+ */
+export const ITEM_KINDS = ["game", "special"];
+
+/** Whether the item is a special item (ITEM_KINDS). */
+export const isSpecial = (item) => item.kind === "special";
 
 /** An item id: v-<UTC day it was picked>-<label or number>. */
 export const ITEM_ID = /^v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/;
@@ -221,7 +239,11 @@ export const postProblem = (
 /** A day file's candidates, in label order. */
 export const LABELS = ["A", "B", "C"];
 
-/** Where an item's production stands, derived from its fields. */
+/**
+ * Where an item's production stands, derived from its fields. A special
+ * item is "picked" until its video is attached, then "attached": it has no
+ * list, render or check (attachSpecial).
+ */
 export const STAGES = [
   "picked",
   "directed",
@@ -229,19 +251,24 @@ export const STAGES = [
   "rendered",
   "render-failed",
   "checked",
+  "attached",
 ];
 export const stage = (item) =>
-  !item.edl
-    ? "picked"
-    : !item.render
-      ? "directed"
-      : !item.render.finishedAt
-        ? "rendering"
-        : item.render.error
-          ? "render-failed"
-          : item.check?.ok
-            ? "checked"
-            : "rendered";
+  isSpecial(item)
+    ? item.render
+      ? "attached"
+      : "picked"
+    : !item.edl
+      ? "picked"
+      : !item.render
+        ? "directed"
+        : !item.render.finishedAt
+          ? "rendering"
+          : item.render.error
+            ? "render-failed"
+            : item.check?.ok
+              ? "checked"
+              : "rendered";
 
 /**
  * Every place a video posts to, in the order a slot posts them.
@@ -285,6 +312,30 @@ export const writeAtomic = (path, text) => {
 
 /** The stages a new list may replace, and an item may be dropped in. */
 const SETTLED = ["picked", "directed", "rendered", "render-failed", "checked"];
+/** The stages a special item may be dropped in: all of its stages. */
+const SPECIAL_SETTLED = ["picked", "attached"];
+
+/**
+ * Refuse a step of the edit list and the 4090 (direct, render, preview,
+ * lint, a capture, check) on a special item: it has none of them.
+ */
+export const gameOnly = (item, step) => {
+  if (isSpecial(item)) {
+    refuse(
+      `a special item has no edit list: ${step} works only on a game item. ${item.id} gets its video from crew.mjs special --item ${item.id} --video <mp4> --sources <file>`,
+    );
+  }
+};
+
+/**
+ * Why `script` cannot be the passed script of a special item, or null: the
+ * render vet takes its checks from the script's VET CHECKS section
+ * (vetChecks), as a special item has no game to check against.
+ */
+const specialScriptProblem = (item, script) =>
+  isSpecial(item) && !vetChecks(script)
+    ? `${item.id} is a special item: its script needs a section that starts with the line "VET CHECKS" and lists what the vet checks (crew.mjs vet-prompt reads it)`
+    : null;
 
 /** Nil's review actions (review.mjs), and the state each one leaves. */
 export const REVIEW_ACTIONS = ["approve", "discard", "revise"];
@@ -641,13 +692,55 @@ export const openStore = (dataDir) => {
    * review page disables Approve with this text; review() refuses with it.
    */
   const approveProblem = (item) => {
-    const other = postOfGame(item);
+    // A special item is the one exception: it shows a posted video of its
+    // game (pickSpecial).
+    const other = isSpecial(item) ? null : postOfGame(item);
     if (other) {
       return `another video of this game is ${other.state} (${other.id}): ${other.state === "approved" ? "withdraw it, or discard this one" : "only one video of a game posts; discard this one"}`;
     }
     const music = musicProblem(item);
     if (music) return `${music}: re-direct with a track that may play`;
     return null;
+  };
+
+  /**
+   * Write a new draft item of `kind` (ITEM_KINDS). Its id is v-<UTC day>-<n>,
+   * the day's next number (an item migrated from a day file has a letter
+   * instead). `what` is its first event.
+   */
+  const newItem = ({ kind, candidate, style, styleVersion, source, what }) => {
+    const now = new Date().toISOString();
+    const day = utcDay();
+    const taken = readdirSync(dirs.items)
+      .map((f) => f.match(/^v-(\d{4}-\d{2}-\d{2})-(\d+)\.json$/))
+      .filter((m) => m && m[1] === day)
+      .map((m) => Number(m[2]));
+    const item = {
+      version: ITEM_VERSION,
+      id: itemId(day, String(Math.max(0, ...taken) + 1)),
+      kind,
+      createdAt: now,
+      updatedAt: now,
+      gameId: candidate.gameId,
+      source,
+      candidate,
+      style,
+      // The on-video caption style at pick time (candidate.mjs).
+      styleVersion,
+      edl: null,
+      render: null,
+      check: null,
+      caption: null,
+      payoff: null,
+      copy: null,
+      state: "draft",
+      reviews: [],
+      approval: null,
+      posts: {},
+      events: [{ utc: now, what }],
+    };
+    writeItem(item);
+    return item;
   };
 
   const api = {
@@ -854,7 +947,8 @@ export const openStore = (dataDir) => {
             utc: at,
             itemId: id,
             gameId: it.gameId,
-            edlSha256: it.edl.sha256,
+            // A special item has no list.
+            edlSha256: isSpecial(it) ? null : it.edl.sha256,
             videoSha256,
             copySha256,
             action,
@@ -915,7 +1009,7 @@ export const openStore = (dataDir) => {
             utc: at,
             itemId: id,
             gameId: it.gameId,
-            edlSha256: it.edl.sha256,
+            edlSha256: isSpecial(it) ? null : it.edl.sha256,
             videoSha256,
             copySha256,
             action: "withdraw",
@@ -930,10 +1024,11 @@ export const openStore = (dataDir) => {
     },
 
     /**
-     * A new item for the director: a game from a candidate report, or the
-     * game of an earlier item that Nil discarded or that posted (carry-over,
-     * `source.carriedFrom`). Its id is v-<UTC day>-<n>, the day's next
-     * number (an item migrated from a day file has a letter instead).
+     * A new game item for the director: a game from a candidate report, or
+     * the game of an earlier item that Nil discarded (carry-over,
+     * `source.carriedFrom`). A game with an item that posts, may post or
+     * did post is refused (postOfGame); only a special item skips that
+     * (pickSpecial).
      */
     pick({ candidate, style, styleVersion, source }) {
       const posts = postOfGame({ gameId: candidate.gameId, id: null });
@@ -950,42 +1045,155 @@ export const openStore = (dataDir) => {
           );
         }
       }
-      const now = new Date().toISOString();
-      const day = utcDay();
-      const taken = readdirSync(dirs.items)
-        .map((f) => f.match(/^v-(\d{4}-\d{2}-\d{2})-(\d+)\.json$/))
-        .filter((m) => m && m[1] === day)
-        .map((m) => Number(m[2]));
-      const item = {
-        version: ITEM_VERSION,
-        id: itemId(day, String(Math.max(0, ...taken) + 1)),
-        createdAt: now,
-        updatedAt: now,
-        gameId: candidate.gameId,
-        source,
+      return newItem({
+        kind: "game",
         candidate,
         style,
-        // The on-video caption style at pick time (candidate.mjs).
         styleVersion,
-        edl: null,
-        render: null,
-        check: null,
-        caption: null,
-        payoff: null,
-        copy: null,
-        state: "draft",
-        reviews: [],
-        approval: null,
-        posts: {},
-        events: [
-          {
-            utc: now,
-            what: `picked ${candidate.gameId}${source.carriedFrom ? ` (carried over from ${source.carriedFrom})` : ""}`,
-          },
-        ],
-      };
-      writeItem(item);
-      return item;
+        source,
+        what: `picked ${candidate.gameId}${source.carriedFrom ? ` (carried over from ${source.carriedFrom})` : ""}`,
+      });
+    },
+
+    /**
+     * A new special item (ITEM_KINDS): a draft tied to the game of `from`,
+     * a posted item, whose video the special one shows. It skips the rule
+     * that one video of a game posts (pick, approveProblem): the posted
+     * video is its content. Its game, candidate and style are `from`'s.
+     * Then, as any item: its script and script review (phase 1), and its
+     * video comes in by attachSpecial (phase 2).
+     */
+    pickSpecial(from) {
+      const old = needItem(from);
+      if (old.state !== "posted") {
+        refuse(
+          `${old.id} is ${old.state}: a special item shows a posted video, so it comes from an item that is posted`,
+        );
+      }
+      return newItem({
+        kind: "special",
+        candidate: old.candidate,
+        style: old.style,
+        styleVersion: old.styleVersion,
+        source: { specialFrom: old.id },
+        what: `picked ${old.gameId} as a special item of the posted ${old.id}`,
+      });
+    },
+
+    /**
+     * A special item's video (phase 2): the MP4 at `video` is copied into
+     * the app's videos, and the copy is the item's video only when its
+     * sha256 is the source file's. `sources` is a text file that names
+     * where each part of the video comes from; its text is kept. The same
+     * gate as startRender: the latest script review since the pick or Nil's
+     * last revise passed. No edit list, no lint, no 4090 render, no contact
+     * sheet: the item is finished at once, and its own vet (recordVet) is
+     * what lets it into review (reviewState). A new video replaces the old
+     * one before Nil's review, as a new render does.
+     * @param {string} id
+     * @param {{ video: string, sources: string }} files absolute paths
+     */
+    attachSpecial(id, { video, sources }) {
+      for (const [name, path] of [
+        ["video", video],
+        ["sources", sources],
+      ]) {
+        if (typeof path !== "string" || !isAbsolute(path)) {
+          refuse(`special needs --${name}: the absolute path of a file`);
+        }
+        if (!existsSync(path) || !statSync(path).isFile()) {
+          refuse(`special --${name}: no file ${path}`);
+        }
+      }
+      const sourcesText = readFileSync(sources, "utf8");
+      if (!sourcesText.trim()) {
+        refuse(
+          `special --sources: ${sources} is empty; name where each part of the video comes from`,
+        );
+      }
+      const sha256 = fileSha256(video);
+      let summary = "";
+      return updateItem(
+        id,
+        ["draft", "finished"],
+        (item) => {
+          if (!isSpecial(item)) {
+            refuse(
+              `${id} is a game item: its video comes from a 4090 render (crew.mjs render)`,
+            );
+          }
+          const script = currentScriptReview(item);
+          if (script?.verdict !== "pass") {
+            refuse(
+              script
+                ? `${id}'s latest script review failed: fix the script, get a new review and record it (crew.mjs script-review) before the video comes in`
+                : `${id} has no script review${item.reviews.some((r) => r.action === "revise") ? " since Nil's revise" : ""}: write the script, get it reviewed and record the verdict (crew.mjs script-review) before the video comes in`,
+            );
+          }
+          const at = new Date().toISOString();
+          const path = join(
+            dirs.videos,
+            `${id}-special-${Date.now().toString(36)}.mp4`,
+          );
+          const scratch = `${path}.${process.pid}.tmp`;
+          copyFileSync(video, scratch);
+          const copied = fileSha256(scratch);
+          if (copied !== sha256) {
+            rmSync(scratch, { force: true });
+            refuse(
+              `special --video: the copy of ${video} has the sha256 ${copied}, not the file's ${sha256}; the file changed during the copy, so nothing is kept`,
+            );
+          }
+          let facts;
+          try {
+            facts = probe(scratch);
+          } catch (err) {
+            rmSync(scratch, { force: true });
+            refuse(
+              `special --video: ${video} is not a video that ffprobe reads (${err.message})`,
+            );
+          }
+          renameSync(scratch, path);
+          const durationSeconds = Number(facts.duration.toFixed(2));
+          item.state = "finished";
+          // The fields a render has, so every reader of a video (the vet,
+          // the review, the post and its log row) reads it as one; what a
+          // special item does not have is null, and it plays no track of
+          // ours (music []).
+          item.render = {
+            jobId: null,
+            fromCache: false,
+            requestedAt: at,
+            finishedAt: at,
+            error: null,
+            ending: null,
+            edlSha256: null,
+            // The story this video tells (renderScriptReview).
+            scriptReview: { at: script.at, scriptSha256: script.scriptSha256 },
+            video: {
+              path,
+              bytes: statSync(path).size,
+              sha256,
+              durationSeconds,
+            },
+            sources: {
+              file: sources,
+              sha256: createHash("sha256").update(sourcesText).digest("hex"),
+              text: sourcesText,
+            },
+            sheet: null,
+            effect: null,
+            sound: null,
+            music: [],
+            quality: null,
+            timeline: null,
+            grid: null,
+            timings: null,
+          };
+          summary = `special video attached: ${sha256.slice(0, 12)}, ${durationSeconds} s, from ${video}; finished, and it needs its vet`;
+        },
+        () => summary,
+      );
     },
 
     /**
@@ -1009,6 +1217,7 @@ export const openStore = (dataDir) => {
         id,
         ["draft", "finished"],
         (item) => {
+          gameOnly(item, "direct");
           expectStage(item, SETTLED, "direct");
           item.state = "draft";
           item.edl = {
@@ -1042,6 +1251,7 @@ export const openStore = (dataDir) => {
         id,
         ["draft"],
         (item) => {
+          gameOnly(item, "render");
           expectStage(item, ["directed", "render-failed"], "render");
           // Phase 1 before phase 2 (SCRIPT.md): no render of a story that
           // no fresh reviewer passed. Previews, quick looks and lints may
@@ -1098,6 +1308,7 @@ export const openStore = (dataDir) => {
         id,
         ["draft"],
         (item) => {
+          gameOnly(item, "a capture-only job");
           expectStage(
             item,
             ["picked", "directed", "render-failed"],
@@ -1167,6 +1378,8 @@ export const openStore = (dataDir) => {
         id,
         ["draft"],
         (item) => {
+          // A special item has no stills: its vet alone lets it into review.
+          gameOnly(item, "check");
           expectStage(item, ["rendered"], "check");
           const sheet = item.render.sheet;
           if (item.check && !item.check.ok) {
@@ -1252,7 +1465,7 @@ export const openStore = (dataDir) => {
               );
             }
           }
-          expectStage(item, ["rendered", "checked"], "copy");
+          expectStage(item, ["rendered", "checked", "attached"], "copy");
           // The final video passed a fresh reviewer first (Wall Game
           // Director, 2026-10-28, rule R10).
           if (currentVet(item)?.verdict !== "pass") {
@@ -1383,6 +1596,9 @@ export const openStore = (dataDir) => {
         id,
         ["draft"],
         (item) => {
+          const special =
+            verdict === "pass" ? specialScriptProblem(item, script) : null;
+          if (special) refuse(special);
           item.scriptReviews = [
             ...(item.scriptReviews ?? []),
             {
@@ -1440,6 +1656,8 @@ export const openStore = (dataDir) => {
           if (script === scriptText(review).script) {
             refuse(`${id}: the script is the same as the stored one`);
           }
+          const special = specialScriptProblem(item, script);
+          if (special) refuse(special);
           review.fixes = [
             ...(review.fixes ?? []),
             {
@@ -1654,7 +1872,11 @@ export const openStore = (dataDir) => {
         id,
         ["draft", "finished"],
         (item) => {
-          expectStage(item, SETTLED, "drop");
+          expectStage(
+            item,
+            isSpecial(item) ? SPECIAL_SETTLED : SETTLED,
+            "drop",
+          );
           item.state = "discarded";
         },
         `dropped by the director: ${reason.slice(0, 300)}`,
