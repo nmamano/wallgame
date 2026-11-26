@@ -24,6 +24,7 @@ export interface VideoPuzzle {
 
 export const VIDEO_PUZZLES: readonly VideoPuzzle[] = [
   { n: 1, itemId: "v-2026-11-22-1", gameId: "EDP5pYum", ply: 38 },
+  { n: 2, itemId: "v-2026-11-25-3", gameId: "KqbeyXIF", ply: 14 },
 ];
 
 /** The tags of a visit from a daily video's call to action. */
