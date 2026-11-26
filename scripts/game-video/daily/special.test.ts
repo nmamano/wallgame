@@ -31,6 +31,10 @@ import {
 } from "./store.mjs";
 import { createDaily, logRow } from "./routes.mjs";
 import { reviewView } from "./review.mjs";
+import { askPrompt } from "./review-asks.mjs";
+
+/** A next slot that posts (scheduler.mjs status nextSlot). */
+const NEXT_SLOT = { pacific: "Fri 09:00 PT", willPost: true, why: null };
 import { specialVetPrompt, vetChecks } from "./script.mjs";
 import { REVIEWER_MEMBER_ID } from "./review.mjs";
 import { testTmp } from "../test-tmp";
@@ -457,6 +461,41 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
       edlSha256: null,
       videoSha256,
     });
+  });
+
+  test("the posted video's claim-risk sounds go with it: the review card and Nil's ask name them; none gives none", () => {
+    const { store, id } = inReview();
+    const view = () => {
+      const card = reviewView(store, NEXT_SLOT).items.find((x) => x.id === id);
+      if (!card) throw new Error(`${id} is not in review`);
+      return card;
+    };
+    // The posted item's list plays no sound with a claim risk.
+    expect(view().claimRiskSounds).toEqual([]);
+    // v-2026-11-05-8's case: reveal-1, horn-1 and alert-1 (VR1, N1).
+    const posted = store.item(POSTED) as Item & {
+      edl: { doc: Record<string, unknown> };
+    };
+    posted.edl.doc = {
+      vsSound: "horn-1",
+      finishSound: "trombone-1",
+      events: [
+        { ply: 3, kind: "zoom", frame: ["e4", "e5"], sound: "reveal-1" },
+        { ply: 5, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" },
+        { ply: 7, kind: "zoom", frame: ["e4", "e5"], sound: "alert-1" },
+      ],
+    };
+    writeFileSync(
+      join(store.dirs.items, `${POSTED}.json`),
+      JSON.stringify(posted),
+    );
+    const card = view();
+    expect(card.claimRiskSounds).toEqual(["horn-1", "reveal-1", "alert-1"]);
+    const ask = askPrompt(store.item(id), card);
+    for (const key of ["reveal-1", "horn-1", "alert-1"]) {
+      expect(ask).toContain(`**Uses ${key}: a claim is possible.**`);
+    }
+    expect(ask).not.toContain("fuahhh-1");
   });
 
   test("the posted video's music goes with it: a track that may not play stops its approval", () => {

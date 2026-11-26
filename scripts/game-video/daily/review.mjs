@@ -129,6 +129,33 @@ export const approvedLine = (index, nextSlot) =>
       : `Approved: no slot posts it yet (${nextSlot.why ?? "no slot"}).`;
 
 /**
+ * Each sound with a high claim risk that the list `edl` plays, once, in
+ * the order it first plays.
+ * @param {any} edl an edit list (edl.mjs)
+ * @returns {string[]}
+ */
+export const claimRiskSounds = (edl) => [
+  ...new Set(
+    soundUses(edl)
+      .map(([, key]) => key)
+      .filter((key) => claimRisk(key)),
+  ),
+];
+
+/**
+ * The item whose edit list holds the sounds that `it`'s video plays: the
+ * item itself, or for a special item the posted item it shows, whose
+ * audio the composite keeps (VR1, batch 182 N1: v-2026-11-05-8 plays
+ * reveal-1, horn-1 and alert-1). Read when asked, not copied: a posted
+ * item takes no new list (store.direct needs a draft or a finished item),
+ * so its list is the one source of truth.
+ * @param {ReturnType<import("./store.mjs").openStore>} store
+ * @param {any} it
+ */
+const soundsItem = (store, it) =>
+  isSpecial(it) ? store.item(it.source.specialFrom) : it;
+
+/**
  * @param {ReturnType<import("./store.mjs").openStore>} store
  * @param {{ pacific: string, willPost: boolean, why: string | null }} nextSlot
  */
@@ -152,16 +179,7 @@ export const reviewView = (store, nextSlot) => ({
     approveProblem: store.approveProblem(it),
     // Each sound with a high claim risk that the video plays, once: the
     // director kept it on purpose, and Nil must see the risk.
-    // A special item plays no meme sound of ours: it has no list.
-    claimRiskSounds: isSpecial(it)
-      ? []
-      : [
-          ...new Set(
-            soundUses(it.edl.doc)
-              .map(([, key]) => key)
-              .filter((key) => claimRisk(key)),
-          ),
-        ],
+    claimRiskSounds: claimRiskSounds(soundsItem(store, it).edl.doc),
     noStory: noStoryLine(it.render.video),
     version: versionLine(it, store.sameGame(it)),
     scriptCarried: carriedScriptLine(renderScriptReview(it)),
