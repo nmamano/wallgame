@@ -37,7 +37,8 @@
  *                                  one-post-of-a-game rule. Prints its id.
  *                                  Then, as any item: script, script-review
  *                                  (its script needs a section that starts
- *                                  with the line "VET CHECKS": the checks
+ *                                  with a line "VET CHECKS" or a markdown
+ *                                  heading "## VET CHECKS": the checks
  *                                  vet-prompt gives the vet)
  *   special --item ID --video F --sources F
  *                                  the special item's video: the app copies
@@ -1597,7 +1598,7 @@ const commands = {
     const c = await itemNamed(itemFlag());
     if (isSpecial(c)) {
       die(
-        `${c.id} is a special item: it has no edit list, so there is no draft. Write its script by hand, with a section that starts with the line "VET CHECKS" (the checks vet-prompt gives the vet), then: script-review-prompt --item ${c.id} --script <file>`,
+        `${c.id} is a special item: it has no edit list, so there is no draft. Write its script by hand, with a section that starts with a line "VET CHECKS" (or a markdown heading "## VET CHECKS") (the checks vet-prompt gives the vet), then: script-review-prompt --item ${c.id} --script <file>`,
       );
     }
     const out = resolve(
@@ -1862,7 +1863,7 @@ const commands = {
         from: flag("from"),
       });
       console.log(
-        `special item: ${item.id} (game ${item.gameId}, from the posted ${flag("from")})\n  next: write its script with a "VET CHECKS" section, get it reviewed (script-review-prompt, script-review), then: special --item ${item.id} --video <mp4> --sources <file>`,
+        `special item: ${item.id} (game ${item.gameId}, from the posted ${flag("from")})\n  next: write its script with a section that starts with a line "VET CHECKS" (or a markdown heading "## VET CHECKS"), get it reviewed (script-review-prompt, script-review), then: special --item ${item.id} --video <mp4> --sources <file>`,
       );
       return;
     }
@@ -1906,7 +1907,7 @@ const specialVetCommand = (c) => {
   const checks =
     vetChecks(text.script) ??
     die(
-      `${c.id}'s script has no VET CHECKS section: the Director adds one (a line "VET CHECKS", then one check a line) with crew.mjs script-fix, then runs vet-prompt again`,
+      `${c.id}'s script has no VET CHECKS section: the Director adds one (a line "VET CHECKS" (or a markdown heading "## VET CHECKS"), then one check a line) with crew.mjs script-fix, then runs vet-prompt again`,
     );
   const scratch = mkdtempSync(join(tmpdir(), `daily-vet-${c.id}-`));
   const scriptFile = join(scratch, "script.txt");

@@ -1466,10 +1466,11 @@ export const createDaily = ({
       ? makeLiveTransport()
       : dryRunTransport(dryRunReplies[platform]);
     const texts = postTexts(item.copy.block);
-    // A special item shows a real place with altered footage (Wall Game
-    // PM, 2026-11-26): each platform whose API has a field for altered or
-    // AI-made content says so (YouTube, X, Instagram, Facebook, Threads;
-    // TikTok's inbox upload and Bluesky have none).
+    // A special item shows a real place with altered footage: the
+    // altered-content label where the platform's field means altered
+    // content, not AI-only (Wall Game PM, 2026-11-26); the reveal in the
+    // post text covers X, TikTok and Bluesky. So YouTube, Instagram (Reel
+    // and Story), Facebook and Threads get it; X's made_with_ai is not sent.
     const altered = isSpecial(item);
     const at = new Date().toISOString();
     // Set once the final, public request is about to go out.
@@ -1509,7 +1510,6 @@ export const createDaily = ({
         return postToX({
           video,
           text: texts.x,
-          altered,
           transport,
           sign: creds ? (req) => oauth1Header(req, creds) : dryRunSigner,
           sleep,

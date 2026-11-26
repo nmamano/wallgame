@@ -337,24 +337,27 @@ export const batchLines = (items, selfId) => {
 
 /**
  * The checks a special item's script gives its render vet: the lines of
- * its section that starts with a line "VET CHECKS" (the Director writes
- * them: the screen corners hold, the clip reads on the screen, the reveal
- * card, the credit), up to the next section (a blank line, then a line in
- * capitals) or the end. Null when the script has no such section, or the
- * section has no check.
+ * its section that starts with a line "VET CHECKS", or a markdown heading
+ * "## VET CHECKS" (the Director writes them: the screen corners hold, the
+ * clip reads on the screen, the reveal card, the credit), up to the next
+ * section or the end. The next section starts at a markdown heading
+ * ("## Beats"), or at a line in capitals after a blank line ("CHECKLIST");
+ * a check line such as "V1 The screen corners ..." is no heading. Null
+ * when the script has no such section, or the section has no check.
  * @param {string} script
  * @returns {string[] | null}
  */
 export const vetChecks = (script) => {
   const lines = script.split("\n");
-  const start = lines.findIndex((l) => /^VET CHECKS\b/.test(l));
+  const start = lines.findIndex((l) => /^(?:#+\s*)?VET CHECKS\b/.test(l));
   if (start === -1) return null;
   const rest = lines.slice(start + 1);
   const end = rest.findIndex(
     (l, i) =>
-      i > 0 &&
-      rest[i - 1].trim() === "" &&
-      /^[A-Z]{2,}(?:[ -][A-Z]{2,})*(?:[\s:(]|$)/.test(l),
+      /^#+\s/.test(l) ||
+      (i > 0 &&
+        rest[i - 1].trim() === "" &&
+        /^[A-Z]{2,}(?:[ -][A-Z]{2,})*(?:[\s:(]|$)/.test(l)),
   );
   const checks = (end === -1 ? rest : rest.slice(0, end))
     .map((l) => l.trimEnd())

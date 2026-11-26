@@ -288,7 +288,7 @@ describe("its video comes after its script review passes", () => {
     expect(() => {
       store.recordScriptReview(id, scriptPass(bare));
     }).toThrow(
-      `${id} is a special item: its script needs a section that starts with the line "VET CHECKS"`,
+      `${id} is a special item: its script needs a section that starts with a line "VET CHECKS" (or a markdown heading "## VET CHECKS")`,
     );
     store.recordScriptReview(id, {
       ...scriptPass(bare),
@@ -300,7 +300,7 @@ describe("its video comes after its script review passes", () => {
     expect(() => {
       store.recordScriptFix(id, { script: bare, by: "Director", why: "x" });
     }).toThrow(
-      'its script needs a section that starts with the line "VET CHECKS"',
+      'its script needs a section that starts with a line "VET CHECKS" (or a markdown heading "## VET CHECKS")',
     );
   });
 
@@ -479,7 +479,7 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
     );
   });
 
-  test("its post says it is altered where the platform's API has a field; a game item's does not (daily.test.ts)", async () => {
+  test("its post carries the altered-content label where the platform's field means altered content, not on X; a game item's does not (daily.test.ts)", async () => {
     const { dir, id, videoSha256 } = inReview();
     const store = openStore(dir);
     store.review(id, {
@@ -522,7 +522,6 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
       (bodyWith("youtube", "status")?.status as Record<string, unknown>)
         .containsSyntheticMedia,
     ).toBe(true);
-    expect(bodyWith("x", "made_with_ai")?.made_with_ai).toBe(true);
     expect(bodyWith("instagram", "is_ai_generated")?.is_ai_generated).toBe(
       true,
     );
@@ -534,8 +533,9 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
       is_ai_generated: true,
     });
     expect(bodyWith("threads", "is_made_with_ai")?.is_made_with_ai).toBe(true);
-    // TikTok's inbox upload and Bluesky have no such field: nothing is sent.
-    for (const p of ["tiktok", "bluesky"]) {
+    // X's field claims AI, which is false here (Wall Game PM, 2026-11-26);
+    // TikTok's inbox upload and Bluesky have no field: nothing is sent.
+    for (const p of ["x", "tiktok", "bluesky"]) {
       const sent = JSON.stringify(plans[p].map((r) => r.body));
       expect([p, /made_with_ai|is_ai_generated|synthetic/i.test(sent)]).toEqual(
         [p, false],
@@ -576,6 +576,59 @@ describe("then it goes the way of every item: vet, copy, review, post", () => {
 });
 
 describe("the vet prompt of a special item takes its checks from the script", () => {
+  /** The real billboard script's shape (Director, v1.4): markdown. */
+  const V_LINES = Array.from(
+    { length: 13 },
+    (_, i) => `V${i + 1} The screen corners hold, check ${i + 1}`,
+  );
+  const MARKDOWN = [
+    "# SCRIPT special: the billboard",
+    "",
+    "## Beats",
+    "- 0 s: the square at night",
+    "",
+    "## Sounds",
+    "- the city",
+    "",
+    "## NOT USED (and why)",
+    "- a VS card: no game on screen",
+    "",
+    "## Asks to the renderer",
+    "- none",
+    "",
+    "## VET CHECKS",
+    "",
+    ...V_LINES,
+    "",
+  ].join("\n");
+  /** The same, with a POSTING GATE heading right after the section. */
+  const GATED = [
+    "# SCRIPT special: the billboard",
+    "",
+    "## Beats",
+    "- 0 s: the square at night",
+    "",
+    "## VET CHECKS",
+    ...V_LINES,
+    "## POSTING GATE (for the COPY REQUEST to Growth)",
+    "- the post text reveals the edit",
+  ].join("\n");
+
+  test("vetChecks: a markdown heading '## VET CHECKS' as the last section, with its V1..V13 lines", () => {
+    expect(vetChecks(MARKDOWN)).toEqual(V_LINES);
+  });
+
+  test("vetChecks: the next markdown heading ends the section", () => {
+    expect(vetChecks(GATED)).toEqual(V_LINES);
+  });
+
+  test("a special script passes review with the markdown heading", () => {
+    const { store } = withPosted();
+    const id = pickSpecial(store).id;
+    store.recordScriptReview(id, scriptPass(MARKDOWN));
+    expect((store.item(id) as Item).scriptReviews.at(-1)?.verdict).toBe("pass");
+  });
+
   test("vetChecks: the VET CHECKS section up to the next section", () => {
     expect(vetChecks(SCRIPT)).toEqual([
       "- the screen's four corners hold on the building in every frame",

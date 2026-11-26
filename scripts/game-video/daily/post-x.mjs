@@ -133,10 +133,7 @@ export const xDryRunReply = (req) => {
 };
 
 /**
- * Upload `video` (a Buffer) and post it with `text`. `altered`: the video
- * holds altered or synthetic content (a special item, store.mjs
- * ITEM_KINDS): the post sets made_with_ai, X's AI disclosure. Else the
- * field is not sent.
+ * Upload `video` (a Buffer) and post it with `text`.
  * Returns {postId, url, mediaId}. Throws PostFailed with the failing step.
  *
  * `beforeCommit` runs just before POST /2/tweets, the one request that makes
@@ -145,7 +142,6 @@ export const xDryRunReply = (req) => {
 export const postToX = async ({
   video,
   text,
-  altered,
   transport,
   sign,
   sleep,
@@ -217,11 +213,7 @@ export const postToX = async ({
     method: "POST",
     url: `${X_API}/2/tweets`,
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      text,
-      media: { media_ids: [mediaId] },
-      ...(altered ? { made_with_ai: true } : {}),
-    }),
+    body: JSON.stringify({ text, media: { media_ids: [mediaId] } }),
   });
   const postId = post.json?.data?.id;
   if (!postId) throw new PostFailed("x post: no post id", post);

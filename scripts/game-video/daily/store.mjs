@@ -334,7 +334,7 @@ export const gameOnly = (item, step) => {
  */
 const specialScriptProblem = (item, script) =>
   isSpecial(item) && !vetChecks(script)
-    ? `${item.id} is a special item: its script needs a section that starts with the line "VET CHECKS" and lists what the vet checks (crew.mjs vet-prompt reads it)`
+    ? `${item.id} is a special item: its script needs a section that starts with a line "VET CHECKS" (or a markdown heading "## VET CHECKS") and lists what the vet checks (crew.mjs vet-prompt reads it)`
     : null;
 
 /** Nil's review actions (review.mjs), and the state each one leaves. */
