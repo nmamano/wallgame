@@ -281,6 +281,8 @@ function botConfigFor(botId: string): BotConfig {
 async function openAutoBot(
   clientId: string,
   botIds: string[],
+  /** Set before the attach, so it holds for the requests the attach brings. */
+  hangs: (msg: CustomBotServerMessage) => boolean = () => false,
 ): Promise<AutoBot> {
   return new Promise((resolve, reject) => {
     const wsUrl = baseUrl.replace("http", "ws") + `/ws/custom-bot`;
@@ -307,7 +309,7 @@ async function openAutoBot(
       transcript,
       drop: () => ws.close(),
       silent: false,
-      hangs: () => false,
+      hangs,
       ping: () => {
         if (ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}');
       },
@@ -678,6 +680,143 @@ describe("a bot request that times out on a silent connection", () => {
     expect(detail.botResignCause).toBe("bgs-update-failed-after-human-move");
     // No disconnect: the client is still registered.
     expect(await listBotIds("standard")).toContain(`${clientId}:b`);
+
+    human.close();
+    bot1.drop();
+  }, 30000);
+
+  // The session start (task 5f4ee738). Game cH9viVbp (2026-11-26): the bot
+  // client reattached during a network stall, the resync's start reply was
+  // lost, and the start timeout forfeited the game as an engine failure; the
+  // client reattached again 47 s later.
+  const hangsOnStart = (m: CustomBotServerMessage) =>
+    m.type === "start_game_session";
+
+  it("keeps the game when the reattach resync's start times out silent", async () => {
+    const clientId = "st-start-resync";
+    const bot1 = await openAutoBot(clientId, ["b"]);
+    const human = await startGameWithOneRound("user-st6", `${clientId}:b`);
+
+    bot1.drop();
+    await sleep(100);
+    const bot2 = await openAutoBot(clientId, ["b"], hangsOnStart);
+    await bot2.waitFor((m) => m.type === "start_game_session");
+    await sleep(TEST_REQUEST_TIMEOUT_MS + 200);
+    // The timeout did not forfeit: the game waits in the grace.
+    expect(latestState(human).status).toBe("playing");
+    expect(await listBotIds("standard")).not.toContain(`${clientId}:b`);
+
+    const bot3 = await openAutoBot(clientId, ["b"]);
+    await bot3.waitFor((m) => m.type === "start_game_session");
+    await humanMove(human, "---", 3, 3);
+    await human.waitForState(
+      (s) => s.state.history.length >= 4 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    human.close();
+    bot3.drop();
+  }, 30000);
+
+  it("forfeits as before when the resync's start times out and the socket still talks", async () => {
+    const clientId = "st-start-talks";
+    const bot1 = await openAutoBot(clientId, ["b"]);
+    const human = await startGameWithOneRound("user-st7", `${clientId}:b`);
+
+    bot1.drop();
+    await sleep(100);
+    const bot2 = await openAutoBot(clientId, ["b"], hangsOnStart);
+    await bot2.waitFor((m) => m.type === "start_game_session");
+    bot2.ping();
+
+    await human.waitForState(
+      (s) => s.state.status === "finished",
+      TEST_REQUEST_TIMEOUT_MS + 5000,
+    );
+    const detail = await waitForGameDetail(human.gameId);
+    expect(detail.botResignCause).toBe("bgs-restart-failed:reattach:timeout");
+    expect(await listBotIds("standard")).toContain(`${clientId}:b`);
+
+    human.close();
+    bot2.drop();
+  }, 30000);
+
+  it("forfeits when a second silent start timeout comes inside the grace window", async () => {
+    // The loop guard, now reachable from a start: a hung engine on a quiet
+    // socket gets one reconnect cycle, then it is an engine failure.
+    const clientId = "st-start-twice";
+    const bot1 = await openAutoBot(clientId, ["b"]);
+    const human = await startGameWithOneRound("user-st10", `${clientId}:b`);
+
+    bot1.drop();
+    await sleep(100);
+    const bot2 = await openAutoBot(clientId, ["b"], hangsOnStart);
+    await bot2.waitFor((m) => m.type === "start_game_session");
+    await sleep(TEST_REQUEST_TIMEOUT_MS + 200);
+    expect(latestState(human).status).toBe("playing");
+
+    const bot3 = await openAutoBot(clientId, ["b"], hangsOnStart);
+    await human.waitForState(
+      (s) => s.state.status === "finished",
+      TEST_REQUEST_TIMEOUT_MS + 5000,
+    );
+    const detail = await waitForGameDetail(human.gameId);
+    expect(detail.botResignCause).toBe("bgs-restart-failed:reattach:timeout");
+
+    human.close();
+    bot3.drop();
+    bot2.drop();
+  }, 30000);
+
+  /** A new game whose FIRST start times out on a silent socket. */
+  const stallOnFirstStart = async (clientId: string, userId: string) => {
+    const bot1 = await openAutoBot(clientId, ["b"], hangsOnStart);
+    const { status, body } = await playVsBot(
+      userId,
+      `${clientId}:b`,
+      gameConfig,
+      true,
+    );
+    expect(status).toBe(201);
+    const play = body as PlayVsBotResponse;
+    const human = await openHumanSocket(userId, play.gameId, play.socketToken);
+    await human.waitForState((s) => s.state.status === "playing");
+    await bot1.waitFor((m) => m.type === "start_game_session");
+    await sleep(TEST_REQUEST_TIMEOUT_MS + 200);
+    // Not forfeited and not stuck: it waits in the grace.
+    expect(latestState(human).status).toBe("playing");
+    expect(await listBotIds("standard")).not.toContain(`${clientId}:b`);
+    return { bot1, human };
+  };
+
+  it("keeps a new game whose first start times out silent; the reattach starts it", async () => {
+    const clientId = "st-first-back";
+    const { bot1, human } = await stallOnFirstStart(clientId, "user-st8");
+
+    const bot2 = await openAutoBot(clientId, ["b"]);
+    await bot2.waitFor((m) => m.type === "start_game_session");
+    await humanMove(human, "---", 3, 1);
+    await human.waitForState(
+      (s) => s.state.history.length >= 2 && s.state.turn === 1,
+    );
+    expect(latestState(human).status).toBe("playing");
+
+    human.close();
+    bot2.drop();
+    bot1.drop();
+  }, 30000);
+
+  it("ends a new game whose first start timed out silent at grace expiry", async () => {
+    const clientId = "st-first-gone";
+    const { bot1, human } = await stallOnFirstStart(clientId, "user-st9");
+
+    // No move was played, so the existing abort rule records the bot's
+    // forfeit as an aborted game (abort-threshold): the game ends, not stuck.
+    const finished = await human.waitForState(
+      (s) => s.state.status === "finished" || s.state.status === "aborted",
+      TEST_GRACE_MS + 8000,
+    );
+    expect(finished.state.result?.reason).toBe("aborted");
 
     human.close();
     bot1.drop();

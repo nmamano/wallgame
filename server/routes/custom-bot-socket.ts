@@ -1209,6 +1209,7 @@ export const startBgsSession = async (
   addClientBgsSession(clientId, bgsId);
 
   // Send start_game_session message
+  const framesAtSend = getSocketForContext(ctx)?.inboundFrames ?? 0;
   send(ctx, {
     type: "start_game_session",
     bgsId,
@@ -1269,7 +1270,26 @@ export const startBgsSession = async (
         bgsId,
         clientId,
       });
-      reject(new BgsStartFailure("timeout", "start_game_session timeout"));
+      // A silent connection is a disconnect, as for the other requests: the
+      // grace starts, every caller's resignBotOnFailure stands down while the
+      // client is in it, and the reattach's resync starts the session again
+      // (game cH9viVbp, 2026-11-26: the start reply was lost in a network
+      // stall and the bot client reattached 47 s later). No reattach: the
+      // grace expiry ends the game (aborted when no move was played).
+      const silent = disconnectIfSilent(
+        ctx,
+        framesAtSend,
+        "start_game_session",
+        bgsId,
+      );
+      reject(
+        new BgsStartFailure(
+          "timeout",
+          silent
+            ? "start_game_session timeout on a silent connection"
+            : "start_game_session timeout",
+        ),
+      );
     }, BGS_REQUEST_TIMEOUT_MS);
 
     // NOT wrapped to relabel whatever arrives. A first draft mapped every
