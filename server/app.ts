@@ -37,6 +37,24 @@ export const MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024;
 export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 /**
+ * The site's own media, whose names are NOT hashed: the sounds, the pawn art
+ * and the logo (task 42c3ae3a). Browsers and Cloudflare keep them 30 days,
+ * where before the origin sent no Cache-Control and Cloudflare kept 4 h.
+ *
+ * Not "immutable", and not hashed, because the names are fixed: the
+ * game-video tools read /audio and /pawns* by name. So:
+ * - CHANGE A FILE'S NAME WHEN ITS CONTENT CHANGES, and update what links it.
+ * - A change in place reaches a returning visitor only after up to 30 days,
+ *   and Cloudflare also keeps the old file that long: a change in place needs
+ *   a Cloudflare purge of that URL (the Warden does it).
+ */
+const MONTH_CACHE = "public, max-age=2592000";
+const MONTH_CACHED_MEDIA =
+  /^\/(?:audio|pawns|pawn-backings|pawn-foreground-fixes)\/|^\/logo(?:-96)?\.(?:png|webp)$/;
+const isMonthCachedMedia = (path: string): boolean =>
+  MONTH_CACHED_MEDIA.test(path);
+
+/**
  * `htmlShell` is absent in tests and in vite-backed development, where this
  * process never serves HTML. File I/O to obtain it stays in the caller.
  */
@@ -155,6 +173,9 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
       // "/" without the HTML shell (tests, vite development) is this file.
       onFound: (path, c) => {
         if (path.endsWith("/index.html")) c.header("Cache-Control", "no-cache");
+        else if (isMonthCachedMedia(c.req.path)) {
+          c.header("Cache-Control", MONTH_CACHE);
+        }
       },
     }),
   );

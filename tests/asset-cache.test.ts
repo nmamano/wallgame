@@ -45,6 +45,17 @@ beforeAll(async () => {
   writeFileSync(join(site, "frontend/dist/index.html"), SHELL);
   writeFileSync(join(site, "frontend/dist/assets/index-AbCd1234.js"), "1;");
   writeFileSync(join(site, "frontend/dist/logo.png"), "png");
+  writeFileSync(join(site, "frontend/dist/logo-96.webp"), "webp");
+  writeFileSync(join(site, "frontend/dist/og-image.png"), "png");
+  for (const dir of [
+    "audio",
+    "pawns/cat",
+    "pawn-backings",
+    "pawn-foreground-fixes",
+  ]) {
+    mkdirSync(join(site, "frontend/dist", dir), { recursive: true });
+    writeFileSync(join(site, "frontend/dist", dir, "x.svg"), "x");
+  }
   process.chdir(site);
   const { createApp } = await import("../server/app");
   const { parseHtmlShell } = await import("../server/routes/html-shell");
@@ -85,8 +96,27 @@ describe("cache headers of the built site", () => {
     }
   });
 
-  it("leaves a file outside /assets without a long cache", async () => {
-    const res = await app.request("/logo.png");
+  it("keeps the site's own media 30 days, not immutable (task 42c3ae3a)", async () => {
+    for (const a of [app, appWithShell]) {
+      for (const path of [
+        "/logo.png",
+        "/logo-96.webp",
+        "/audio/x.svg",
+        "/pawns/cat/x.svg",
+        "/pawn-backings/x.svg",
+        "/pawn-foreground-fixes/x.svg",
+      ]) {
+        const res = await a.request(path);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Cache-Control")).toBe(
+          "public, max-age=2592000",
+        );
+      }
+    }
+  });
+
+  it("leaves any other file outside /assets without a long cache", async () => {
+    const res = await app.request("/og-image.png");
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBeNull();
   });
