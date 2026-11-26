@@ -160,34 +160,37 @@ const soundsItem = (store, it) =>
  * @param {{ pacific: string, willPost: boolean, why: string | null }} nextSlot
  */
 export const reviewView = (store, nextSlot) => ({
-  items: store.inReview().map((it) => ({
-    // For the action's address and the video's; the page does not show it.
-    id: it.id,
-    videoSha256: it.render.video.sha256,
-    // Recomputed, as store.review compares it: a stored hash from an
-    // older definition would refuse every action on the item.
-    copySha256: copySha256(it.copy.block),
-    caption: postCaption(it.copy.block),
-    // The YouTube title is its own text, and Approve binds it too: the
-    // card shows it when it is not the caption (Wall Game Director,
-    // 2026-10-28; also while YouTube is a dry run).
-    youtubeTitle:
-      it.copy.block.youtubeTitle === postCaption(it.copy.block)
-        ? null
-        : it.copy.block.youtubeTitle,
-    // Why Approve cannot work now, or null: the page disables it.
-    approveProblem: store.approveProblem(it),
-    // Each sound with a high claim risk that the video plays, once: the
-    // director kept it on purpose, and Nil must see the risk.
-    // A special item whose posted item is gone names none; approveProblem
-    // says why, so one card cannot break the page (VR1 183 N1).
-    claimRiskSounds: soundsItem(store, it)
-      ? claimRiskSounds(soundsItem(store, it).edl.doc)
-      : [],
-    noStory: noStoryLine(it.render.video),
-    version: versionLine(it, store.sameGame(it)),
-    scriptCarried: carriedScriptLine(renderScriptReview(it)),
-  })),
+  items: store.inReview().map((it) => {
+    // The item whose sounds the video plays (a special item's posted
+    // item), or null when it is gone: read once (VR1 184).
+    const sounds = soundsItem(store, it);
+    return {
+      // For the action's address and the video's; the page does not show it.
+      id: it.id,
+      videoSha256: it.render.video.sha256,
+      // Recomputed, as store.review compares it: a stored hash from an
+      // older definition would refuse every action on the item.
+      copySha256: copySha256(it.copy.block),
+      caption: postCaption(it.copy.block),
+      // The YouTube title is its own text, and Approve binds it too: the
+      // card shows it when it is not the caption (Wall Game Director,
+      // 2026-10-28; also while YouTube is a dry run).
+      youtubeTitle:
+        it.copy.block.youtubeTitle === postCaption(it.copy.block)
+          ? null
+          : it.copy.block.youtubeTitle,
+      // Why Approve cannot work now, or null: the page disables it.
+      approveProblem: store.approveProblem(it),
+      // Each sound with a high claim risk that the video plays, once: the
+      // director kept it on purpose, and Nil must see the risk.
+      // A special item whose posted item is gone names none; approveProblem
+      // says why, so one card cannot break the page (VR1 183 N1).
+      claimRiskSounds: sounds ? claimRiskSounds(sounds.edl.doc) : [],
+      noStory: noStoryLine(it.render.video),
+      version: versionLine(it, store.sameGame(it)),
+      scriptCarried: carriedScriptLine(renderScriptReview(it)),
+    };
+  }),
   // Approved and no slot took it yet (a slot makes it posting), in post
   // order: Nil may still take the approval back (withdraw).
   // A held item (store.hold) is still approved, so it is listed, after the
