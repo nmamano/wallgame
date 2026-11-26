@@ -58,7 +58,7 @@ import { useWinOffer } from "@/hooks/use-win-offer";
 import { winOfferTrigger } from "@/lib/account-nudge";
 import { useGameFirstMove } from "@/hooks/use-game-first-move";
 import { usePuzzleSolved } from "@/hooks/use-puzzle-solved";
-import { play } from "@/lib/sounds";
+import { play, preloadSounds } from "@/lib/sounds";
 import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -1794,6 +1794,11 @@ export function useGamePageController(gameId: string) {
       applied: true,
     };
   }, [replayPlyIndex, isReplaySession, historyEntryCount, gameInstanceId]);
+
+  // A player's first click sound must not wait for its download.
+  useEffect(() => {
+    if (sfxEnabled && !isReadOnlySession) preloadSounds();
+  }, [sfxEnabled, isReadOnlySession]);
 
   const prevMatchingPanelOpenRef = useRef<boolean | null>(null);
   useEffect(() => {

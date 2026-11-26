@@ -5,8 +5,10 @@ import { assetUrl } from "@/lib/asset-url";
  *
  * The game code also loads in idle time on pages that start a game
  * (main.tsx), so a sound made when this module loads would download on a page
- * that may never play it. The first `play()` makes every sound at once, so the
- * move sounds load during the game's opening sound, before the first move.
+ * that may never play it. The game page calls `preloadSounds()` when a player
+ * with sound effects on opens a game, so the files arrive before the first
+ * move. `play()` makes them too, for a page that played no preload
+ * (a spectator who hears only the end of the game).
  *
  * The click sounds are mp3 copies of the .wav files next to them in
  * public/audio, a fifth of the size. The .wav files stay: the game-video
@@ -26,7 +28,7 @@ export type SoundName = keyof typeof SOUNDS;
 
 let loaded: Record<SoundName, HTMLAudioElement> | null = null;
 
-function loadSounds(): Record<SoundName, HTMLAudioElement> {
+function makeSounds(): Record<SoundName, HTMLAudioElement> {
   const entries = Object.entries(SOUNDS).map(([name, { url, volume }]) => {
     const audio = new Audio(url);
     audio.preload = "auto";
@@ -36,9 +38,14 @@ function loadSounds(): Record<SoundName, HTMLAudioElement> {
   return Object.fromEntries(entries) as Record<SoundName, HTMLAudioElement>;
 }
 
+/** Starts the download of every sound once; later calls do nothing. */
+export function preloadSounds(): Record<SoundName, HTMLAudioElement> {
+  loaded ??= makeSounds();
+  return loaded;
+}
+
 export function play(name: SoundName) {
-  loaded ??= loadSounds();
-  const audio = loaded[name];
+  const audio = preloadSounds()[name];
   audio.currentTime = 0;
   void audio.play();
 }
