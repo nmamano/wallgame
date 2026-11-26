@@ -30,6 +30,25 @@
  *                                  once: pick refuses a game with an item
  *                                  approved, posting, posted or post-failed,
  *                                  and names one in work or in review
+ *   special --from ID              a SPECIAL item: a one-off video made
+ *                                  outside the renderer (e.g. a posted video
+ *                                  on a billboard), tied to the game of item
+ *                                  ID, which must be posted. It skips the
+ *                                  one-post-of-a-game rule. Prints its id.
+ *                                  Then, as any item: script, script-review
+ *                                  (its script needs a section that starts
+ *                                  with the line "VET CHECKS": the checks
+ *                                  vet-prompt gives the vet)
+ *   special --item ID --video F --sources F
+ *                                  the special item's video: the app copies
+ *                                  the MP4 F into its videos and keeps it
+ *                                  when the copy's sha256 is F's; --sources
+ *                                  is a text file of where each part of the
+ *                                  video comes from. Refused until the
+ *                                  item's latest script review passes. No
+ *                                  edit list, lint, render or check: the
+ *                                  item is finished, and its vet lets it
+ *                                  into review
  *   storyboard --item ID [--edl F] one image of every position of the item's
  *                                  game (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
@@ -332,6 +351,7 @@ import * as tools from "./tools.mjs";
 import {
   currentScriptReview,
   isHeld,
+  isSpecial,
   renderScriptReview,
   scriptAfterRender,
   scriptText,
@@ -342,6 +362,8 @@ import {
   scriptChecklist,
   scriptDraft,
   seatColors,
+  specialVetPrompt,
+  vetChecks,
 } from "./script.mjs";
 import { timelineOf } from "./strips.mjs";
 import { heldWords } from "./review-asks.mjs";
@@ -457,6 +479,7 @@ export const COMMAND_FLAGS = {
   "script-unchanged": "item by why",
   "script-fix": "item script by why",
   "vet-prompt": "item",
+  special: "from item video sources",
 };
 /** The app's address and the director docs: for tests and other boxes. */
 export const GLOBAL_FLAGS = "app docs";
@@ -686,7 +709,15 @@ const itemLines = (k, progress = null) => {
       ...(r.notes ? quoteLines(r.notes, "  ") : []),
     ]),
   ];
-  if (k.edl) {
+  if (isSpecial(k)) {
+    lines.push(
+      `special item: a video made outside the renderer, of the posted ${k.source.specialFrom}; no edit list, render or check`,
+      k.render
+        ? `video ${k.render.video.path} (${k.render.video.bytes} bytes, sha256 ${k.render.video.sha256.slice(0, 12)}, ${k.render.video.durationSeconds} s), attached at ${k.render.finishedAt}; sources ${k.render.sources.file} (sha256 ${k.render.sources.sha256.slice(0, 12)})`
+        : `no video yet: crew.mjs special --item ${k.id} --video <mp4> --sources <file>, after its script review passes`,
+      ...(k.render ? storyWarning(k.render.video) : []),
+    );
+  } else if (k.edl) {
     lines.push(
       `edit list ${k.edl.sha256.slice(0, 12)}:`,
       ...k.edl.summary.map((l) => `  ${l}`),
@@ -694,7 +725,7 @@ const itemLines = (k, progress = null) => {
   } else {
     lines.push("no edit list yet");
   }
-  if (k.render) {
+  if (k.render && !isSpecial(k)) {
     lines.push(
       k.render.error
         ? `render ${k.render.jobId}: FAILED ${k.render.error}`
@@ -778,12 +809,17 @@ export const vetLines = (item) => {
     Object.entries(keys.reduce((n, k) => ({ ...n, [k]: (n[k] ?? 0) + 1 }), {}))
       .map(([k, n]) => `${k} ${n}`)
       .join(", ") || "none";
-  const events = item.edl.doc.events;
+  // A special item has no list: no effects or overlays to count.
+  const events = isSpecial(item) ? null : item.edl.doc.events;
   return [
     `${item.id}: vet ${v.verdict.toUpperCase()} by ${v.reviewer} at ${v.at}, video ${v.videoSha256.slice(0, 12)}`,
     `  video length: ${item.render.video.durationSeconds ?? "?"} s`,
-    `  effects: ${count(events.filter((e) => e.kind !== "overlay").map((e) => e.kind))}`,
-    `  overlays: ${count(events.filter((e) => e.kind === "overlay").map((e) => e.asset))}`,
+    ...(events
+      ? [
+          `  effects: ${count(events.filter((e) => e.kind !== "overlay").map((e) => e.kind))}`,
+          `  overlays: ${count(events.filter((e) => e.kind === "overlay").map((e) => e.asset))}`,
+        ]
+      : []),
     "  notes:",
     ...quoteLines(v.notes, "  "),
   ];
@@ -1378,6 +1414,11 @@ const commands = {
 
   async sheet() {
     const c = await itemNamed(itemFlag());
+    if (isSpecial(c)) {
+      die(
+        `${c.id} is a special item: it has no contact sheet; its vet alone lets it into review (crew.mjs vet-prompt --item ${c.id})`,
+      );
+    }
     const sheet = c.render?.sheet ?? die(`${c.id} has no contact sheet yet`);
     console.log(`contact sheet: ${sheet.path}`);
     console.log(`  sha256 ${sheet.sha256} (give it to check --sheet)`);
@@ -1554,6 +1595,11 @@ const commands = {
    */
   async script() {
     const c = await itemNamed(itemFlag());
+    if (isSpecial(c)) {
+      die(
+        `${c.id} is a special item: it has no edit list, so there is no draft. Write its script by hand, with a section that starts with the line "VET CHECKS" (the checks vet-prompt gives the vet), then: script-review-prompt --item ${c.id} --script <file>`,
+      );
+    }
     const out = resolve(
       flag("out") ?? join(tmpdir(), "daily-scripts", `${c.id}.script.txt`),
     );
@@ -1630,7 +1676,7 @@ const commands = {
         `## Your task: item ${c.id}, game ${c.gameId}`,
         `- SCRIPT: ${script}`,
         `- STORYBOARD: ${board.png} (${board.plies} plies)`,
-        `- LIST: ${edl ?? "none yet (the script comes first)"}`,
+        `- LIST: ${edl ?? (isSpecial(c) ? `none: a special item, a video made outside the renderer, of the posted ${c.source.specialFrom}` : "none yet (the script comes first)")}`,
         `- RULES: ${rules()}`,
         `- PLAYERS: ${seatsLine(c.candidate)}`,
         "- FACTS (plies 0-based in the director lines):",
@@ -1673,7 +1719,7 @@ const commands = {
     });
     const r = item.scriptReviews.at(-1);
     console.log(
-      `${id}: script review ${r.verdict} by ${r.reviewer}, script ${r.scriptSha256.slice(0, 12)}. ${r.verdict === "pass" ? "The item may render." : "No render until a review of a fixed script passes."}`,
+      `${id}: script review ${r.verdict} by ${r.reviewer}, script ${r.scriptSha256.slice(0, 12)}. ${r.verdict === "pass" ? (isSpecial(item) ? `Its video may come in: crew.mjs special --item ${id} --video <mp4> --sources <file>.` : "The item may render.") : isSpecial(item) ? "No video until a review of a fixed script passes." : "No render until a review of a fixed script passes."}`,
     );
   },
 
@@ -1741,6 +1787,7 @@ const commands = {
    */
   async "vet-prompt"() {
     const c = await itemNamed(itemFlag());
+    if (isSpecial(c)) return specialVetCommand(c);
     const video = c.render?.video ?? die(`${c.id} has no video yet: render it`);
     const sheet = c.render.sheet ?? die(`${c.id} has no contact sheet yet`);
     const scratch = mkdtempSync(join(tmpdir(), `daily-vet-${c.id}-`));
@@ -1797,6 +1844,90 @@ const commands = {
       ].join("\n"),
     );
   },
+
+  /**
+   * A special item (store.mjs ITEM_KINDS): --from makes the draft; --item
+   * with --video and --sources gives it its video, after its script
+   * review passed (store.attachSpecial). Two steps, because the script
+   * review needs the item first.
+   */
+  async special() {
+    if (flag("from")) {
+      if (flag("item") || flag("video") || flag("sources")) {
+        die(
+          "special --from makes the item; its video comes after its script review passes: special --item ID --video F --sources F",
+        );
+      }
+      const item = await app("POST", "/api/daily/special", {
+        from: flag("from"),
+      });
+      console.log(
+        `special item: ${item.id} (game ${item.gameId}, from the posted ${flag("from")})\n  next: write its script with a "VET CHECKS" section, get it reviewed (script-review-prompt, script-review), then: special --item ${item.id} --video <mp4> --sources <file>`,
+      );
+      return;
+    }
+    const id =
+      flag("item") ??
+      die("special needs --from <posted item> or --item <special item>");
+    const file = (name) =>
+      resolve(
+        flag(name) ??
+          die(`special --item needs --${name} <file>: --video F --sources F`),
+      );
+    await app("POST", "/api/daily/special/video", {
+      item: id,
+      video: file("video"),
+      sources: file("sources"),
+    });
+    console.log(await itemSummary(id));
+  },
+};
+
+/**
+ * vet-prompt for a special item: no game checks, the checks of its
+ * script's VET CHECKS section (script.mjs specialVetPrompt).
+ */
+const specialVetCommand = (c) => {
+  if (!c.render) {
+    die(
+      `${c.id} has no video yet: crew.mjs special --item ${c.id} --video <mp4> --sources <file>`,
+    );
+  }
+  if (scriptAfterRender(c)) {
+    const r = c.scriptReviews.at(-1);
+    die(
+      `${c.id}: a script review (${r.verdict} by ${r.reviewer}, ${r.at}) came after this video, so the video tells an older story: attach a video of the current script (crew.mjs special)`,
+    );
+  }
+  const review =
+    renderScriptReview(c) ??
+    die(`${c.id}: the script review its video came in under is not on record`);
+  const text = scriptText(review);
+  const checks =
+    vetChecks(text.script) ??
+    die(
+      `${c.id}'s script has no VET CHECKS section: the Director adds one (a line "VET CHECKS", then one check a line) with crew.mjs script-fix, then runs vet-prompt again`,
+    );
+  const scratch = mkdtempSync(join(tmpdir(), `daily-vet-${c.id}-`));
+  const scriptFile = join(scratch, "script.txt");
+  const scriptNotesFile = join(scratch, "script-review.txt");
+  const sourcesFile = join(scratch, "sources.txt");
+  writeFileSync(scriptFile, text.script);
+  writeFileSync(scriptNotesFile, review.notes);
+  writeFileSync(sourcesFile, c.render.sources.text);
+  console.log(
+    specialVetPrompt({
+      item: c,
+      checks,
+      scriptFile,
+      scriptNotesFile,
+      sourcesFile,
+      review,
+      fix: text.fix,
+      notesFile: join(scratch, "notes.txt"),
+      scratch,
+    }).join("\n"),
+  );
 };
 
 /** The commands' names, for the test that COMMAND_FLAGS names each one. */
