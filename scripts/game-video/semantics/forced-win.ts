@@ -23,6 +23,9 @@
  * before M1 and 2 x CAPTURE_REACH after it and after every reply. Only
  * moves with a cat step can bring a cat within CAPTURE_REACH (a test
  * compares the pruned search with the full one).
+ * The walk bounds also assume the defender always has a reply that does
+ * not shorten the walk: a wall-only reply, which Standard always has (no
+ * wall limit). A variant with a wall limit must drop or recheck them.
  *
  * COVERED: Standard only. Classic's race is a cat to its home, which
  * defenceOf does not read, and Animal Cycle has no test yet; both give
@@ -152,7 +155,10 @@ export function* movesOf(
     for (let j = i + 1; j < walls.length; j++) yield `${walls[i]}.${walls[j]}`;
 }
 
-/** Manhattan distance from a wall's cell to a cell, both in notation. */
+/**
+ * Manhattan distance from a wall's cell to a cell, both in notation. It
+ * reads a 1-letter column, so on a wider board it only orders less well.
+ */
 const far = (wall: string, cell: string) =>
   Math.abs(wall.charCodeAt(1) - cell.charCodeAt(0)) +
   Math.abs(Number(wall.slice(2)) - Number(cell.slice(1)));
