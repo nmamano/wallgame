@@ -11,6 +11,7 @@ import {
 import { Script } from "node:vm";
 import { dirname, join } from "node:path";
 import { LINT_KINDS } from "./edl.mjs";
+import { cliRefusal, FLAGS } from "./render-flags.mjs";
 import { REPO, renderKitFiles } from "./render-kit.mjs";
 import { testTmp } from "./test-tmp";
 
@@ -18,6 +19,17 @@ import { testTmp } from "./test-tmp";
 const TEST_TMP = testTmp();
 
 const RENDERER = join(import.meta.dir, "render-game-video.mjs");
+
+/**
+ * The renderer's refusal of a command line, without starting it: a start
+ * loads all its imports first (1.1-1.7 s under load), and three in one
+ * test ran over bun's 5 s limit (task 3ef11782). The renderer runs
+ * cliRefusal before any work; the --help test below starts it for real.
+ */
+const refuse = (...args: string[]) => {
+  const r = cliRefusal(args);
+  return { status: r?.code ?? null, stderr: r?.stderr ?? "" };
+};
 
 /** The renderer's exit code and stderr for a command line. */
 const run = (...args: string[]) => {
@@ -30,9 +42,8 @@ const run = (...args: string[]) => {
 
 describe("the renderer's flags", () => {
   test("a word that is not its flag stops it before the browser", () => {
-    // The check names every problem at once, so one start of the renderer
-    // (about 1 s: it loads all its imports first) covers the three words.
-    const bogus = run(
+    // The check names every problem at once.
+    const bogus = refuse(
       "--edl",
       "x.json",
       // An old kit without --from-cache captured live: a real view.
@@ -53,7 +64,8 @@ describe("the renderer's flags", () => {
 
   test("--help prints the usage line that ship checks, and stops", () => {
     // daily/ship.mjs (step "help") runs `--help 2>&1 | head -1` on the
-    // 4090 and needs this start; the release runbook does the same.
+    // 4090 and needs this start; the release runbook does the same. It is
+    // also the one start that shows the renderer runs cliRefusal.
     const r = spawnSync("bun", [RENDERER, "--help", "--edl", "none.json"], {
       encoding: "utf8",
       timeout: 30_000,
@@ -83,22 +95,20 @@ describe("the renderer's flags", () => {
   });
 
   test("a flag that takes a value needs one", () => {
-    // One start: --edl meets the next flag, --plies the end of the line.
-    const r = run("--edl", "--from-cache", "--plies");
+    // --edl meets the next flag, --plies the end of the line.
+    const r = refuse("--edl", "--from-cache", "--plies");
     expect(r.status).toBe(2);
     expect(r.stderr).toContain("--edl needs a value");
     expect(r.stderr).toContain("--plies needs a value");
   });
 
   test("every name the renderer reads is in FLAGS", () => {
-    // Some readers run only on some paths, so read the source, not a run.
-    const source = readFileSync(RENDERER, "utf8");
-    const block = /const FLAGS = \{([^}]*)\}/.exec(source)![1];
-    const flags = new Set(
-      [...block.matchAll(/"?([a-z0-9-]+)"?:\s*"(value|switch)"/g)].map(
-        (m) => m[1],
-      ),
-    );
+    // Some readers run only on some paths, so read the source, not a run:
+    // the renderer's and cliRefusal's (render-flags.mjs).
+    const source = [RENDERER, join(import.meta.dir, "render-flags.mjs")]
+      .map((f) => readFileSync(f, "utf8"))
+      .join("\n");
+    const flags = new Set(Object.keys(FLAGS));
     const read = new Set(
       [...source.matchAll(/\b(?:cliArg|arg|flag)\(\s*"([a-z0-9-]+)"/g)].map(
         (m) => m[1],
@@ -113,19 +123,23 @@ describe("the renderer's flags", () => {
 
 describe("the lint (--lint)", () => {
   test("it never captures: without --from-cache it stops before the browser", () => {
-    const r = run("--edl", "x.json", "--lint");
+    const r = refuse("--edl", "x.json", "--lint");
     expect(r.status).toBe(2);
     expect(r.stderr).toContain("--lint reads the capture cache");
   });
 
   test("--capture is only the capture-only job's live lint: never with --from-cache, never alone", () => {
     // Each a refusal before the browser: no view.
+    expect(refuse("--edl", "x.json", "--lint", "--capture")).toEqual({
+      status: null,
+      stderr: "",
+    });
     for (const args of [
       ["--edl", "x.json", "--lint", "--capture", "--from-cache"],
       ["--edl", "x.json", "--capture"],
       ["--game", "x", "--lint", "--capture"],
     ]) {
-      const r = run(...args);
+      const r = refuse(...args);
       expect(r.status).toBe(2);
       expect(r.stderr).toContain(
         "--capture captures live for a lint: give --lint and --edl, not --from-cache",

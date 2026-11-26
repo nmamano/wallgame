@@ -57,6 +57,7 @@
  * sync-render-kit.sh, which sets that box up.
  */
 import { chromium } from "playwright-core";
+import { cliRefusal, FLAGS, USAGE } from "./render-flags.mjs";
 import {
   mkdirSync,
   writeFileSync,
@@ -251,79 +252,18 @@ const MEME_DIR = join(REPO, "assets/meme-sounds");
 
 /* ------------------------------------------------------------------ args -- */
 
-/**
- * The first line is a contract: ship.mjs (step "help") and the release
- * runbook check that `--help` prints a line that starts with it.
- */
-const USAGE =
-  "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
-  "       [--seconds-per-move S] [--aspect fit|square|9x16]\n" +
-  "   or: render-game-video.mjs --edl FILE   (the daily look; see edl.mjs)\n" +
-  "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
-  "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
-  "  plumbing, for the app rather than for a person:\n" +
-  "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
-  "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-  "       [--from-cache] [--cache DIR] [--plies FROM..TO] [--lint [--capture]] [--draft]";
-
-/**
- * Every flag the renderer takes: "value" (--name VALUE) or "switch". The
- * readers below (cliArg, arg, flag) ask for these names only, and any other
- * word on the command line stops the render here, before the browser
- * starts. Without it a kit older than a flag ignores the flag: a kit
- * without --from-cache captured the game live, which counts a real view
- * (Video Reviewer 1, 2026-10-27).
- */
-const FLAGS = {
-  help: "switch",
-  aspect: "value",
-  "board-theme": "value",
-  browser: "value",
-  cache: "value",
-  capture: "switch",
-  draft: "switch",
-  edl: "value",
-  encoder: "value",
-  ffmpeg: "value",
-  "from-cache": "switch",
-  game: "value",
-  lint: "switch",
-  log: "value",
-  music: "value",
-  "no-music": "switch",
-  out: "value",
-  plies: "value",
-  "seconds-per-move": "value",
-  sounds: "value",
-  style: "value",
-  work: "value",
-  workers: "value",
-};
 const argv = process.argv.slice(2);
+// Unknown words, missing values, --capture and --lint misuse, and --help:
+// render-flags.mjs, before any work (no browser, no view).
 {
-  const problems = [];
-  for (let i = 0; i < argv.length; i += 1) {
-    const name = argv[i].startsWith("--") ? argv[i].slice(2) : null;
-    if (name === null || !Object.hasOwn(FLAGS, name)) {
-      problems.push(`${argv[i]} is not a flag of this renderer`);
-    } else if (FLAGS[name] === "value") {
-      if (i + 1 === argv.length || argv[i + 1].startsWith("--")) {
-        problems.push(`--${name} needs a value`);
-      } else {
-        i += 1;
-      }
-    }
-  }
-  if (problems.length > 0) {
-    console.error(
-      `${problems.join("\n")}\nKnown: ${Object.keys(FLAGS)
-        .map((f) => `--${f}`)
-        .join(" ")}`,
-    );
-    process.exit(2);
+  const refusal = cliRefusal(argv);
+  if (refusal) {
+    if (refusal.stdout !== undefined) console.log(refusal.stdout);
+    else console.error(refusal.stderr);
+    process.exit(refusal.code);
   }
 }
-/** A reader's name must be in FLAGS, or the check above would refuse it. */
+/** A reader's name must be in FLAGS, or cliRefusal would refuse it. */
 const listed = (name) => {
   if (!Object.hasOwn(FLAGS, name)) {
     throw new Error(`the renderer reads --${name}, which FLAGS does not list`);
@@ -338,24 +278,15 @@ const flag = (name) => argv.includes(`--${listed(name)}`);
 /**
  * Compose only, and report the list's faults (R1): no image, no MP4. The
  * RESULT line is {lint: {faults, notes, counts, loudness, timeline},
- * timings}.
+ * timings}. It reads the capture cache (--from-cache), or with --capture
+ * (and no --from-cache: cliRefusal) it captures the game live first (one
+ * view of the real game), saves the capture to the cache, then lints from
+ * it: the daily app's capture-only job (crew.mjs lint --capture, Wall Game
+ * PM, 2026-11-17), which counts the view. The Director gets the full lint
+ * of a new game before its first render, and nothing is shot.
+ * RESULT.captureSaved says whether the capture reached the cache.
  */
 const LINT = flag("lint");
-/**
- * With --lint: capture the game live first (one view of the real game),
- * save the capture to the cache, then lint from it. The daily app's
- * capture-only job (crew.mjs lint --capture, Wall Game PM, 2026-11-17),
- * which counts the view: the Director gets the full lint of a new game
- * before its first render, and nothing is shot. RESULT.captureSaved says
- * whether the capture reached the cache.
- */
-const CAPTURE_LINT = flag("capture");
-if (CAPTURE_LINT && (!LINT || flag("from-cache") || !flag("edl"))) {
-  console.error(
-    "--capture captures live for a lint: give --lint and --edl, not --from-cache",
-  );
-  process.exit(2);
-}
 /**
  * A draft (R2, Wall Game Director, 2026-10-29: quick tries of timing and
  * story): the same composition, sound and seconds, shot at DRAFT_FPS and
@@ -365,18 +296,6 @@ if (CAPTURE_LINT && (!LINT || flag("from-cache") || !flag("edl"))) {
 const DRAFT = flag("draft");
 const DRAFT_FPS = 15;
 const DRAFT_SCALE = 0.5;
-// A lint reads the capture, so it never costs a view (Video Editor (daily
-// app), 2026-10-29).
-if (LINT && !flag("from-cache") && !CAPTURE_LINT) {
-  console.error(
-    "--lint reads the capture cache: add --from-cache (or --capture to capture live first: one view)",
-  );
-  process.exit(2);
-}
-if (flag("help")) {
-  console.log(USAGE);
-  process.exit(0);
-}
 
 /**
  * The edit decision list of a daily video (edl.mjs), written by the director
