@@ -98,12 +98,13 @@
  *            a03b8f5c; Nil, 2026-11-22: "payoff then puzzle as an
  *            experiment"). The ending plays as it does, then "<< REWIND"
  *            (the flashback's look) back to the position before `ply`'s
- *            move, which holds in full colour with no other words: a ring
- *            on the cat of the side to move (the mover of `ply`), the
- *            opponent's last move as a bold arrow, "What would you do as
- *            Red?" in the caption's place (the renderer's line, the side's
- *            name in its colour: Nil, 2026-11-22, C80: "it's not clear
- *            whose turn it is") and `cta` in the badge under the board.
+ *            move, which holds in full colour on a plain board (no ring,
+ *            no last-move arrow, no lit walls: Nil, 2026-11-27, "Just show
+ *            a normal board without extra effects") with no other words:
+ *            "What would you do as Red?" in the caption's place (the
+ *            renderer's line, the side's name in its colour: Nil,
+ *            2026-11-22, C80: "it's not clear whose turn it is") and `cta`
+ *            in the badge under the board.
  *            `cta` names the puzzle's link,
  *            wallgame.io/go/<n>, where `n` is the puzzle's entry in
  *            shared/domain/video-puzzles.ts; the GG card shows no call to
