@@ -819,9 +819,54 @@ export const missedWinLine = (
 };
 
 /**
+ * C87 (Nil, 2026-11-27, on Kqbe ply 14: "red is clearly winning, there's no
+ * risk of losing"): a missed forced win is a puzzle only when the played
+ * move put the game at risk: after it the mover's engine win chance is this
+ * or less, or the mover lost the game.
+ */
+export const PUZZLE_RISK_AFTER = 0.5;
+
+export type PuzzleGate =
+  | { known: false }
+  | {
+      known: true;
+      /** The mover's engine win chance before and after the played move. */
+      before: number;
+      after: number;
+      pass: boolean;
+      why: "drop" | "lost the game" | "still winning";
+    };
+
+/** The C87 puzzle gate of a missed forced win (engine scores needed). */
+export const puzzleGate = (facts: GameFacts, f: ForcedWin): PuzzleGate => {
+  const engine = facts.plies[f.ply]?.engine ?? null;
+  if (engine === null) return { known: false };
+  const { before, after } = engine;
+  const why =
+    after <= PUZZLE_RISK_AFTER
+      ? "drop"
+      : facts.winner !== null && facts.winner !== f.mover
+        ? "lost the game"
+        : "still winning";
+  return { known: true, before, after, pass: why !== "still winning", why };
+};
+
+const gateWords = (g: PuzzleGate): string => {
+  if (!g.known) return "puzzle not known (no engine scores)";
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  const verdict = {
+    drop: "PASS (the move cost the win)",
+    "lost the game": "PASS (the mover lost the game)",
+    "still winning": "FAIL (no risk: still winning after the move)",
+  }[g.why];
+  return `win chance ${pct(g.before)} -> ${pct(g.after)}, puzzle ${verdict}`;
+};
+
+/**
  * The forced wins of a game in one line (forced-win.ts): each ply where the
  * side to move had a forced capture in 2-3 turns and did not play a winning
- * move, with the count of winning first moves (few = a real puzzle).
+ * move, with the count of winning first moves (few = a real puzzle) and the
+ * C87 puzzle gate (the mover's win chance before and after the move).
  */
 export const forcedWinLine = (
   facts: GameFacts,
@@ -849,7 +894,7 @@ export const forcedWinLine = (
     const moves =
       f.winning && !f.countCapped ? ` (${f.winning.join(", ")})` : "";
     const count = `${f.countCapped ? "at least " : ""}${f.winningCount} of ${f.legalCount}`;
-    return `ply ${f.ply} (move ${siteMove(f.ply)}, ${names[f.mover]}, ${colors[f.mover]} to move) a ${f.turns}-turn win, ${count} first moves win${moves}${share >= TRIVIAL_SHARE ? ", trivial" : ""}; played ${f.played}: ${verdict[f.playedVerdict as keyof typeof verdict]}`;
+    return `ply ${f.ply} (move ${siteMove(f.ply)}, ${names[f.mover]}, ${colors[f.mover]} to move) a ${f.turns}-turn win, ${count} first moves win${moves}${share >= TRIVIAL_SHARE ? ", trivial" : ""}; played ${f.played}: ${verdict[f.playedVerdict as keyof typeof verdict]}; ${gateWords(puzzleGate(facts, f))}`;
   };
   return `Forced wins: ${missed.map(one).join("; ")}${tail}`;
 };

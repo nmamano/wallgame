@@ -32,6 +32,8 @@ import {
   factsOf,
   forcedWinLine,
   missedWinLine,
+  PUZZLE_RISK_AFTER,
+  puzzleGate,
   paceLine,
   seatColorsOf,
   renderTable,
@@ -1617,20 +1619,43 @@ describe("cycle 8 cases (C79, C82-C84)", () => {
 });
 
 describe("the forced-win line agrees with the stored search (cycle 8, the 11-26 table)", () => {
-  // [ply, side to move, colour, turns, winning count, played verdict]
+  // [ply, side to move, colour, turns, winning count, played verdict, the
+  // C87 puzzle gate: the mover's win chance before -> after the move]
+  const fail = "puzzle FAIL (no risk: still winning after the move)";
   const table: Record<
     string,
-    [number, string, string, number, number, "lost" | "delayed"][]
+    [number, string, string, number, number, "lost" | "delayed", string][]
   > = {
-    EDP5pYum: [[38, "Normal Bot", "red", 3, 1, "lost"]],
-    _T3d_YPz: [[29, "Guest Yak", "blue", 3, 1, "lost"]],
-    qKeMIIRp: [
-      [37, "Normal Bot", "red", 3, 1, "lost"],
-      [39, "Normal Bot", "red", 2, 1, "delayed"],
+    EDP5pYum: [
+      [
+        38,
+        "Normal Bot",
+        "red",
+        3,
+        1,
+        "lost",
+        "win chance 98% -> 0%, puzzle PASS (the move cost the win)",
+      ],
     ],
+    _T3d_YPz: [
+      [29, "Guest Yak", "blue", 3, 1, "lost", `win chance 94% -> 93%, ${fail}`],
+    ],
+    qKeMIIRp: [
+      [37, "Normal Bot", "red", 3, 1, "lost", `win chance 94% -> 96%, ${fail}`],
+      [
+        39,
+        "Normal Bot",
+        "red",
+        2,
+        1,
+        "delayed",
+        `win chance 99% -> 100%, ${fail}`,
+      ],
+    ],
+    // Nil, 2026-11-27 on ply 14: "red is clearly winning, there's no risk".
     KqbeyXIF: [
-      [14, "Normal Bot", "red", 2, 1, "lost"],
-      [16, "Normal Bot", "red", 3, 3, "lost"],
+      [14, "Normal Bot", "red", 2, 1, "lost", `win chance 97% -> 97%, ${fail}`],
+      [16, "Normal Bot", "red", 3, 3, "lost", `win chance 96% -> 98%, ${fail}`],
     ],
   };
   const words = {
@@ -1652,6 +1677,7 @@ describe("the forced-win line agrees with the stored search (cycle 8, the 11-26 
         rows.map((r) => r[0]),
       );
       expect(line).not.toContain("not known");
+      expect(line).not.toContain("time cap");
       // One part a ply; the tail counts the plies searched.
       expect(line).toEndWith(
         ` (${game.moves.length} of ${game.moves.length} plies searched)`,
@@ -1661,7 +1687,7 @@ describe("the forced-win line agrees with the stored search (cycle 8, the 11-26 
         .replace(/ \(\d+ of \d+ plies searched\)$/, "")
         .split(/; (?=ply \d+ \(move)/);
       expect(parts).toHaveLength(rows.length);
-      rows.forEach(([ply, name, colour, turns, count, verdict], i) => {
+      rows.forEach(([ply, name, colour, turns, count, verdict, gate], i) => {
         const f = forced.find((x) => x.ply === ply);
         if (!f) throw new Error(`no stored search at ply ${ply}`);
         expect(f).toMatchObject({
@@ -1674,9 +1700,51 @@ describe("the forced-win line agrees with the stored search (cycle 8, the 11-26 
         const winning = f.winning ?? [];
         expect(winning).toHaveLength(count);
         expect(parts[i]).toBe(
-          `ply ${ply} (move ${siteMove(ply)}, ${name}, ${colour} to move) a ${turns}-turn win, ${count} of ${f.legalCount} first moves win (${winning.join(", ")}); played ${f.played}: ${words[verdict]}`,
+          `ply ${ply} (move ${siteMove(ply)}, ${name}, ${colour} to move) a ${turns}-turn win, ${count} of ${f.legalCount} first moves win (${winning.join(", ")}); played ${f.played}: ${words[verdict]}; ${gate}`,
         );
       });
     });
   }
+});
+
+describe("the C87 puzzle gate (Nil, 2026-11-27: a real risk of losing)", () => {
+  const edp = () => {
+    const { game, engine, deep, forced } = loadFixture("EDP5pYum");
+    return {
+      facts: gameFacts(game, engine, deep ?? null, forced!),
+      forced: forced!,
+    };
+  };
+
+  test("the bar is the played move: 50% or less after it, or the mover lost", () => {
+    const { facts, forced } = edp();
+    const f38 = forced.find((f) => f.ply === 38)!;
+    expect(puzzleGate(facts, f38)).toMatchObject({ pass: true, why: "drop" });
+    // The same entry on a ply where the bot (the loser, P1) stayed above 50%:
+    // it passes only because the mover lost the game.
+    const high = facts.plies.find(
+      (p) => p.mover === 1 && p.engine!.after > PUZZLE_RISK_AFTER,
+    )!;
+    expect(puzzleGate(facts, { ...f38, ply: high.ply })).toMatchObject({
+      pass: true,
+      why: "lost the game",
+    });
+    // The winner (P2) above 50% after its move: no risk, no puzzle.
+    const winner = facts.plies.find(
+      (p) => p.mover === 2 && p.engine!.after > PUZZLE_RISK_AFTER,
+    )!;
+    expect(
+      puzzleGate(facts, { ...f38, ply: winner.ply, mover: 2 }),
+    ).toMatchObject({ pass: false, why: "still winning" });
+  });
+
+  test("with no engine scores the gate is not known, never a pass", () => {
+    const { game, deep, forced } = loadFixture("EDP5pYum");
+    const facts = gameFacts(game, null, deep ?? null, forced!);
+    const f38 = forced!.find((f) => f.ply === 38)!;
+    expect(puzzleGate(facts, f38)).toEqual({ known: false });
+    expect(forcedWinLine(facts, seatColorsOf(game))).toContain(
+      "lost it; puzzle not known (no engine scores)",
+    );
+  });
 });
