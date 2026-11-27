@@ -1716,26 +1716,20 @@ describe("the C87 puzzle gate (Nil, 2026-11-27: a real risk of losing)", () => {
     };
   };
 
-  test("the bar is the played move: 50% or less after it, or the mover lost", () => {
+  test("the bar is the played move only: 50% or less after it", () => {
     const { facts, forced } = edp();
     const f38 = forced.find((f) => f.ply === 38)!;
     expect(puzzleGate(facts, f38)).toMatchObject({ pass: true, why: "drop" });
-    // The same entry on a ply where the bot (the loser, P1) stayed above 50%:
-    // it passes only because the mover lost the game.
+    // The bot (P1) lost this game, but a move of it that stayed above 50%
+    // is no puzzle: the loss came from another move (KL-hqILb 12, 97% -> 93%).
     const high = facts.plies.find(
       (p) => p.mover === 1 && p.engine!.after > PUZZLE_RISK_AFTER,
     )!;
+    expect(facts.winner).toBe(2);
     expect(puzzleGate(facts, { ...f38, ply: high.ply })).toMatchObject({
-      pass: true,
-      why: "lost the game",
+      pass: false,
+      why: "still winning",
     });
-    // The winner (P2) above 50% after its move: no risk, no puzzle.
-    const winner = facts.plies.find(
-      (p) => p.mover === 2 && p.engine!.after > PUZZLE_RISK_AFTER,
-    )!;
-    expect(
-      puzzleGate(facts, { ...f38, ply: winner.ply, mover: 2 }),
-    ).toMatchObject({ pass: false, why: "still winning" });
   });
 
   test("with no engine scores the gate is not known, never a pass", () => {

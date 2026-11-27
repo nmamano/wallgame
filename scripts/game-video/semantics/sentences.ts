@@ -822,7 +822,8 @@ export const missedWinLine = (
  * C87 (Nil, 2026-11-27, on Kqbe ply 14: "red is clearly winning, there's no
  * risk of losing"): a missed forced win is a puzzle only when the played
  * move put the game at risk: after it the mover's engine win chance is this
- * or less, or the mover lost the game.
+ * or less. The played move only (the Director, 2026-11-27): a game the
+ * mover lost later by another move does not count (KL-hqILb 12: 97% -> 93%).
  */
 export const PUZZLE_RISK_AFTER = 0.5;
 
@@ -834,7 +835,7 @@ export type PuzzleGate =
       before: number;
       after: number;
       pass: boolean;
-      why: "drop" | "lost the game" | "still winning";
+      why: "drop" | "still winning";
     };
 
 /** The C87 puzzle gate of a missed forced win (engine scores needed). */
@@ -842,12 +843,7 @@ export const puzzleGate = (facts: GameFacts, f: ForcedWin): PuzzleGate => {
   const engine = facts.plies[f.ply]?.engine ?? null;
   if (engine === null) return { known: false };
   const { before, after } = engine;
-  const why =
-    after <= PUZZLE_RISK_AFTER
-      ? "drop"
-      : facts.winner !== null && facts.winner !== f.mover
-        ? "lost the game"
-        : "still winning";
+  const why = after <= PUZZLE_RISK_AFTER ? "drop" : "still winning";
   return { known: true, before, after, pass: why !== "still winning", why };
 };
 
@@ -856,7 +852,6 @@ const gateWords = (g: PuzzleGate): string => {
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   const verdict = {
     drop: "PASS (the move cost the win)",
-    "lost the game": "PASS (the mover lost the game)",
     "still winning": "FAIL (no risk: still winning after the move)",
   }[g.why];
   return `win chance ${pct(g.before)} -> ${pct(g.after)}, puzzle ${verdict}`;
