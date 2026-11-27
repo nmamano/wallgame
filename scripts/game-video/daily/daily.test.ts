@@ -2882,20 +2882,39 @@ const writeDocs = (
 const DOCS = tempDir();
 writeDocs(DOCS);
 
+const crewArgv = (base: string, args: string[]) => [
+  "node",
+  resolve(import.meta.dir, "crew.mjs"),
+  ...args,
+  "--app",
+  base,
+  "--docs",
+  DOCS,
+];
+
+/**
+ * crew.mjs as `crew`, but it does not block this process: for an app that
+ * runs here (serveHere), which must answer while crew waits.
+ */
+const crewNear = async (base: string, ...args: string[]) => {
+  const run = Bun.spawn(crewArgv(base, args), {
+    env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [out, err, code] = await Promise.all([
+    new Response(run.stdout).text(),
+    new Response(run.stderr).text(),
+    run.exited,
+  ]);
+  return { code, out, err };
+};
+
 /** crew.mjs against the app at `base`, with the stand-in docs. */
 const crew = (base: string, ...args: string[]) => {
-  const run = Bun.spawnSync(
-    [
-      "node",
-      resolve(import.meta.dir, "crew.mjs"),
-      ...args,
-      "--app",
-      base,
-      "--docs",
-      DOCS,
-    ],
-    { env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root } },
-  );
+  const run = Bun.spawnSync(crewArgv(base, args), {
+    env: { PATH: process.env.PATH!, TMPDIR: TEST_TMP.root },
+  });
   return {
     code: run.exitCode,
     out: run.stdout.toString(),
@@ -4976,18 +4995,21 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     ).toBeString();
   });
 
-  test("slot --now: the timer's own slot step; refused with its reason", async () => {
-    const waitFirstTick = async (root: string) => {
-      const schedule = join(root, "schedule.json");
-      for (let i = 0; i < 50 && !existsSync(schedule); i++) {
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      return schedule;
-    };
-    // No approved item: a 409 with the reason; crew says it and fails.
+  // The app runs here (serveHere) and crew starts without blocking this
+  // process (crewNear): an app process and five crew starts in one test ran
+  // over bun's 5 s limit under load (task 5a5f0f01).
+  const waitFirstTick = async (root: string) => {
+    const schedule = join(root, "schedule.json");
+    for (let i = 0; i < 50 && !existsSync(schedule); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return schedule;
+  };
+
+  test("slot --now: refused with its reason; with an approved item, the timer's own slot step", async () => {
+    // No approved item: a 409 with the reason.
     const emptyDir = tempDir();
-    // crew blocks this process while it runs: the app runs in its own.
-    const emptyBase = await serve(emptyDir, "unused");
+    const { base: emptyBase } = await serveHere(emptyDir, "unused");
     await waitFirstTick(openStore(emptyDir).dirs.root);
     const unnamed = await call(emptyBase, "/api/daily/slot-now", {});
     expect(unnamed.status).toBe(409);
@@ -4997,13 +5019,6 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toBe("slot --now: the approved queue is empty");
-    expect(crew(emptyBase, "slot", "--now").err).toContain(
-      'slot --now needs --by "<your agent name>"',
-    );
-    const said = crew(emptyBase, "slot", "--now", "--by", "Wall Game Growth");
-    expect(said.code).toBe(1);
-    expect(said.err).toContain("slot --now: the approved queue is empty");
-    expect(crew(emptyBase, "slot").err).toContain("slot needs --now");
 
     // An approved item, and no platform live in the test env: the slot
     // runs and skips, the item stays approved, and the gap does not hold.
@@ -5011,11 +5026,15 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     const store = openStore(dir);
     const id = finishItem(store);
     approveItem(store, id);
-    const base = await serve(dir, "unused");
+    const { base } = await serveHere(dir, "unused");
     const schedule = await waitFirstTick(store.dirs.root);
-    const ran = crew(base, "slot", "--now", "--by", "Wall Game Growth");
-    expect(ran.out).toContain("slot by hand: no item no-live");
-    expect(ran.code).toBe(1);
+    const ran = await call<{ itemId: string | null; outcome: string }>(
+      base,
+      "/api/daily/slot-now",
+      { by: "Wall Game Growth" },
+    );
+    expect(ran.status).toBe(200);
+    expect(ran.body).toMatchObject({ itemId: null, outcome: "no-live" });
     const state = JSON.parse(readFileSync(schedule, "utf8")) as {
       lastPostAt: string | null;
       lastSlot: { outcome: string };
@@ -5023,6 +5042,47 @@ describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () =>
     expect(state.lastSlot.outcome).toBe("no-live");
     expect(state.lastPostAt).toBeNull();
     expect(itemOf(openStore(dir), id).state).toBe("approved");
+  });
+
+  test("crew slot: --now and --by, before it calls the app", () => {
+    // No app answers at this address: the refusals come first.
+    const none = "http://127.0.0.1:9";
+    expect(crew(none, "slot").err).toContain("slot needs --now");
+    expect(crew(none, "slot", "--now").err).toContain(
+      'slot --now needs --by "<your agent name>"',
+    );
+  });
+
+  test("crew slot --now says the app's refusal and fails", async () => {
+    const emptyDir = tempDir();
+    const { base } = await serveHere(emptyDir, "unused");
+    await waitFirstTick(openStore(emptyDir).dirs.root);
+    const said = await crewNear(
+      base,
+      "slot",
+      "--now",
+      "--by",
+      "Wall Game Growth",
+    );
+    expect(said.code).toBe(1);
+    expect(said.err).toContain("slot --now: the approved queue is empty");
+  });
+
+  test("crew slot --now says the slot's outcome, and fails when nothing posted", async () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    approveItem(store, finishItem(store));
+    const { base } = await serveHere(dir, "unused");
+    await waitFirstTick(store.dirs.root);
+    const ran = await crewNear(
+      base,
+      "slot",
+      "--now",
+      "--by",
+      "Wall Game Growth",
+    );
+    expect(ran.out).toContain("slot by hand: no item no-live");
+    expect(ran.code).toBe(1);
   });
 
   test("the Meta insights token page: only Nil saves, 0600, the token never shown", async () => {
