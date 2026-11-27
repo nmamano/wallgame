@@ -536,11 +536,14 @@ describe("the sitemap's puzzle pages", () => {
  * same reason it leaves the sitemap. tests/structured-data.test.ts covers the
  * shape and the fault path; this proves the lookup reads the right rows.
  */
-describe("a puzzle page's structured data", () => {
-  const breadcrumbFor = async (path: string) => {
-    const { structuredDataForPath } =
+describe("a puzzle page's structured data and canonical path", () => {
+  const headFor = async (path: string) => {
+    const { pageHeadForPath } =
       await import("../../server/routes/structured-data");
-    const json = await structuredDataForPath(path);
+    return pageHeadForPath(path);
+  };
+  const breadcrumbFor = async (path: string) => {
+    const json = (await headFor(path)).structuredData;
     return json === undefined
       ? undefined
       : (JSON.parse(json) as {
@@ -568,6 +571,8 @@ describe("a puzzle page's structured data", () => {
         name: row.displayName,
         item: `https://wallgame.io/puzzles/${slug}`,
       });
+      // Board c69ad0f8: the page's canonical link names the same address.
+      expect((await headFor(path)).canonicalPath).toBe(`/puzzles/${slug}`);
     }
   });
 

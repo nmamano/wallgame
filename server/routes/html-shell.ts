@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import { SITE_ORIGIN } from "./seo";
-import { structuredDataForPath } from "./structured-data";
+import { pageHeadForPath } from "./structured-data";
 import {
   normalizePath,
   pageMetaForPath,
@@ -267,6 +267,8 @@ function locateHeadClose(template: string, afterLastSlot: number): number {
 }
 
 /**
+ * @param path the page's canonical path (./structured-data.ts PageHead), which
+ * picks the copy and fills the canonical link, og:url and twitter:url.
  * @param structuredData serialized JSON-LD (./structured-data.ts). When it is
  * absent the document is exactly what it was before structured data existed:
  * no element, not even whitespace, is added.
@@ -360,9 +362,9 @@ export const registerHtmlShell = (app: Hono, shell: HtmlShell) => {
       headers["X-Robots-Tag"] = "noindex, follow";
     }
 
-    const structuredData = await structuredDataForPath(c.req.path);
+    const head = await pageHeadForPath(c.req.path);
     return c.body(
-      renderPageShell(shell, c.req.path, structuredData),
+      renderPageShell(shell, head.canonicalPath, head.structuredData),
       200,
       headers,
     );

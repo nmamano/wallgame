@@ -89,6 +89,15 @@ export function puzzlePath(kind: PuzzleKind, id: string): string {
 }
 
 /**
+ * A saved puzzle's one address: what the app links to, what the sitemap
+ * lists, and what every puzzle page names as its canonical link, whichever
+ * slug opened it.
+ */
+export function savedPuzzlePath(puzzle: SavedPuzzleRef): string {
+  return puzzlePath("saved", savedPuzzleSlug(puzzle));
+}
+
+/**
  * The absolute link to hand to someone else.
  *
  * `origin` is passed in rather than read from `window` so this stays pure and

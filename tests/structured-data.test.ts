@@ -1,5 +1,6 @@
 /**
- * Board 456de365: the BreadcrumbList on a puzzle page.
+ * Board 456de365: the BreadcrumbList on a puzzle page. Board c69ad0f8: the
+ * canonical path the same lookup gives the page.
  *
  * No database: the puzzle list is passed in, which is also how the
  * database-fault case is reached. tests/integration/puzzle-votes.test.ts runs
@@ -10,8 +11,8 @@ import { describe, it, expect, spyOn } from "bun:test";
 import {
   homeStructuredData,
   puzzleBreadcrumbList,
+  pageHeadForPath,
   serializeJsonLd,
-  structuredDataForPath,
 } from "../server/routes/structured-data";
 import type { SavedPuzzleRef } from "../shared/domain/puzzle-links";
 import { pageMetaForPath } from "../shared/domain/page-metadata";
@@ -105,7 +106,12 @@ describe("serializeJsonLd", () => {
   });
 });
 
-describe("structuredDataForPath", () => {
+/** The JSON-LD half of a page's head, as the tests below read it. */
+const structuredDataForPath = async (
+  ...args: Parameters<typeof pageHeadForPath>
+) => (await pageHeadForPath(...args)).structuredData;
+
+describe("pageHeadForPath: structured data", () => {
   it("describes a puzzle page by number", async () => {
     const json = await structuredDataForPath("/puzzles/7", load);
     expect(JSON.parse(json!)).toEqual(puzzleBreadcrumbList(PUZZLES[1]));
@@ -191,6 +197,49 @@ describe("structuredDataForPath", () => {
       );
       expect(json).toBeUndefined();
       expect(quiet).toHaveBeenCalledTimes(1);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
+describe("pageHeadForPath: canonical path", () => {
+  const canonical = async (...args: Parameters<typeof pageHeadForPath>) =>
+    (await pageHeadForPath(...args)).canonicalPath;
+
+  it("names a puzzle page by number, whichever slug opened it", async () => {
+    for (const path of ["/puzzles/7", "/puzzles/7/", "/puzzles/rowid-seven"]) {
+      expect(await canonical(path, load)).toBe("/puzzles/7");
+    }
+  });
+
+  it("keeps the row id for a puzzle whose name has no number", async () => {
+    // The sitemap lists it by row id too (savedPuzzlePath), so the two agree.
+    expect(await canonical("/puzzles/rowid-unnumbered", load)).toBe(
+      "/puzzles/rowid-unnumbered",
+    );
+  });
+
+  it("keeps the requested path for a puzzle not in the enabled list", async () => {
+    for (const path of ["/puzzles/8", "/puzzles/no-such-row"]) {
+      expect(await canonical(path, load)).toBe(path);
+    }
+  });
+
+  it("keeps the requested path on every other page", async () => {
+    for (const path of ["/", "//", "/play", "/puzzles", "/game/abc123"]) {
+      expect(await canonical(path, load)).toBe(path);
+    }
+  });
+
+  it("keeps the requested path when the database fails", async () => {
+    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(
+        await canonical("/puzzles/rowid-seven", () =>
+          Promise.reject(new Error("connection refused")),
+        ),
+      ).toBe("/puzzles/rowid-seven");
     } finally {
       quiet.mockRestore();
     }

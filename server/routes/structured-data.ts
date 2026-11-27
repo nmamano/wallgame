@@ -10,6 +10,10 @@
  *
  * Every other page gets nothing, so its bytes stay exactly as they were.
  *
+ * The same puzzle lookup also names the page (board c69ad0f8): a puzzle page
+ * opened by its row id gets the numbered address as its canonical link, the
+ * address the breadcrumb and the sitemap use.
+ *
  * Deliberately not here:
  *
  * - A SearchAction on the WebSite. It promises a search URL, and the site has
@@ -27,9 +31,8 @@ import {
   pageMetaForPath,
 } from "../../shared/domain/page-metadata";
 import {
-  puzzlePath,
   resolveSavedPuzzle,
-  savedPuzzleSlug,
+  savedPuzzlePath,
   type SavedPuzzleRef,
 } from "../../shared/domain/puzzle-links";
 import { fetchEnabledSavedPuzzles, SITE_ORIGIN } from "./seo";
@@ -85,10 +88,7 @@ export function puzzleBreadcrumbList(puzzle: SavedPuzzleRef) {
     // The canonical slug, not the segment the visitor typed: a link by row id
     // and a link by number are the same page, and the breadcrumb names the
     // address the app itself hands out.
-    {
-      name: puzzle.displayName,
-      path: puzzlePath("saved", savedPuzzleSlug(puzzle)),
-    },
+    { name: puzzle.displayName, path: savedPuzzlePath(puzzle) },
   ];
 
   return {
@@ -123,29 +123,47 @@ export function serializeJsonLd(data: unknown): string {
  */
 const PUZZLE_LOOKUP_TIMEOUT_MS = 1000;
 
+/** What the first response says about a page beyond its route's fixed copy. */
+export interface PageHead {
+  /**
+   * The page's own address, for its canonical link and its og:url and
+   * twitter:url. The path as requested, except on a puzzle page found in the
+   * enabled list: there it is the puzzle's canonical slug (/puzzles/7), the
+   * sitemap's URL, whichever slug opened the page.
+   */
+  canonicalPath: string;
+  /** Serialized JSON-LD, absent on a page that carries none. */
+  structuredData?: string;
+}
+
 /**
- * The JSON-LD for a page, or undefined when the page carries none.
+ * The head of a page: its canonical path and its JSON-LD.
  *
  * Fails OPEN, unlike the sitemap: the page is the product and the markup is a
  * hint to search engines. A database error costs the hint, and a stalled
- * database costs the hint after `timeoutMs`; neither costs the page. Only a
- * per-puzzle path ever calls `loadPuzzles`, so no other page waits on the
- * database; the home page's block is fixed.
+ * database costs the hint after `timeoutMs`; neither costs the page. On a
+ * failed lookup the canonical path stays the path as requested, which is what
+ * every page carried before the lookup existed. Only a per-puzzle path ever
+ * calls `loadPuzzles`, so no other page waits on the database; the home
+ * page's block is fixed.
  *
  * @param loadPuzzles the enabled puzzles. A parameter so a test can make it
  * throw or hang; production uses the sitemap's query.
  */
-export async function structuredDataForPath(
+export async function pageHeadForPath(
   path: string,
   loadPuzzles: () => Promise<SavedPuzzleRef[]> = fetchEnabledSavedPuzzles,
   timeoutMs: number = PUZZLE_LOOKUP_TIMEOUT_MS,
-): Promise<string | undefined> {
+): Promise<PageHead> {
   if (normalizePath(path) === "/") {
-    return serializeJsonLd(homeStructuredData());
+    return {
+      canonicalPath: path,
+      structuredData: serializeJsonLd(homeStructuredData()),
+    };
   }
 
   const param = puzzlePageParam(path);
-  if (param === null) return undefined;
+  if (param === null) return { canonicalPath: path };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let puzzles: SavedPuzzleRef[];
@@ -164,11 +182,15 @@ export async function structuredDataForPath(
       path,
       error,
     });
-    return undefined;
+    return { canonicalPath: path };
   } finally {
     clearTimeout(timer);
   }
 
   const puzzle = resolveSavedPuzzle(puzzles, param);
-  return puzzle ? serializeJsonLd(puzzleBreadcrumbList(puzzle)) : undefined;
+  if (!puzzle) return { canonicalPath: path };
+  return {
+    canonicalPath: savedPuzzlePath(puzzle),
+    structuredData: serializeJsonLd(puzzleBreadcrumbList(puzzle)),
+  };
 }

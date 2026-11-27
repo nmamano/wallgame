@@ -16,8 +16,7 @@
 import { Hono } from "hono";
 import { CANONICAL_PATHS } from "../../shared/domain/page-metadata";
 import {
-  puzzlePath,
-  savedPuzzleSlug,
+  savedPuzzlePath,
   type SavedPuzzleRef,
 } from "../../shared/domain/puzzle-links";
 
@@ -97,7 +96,7 @@ export async function fetchEnabledSavedPuzzles(): Promise<SavedPuzzleRef[]> {
 /**
  * The path of every puzzle a stranger can open, newest numbering and all.
  *
- * The slug is built by `savedPuzzleSlug` rather than from the row id, because
+ * The path is built by `savedPuzzlePath` (the number, not the row id), because
  * that is what the links in the app say, and a sitemap advertising a second
  * address for the same page is the duplicate-content problem it exists to
  * avoid.
@@ -110,7 +109,7 @@ export async function fetchEnabledSavedPuzzles(): Promise<SavedPuzzleRef[]> {
  */
 export async function fetchPuzzleSitemapPaths(): Promise<string[]> {
   const rows = await fetchEnabledSavedPuzzles();
-  return rows.map((row) => puzzlePath("saved", savedPuzzleSlug(row)));
+  return rows.map(savedPuzzlePath);
 }
 
 /**
