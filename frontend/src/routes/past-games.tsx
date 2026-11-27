@@ -187,7 +187,12 @@ function PastGames() {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="space-y-2">
-              <Label className="text-foreground">Variant</Label>
+              <Label
+                htmlFor="past-games-filter-variant"
+                className="text-foreground"
+              >
+                Variant
+              </Label>
               <Select
                 value={filters.variant}
                 onValueChange={(value) =>
@@ -196,7 +201,10 @@ function PastGames() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="past-games-filter-variant"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -209,7 +217,12 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Rated</Label>
+              <Label
+                htmlFor="past-games-filter-rated"
+                className="text-foreground"
+              >
+                Rated
+              </Label>
               <Select
                 value={filters.rated}
                 onValueChange={(value) =>
@@ -218,7 +231,10 @@ function PastGames() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="past-games-filter-rated"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -230,7 +246,12 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Time Control</Label>
+              <Label
+                htmlFor="past-games-filter-time-control"
+                className="text-foreground"
+              >
+                Time Control
+              </Label>
               <Select
                 value={filters.timeControl}
                 onValueChange={(value) =>
@@ -239,7 +260,10 @@ function PastGames() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="past-games-filter-time-control"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -253,7 +277,12 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Board Size</Label>
+              <Label
+                htmlFor="past-games-filter-board-size"
+                className="text-foreground"
+              >
+                Board Size
+              </Label>
               <Select
                 value={filters.boardSize}
                 onValueChange={(value) =>
@@ -262,7 +291,10 @@ function PastGames() {
                   })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="past-games-filter-board-size"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -275,8 +307,14 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Player 1</Label>
+              <Label
+                htmlFor="past-games-filter-player-1"
+                className="text-foreground"
+              >
+                Player 1
+              </Label>
               <Input
+                id="past-games-filter-player-1"
                 placeholder="Enter player name..."
                 value={filters.player1}
                 onChange={(e) =>
@@ -289,8 +327,14 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Player 2</Label>
+              <Label
+                htmlFor="past-games-filter-player-2"
+                className="text-foreground"
+              >
+                Player 2
+              </Label>
               <Input
+                id="past-games-filter-player-2"
                 placeholder="Enter player name..."
                 value={filters.player2}
                 onChange={(e) =>
@@ -303,8 +347,14 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Min ELO</Label>
+              <Label
+                htmlFor="past-games-filter-min-elo"
+                className="text-foreground"
+              >
+                Min ELO
+              </Label>
               <Input
+                id="past-games-filter-min-elo"
                 type="number"
                 placeholder="e.g., 1200"
                 value={filters.eloMin}
@@ -318,8 +368,14 @@ function PastGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Max ELO</Label>
+              <Label
+                htmlFor="past-games-filter-max-elo"
+                className="text-foreground"
+              >
+                Max ELO
+              </Label>
               <Input
+                id="past-games-filter-max-elo"
                 type="number"
                 placeholder="e.g., 2000"
                 value={filters.eloMax}

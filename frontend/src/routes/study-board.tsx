@@ -225,7 +225,7 @@ function StudyBoard() {
                         );
                       }}
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger id="rows" className="h-8">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -261,7 +261,7 @@ function StudyBoard() {
                         );
                       }}
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger id="cols" className="h-8">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -292,7 +292,11 @@ function StudyBoard() {
                         setSelectedPawnColor(value as PlayerColor)
                       }
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger
+                        id="pawn-color"
+                        aria-label="Pawn color"
+                        className="h-8"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -321,7 +325,7 @@ function StudyBoard() {
                         setSelectedPawnType(value as PawnType)
                       }
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger id="pawn-type" className="h-8">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -381,7 +385,11 @@ function StudyBoard() {
                         setSelectedWallColor(value as PlayerColor)
                       }
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger
+                        id="wall-color"
+                        aria-label="Wall color"
+                        className="h-8"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -410,7 +418,7 @@ function StudyBoard() {
                         setSelectedWallState(value as WallState)
                       }
                     >
-                      <SelectTrigger className="h-8">
+                      <SelectTrigger id="wall-state" className="h-8">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

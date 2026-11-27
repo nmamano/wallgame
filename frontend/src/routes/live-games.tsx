@@ -214,14 +214,22 @@ function LiveGames() {
 
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div className="space-y-2">
-              <Label className="text-foreground">Variant</Label>
+              <Label
+                htmlFor="live-games-filter-variant"
+                className="text-foreground"
+              >
+                Variant
+              </Label>
               <Select
                 value={filters.variant}
                 onValueChange={(value) =>
                   setFilters({ ...filters, variant: value })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="live-games-filter-variant"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -234,14 +242,22 @@ function LiveGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Rated</Label>
+              <Label
+                htmlFor="live-games-filter-rated"
+                className="text-foreground"
+              >
+                Rated
+              </Label>
               <Select
                 value={filters.rated}
                 onValueChange={(value) =>
                   setFilters({ ...filters, rated: value })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="live-games-filter-rated"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -253,14 +269,22 @@ function LiveGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Time Control</Label>
+              <Label
+                htmlFor="live-games-filter-time-control"
+                className="text-foreground"
+              >
+                Time Control
+              </Label>
               <Select
                 value={filters.timeControl}
                 onValueChange={(value) =>
                   setFilters({ ...filters, timeControl: value })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="live-games-filter-time-control"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -274,14 +298,22 @@ function LiveGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Board Size</Label>
+              <Label
+                htmlFor="live-games-filter-board-size"
+                className="text-foreground"
+              >
+                Board Size
+              </Label>
               <Select
                 value={filters.boardSize}
                 onValueChange={(value) =>
                   setFilters({ ...filters, boardSize: value })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="live-games-filter-board-size"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -294,8 +326,14 @@ function LiveGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Min ELO</Label>
+              <Label
+                htmlFor="live-games-filter-min-elo"
+                className="text-foreground"
+              >
+                Min ELO
+              </Label>
               <Input
+                id="live-games-filter-min-elo"
                 type="number"
                 placeholder="e.g., 1200"
                 value={filters.eloMin}
@@ -307,8 +345,14 @@ function LiveGames() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground">Max ELO</Label>
+              <Label
+                htmlFor="live-games-filter-max-elo"
+                className="text-foreground"
+              >
+                Max ELO
+              </Label>
               <Input
+                id="live-games-filter-max-elo"
                 type="number"
                 placeholder="e.g., 2000"
                 value={filters.eloMax}

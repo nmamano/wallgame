@@ -217,14 +217,22 @@ function Ranking() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="space-y-2">
-              <Label className="text-foreground">Variant</Label>
+              <Label
+                htmlFor="ranking-filter-variant"
+                className="text-foreground"
+              >
+                Variant
+              </Label>
               <Select
                 value={filters.variant}
                 onValueChange={(value) =>
                   updateFilters({ variant: value as RankingFilters["variant"] })
                 }
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger
+                  id="ranking-filter-variant"
+                  className="bg-background"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -242,7 +250,12 @@ function Ranking() {
                 as if it still applied. */}
             {!isGlobal && (
               <div className="space-y-2">
-                <Label className="text-foreground">Time Control</Label>
+                <Label
+                  htmlFor="ranking-filter-time-control"
+                  className="text-foreground"
+                >
+                  Time Control
+                </Label>
                 <Select
                   value={filters.timeControl}
                   onValueChange={(value) =>
@@ -251,7 +264,10 @@ function Ranking() {
                     })
                   }
                 >
-                  <SelectTrigger className="bg-background">
+                  <SelectTrigger
+                    id="ranking-filter-time-control"
+                    className="bg-background"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -265,8 +281,14 @@ function Ranking() {
             )}
 
             <div className="space-y-2">
-              <Label className="text-foreground">Search Player</Label>
+              <Label
+                htmlFor="ranking-filter-search-player"
+                className="text-foreground"
+              >
+                Search Player
+              </Label>
               <Input
+                id="ranking-filter-search-player"
                 placeholder="Enter player name..."
                 value={filters.player}
                 onChange={(e) => updateFilters({ player: e.target.value })}
